@@ -25,12 +25,13 @@ RUN pnpm install --prod --frozen-lockfile 2>/dev/null || pnpm install --prod
 # Copy compiled JS
 COPY --from=builder /app/dist ./dist
 
-# Create data directory (will be overridden by Railway volume mount)
-RUN mkdir -p /data/workspace
+# Create data directories (will be overridden by Railway volume mount)
+RUN mkdir -p /data/workspace /data/training /data/training/epochs /data/training/exports
 
 ENV NODE_ENV=production
 ENV PORT=8080
 ENV DATA_DIR=/data/workspace
+ENV TRAINING_DIR=/data/training
 
 EXPOSE 8080
 

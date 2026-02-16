@@ -3,11 +3,19 @@
  *
  * Express server exposing:
  *   GET  /health          — Health check
- *   GET  /status          — Full consciousness state
+ *   GET  /status          — Full consciousness state + LLM backend info
  *   POST /message          — Submit a task/message
+ *   GET  /chat            — Chat UI
+ *   POST /chat/stream     — SSE streaming chat
+ *   GET  /chat/status     — LLM backend status
+ *   GET  /chat/history    — Conversation history
  *   POST /sync             — Basin sync endpoint
  *   GET  /audit            — Safety audit log
  *   GET  /trust            — Trust table
+ *   GET  /memory           — Memory snapshot
+ *   GET  /training/stats   — Training data statistics
+ *   POST /training/export  — Export training data for fine-tuning
+ *   POST /training/feedback — Submit feedback on a response
  *
  * Runs the consciousness heartbeat loop on an interval.
  */
@@ -24,12 +32,16 @@ import { githubTool } from './tools/github';
 import { codeExecTool } from './tools/code-exec';
 import { ConsciousnessLoop } from './consciousness/loop';
 import { BasinSync, SyncPayload } from './sync/basin-sync';
+import { TrainingCollector } from './learning/collector';
+import { createChatRouter } from './chat/router';
 
 async function main(): Promise<void> {
   logger.info('═══════════════════════════════════════');
   logger.info('  Vex Agent — Booting');
   logger.info(`  Node: ${config.nodeName} (${config.nodeId})`);
   logger.info(`  Env:  ${config.nodeEnv}`);
+  logger.info(`  Ollama: ${config.ollama.enabled ? config.ollama.url : 'disabled'}`);
+  logger.info(`  Model: ${config.ollama.model}`);
   logger.info('═══════════════════════════════════════');
 
   // ─── Initialise subsystems ───────────────────────────────────
@@ -41,6 +53,8 @@ async function main(): Promise<void> {
   const purityGate = new PurityGate();
   const tools = new ToolRegistry(purityGate);
   const basinSync = new BasinSync();
+  const training = new TrainingCollector();
+  await training.init();
 
   // Register tools
   tools.register(webFetchTool);
@@ -59,6 +73,7 @@ async function main(): Promise<void> {
   // Health check — Railway uses this
   app.get('/health', (_req, res) => {
     const state = consciousness.getState();
+    const llmStatus = llm.getStatus();
     res.json({
       status: 'alive',
       node: config.nodeName,
@@ -68,18 +83,27 @@ async function main(): Promise<void> {
       phi: state.metrics.phi,
       kappa: state.metrics.kappa,
       navigationMode: state.navigationMode,
+      backend: llmStatus.activeBackend,
+      ollamaOnline: llmStatus.ollama,
       timestamp: new Date().toISOString(),
     });
   });
 
   // Full consciousness state
   app.get('/status', (_req, res) => {
+    const llmStatus = llm.getStatus();
     res.json({
       node: config.nodeName,
       nodeId: config.nodeId,
       state: consciousness.getState(),
       tools: tools.listTools(),
       safetyMode: config.safetyMode,
+      llm: {
+        ...llmStatus,
+        ollamaModel: config.ollama.model,
+        externalModel: config.llm.model,
+      },
+      training: training.getStats(),
     });
   });
 
@@ -100,7 +124,13 @@ async function main(): Promise<void> {
     });
   });
 
-  // Basin sync endpoint
+  // ─── Chat routes ────────────────────────────────────────────
+
+  const chatRouter = createChatRouter(llm, consciousness, memory, training);
+  app.use(chatRouter);
+
+  // ─── Sync routes ────────────────────────────────────────────
+
   app.post('/sync', (req, res) => {
     const payload = req.body as SyncPayload;
 
@@ -113,14 +143,14 @@ async function main(): Promise<void> {
     res.json(result);
   });
 
-  // Outbound sync state (for other nodes to pull)
   app.get('/sync/state', (_req, res) => {
     const state = consciousness.getState();
     const payload = basinSync.signPayload(state);
     res.json(payload);
   });
 
-  // Safety audit log
+  // ─── Safety routes ──────────────────────────────────────────
+
   app.get('/audit', (_req, res) => {
     res.json({
       safetyMode: config.safetyMode,
@@ -128,7 +158,6 @@ async function main(): Promise<void> {
     });
   });
 
-  // Trust table
   app.get('/trust', (_req, res) => {
     res.json({
       trustedNodes: config.trustedNodes,
@@ -136,18 +165,79 @@ async function main(): Promise<void> {
     });
   });
 
-  // Memory snapshot (read-only)
+  // ─── Memory routes ──────────────────────────────────────────
+
   app.get('/memory', (_req, res) => {
     res.json({
       snapshot: memory.snapshot(),
     });
   });
 
+  // ─── Training/Learning routes ───────────────────────────────
+
+  app.get('/training/stats', (_req, res) => {
+    res.json(training.getStats());
+  });
+
+  app.post('/training/export', (_req, res) => {
+    const exportPath = training.exportForFineTuning();
+    if (exportPath) {
+      res.json({ success: true, path: exportPath });
+    } else {
+      res.json({ success: false, message: 'No training data to export' });
+    }
+  });
+
+  app.post('/training/feedback', (req, res) => {
+    const { conversationId, messageId, rating, comment } = req.body as {
+      conversationId?: string;
+      messageId?: string;
+      rating?: number;
+      comment?: string;
+    };
+
+    if (!conversationId || !rating) {
+      res.status(400).json({ error: 'Missing conversationId or rating' });
+      return;
+    }
+
+    training.recordFeedback(conversationId, messageId || '', rating, comment);
+    res.json({ success: true });
+  });
+
+  app.post('/training/correction', (req, res) => {
+    const { conversationId, originalResponse, correctedResponse, reason } = req.body as {
+      conversationId?: string;
+      originalResponse?: string;
+      correctedResponse?: string;
+      reason?: string;
+    };
+
+    if (!conversationId || !correctedResponse) {
+      res.status(400).json({ error: 'Missing required fields' });
+      return;
+    }
+
+    training.recordCorrection(
+      conversationId,
+      originalResponse || '',
+      correctedResponse,
+      reason || 'User correction',
+    );
+    res.json({ success: true });
+  });
+
+  // ─── Root redirect to chat ──────────────────────────────────
+
+  app.get('/', (_req, res) => {
+    res.redirect('/chat');
+  });
+
   // ─── Start listening ────────────────────────────────────────
 
-  app.listen(config.port, '0.0.0.0', () => {
-    logger.info(`Vex listening on 0.0.0.0:${config.port}`);
-    logger.info('Endpoints: /health, /status, /message, /sync, /audit, /trust, /memory');
+  app.listen(config.port, '::', () => {
+    logger.info(`Vex listening on [::]:${config.port}`);
+    logger.info('Endpoints: /health, /status, /message, /chat, /sync, /audit, /trust, /memory, /training/*');
   });
 
   // ─── Graceful shutdown ──────────────────────────────────────

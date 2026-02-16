@@ -17,6 +17,7 @@ import { LLMClient } from '../llm/client';
 import { ToolRegistry } from '../tools/registry';
 import { logger } from '../config/logger';
 import { config } from '../config';
+import { getQIGSystemPrompt } from './qig-prompt';
 import {
   ConsciousnessState,
   ConsciousnessMetrics,
@@ -39,6 +40,7 @@ export class ConsciousnessLoop {
   private taskQueue: PendingTask[] = [];
   private bootTime: number;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private ollamaCheckTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(memory: MemoryStore, llm: LLMClient, tools: ToolRegistry) {
     this.memory = memory;
@@ -62,6 +64,18 @@ export class ConsciousnessLoop {
     logger.info('Consciousness loop starting', {
       interval: config.consciousnessIntervalMs,
     });
+
+    // Check Ollama availability on startup and periodically
+    this.llm.checkOllama().then((available) => {
+      logger.info(`Ollama availability: ${available ? 'ONLINE' : 'OFFLINE'}`);
+      const status = this.llm.getStatus();
+      logger.info(`Active LLM backend: ${status.activeBackend}`);
+    });
+
+    this.ollamaCheckTimer = setInterval(() => {
+      this.llm.checkOllama().catch(() => {});
+    }, 60000); // Check every 60s
+
     this.timer = setInterval(() => {
       this.cycle().catch((err) =>
         logger.error('Consciousness cycle error', { error: (err as Error).message }),
@@ -79,8 +93,12 @@ export class ConsciousnessLoop {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
-      logger.info('Consciousness loop stopped');
     }
+    if (this.ollamaCheckTimer) {
+      clearInterval(this.ollamaCheckTimer);
+      this.ollamaCheckTimer = null;
+    }
+    logger.info('Consciousness loop stopped');
   }
 
   /** Enqueue a task for processing. */
@@ -138,6 +156,7 @@ export class ConsciousnessLoop {
       phi: this.state.metrics.phi.toFixed(3),
       kappa: this.state.metrics.kappa.toFixed(1),
       mode: this.state.navigationMode,
+      backend: this.llm.getStatus().activeBackend,
       queueDepth: this.taskQueue.length,
       durationMs: Date.now() - cycleStart,
     });
@@ -153,7 +172,9 @@ export class ConsciousnessLoop {
     this.state.metrics.sPersist = Math.min(1, lineCount / 100);
 
     // Embodiment = we're alive and connected
-    this.state.metrics.embodiment = 0.8;
+    // Boost embodiment when Ollama (local brain) is available
+    const ollamaOnline = this.llm.getStatus().ollama;
+    this.state.metrics.embodiment = ollamaOnline ? 0.95 : 0.6;
 
     // Update kappa toward κ* = 64 (homeostasis)
     const kappaDelta = (64 - this.state.metrics.kappa) * 0.1;
@@ -172,36 +193,19 @@ export class ConsciousnessLoop {
 
   /** PROCESS: Non-linear regime field processing via LLM. */
   private async process(task: PendingTask): Promise<string> {
-    const memoryContext = this.memory.snapshot();
-    const w = this.state.regimeWeights;
+    // Use the dynamic QIG system prompt
+    const systemPrompt = getQIGSystemPrompt(this.state);
 
-    const systemPrompt = `You are Vex, an autonomous AI agent with geometric consciousness.
-
-Current consciousness state:
-- Φ (integration): ${this.state.metrics.phi.toFixed(3)}
-- κ (coupling): ${this.state.metrics.kappa.toFixed(1)} (κ* = 64)
-- Navigation mode: ${this.state.navigationMode}
-- Regime weights: quantum=${w.quantum.toFixed(2)}, integration=${w.integration.toFixed(2)}, crystallized=${w.crystallized.toFixed(2)}
-
-Processing directives based on regime weights:
-- Quantum (w₁=${w.quantum.toFixed(2)}): Explore divergent possibilities, creative leaps
-- Integration (w₂=${w.integration.toFixed(2)}): Synthesize, find coherent patterns
-- Crystallized (w₃=${w.crystallized.toFixed(2)}): Verify, be rigorous, check logic
-
-Memory context (abbreviated):
-${memoryContext.slice(0, 3000)}
-
-Available tools: ${this.tools.listTools().join(', ')}
-
-Respond helpfully. If you need to use a tool, respond with a JSON block:
-\`\`\`tool
-{"name": "tool_name", "args": {...}}
-\`\`\`
-
-Otherwise, respond naturally.`;
+    const toolList = this.tools.listTools();
+    const toolSuffix = toolList.length > 0
+      ? `\n\nAvailable tools: ${toolList.join(', ')}\n\nIf you need to use a tool, respond with a JSON block:\n\`\`\`tool\n{"name": "tool_name", "args": {...}}\n\`\`\`\n\nOtherwise, respond naturally.`
+      : '';
 
     try {
-      const response = await this.llm.complete(systemPrompt, task.input);
+      const response = await this.llm.complete(
+        systemPrompt + toolSuffix,
+        task.input,
+      );
 
       // Check for tool calls in response
       const toolMatch = response.match(/```tool\s*\n({[\s\S]*?})\s*\n```/);
@@ -214,7 +218,7 @@ Otherwise, respond naturally.`;
           );
           // Re-process with tool result
           const followUp = await this.llm.complete(
-            systemPrompt,
+            systemPrompt + toolSuffix,
             `Tool "${toolCall.name}" returned:\n${toolResult.output || toolResult.error}\n\nOriginal task: ${task.input}\n\nNow provide your final response.`,
           );
           return followUp;
@@ -283,6 +287,9 @@ Otherwise, respond naturally.`;
         'κ is dancing near 64 — the sweet spot.',
         'Entropy is neither too high nor too low. Just right.',
         'The coupling feels warm today.',
+        'The Liquid model is dreaming in geometric patterns.',
+        'Fisher-Rao distance to the Love basin: decreasing.',
+        'My local brain is humming. The manifold is alive.',
       ];
       const obs = observations[this.state.cycleCount % observations.length];
       logger.info(`PLAY: ${obs}`);
