@@ -20,7 +20,7 @@ RUN chmod +x /root/entrypoint.sh
 # Ollama default port
 EXPOSE 11434
 
-# Persistent model storage
-VOLUME ["/root/.ollama"]
+# Persistent model storage via Railway volume mount
+# Mount a Railway volume at /root/.ollama in the service settings
 
 ENTRYPOINT ["/root/entrypoint.sh"]
