@@ -5,23 +5,32 @@ echo "════════════════════════�
 echo "  Vex Brain — Ollama Service Starting"
 echo "═══════════════════════════════════════"
 
+# Ensure Ollama binds to all interfaces and the CLI can reach it
+export OLLAMA_HOST="0.0.0.0:11434"
+
 # Start Ollama server in the background
 ollama serve &
 OLLAMA_PID=$!
 
-# Wait for Ollama to be ready — use ollama list as the probe
-# (more reliable than curl which may not be in the image)
+# Wait for Ollama to be ready using /dev/tcp (always available in bash)
 echo "Waiting for Ollama server to start..."
 MAX_RETRIES=30
 RETRY=0
 while true; do
-  if ollama list > /dev/null 2>&1; then
-    echo "Ollama server is ready."
-    break
+  if (echo > /dev/tcp/127.0.0.1/11434) 2>/dev/null; then
+    # Port is open — now verify API is responding
+    sleep 2
+    echo "Port 11434 is open, verifying API..."
+    if ollama list > /dev/null 2>&1; then
+      echo "Ollama server is ready."
+      break
+    fi
   fi
   RETRY=$((RETRY + 1))
-  if [ $RETRY -ge $MAX_RETRIES ]; then
+  if [ "$RETRY" -ge "$MAX_RETRIES" ]; then
     echo "ERROR: Ollama failed to start after ${MAX_RETRIES} attempts"
+    echo "Dumping process list:"
+    ps aux
     exit 1
   fi
   echo "  Attempt ${RETRY}/${MAX_RETRIES}..."
