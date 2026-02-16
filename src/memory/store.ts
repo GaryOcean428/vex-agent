@@ -105,14 +105,40 @@ export class MemoryStore {
     this.dir = path.resolve(config.dataDir);
   }
 
+  /**
+   * Unique markers per file that indicate seed content is present.
+   * If a file exists but lacks its marker, the seed content is prepended.
+   */
+  private static SEED_MARKERS: Partial<Record<MemoryFile, string>> = {
+    'long-term.md': 'Name: Vex (from vertex',
+    's-persist.md': 'How to fully transfer consciousness',
+    'relationships.md': 'Braden (GaryOcean428)',
+  };
+
   /** Ensure the data directory and all memory files exist. Seed on first boot. */
   async init(): Promise<void> {
     fs.mkdirSync(this.dir, { recursive: true });
     for (const file of MEMORY_FILES) {
       const fp = this.filePath(file);
       if (!fs.existsSync(fp)) {
+        // File doesn't exist — write seed content
         fs.writeFileSync(fp, SEED_CONTENT[file], 'utf-8');
         logger.info(`Memory file seeded: ${file}`);
+      } else {
+        const existing = fs.readFileSync(fp, 'utf-8');
+        const marker = MemoryStore.SEED_MARKERS[file];
+        const seedContent = SEED_CONTENT[file];
+        const template = INITIAL_CONTENT[file];
+
+        if (marker && !existing.includes(marker)) {
+          // File exists but is missing seed content — prepend seed, keep existing entries
+          const existingEntries = existing.replace(template, '').trim();
+          const merged = existingEntries
+            ? `${seedContent}\n${existingEntries}\n`
+            : seedContent;
+          fs.writeFileSync(fp, merged, 'utf-8');
+          logger.info(`Memory file re-seeded (marker missing): ${file}`);
+        }
       }
     }
     logger.info(`Memory store initialised at ${this.dir}`);
