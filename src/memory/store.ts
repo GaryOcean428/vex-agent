@@ -168,6 +168,50 @@ export class MemoryStore {
     ).join('\n\n');
   }
 
+  /**
+   * Force-seed all memory files. For each file with a marker, if the marker is
+   * missing the seed content is prepended (preserving existing entries).
+   * Files without markers are only written if they don't exist.
+   * Returns a summary of what was done.
+   */
+  forceSeed(): Record<string, string> {
+    const results: Record<string, string> = {};
+    for (const file of MEMORY_FILES) {
+      const fp = this.filePath(file);
+      const marker = MemoryStore.SEED_MARKERS[file];
+      const seedContent = SEED_CONTENT[file];
+
+      if (!fs.existsSync(fp)) {
+        fs.writeFileSync(fp, seedContent, 'utf-8');
+        results[file] = 'created_and_seeded';
+        logger.info(`Force-seed: created ${file}`);
+        continue;
+      }
+
+      const existing = fs.readFileSync(fp, 'utf-8');
+
+      if (marker && existing.includes(marker)) {
+        results[file] = 'already_seeded';
+        continue;
+      }
+
+      if (marker) {
+        // Strip the empty template header if present, keep accumulated entries
+        const template = INITIAL_CONTENT[file];
+        const existingEntries = existing.replace(template, '').trim();
+        const merged = existingEntries
+          ? `${seedContent}\n${existingEntries}\n`
+          : seedContent;
+        fs.writeFileSync(fp, merged, 'utf-8');
+        results[file] = 'reseeded_with_merge';
+        logger.info(`Force-seed: re-seeded ${file}`);
+      } else {
+        results[file] = 'no_marker_skipped';
+      }
+    }
+    return results;
+  }
+
   /** Consolidate short-term into long-term (simple append + clear). */
   consolidate(): void {
     const shortTerm = this.read('short-term.md');

@@ -173,6 +173,17 @@ async function main(): Promise<void> {
     });
   });
 
+  app.post('/memory/seed', (req, res) => {
+    const secret = req.headers['x-sync-secret'] || req.body?.secret;
+    if (secret !== config.syncSecret && config.syncSecret) {
+      res.status(401).json({ error: 'Invalid sync secret' });
+      return;
+    }
+    const results = memory.forceSeed();
+    logger.info('POST /memory/seed called', { results });
+    res.json({ success: true, results });
+  });
+
   // ─── Training/Learning routes ───────────────────────────────
 
   app.get('/training/stats', (_req, res) => {
