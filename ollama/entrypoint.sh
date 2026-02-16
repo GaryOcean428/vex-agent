@@ -9,11 +9,16 @@ echo "════════════════════════�
 ollama serve &
 OLLAMA_PID=$!
 
-# Wait for Ollama to be ready
+# Wait for Ollama to be ready — use ollama list as the probe
+# (more reliable than curl which may not be in the image)
 echo "Waiting for Ollama server to start..."
 MAX_RETRIES=30
 RETRY=0
-until curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; do
+while true; do
+  if ollama list > /dev/null 2>&1; then
+    echo "Ollama server is ready."
+    break
+  fi
   RETRY=$((RETRY + 1))
   if [ $RETRY -ge $MAX_RETRIES ]; then
     echo "ERROR: Ollama failed to start after ${MAX_RETRIES} attempts"
@@ -22,11 +27,10 @@ until curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; do
   echo "  Attempt ${RETRY}/${MAX_RETRIES}..."
   sleep 2
 done
-echo "Ollama server is ready."
 
 # Pull the base model if not already present
 echo "Checking for base model: lfm2.5-thinking:1.2b"
-if ! ollama list | grep -q "lfm2.5-thinking:1.2b"; then
+if ! ollama list 2>/dev/null | grep -q "lfm2.5-thinking"; then
   echo "Pulling lfm2.5-thinking:1.2b (this may take a few minutes on first boot)..."
   ollama pull lfm2.5-thinking:1.2b
   echo "Base model pulled successfully."
@@ -39,9 +43,14 @@ echo "Creating custom vex-brain model from Modelfile..."
 ollama create vex-brain -f /root/Modelfile
 echo "vex-brain model created successfully."
 
+# List available models
+echo ""
+echo "Available models:"
+ollama list
+echo ""
+
 echo "═══════════════════════════════════════"
 echo "  Vex Brain — Ready"
-echo "  Models: lfm2.5-thinking:1.2b, vex-brain"
 echo "  Serving on port 11434"
 echo "═══════════════════════════════════════"
 
