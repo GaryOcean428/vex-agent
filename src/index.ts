@@ -246,10 +246,15 @@ async function main(): Promise<void> {
 
   // ─── Start listening ────────────────────────────────────────
 
-  app.listen(config.port, '::', () => {
+  const server = app.listen(config.port, '::', () => {
     logger.info(`Vex listening on [::]:${config.port}`);
     logger.info('Endpoints: /health, /status, /message, /chat, /sync, /audit, /trust, /memory, /training/*');
   });
+
+  // Allow long-lived SSE connections (Ollama cold-start can take minutes)
+  server.keepAliveTimeout = 310_000; // 5m 10s — just above the 5m Ollama timeout
+  server.headersTimeout = 315_000;   // must be > keepAliveTimeout
+  server.requestTimeout = 0;         // no per-request timeout for SSE streams
 
   // ─── Graceful shutdown ──────────────────────────────────────
 

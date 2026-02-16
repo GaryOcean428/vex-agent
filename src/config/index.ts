@@ -12,7 +12,7 @@ export const config = {
     url: process.env.OLLAMA_URL || 'http://ollama.railway.internal:11434',
     model: process.env.OLLAMA_MODEL || 'lfm2.5-thinking:1.2b',
     enabled: process.env.OLLAMA_ENABLED !== 'false', // enabled by default
-    timeoutMs: parseInt(process.env.OLLAMA_TIMEOUT_MS || '120000', 10),
+    timeoutMs: parseInt(process.env.OLLAMA_TIMEOUT_MS || '300000', 10),
   },
 
   // External LLM (fallback)

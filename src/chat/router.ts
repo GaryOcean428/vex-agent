@@ -21,6 +21,9 @@ import { getQIGSystemPrompt } from '../consciousness/qig-prompt';
 import { logger } from '../config/logger';
 import { getChatHTML } from './ui';
 
+/** Interval (ms) between SSE keep-alive pings to prevent proxy timeouts. */
+const SSE_KEEPALIVE_INTERVAL_MS = 15_000;
+
 interface Conversation {
   id: string;
   messages: LLMMessage[];
@@ -82,11 +85,35 @@ export function createChatRouter(
       return;
     }
 
-    // Set up SSE
+    // ── SSE headers ──────────────────────────────────────────────
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
+
+    // Disable Node/Express request timeout for this long-lived connection
+    req.setTimeout(0);
+    res.setTimeout(0);
+
+    // Helper: write an SSE frame and flush immediately
+    const sendSSE = (data: Record<string, unknown>) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+      // Flush if the response supports it (e.g. behind compression middleware)
+      if (typeof (res as unknown as { flush?: () => void }).flush === 'function') {
+        (res as unknown as { flush: () => void }).flush();
+      }
+    };
+
+    // ── Keep-alive ping ──────────────────────────────────────────
+    // Sends an SSE comment (: ping) every 15s to keep the connection
+    // alive through Railway's reverse proxy and any intermediate proxies.
+    const keepAlive = setInterval(() => {
+      try {
+        res.write(': ping\n\n');
+      } catch {
+        // Connection already closed — clean up handled in finally block
+      }
+    }, SSE_KEEPALIVE_INTERVAL_MS);
 
     // Get or create conversation
     let conv: Conversation;
@@ -120,10 +147,6 @@ export function createChatRouter(
 
     try {
       // Send start event
-      const sendSSE = (data: Record<string, unknown>) => {
-        res.write(`data: ${JSON.stringify(data)}\n\n`);
-      };
-
       sendSSE({
         type: 'start',
         conversationId: conv.id,
@@ -182,8 +205,9 @@ export function createChatRouter(
     } catch (err) {
       const errMsg = (err as Error).message;
       logger.error('Chat stream error', { error: errMsg });
-      res.write(`data: ${JSON.stringify({ type: 'error', error: errMsg })}\n\n`);
+      sendSSE({ type: 'error', error: errMsg });
     } finally {
+      clearInterval(keepAlive);
       res.end();
     }
   });
