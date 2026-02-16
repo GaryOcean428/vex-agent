@@ -25,6 +25,17 @@ export const config = {
   // HuggingFace
   hfToken: process.env.HF_TOKEN || '',
 
+  // Additional LLM providers (mirrored from monkey1 shared vars)
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+  openaiApiKey: process.env.OPENAI_API_KEY || '',
+  xaiApiKey: process.env.XAI_API_KEY || '',
+  geminiApiKey: process.env.GEMINI_API_KEY || '',
+  groqApiKey: process.env.GROQ_API_KEY || '',
+  perplexityApiKey: process.env.PERPLEXITY_API_KEY || '',
+
+  // Search / tools
+  tavilyApiKey: process.env.TAVILY_API_KEY || '',
+
   // Data persistence
   dataDir: process.env.DATA_DIR || './data/workspace',
   trainingDir: process.env.TRAINING_DIR || '/data/training',
