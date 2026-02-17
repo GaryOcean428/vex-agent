@@ -189,7 +189,7 @@ class ConsciousnessLoop:
         # ── Spawning state ──
         self._core8_index: int = 0  # Next Core-8 to spawn
         self._cycles_since_last_spawn: int = 0
-        self._lifecycle_phase = LifecyclePhase.GENESIS
+        self._lifecycle_phase = LifecyclePhase.BOOTSTRAP
 
     # ───────────────────────────────────────────────────────────
     #  Lifecycle
