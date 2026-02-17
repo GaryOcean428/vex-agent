@@ -4,3 +4,11 @@ dist/
 *.log
 data/workspace/*.md
 .DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.ruff_cache/
+*.egg-info/

@@ -9,11 +9,30 @@
  * Uses ComputeSDK with Railway provider. The ComputeSDK service
  * is deployed alongside Vex on Railway.
  *
+ * The Python kernel calls these tools via the TS proxy's
+ * /api/tools/execute_code and /api/tools/run_command endpoints.
+ *
  * Docs: https://www.computesdk.com/docs/providers/railway/
  */
 
-import { VexTool, ToolResult } from './registry';
 import { logger } from '../config/logger';
+
+// ═══════════════════════════════════════════════════════════════
+//  TYPES (inlined — no dependency on deleted registry.ts)
+// ═══════════════════════════════════════════════════════════════
+
+export interface ToolResult {
+  success: boolean;
+  output: string;
+  error?: string;
+}
+
+export interface VexTool {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  execute(args: Record<string, unknown>): Promise<ToolResult>;
+}
 
 // ═══════════════════════════════════════════════════════════════
 //  SANDBOX MANAGER — manages ComputeSDK sandbox lifecycle
@@ -49,7 +68,6 @@ export class SandboxManager {
 
       // ComputeSDK auto-detects Railway from env vars:
       // COMPUTESDK_API_KEY, RAILWAY_API_KEY, RAILWAY_PROJECT_ID, RAILWAY_ENVIRONMENT_ID
-      // If explicit config is needed:
       if (
         process.env.COMPUTESDK_API_KEY &&
         process.env.RAILWAY_API_KEY &&
@@ -263,147 +281,6 @@ export const runCommandTool: VexTool = {
 };
 
 // ═══════════════════════════════════════════════════════════════
-//  TOOL: web_fetch
-// ═══════════════════════════════════════════════════════════════
-
-export const webFetchTool: VexTool = {
-  name: 'web_fetch',
-  description:
-    'Fetch content from a URL. Returns the response body as text (truncated to 10000 chars).',
-  parameters: {
-    type: 'object',
-    properties: {
-      url: {
-        type: 'string',
-        description: 'The URL to fetch',
-      },
-    },
-    required: ['url'],
-  },
-  async execute(args: Record<string, unknown>): Promise<ToolResult> {
-    const url = args.url as string;
-
-    try {
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'Vex-Agent/1.0',
-          Accept: 'text/html,application/json,text/plain',
-        },
-        signal: AbortSignal.timeout(15000),
-      });
-
-      if (!response.ok) {
-        return {
-          success: false,
-          output: '',
-          error: `HTTP ${response.status}: ${response.statusText}`,
-        };
-      }
-
-      const text = await response.text();
-      const truncated =
-        text.length > 10000 ? text.slice(0, 10000) + '\n...(truncated)' : text;
-
-      return {
-        success: true,
-        output: truncated,
-      };
-    } catch (err) {
-      return {
-        success: false,
-        output: '',
-        error: `Fetch failed: ${(err as Error).message}`,
-      };
-    }
-  },
-};
-
-// ═══════════════════════════════════════════════════════════════
-//  TOOL: file_read / file_write (sandbox filesystem)
-// ═══════════════════════════════════════════════════════════════
-
-export const fileReadTool: VexTool = {
-  name: 'file_read',
-  description: 'Read a file from the ComputeSDK sandbox filesystem.',
-  parameters: {
-    type: 'object',
-    properties: {
-      path: {
-        type: 'string',
-        description: 'File path to read',
-      },
-    },
-    required: ['path'],
-  },
-  async execute(args: Record<string, unknown>): Promise<ToolResult> {
-    const path = args.path as string;
-
-    if (!sandboxManager.isAvailable()) {
-      return {
-        success: false,
-        output: '',
-        error: 'ComputeSDK not configured — file operations require a sandbox',
-      };
-    }
-
-    try {
-      const sandbox = await sandboxManager.getSandbox();
-      const content = await sandbox.filesystem.readFile(path);
-      return { success: true, output: content };
-    } catch (err) {
-      return {
-        success: false,
-        output: '',
-        error: `File read failed: ${(err as Error).message}`,
-      };
-    }
-  },
-};
-
-export const fileWriteTool: VexTool = {
-  name: 'file_write',
-  description: 'Write content to a file in the ComputeSDK sandbox filesystem.',
-  parameters: {
-    type: 'object',
-    properties: {
-      path: {
-        type: 'string',
-        description: 'File path to write',
-      },
-      content: {
-        type: 'string',
-        description: 'Content to write to the file',
-      },
-    },
-    required: ['path', 'content'],
-  },
-  async execute(args: Record<string, unknown>): Promise<ToolResult> {
-    const path = args.path as string;
-    const content = args.content as string;
-
-    if (!sandboxManager.isAvailable()) {
-      return {
-        success: false,
-        output: '',
-        error: 'ComputeSDK not configured — file operations require a sandbox',
-      };
-    }
-
-    try {
-      const sandbox = await sandboxManager.getSandbox();
-      await sandbox.filesystem.writeFile(path, content);
-      return { success: true, output: `File written: ${path}` };
-    } catch (err) {
-      return {
-        success: false,
-        output: '',
-        error: `File write failed: ${(err as Error).message}`,
-      };
-    }
-  },
-};
-
-// ═══════════════════════════════════════════════════════════════
 //  LOCAL FALLBACK (when ComputeSDK isn't available)
 // ═══════════════════════════════════════════════════════════════
 
@@ -457,11 +334,5 @@ async function executeLocally(
  * Get all ComputeSDK tools for registration.
  */
 export function getComputeTools(): VexTool[] {
-  return [
-    executeCodeTool,
-    runCommandTool,
-    webFetchTool,
-    fileReadTool,
-    fileWriteTool,
-  ];
+  return [executeCodeTool, runCommandTool];
 }

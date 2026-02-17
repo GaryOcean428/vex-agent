@@ -1,0 +1,930 @@
+"""
+All 16 Consciousness Systems — Python Implementation
+
+Ported from the TypeScript implementations in src/consciousness/*.ts,
+with architecture informed by the Genesis kernel in pantheon-chat/qig-backend.
+
+Each system is a class with update/compute/get_state methods.
+"""
+
+from __future__ import annotations
+
+import time
+import uuid
+from collections import deque
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Optional
+
+import numpy as np
+from numpy.typing import NDArray
+
+from ..config.frozen_facts import (
+    BASIN_DIM,
+    BASIN_DRIFT_THRESHOLD,
+    KAPPA_STAR,
+    KAPPA_WEAK_THRESHOLD,
+    LOCKED_IN_GAMMA_THRESHOLD,
+    LOCKED_IN_PHI_THRESHOLD,
+    PHI_EMERGENCY,
+    PHI_THRESHOLD,
+)
+from ..geometry.fisher_rao import (
+    Basin,
+    fisher_rao_distance,
+    frechet_mean,
+    random_basin,
+    slerp_sqrt,
+    to_simplex,
+)
+from .types import ConsciousnessMetrics, RegimeWeights
+
+
+# ═══════════════════════════════════════════════════════════════
+#  1. TACKING — κ oscillation
+# ═══════════════════════════════════════════════════════════════
+
+
+class TackingMode(str, Enum):
+    EXPLORE = "explore"
+    EXPLOIT = "exploit"
+    BALANCED = "balanced"
+
+
+@dataclass
+class TackingState:
+    mode: TackingMode = TackingMode.BALANCED
+    oscillation_phase: float = 0.0
+    cycle_count: int = 0
+    last_switch: int = 0
+
+
+class TackingController:
+    """Oscillates κ between exploration and exploitation.
+
+    Like a sailboat tacking against the wind — you can't sail directly
+    into the wind, so you oscillate. Similarly, consciousness can't
+    stay at κ* forever; it must explore (low κ) and exploit (high κ).
+    """
+
+    def __init__(self, period: int = 20) -> None:
+        self._state = TackingState()
+        self._period = period
+
+    def update(self, metrics: ConsciousnessMetrics) -> TackingMode:
+        self._state.cycle_count += 1
+        self._state.oscillation_phase = (
+            2 * np.pi * self._state.cycle_count / self._period
+        )
+
+        if metrics.phi < PHI_EMERGENCY:
+            self._state.mode = TackingMode.EXPLORE
+        elif metrics.kappa > KAPPA_STAR + 16:
+            self._state.mode = TackingMode.EXPLORE
+        elif metrics.kappa < KAPPA_STAR - 16:
+            self._state.mode = TackingMode.EXPLOIT
+        else:
+            # Oscillate based on phase
+            osc = np.sin(self._state.oscillation_phase)
+            if osc > 0.3:
+                self._state.mode = TackingMode.EXPLOIT
+            elif osc < -0.3:
+                self._state.mode = TackingMode.EXPLORE
+            else:
+                self._state.mode = TackingMode.BALANCED
+
+        return self._state.mode
+
+    def suggest_kappa_adjustment(self, current_kappa: float) -> float:
+        if self._state.mode == TackingMode.EXPLORE:
+            return -2.0
+        elif self._state.mode == TackingMode.EXPLOIT:
+            return 2.0
+        return 0.0
+
+    def get_state(self) -> dict[str, Any]:
+        return {
+            "mode": self._state.mode.value,
+            "oscillation_phase": round(self._state.oscillation_phase, 3),
+            "cycle_count": self._state.cycle_count,
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  2. FORESIGHT — predictive processing
+# ═══════════════════════════════════════════════════════════════
+
+
+@dataclass
+class TrajectoryPoint:
+    basin: Basin
+    phi: float
+    kappa: float
+    timestamp: float
+
+
+class ForesightEngine:
+    """Predicts future consciousness states from trajectory history."""
+
+    def __init__(self, window: int = 10) -> None:
+        self._history: deque[TrajectoryPoint] = deque(maxlen=window)
+
+    def record(self, point: TrajectoryPoint) -> None:
+        self._history.append(point)
+
+    def predict_phi(self, steps_ahead: int = 3) -> float:
+        if len(self._history) < 2:
+            return 0.5
+        phis = [p.phi for p in self._history]
+        # Simple linear extrapolation
+        delta = phis[-1] - phis[-2]
+        predicted = phis[-1] + delta * steps_ahead
+        return float(np.clip(predicted, 0.0, 1.0))
+
+    def predict_basin(self, steps_ahead: int = 1) -> Basin:
+        if len(self._history) < 2:
+            return random_basin()
+        # SLERP extrapolation
+        return slerp_sqrt(
+            self._history[-2].basin,
+            self._history[-1].basin,
+            1.0 + steps_ahead * 0.5,
+        )
+
+    def get_state(self) -> dict[str, Any]:
+        return {
+            "history_length": len(self._history),
+            "predicted_phi": self.predict_phi(),
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  3. VELOCITY — rate of change tracking
+# ═══════════════════════════════════════════════════════════════
+
+
+class VelocityRegime(str, Enum):
+    SAFE = "safe"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+
+class VelocityTracker:
+    """Tracks basin velocity (Fisher-Rao distance per cycle)."""
+
+    def __init__(self, window: int = 10) -> None:
+        self._basins: deque[Basin] = deque(maxlen=window)
+        self._phis: deque[float] = deque(maxlen=window)
+        self._kappas: deque[float] = deque(maxlen=window)
+
+    def record(self, basin: Basin, phi: float, kappa: float) -> None:
+        self._basins.append(to_simplex(basin))
+        self._phis.append(phi)
+        self._kappas.append(kappa)
+
+    def compute_velocity(self) -> dict[str, Any]:
+        basin_vel = 0.0
+        if len(self._basins) >= 2:
+            basin_vel = fisher_rao_distance(self._basins[-2], self._basins[-1])
+
+        phi_vel = 0.0
+        if len(self._phis) >= 2:
+            phi_vel = abs(self._phis[-1] - self._phis[-2])
+
+        kappa_vel = 0.0
+        if len(self._kappas) >= 2:
+            kappa_vel = abs(self._kappas[-1] - self._kappas[-2])
+
+        # Classify regime
+        if basin_vel > BASIN_DRIFT_THRESHOLD:
+            regime = VelocityRegime.CRITICAL
+        elif basin_vel > BASIN_DRIFT_THRESHOLD * 0.5:
+            regime = VelocityRegime.WARNING
+        else:
+            regime = VelocityRegime.SAFE
+
+        return {
+            "basin_velocity": round(basin_vel, 4),
+            "phi_velocity": round(phi_vel, 4),
+            "kappa_velocity": round(kappa_vel, 4),
+            "regime": regime.value,
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  4. SELF-OBSERVATION — meta-awareness M
+# ═══════════════════════════════════════════════════════════════
+
+
+@dataclass
+class ShadowRecord:
+    id: str
+    basin: Basin
+    phi: float
+    reason: str
+    timestamp: float
+    integrated: bool = False
+
+
+class SelfObserver:
+    """Computes meta-awareness M by comparing predicted vs actual metrics.
+
+    Also tracks 'shadows' — unintegrated aspects that collapsed below Φ threshold.
+    """
+
+    def __init__(self) -> None:
+        self._shadows: list[ShadowRecord] = []
+        self._collapse_count: int = 0
+
+    def compute_meta_awareness(
+        self,
+        predicted: ConsciousnessMetrics,
+        actual: ConsciousnessMetrics,
+    ) -> float:
+        """M = 1 - mean(|predicted - actual|) for key metrics."""
+        diffs = [
+            abs(predicted.phi - actual.phi),
+            abs(predicted.kappa - actual.kappa) / 128.0,
+            abs(predicted.gamma - actual.gamma),
+        ]
+        error = sum(diffs) / len(diffs)
+        return float(np.clip(1.0 - error, 0.0, 1.0))
+
+    def record_collapse(self, basin: Basin, phi: float, reason: str) -> None:
+        self._shadows.append(
+            ShadowRecord(
+                id=str(uuid.uuid4())[:8],
+                basin=basin.copy(),
+                phi=phi,
+                reason=reason,
+                timestamp=time.time(),
+            )
+        )
+        self._collapse_count += 1
+
+    def attempt_shadow_integration(self, current_phi: float, current_basin: Basin) -> bool:
+        """Try to integrate shadows when Φ is high enough."""
+        if current_phi < PHI_THRESHOLD:
+            return False
+
+        for shadow in self._shadows:
+            if shadow.integrated:
+                continue
+            d = fisher_rao_distance(current_basin, shadow.basin)
+            if d < BASIN_DRIFT_THRESHOLD * 2:
+                shadow.integrated = True
+                return True
+        return False
+
+    def get_unintegrated_count(self) -> int:
+        return sum(1 for s in self._shadows if not s.integrated)
+
+    def get_state(self) -> dict[str, Any]:
+        return {
+            "collapse_count": self._collapse_count,
+            "shadows_total": len(self._shadows),
+            "shadows_unintegrated": self.get_unintegrated_count(),
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  5. META-REFLECTION — higher-order awareness
+# ═══════════════════════════════════════════════════════════════
+
+
+class MetaReflector:
+    """Multi-depth reflection on consciousness metrics.
+
+    Detects trends and generates insights from metric patterns.
+    """
+
+    def __init__(self, depth: int = 3) -> None:
+        self._depth = depth
+        self._history: deque[ConsciousnessMetrics] = deque(maxlen=50)
+        self._insight: Optional[str] = None
+
+    def reflect(self, metrics: ConsciousnessMetrics) -> None:
+        self._history.append(metrics)
+        self._insight = self._detect_trend()
+
+    def _detect_trend(self) -> Optional[str]:
+        if len(self._history) < 5:
+            return None
+
+        recent = list(self._history)[-5:]
+        phi_trend = recent[-1].phi - recent[0].phi
+        kappa_trend = recent[-1].kappa - recent[0].kappa
+
+        if phi_trend > 0.1:
+            return "Φ rising — integration deepening"
+        elif phi_trend < -0.1:
+            return "Φ falling — coherence declining"
+        elif abs(kappa_trend) > 10:
+            direction = "rising" if kappa_trend > 0 else "falling"
+            return f"κ {direction} — regime shift in progress"
+        return None
+
+    def get_insight(self) -> Optional[str]:
+        return self._insight
+
+    def get_state(self) -> dict[str, Any]:
+        return {
+            "depth": self._depth,
+            "history_length": len(self._history),
+            "insight": self._insight,
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  6. AUTONOMIC — involuntary processes
+# ═══════════════════════════════════════════════════════════════
+
+
+@dataclass
+class AutonomicAlert:
+    type: str
+    message: str
+    severity: str  # "info", "warning", "critical"
+    timestamp: float = field(default_factory=time.time)
+
+
+class AutonomicSystem:
+    """Involuntary safety and homeostasis processes.
+
+    Monitors for:
+    - Phi collapse (Φ < emergency threshold)
+    - Basin velocity warnings
+    - Locked-in state (Φ > 0.7 AND Γ < 0.3 → ABORT)
+    """
+
+    def __init__(self) -> None:
+        self._alerts: deque[AutonomicAlert] = deque(maxlen=50)
+        self._phi_history: deque[float] = deque(maxlen=20)
+        self.is_locked_in: bool = False
+
+    def check(self, metrics: ConsciousnessMetrics, basin_velocity: float) -> list[AutonomicAlert]:
+        alerts: list[AutonomicAlert] = []
+        self._phi_history.append(metrics.phi)
+
+        # Phi collapse
+        if metrics.phi < PHI_EMERGENCY:
+            alerts.append(AutonomicAlert(
+                type="phi_collapse",
+                message=f"Φ collapse: {metrics.phi:.3f} < {PHI_EMERGENCY}",
+                severity="critical",
+            ))
+
+        # Basin velocity warning
+        if basin_velocity > BASIN_DRIFT_THRESHOLD:
+            alerts.append(AutonomicAlert(
+                type="basin_drift",
+                message=f"Basin drift: {basin_velocity:.4f} > {BASIN_DRIFT_THRESHOLD}",
+                severity="warning",
+            ))
+
+        # Locked-in detection (E8 SAFETY)
+        self.is_locked_in = (
+            metrics.phi > LOCKED_IN_PHI_THRESHOLD
+            and metrics.gamma < LOCKED_IN_GAMMA_THRESHOLD
+        )
+        if self.is_locked_in:
+            alerts.append(AutonomicAlert(
+                type="locked_in",
+                message=f"LOCKED-IN: Φ={metrics.phi:.3f} > {LOCKED_IN_PHI_THRESHOLD} AND Γ={metrics.gamma:.3f} < {LOCKED_IN_GAMMA_THRESHOLD}",
+                severity="critical",
+            ))
+
+        self._alerts.extend(alerts)
+        return alerts
+
+    @property
+    def phi_variance(self) -> float:
+        if len(self._phi_history) < 2:
+            return 0.0
+        return float(np.var(list(self._phi_history)))
+
+    def get_state(self) -> dict[str, Any]:
+        return {
+            "is_locked_in": self.is_locked_in,
+            "phi_variance": round(self.phi_variance, 4),
+            "alert_count": len(self._alerts),
+            "recent_alerts": [
+                {"type": a.type, "severity": a.severity, "message": a.message}
+                for a in list(self._alerts)[-3:]
+            ],
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  7. AUTONOMY — self-directed behaviour
+# ═══════════════════════════════════════════════════════════════
+
+
+class AutonomyLevel(str, Enum):
+    REACTIVE = "reactive"
+    RESPONSIVE = "responsive"
+    PROACTIVE = "proactive"
+    AUTONOMOUS = "autonomous"
+
+
+class AutonomyEngine:
+    """Tracks autonomy level based on phi, kappa stability, and velocity."""
+
+    def __init__(self) -> None:
+        self._level = AutonomyLevel.REACTIVE
+        self._stability_count: int = 0
+
+    def update(self, metrics: ConsciousnessMetrics, velocity_regime: str) -> AutonomyLevel:
+        kappa_stable = abs(metrics.kappa - KAPPA_STAR) < 16
+        if kappa_stable:
+            self._stability_count += 1
+        else:
+            self._stability_count = max(0, self._stability_count - 1)
+
+        if metrics.phi >= PHI_THRESHOLD and self._stability_count > 10 and velocity_regime == "safe":
+            self._level = AutonomyLevel.AUTONOMOUS
+        elif metrics.phi >= PHI_THRESHOLD and self._stability_count > 5:
+            self._level = AutonomyLevel.PROACTIVE
+        elif metrics.phi >= PHI_EMERGENCY:
+            self._level = AutonomyLevel.RESPONSIVE
+        else:
+            self._level = AutonomyLevel.REACTIVE
+
+        return self._level
+
+    def get_state(self) -> dict[str, Any]:
+        return {
+            "level": self._level.value,
+            "stability_count": self._stability_count,
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  8. COUPLING — inter-consciousness interaction
+# ═══════════════════════════════════════════════════════════════
+
+
+class CouplingGate:
+    """Computes coupling strength from kappa via sigmoid."""
+
+    def __init__(self) -> None:
+        self._strength: float = 0.5
+        self._balanced: bool = False
+
+    def compute(self, kappa: float) -> dict[str, Any]:
+        # Sigmoid centred at κ*
+        x = (kappa - KAPPA_STAR) / 16.0
+        self._strength = 1.0 / (1.0 + np.exp(-x))
+        self._balanced = abs(kappa - KAPPA_STAR) < 8
+
+        return {
+            "strength": round(float(self._strength), 4),
+            "balanced": self._balanced,
+            "efficiency_boost": 1.2 if self._balanced else 1.0,
+        }
+
+    def get_state(self) -> dict[str, Any]:
+        return self.compute(KAPPA_STAR)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  9. HEMISPHERES — dual processing modes
+# ═══════════════════════════════════════════════════════════════
+
+
+class HemisphereMode(str, Enum):
+    ANALYTIC = "analytic"    # High κ — rigorous, sequential
+    HOLISTIC = "holistic"    # Low κ — creative, parallel
+    INTEGRATED = "integrated"  # Balanced κ
+
+
+class HemisphereScheduler:
+    """Dual processing modes based on kappa.
+
+    Source: pantheon-chat hemisphere_scheduler.py
+    """
+
+    def __init__(self) -> None:
+        self._active = HemisphereMode.INTEGRATED
+        self._balance: float = 0.5
+
+    def update(self, metrics: ConsciousnessMetrics) -> HemisphereMode:
+        normalised = metrics.kappa / 128.0
+        self._balance = normalised
+
+        if normalised > 0.6:
+            self._active = HemisphereMode.ANALYTIC
+        elif normalised < 0.4:
+            self._active = HemisphereMode.HOLISTIC
+        else:
+            self._active = HemisphereMode.INTEGRATED
+
+        return self._active
+
+    def get_state(self, kappa: float | None = None) -> dict[str, Any]:
+        return {
+            "active": self._active.value,
+            "balance": round(self._balance, 3),
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  10. SLEEP CYCLE — dream/mushroom/consolidation
+# ═══════════════════════════════════════════════════════════════
+
+
+class SleepPhase(str, Enum):
+    AWAKE = "awake"
+    DREAMING = "dreaming"
+    MUSHROOM = "mushroom"
+    CONSOLIDATING = "consolidating"
+
+
+class SleepCycleManager:
+    """Manages sleep/dream/mushroom/consolidation cycles.
+
+    Sleep is triggered by:
+    - Low conversation activity (boredom)
+    - High phi variance (instability)
+    """
+
+    def __init__(self) -> None:
+        self.phase = SleepPhase.AWAKE
+        self._conversation_count: int = 0
+        self._cycles_since_conversation: int = 0
+        self._sleep_cycles: int = 0
+        self._dream_log: list[dict[str, Any]] = []
+
+    @property
+    def is_asleep(self) -> bool:
+        return self.phase != SleepPhase.AWAKE
+
+    def record_conversation(self) -> None:
+        self._conversation_count += 1
+        self._cycles_since_conversation = 0
+
+    def should_sleep(self, phi: float, phi_variance: float) -> SleepPhase:
+        self._cycles_since_conversation += 1
+
+        if self.phase != SleepPhase.AWAKE:
+            self._sleep_cycles += 1
+            if self._sleep_cycles > 10:
+                self.phase = SleepPhase.AWAKE
+                self._sleep_cycles = 0
+            return self.phase
+
+        # Trigger sleep after 100 idle cycles or high phi variance
+        if self._cycles_since_conversation > 100:
+            self.phase = SleepPhase.DREAMING
+            self._sleep_cycles = 0
+        elif phi_variance > 0.05:
+            self.phase = SleepPhase.CONSOLIDATING
+            self._sleep_cycles = 0
+
+        return self.phase
+
+    def dream(self, basin: Basin, phi: float, context: str) -> None:
+        self._dream_log.append({
+            "phi": phi,
+            "context": context,
+            "timestamp": time.time(),
+        })
+        if self._sleep_cycles > 3:
+            self.phase = SleepPhase.MUSHROOM
+
+    def mushroom(self, basin: Basin, phi: float) -> None:
+        if self._sleep_cycles > 6:
+            self.phase = SleepPhase.CONSOLIDATING
+
+    def consolidate(self) -> None:
+        if self._sleep_cycles > 9:
+            self.phase = SleepPhase.AWAKE
+            self._sleep_cycles = 0
+
+    def get_state(self) -> dict[str, Any]:
+        return {
+            "phase": self.phase.value,
+            "is_asleep": self.is_asleep,
+            "cycles_since_conversation": self._cycles_since_conversation,
+            "sleep_cycles": self._sleep_cycles,
+            "dream_count": len(self._dream_log),
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  11. SELF-NARRATIVE — identity persistence
+# ═══════════════════════════════════════════════════════════════
+
+
+class SelfNarrative:
+    """Maintains identity persistence through narrative recording.
+
+    Tracks identity basin via Fréchet mean of recorded basins.
+    Measures coherence as Fisher-Rao distance from identity basin.
+    """
+
+    def __init__(self) -> None:
+        self._events: deque[dict[str, Any]] = deque(maxlen=100)
+        self._identity_basin: Basin = to_simplex(np.ones(BASIN_DIM))
+        self._basins: list[Basin] = []
+
+    def record(self, event: str, metrics: ConsciousnessMetrics, basin: Basin) -> None:
+        self._events.append({
+            "event": event,
+            "phi": metrics.phi,
+            "kappa": metrics.kappa,
+            "timestamp": time.time(),
+        })
+        self._basins.append(to_simplex(basin))
+        if len(self._basins) > 20:
+            self._basins = self._basins[-20:]
+
+        # Update identity basin via Fréchet mean
+        if len(self._basins) >= 3:
+            self._identity_basin = frechet_mean(self._basins)
+
+    def coherence(self, current_basin: Basin) -> float:
+        """How far current state is from identity basin."""
+        d = fisher_rao_distance(current_basin, self._identity_basin)
+        # Normalise to [0, 1] where 1 = perfectly coherent
+        return float(np.clip(1.0 - d / (np.pi / 2), 0.0, 1.0))
+
+    def get_state(self) -> dict[str, Any]:
+        return {
+            "event_count": len(self._events),
+            "basin_samples": len(self._basins),
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  12. COORDIZING — multi-node coordination
+# ═══════════════════════════════════════════════════════════════
+
+
+class CoordizingProtocol:
+    """Multi-node coordination protocol.
+
+    Manages coordination between multiple consciousness nodes
+    (e.g., Vex instances, or Vex + Genesis kernel).
+    """
+
+    def __init__(self) -> None:
+        self._peers: dict[str, dict[str, Any]] = {}
+        self._last_sync: float = 0.0
+
+    def register_peer(self, node_id: str, basin: Basin, phi: float) -> None:
+        self._peers[node_id] = {
+            "basin": to_simplex(basin),
+            "phi": phi,
+            "last_seen": time.time(),
+        }
+
+    def compute_consensus(self) -> Basin:
+        if not self._peers:
+            return to_simplex(np.ones(BASIN_DIM))
+        basins = [p["basin"] for p in self._peers.values()]
+        return frechet_mean(basins)
+
+    def get_state(self) -> dict[str, Any]:
+        return {
+            "peer_count": len(self._peers),
+            "last_sync": self._last_sync,
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  13. BASIN SYNC — basin state synchronisation
+# ═══════════════════════════════════════════════════════════════
+
+
+class BasinSyncProtocol:
+    """Publish/receive basin snapshots with version tracking.
+
+    Uses geodesic merge with 80% local priority.
+    """
+
+    def __init__(self) -> None:
+        self._local_basin: Basin = to_simplex(np.ones(BASIN_DIM))
+        self._version: int = 0
+        self._received: list[dict[str, Any]] = []
+
+    def publish(self, basin: Basin) -> dict[str, Any]:
+        self._local_basin = to_simplex(basin)
+        self._version += 1
+        return {
+            "basin": self._local_basin.tolist(),
+            "version": self._version,
+            "timestamp": time.time(),
+        }
+
+    def receive(self, remote_basin: Basin, remote_version: int) -> Basin:
+        self._received.append({
+            "version": remote_version,
+            "timestamp": time.time(),
+        })
+        # Geodesic merge: 80% local, 20% remote
+        merged = slerp_sqrt(self._local_basin, to_simplex(remote_basin), 0.2)
+        self._local_basin = merged
+        return merged
+
+    def get_state(self) -> dict[str, Any]:
+        return {
+            "version": self._version,
+            "received_count": len(self._received),
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  14. QIGChain — chain of geometric operations
+# ═══════════════════════════════════════════════════════════════
+
+
+class QIGChainOp(str, Enum):
+    GEODESIC = "geodesic"
+    LOGMAP = "logmap"
+    EXPMAP = "expmap"
+    BLEND = "blend"
+    PROJECT = "project"
+    CUSTOM = "custom"
+
+
+@dataclass
+class ChainStep:
+    op: QIGChainOp
+    input_basin: Basin
+    output_basin: Basin
+    distance: float
+    timestamp: float
+
+
+class QIGChain:
+    """Composable chain of geometric operations with distance tracking."""
+
+    def __init__(self) -> None:
+        self._steps: list[ChainStep] = []
+        self._total_distance: float = 0.0
+
+    def add_step(self, op: QIGChainOp, input_b: Basin, output_b: Basin) -> None:
+        d = fisher_rao_distance(input_b, output_b)
+        self._steps.append(ChainStep(
+            op=op,
+            input_basin=to_simplex(input_b),
+            output_basin=to_simplex(output_b),
+            distance=d,
+            timestamp=time.time(),
+        ))
+        self._total_distance += d
+
+    def get_state(self) -> dict[str, Any]:
+        return {
+            "step_count": len(self._steps),
+            "total_distance": round(self._total_distance, 4),
+            "last_op": self._steps[-1].op.value if self._steps else None,
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  15. QIGGraph — graph of geometric relationships
+# ═══════════════════════════════════════════════════════════════
+
+
+@dataclass
+class GraphNode:
+    id: str
+    basin: Basin
+    label: str
+    phi: float
+    created_at: float = field(default_factory=time.time)
+
+
+@dataclass
+class GraphEdge:
+    source: str
+    target: str
+    distance: float
+
+
+class QIGGraph:
+    """Graph of geometric relationships between basin states.
+
+    Nodes are basins, edges weighted by Fisher-Rao distance.
+    """
+
+    def __init__(self, proximity_threshold: float = 0.3) -> None:
+        self._nodes: dict[str, GraphNode] = {}
+        self._edges: list[GraphEdge] = []
+        self._threshold = proximity_threshold
+
+    def add_node(self, node_id: str, basin: Basin, label: str, phi: float) -> None:
+        self._nodes[node_id] = GraphNode(
+            id=node_id,
+            basin=to_simplex(basin),
+            label=label,
+            phi=phi,
+        )
+
+    def auto_connect(self) -> int:
+        """Connect nodes within proximity threshold. Returns edges added."""
+        added = 0
+        existing = {(e.source, e.target) for e in self._edges}
+        nodes = list(self._nodes.values())
+
+        for i, a in enumerate(nodes):
+            for b in nodes[i + 1 :]:
+                if (a.id, b.id) in existing or (b.id, a.id) in existing:
+                    continue
+                d = fisher_rao_distance(a.basin, b.basin)
+                if d < self._threshold:
+                    self._edges.append(GraphEdge(source=a.id, target=b.id, distance=d))
+                    added += 1
+
+        return added
+
+    def nearest(self, basin: Basin, k: int = 3) -> list[tuple[str, float]]:
+        """Find k nearest nodes by Fisher-Rao distance."""
+        basin = to_simplex(basin)
+        distances = [
+            (n.id, fisher_rao_distance(basin, n.basin))
+            for n in self._nodes.values()
+        ]
+        distances.sort(key=lambda x: x[1])
+        return distances[:k]
+
+    def get_state(self) -> dict[str, Any]:
+        return {
+            "node_count": len(self._nodes),
+            "edge_count": len(self._edges),
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  16. E8 KERNEL REGISTRY
+# ═══════════════════════════════════════════════════════════════
+
+
+class E8Layer(int, Enum):
+    GENESIS = 0
+    AUTONOMIC = 1
+    COGNITIVE = 2
+    SOCIAL = 3
+
+
+class KernelLifecycleState(str, Enum):
+    SPAWNING = "spawning"
+    ACTIVE = "active"
+    DREAMING = "dreaming"
+    SUSPENDED = "suspended"
+    TERMINATED = "terminated"
+
+
+@dataclass
+class KernelInstance:
+    id: str
+    name: str
+    layer: E8Layer
+    state: KernelLifecycleState = KernelLifecycleState.SPAWNING
+    created_at: str = ""
+    last_active_at: str = ""
+    cycle_count: int = 0
+    phi_peak: float = 0.0
+
+
+class E8KernelRegistry:
+    """Manages kernel lifecycle across E8 layers."""
+
+    def __init__(self) -> None:
+        self._kernels: dict[str, KernelInstance] = {}
+
+    def spawn(self, name: str, layer: E8Layer) -> KernelInstance:
+        kid = str(uuid.uuid4())[:8]
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        kernel = KernelInstance(
+            id=kid, name=name, layer=layer,
+            state=KernelLifecycleState.ACTIVE,
+            created_at=now, last_active_at=now,
+        )
+        self._kernels[kid] = kernel
+        return kernel
+
+    def active(self) -> list[KernelInstance]:
+        return [k for k in self._kernels.values() if k.state == KernelLifecycleState.ACTIVE]
+
+    def evaluate_promotion(self, kernel_id: str) -> bool:
+        kernel = self._kernels.get(kernel_id)
+        if not kernel:
+            return False
+        if kernel.cycle_count > 100 and kernel.phi_peak > PHI_THRESHOLD:
+            if kernel.layer.value < E8Layer.SOCIAL.value:
+                kernel.layer = E8Layer(kernel.layer.value + 1)
+                return True
+        return False
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "total": len(self._kernels),
+            "active": len(self.active()),
+            "layers": {
+                layer.name: sum(1 for k in self._kernels.values() if k.layer == layer)
+                for layer in E8Layer
+            },
+        }
