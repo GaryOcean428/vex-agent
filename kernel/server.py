@@ -57,6 +57,9 @@ memory_store = MemoryStore()
 geometric_memory = GeometricMemoryStore(memory_store)
 consciousness = ConsciousnessLoop(llm_client=llm_client)
 
+# Track server boot time for uptime calculation
+_boot_time = time.time()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -125,6 +128,7 @@ async def health():
         "status": "ok",
         "service": "vex-kernel",
         "version": "2.2.0",
+        "uptime": round(time.time() - _boot_time, 1),
         "cycle_count": metrics["cycle_count"],
         "backend": llm_client.get_status()["active_backend"],
     }
