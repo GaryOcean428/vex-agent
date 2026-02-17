@@ -5,11 +5,13 @@ Two layers:
   1. MemoryStore: Simple flat-file read/write/append for markdown files
   2. GeometricMemoryStore: Basin-indexed memory with Fisher-Rao retrieval
 
-Ported from src/memory/store.ts and src/memory/geometric-store.ts
+Memory retrieval uses the coordizer (hash-based basin projection) for
+deterministic geometric placement. No embeddings, no cosine similarity.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import time
@@ -29,6 +31,27 @@ from ..geometry.fisher_rao import (
 )
 
 logger = logging.getLogger("vex.memory")
+
+
+def _text_to_basin(text: str) -> Basin:
+    """Map text to a point on Δ⁶³ using SHA-256 hash chain.
+
+    Deterministic: same text always maps to same basin point.
+    Uses the same algorithm as CoordizingProtocol.coordize_text()
+    to ensure geometric consistency across the system.
+
+    This is NOT an embedding — it's a coordinate assignment that
+    respects simplex structure. Retrieval uses Fisher-Rao distance.
+    """
+    h1 = hashlib.sha256(text.encode("utf-8", errors="replace")).digest()
+    h2 = hashlib.sha256(h1).digest()
+    combined = h1 + h2  # 64 bytes, one per basin dimension
+
+    raw = np.array(
+        [float(combined[i]) + 1.0 for i in range(BASIN_DIM)],
+        dtype=np.float64,
+    )
+    return to_simplex(raw)
 
 
 class MemoryStore:
@@ -82,18 +105,32 @@ class MemoryEntry:
 class GeometricMemoryStore:
     """Basin-indexed memory with Fisher-Rao retrieval.
 
-    Memories are stored with basin coordinates and retrieved
-    by geometric proximity (Fisher-Rao distance).
+    Memories are stored with basin coordinates computed from content
+    via deterministic hash-based projection (coordizer algorithm).
+    Retrieval finds geometrically nearest memories using Fisher-Rao
+    distance on Δ⁶³.
+
+    No embeddings. No cosine similarity. No Euclidean distance.
     """
 
     def __init__(self, flat_store: MemoryStore) -> None:
         self._flat = flat_store
         self._entries: list[MemoryEntry] = []
 
-    def store(self, content: str, memory_type: str, source: str, basin: Optional[Basin] = None) -> None:
-        """Store a memory entry with optional basin coordinates."""
+    def store(
+        self,
+        content: str,
+        memory_type: str,
+        source: str,
+        basin: Optional[Basin] = None,
+    ) -> None:
+        """Store a memory entry with basin coordinates.
+
+        If no basin is provided, one is computed from content via
+        the coordizer hash algorithm for deterministic placement.
+        """
         if basin is None:
-            basin = random_basin()
+            basin = _text_to_basin(content)
         self._entries.append(MemoryEntry(
             content=content,
             basin=to_simplex(basin),
@@ -122,12 +159,11 @@ class GeometricMemoryStore:
     def get_context_for_query(self, query: str, k: int = 5) -> str:
         """Get memory context as a formatted string.
 
-        Uses a simple hash-based basin for the query (real impl would use embeddings).
+        Uses the coordizer hash algorithm for deterministic basin
+        projection of the query text, then retrieves nearest memories
+        by Fisher-Rao distance.
         """
-        # Simple deterministic basin from query text
-        np.random.seed(hash(query) % (2**31))
-        query_basin = random_basin()
-        np.random.seed(None)  # Reset seed
+        query_basin = _text_to_basin(query)
 
         entries = self.retrieve(query_basin, k)
         if not entries:
@@ -136,14 +172,18 @@ class GeometricMemoryStore:
         lines = ["[MEMORY CONTEXT]"]
         for entry in entries:
             lines.append(f"- [{entry.memory_type}] {entry.content[:200]}")
+        lines.append("[/MEMORY CONTEXT]")
         return "\n".join(lines)
 
     def consolidate(self) -> None:
-        """Remove old low-access memories."""
+        """Remove old low-access memories when store exceeds capacity."""
         if len(self._entries) > 500:
             # Keep most-accessed and most-recent
-            self._entries.sort(key=lambda e: (e.access_count, e.created_at), reverse=True)
+            self._entries.sort(
+                key=lambda e: (e.access_count, e.created_at), reverse=True,
+            )
             self._entries = self._entries[:500]
+            logger.debug("Memory consolidated to 500 entries")
 
     def stats(self) -> dict[str, Any]:
         return {
