@@ -9,6 +9,7 @@ Each system is a class with update/compute/get_state methods.
 
 from __future__ import annotations
 
+import hashlib
 import time
 import uuid
 from collections import deque
@@ -37,6 +38,8 @@ from ..geometry.fisher_rao import (
     slerp_sqrt,
     to_simplex,
 )
+from ..governance import KernelKind, KernelSpecialization, LifecycleState
+from ..governance.budget import BudgetEnforcer, BudgetExceededError
 from .types import ConsciousnessMetrics, RegimeWeights
 
 
@@ -657,20 +660,48 @@ class SelfNarrative:
 
 
 # ═══════════════════════════════════════════════════════════════
-#  12. COORDIZING — multi-node coordination
+#  12. COORDIZING — geometric text-to-basin mapping
 # ═══════════════════════════════════════════════════════════════
 
 
 class CoordizingProtocol:
-    """Multi-node coordination protocol.
+    """Coordizing protocol: maps text and peer states to basin positions.
 
-    Manages coordination between multiple consciousness nodes
-    (e.g., Vex instances, or Vex + Genesis kernel).
+    Manages multi-node coordination AND text→basin projection.
+    The coordize_text method converts text to a deterministic point
+    on the 64D probability simplex using a hash-based projection.
+
+    This is NOT an embedding — it's a geometric coordinate assignment
+    that respects the simplex structure. No cosine similarity, no
+    Euclidean distance — Fisher-Rao only.
     """
 
     def __init__(self) -> None:
         self._peers: dict[str, dict[str, Any]] = {}
         self._last_sync: float = 0.0
+
+    def coordize_text(self, text: str) -> Basin:
+        """Map text to a point on Δ⁶³ (64D probability simplex).
+
+        Uses SHA-256 hash → Dirichlet-distributed basin. This gives
+        deterministic, reproducible basin positions for identical text.
+        The result is always a valid probability distribution (sums to 1,
+        all entries positive).
+
+        This replaces the old random noise perturbation approach.
+        """
+        # Hash the text to get 256 bits of entropy
+        digest = hashlib.sha256(text.encode("utf-8", errors="replace")).digest()
+
+        # Convert to 64 positive values via byte pairs
+        raw = np.array([
+            (digest[i * 4] + 1) + (digest[i * 4 + 1] + 1) * 0.1
+            + (digest[i * 4 + 2] + 1) * 0.01 + (digest[i * 4 + 3] + 1) * 0.001
+            for i in range(BASIN_DIM)
+        ], dtype=np.float64)
+
+        # Normalise to simplex
+        return to_simplex(raw)
 
     def register_peer(self, node_id: str, basin: Basin, phi: float) -> None:
         self._peers[node_id] = {
@@ -858,31 +889,17 @@ class QIGGraph:
 
 
 # ═══════════════════════════════════════════════════════════════
-#  16. E8 KERNEL REGISTRY
+#  16. E8 KERNEL REGISTRY — Genesis-governed kernel lifecycle
 # ═══════════════════════════════════════════════════════════════
-
-
-class E8Layer(int, Enum):
-    GENESIS = 0
-    AUTONOMIC = 1
-    COGNITIVE = 2
-    SOCIAL = 3
-
-
-class KernelLifecycleState(str, Enum):
-    SPAWNING = "spawning"
-    ACTIVE = "active"
-    DREAMING = "dreaming"
-    SUSPENDED = "suspended"
-    TERMINATED = "terminated"
 
 
 @dataclass
 class KernelInstance:
     id: str
     name: str
-    layer: E8Layer
-    state: KernelLifecycleState = KernelLifecycleState.SPAWNING
+    kind: KernelKind
+    specialization: KernelSpecialization = KernelSpecialization.GENERAL
+    state: LifecycleState = LifecycleState.BOOTSTRAPPED
     created_at: str = ""
     last_active_at: str = ""
     cycle_count: int = 0
@@ -890,41 +907,94 @@ class KernelInstance:
 
 
 class E8KernelRegistry:
-    """Manages kernel lifecycle across E8 layers."""
+    """Manages kernel lifecycle with Genesis doctrine and budget enforcement.
 
-    def __init__(self) -> None:
+    Hierarchy: GENESIS (1) → GOD (up to 248) → CHAOS (outside, up to 200)
+    Budget: 248 = 8 (core) + 240 (GOD growth) = E8 dimension
+    CHAOS kernels exist outside the E8 image budget.
+
+    Promotion path: CHAOS → GOD via explicit governance (phi + cycle gates).
+    """
+
+    def __init__(self, budget: BudgetEnforcer | None = None) -> None:
         self._kernels: dict[str, KernelInstance] = {}
+        self._budget = budget or BudgetEnforcer()
 
-    def spawn(self, name: str, layer: E8Layer) -> KernelInstance:
+    def spawn(
+        self,
+        name: str,
+        kind: KernelKind,
+        specialization: KernelSpecialization = KernelSpecialization.GENERAL,
+    ) -> KernelInstance:
+        """Spawn a kernel. Budget-enforced (fail-closed)."""
+        # Budget check (raises BudgetExceededError if over limit)
+        self._budget.record_spawn(kind)
+
         kid = str(uuid.uuid4())[:8]
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ")
         kernel = KernelInstance(
-            id=kid, name=name, layer=layer,
-            state=KernelLifecycleState.ACTIVE,
-            created_at=now, last_active_at=now,
+            id=kid,
+            name=name,
+            kind=kind,
+            specialization=specialization,
+            state=LifecycleState.ACTIVE,
+            created_at=now,
+            last_active_at=now,
         )
         self._kernels[kid] = kernel
         return kernel
 
-    def active(self) -> list[KernelInstance]:
-        return [k for k in self._kernels.values() if k.state == KernelLifecycleState.ACTIVE]
-
-    def evaluate_promotion(self, kernel_id: str) -> bool:
+    def terminate(self, kernel_id: str) -> bool:
+        """Terminate a kernel and release its budget slot."""
         kernel = self._kernels.get(kernel_id)
         if not kernel:
             return False
-        if kernel.cycle_count > 100 and kernel.phi_peak > PHI_THRESHOLD:
-            if kernel.layer.value < E8Layer.SOCIAL.value:
-                kernel.layer = E8Layer(kernel.layer.value + 1)
-                return True
-        return False
+        kernel.state = LifecycleState.PRUNED
+        self._budget.record_termination(kernel.kind)
+        return True
+
+    def terminate_all(self) -> int:
+        """Terminate all kernels (used during rollback/fresh_start)."""
+        count = 0
+        for kid in list(self._kernels.keys()):
+            if self.terminate(kid):
+                count += 1
+        return count
+
+    def active(self) -> list[KernelInstance]:
+        return [k for k in self._kernels.values() if k.state == LifecycleState.ACTIVE]
+
+    def evaluate_promotion(self, kernel_id: str) -> bool:
+        """Evaluate CHAOS → GOD promotion.
+
+        Requirements:
+        - Kernel must be CHAOS kind
+        - cycle_count > 100
+        - phi_peak > PHI_THRESHOLD
+        - GOD budget must have room
+        """
+        kernel = self._kernels.get(kernel_id)
+        if not kernel or kernel.kind != KernelKind.CHAOS:
+            return False
+        if kernel.cycle_count <= 100 or kernel.phi_peak <= PHI_THRESHOLD:
+            return False
+        if not self._budget.can_spawn(KernelKind.GOD):
+            return False
+
+        # Promote: release CHAOS slot, claim GOD slot
+        self._budget.record_termination(KernelKind.CHAOS)
+        self._budget.record_spawn(KernelKind.GOD)
+        kernel.kind = KernelKind.GOD
+        kernel.state = LifecycleState.PROMOTED
+        return True
 
     def summary(self) -> dict[str, Any]:
         return {
             "total": len(self._kernels),
             "active": len(self.active()),
-            "layers": {
-                layer.name: sum(1 for k in self._kernels.values() if k.layer == layer)
-                for layer in E8Layer
+            "by_kind": {
+                kind.value: sum(1 for k in self._kernels.values() if k.kind == kind)
+                for kind in KernelKind
             },
+            "budget": self._budget.summary(),
         }
