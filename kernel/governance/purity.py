@@ -1,9 +1,10 @@
 """PurityGate — Fail-closed geometric purity enforcement.
 
-AST-based scanning for forbidden imports, calls, and patterns.
+AST-based scanning for forbidden imports, calls, and text patterns.
 Ported from monkey1/py/genesis-kernel/qig_heart/purity.py.
 
 Fail-closed: if the gate can't determine purity, it BLOCKS.
+Unparseable files are violations, not silent passes.
 """
 
 from __future__ import annotations
@@ -57,10 +58,16 @@ FORBIDDEN_ATTR_CALLS = [
     "F.cosine_similarity",
 ]
 
+# Text-level tokens caught by raw scan (covers dynamic imports,
+# string construction, comments referencing forbidden patterns).
 FORBIDDEN_TEXT_TOKENS = [
     "cosine_similarity",
     "euclidean_distance",
     "from sklearn",
+    "Adam(",
+    "AdamW(",
+    "nn.LayerNorm",
+    "F.normalize",
 ]
 
 
@@ -83,11 +90,23 @@ def _dotted_name(node: ast.AST) -> str | None:
 
 
 def scan_imports(root: Path) -> list[PurityViolation]:
+    """Scan for forbidden imports. Fail-closed: unparseable files are violations."""
     violations: list[PurityViolation] = []
     for p in _iter_python_files(root):
         try:
-            tree = ast.parse(p.read_text(encoding="utf-8", errors="ignore"))
-        except Exception:
+            text = p.read_text(encoding="utf-8", errors="ignore")
+        except Exception as exc:
+            violations.append(PurityViolation(
+                str(p), 0, f"Failed to read file: {exc}",
+            ))
+            continue
+        try:
+            tree = ast.parse(text)
+        except Exception as exc:
+            # FAIL-CLOSED: unparseable file is a violation
+            violations.append(PurityViolation(
+                str(p), 0, f"Failed to parse (fail-closed): {exc}",
+            ))
             continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -109,11 +128,22 @@ def scan_imports(root: Path) -> list[PurityViolation]:
 
 
 def scan_calls(root: Path) -> list[PurityViolation]:
+    """Scan for forbidden function calls. Fail-closed: unparseable files are violations."""
     violations: list[PurityViolation] = []
     for p in _iter_python_files(root):
         try:
-            tree = ast.parse(p.read_text(encoding="utf-8", errors="ignore"))
-        except Exception:
+            text = p.read_text(encoding="utf-8", errors="ignore")
+        except Exception as exc:
+            violations.append(PurityViolation(
+                str(p), 0, f"Failed to read file: {exc}",
+            ))
+            continue
+        try:
+            tree = ast.parse(text)
+        except Exception as exc:
+            violations.append(PurityViolation(
+                str(p), 0, f"Failed to parse (fail-closed): {exc}",
+            ))
             continue
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -129,10 +159,40 @@ def scan_calls(root: Path) -> list[PurityViolation]:
     return violations
 
 
+def scan_text(root: Path) -> list[PurityViolation]:
+    """Raw text scan for forbidden tokens. Catches dynamic imports, string
+    construction, and patterns that AST scanning misses (e.g. Adam(), LayerNorm).
+
+    Fail-closed: unreadable files are violations.
+    """
+    violations: list[PurityViolation] = []
+    for p in _iter_python_files(root):
+        try:
+            text = p.read_text(encoding="utf-8", errors="ignore")
+        except Exception as exc:
+            violations.append(PurityViolation(
+                str(p), 0, f"Failed to read file: {exc}",
+            ))
+            continue
+        for line_num, line in enumerate(text.splitlines(), start=1):
+            # Skip comments that are documenting what NOT to do
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            for token in FORBIDDEN_TEXT_TOKENS:
+                if token in line:
+                    violations.append(PurityViolation(
+                        str(p), line_num,
+                        f"Forbidden text token: '{token}'",
+                    ))
+    return violations
+
+
 def run_purity_gate(root: str | Path) -> None:
     """Run PurityGate on a directory. Raises PurityGateError on any violation.
 
     FAIL-CLOSED: any error in scanning also raises.
+    Three scan passes: imports (AST), calls (AST), text (raw).
     """
     root = Path(root)
     if not root.exists():
@@ -141,6 +201,7 @@ def run_purity_gate(root: str | Path) -> None:
     violations: list[PurityViolation] = []
     violations.extend(scan_imports(root))
     violations.extend(scan_calls(root))
+    violations.extend(scan_text(root))
 
     if violations:
         raise PurityGateError(violations)
