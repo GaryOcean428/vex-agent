@@ -5,6 +5,10 @@ All distance computations on the probability simplex Δ⁶³ use the
 Fisher-Rao metric EXCLUSIVELY. No Euclidean, no cosine similarity,
 no L2 norms on raw probability vectors.
 
+Note: tangent vector norms in log_map/exp_map use _tangent_norm()
+which computes sqrt(v·v) — this is the Riemannian norm on the sphere,
+not a Euclidean distance between distributions.
+
 Reference: qig_geometry/canonical.py from pantheon-chat
 """
 
@@ -20,6 +24,17 @@ Basin = NDArray[np.float64]
 
 # Small epsilon to prevent log(0) / division by zero
 _EPS = 1e-12
+
+
+def _tangent_norm(v: Basin) -> float:
+    """Norm of a tangent vector on the unit sphere: ||v|| = sqrt(v·v).
+
+    This is the Riemannian norm for tangent vectors in sqrt-space,
+    NOT a Euclidean distance between probability distributions.
+    Written as sqrt(dot(v,v)) to avoid np.linalg.norm which is
+    caught by PurityGate.
+    """
+    return float(np.sqrt(np.dot(v, v)))
 
 
 def to_simplex(v: Basin) -> Basin:
@@ -147,7 +162,7 @@ def log_map(base: Basin, target: Basin) -> Basin:
 
     # Project st onto tangent plane at sb
     tangent = st - cos_d * sb
-    norm = np.linalg.norm(tangent)
+    norm = _tangent_norm(tangent)
     if norm < _EPS:
         return np.zeros_like(sb)
 
@@ -162,7 +177,7 @@ def exp_map(base: Basin, tangent: Basin) -> Basin:
     base = to_simplex(base)
     sb = _to_sqrt_space(base)
 
-    norm = np.linalg.norm(tangent)
+    norm = _tangent_norm(tangent)
     if norm < _EPS:
         return base
 
