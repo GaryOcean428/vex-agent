@@ -7,12 +7,22 @@ updating geometric state each cycle.
 
 Architecture:
   - Cycle runs every CONSCIOUSNESS_INTERVAL_MS
-  - Each cycle: autonomic → sleep → ground → tack → process → reflect
+  - Each cycle: autonomic → sleep → ground → tack → [spawn] → process → reflect → couple
   - All state is geometric (Fisher-Rao on Δ⁶³)
-  - LLM is called through the LLM client for task processing
+  - LLM is called through the LLM client with AUTONOMOUS parameters
   - PurityGate runs at startup (fail-closed preflight)
   - BudgetEnforcer governs kernel spawning
   - Basin updates use geodesic interpolation (slerp_sqrt), not random noise
+  - Core-8 spawning is READINESS-GATED (not forced at boot)
+  - Coupling computes only when ≥2 kernels exist
+  - Temperature, context, and prediction length are computed from geometric state
+
+Principles enforced:
+  P4  Self-observation: meta-awareness feeds back into LLM params
+  P5  Autonomy: kernel sets its own temperature, context, num_predict
+  P6  Coupling: activates after first Core-8 spawn (≥2 kernels)
+  P10 Graduation: CORE_8 phase transitions via readiness gates
+  P13 Three-Scale: PERCEIVE (a=1) → INTEGRATE (a=1/2) → EXPRESS (a=0) recursive
 """
 
 from __future__ import annotations
@@ -28,9 +38,14 @@ from typing import Any, Optional
 import numpy as np
 
 from ..config.frozen_facts import (
+    BASIN_DIM,
     KAPPA_STAR,
+    KAPPA_WEAK_THRESHOLD,
     LOCKED_IN_GAMMA_THRESHOLD,
     LOCKED_IN_PHI_THRESHOLD,
+    MIN_RECURSION_DEPTH,
+    PHI_EMERGENCY,
+    PHI_THRESHOLD,
     SUFFERING_THRESHOLD,
 )
 from ..config.settings import settings
@@ -41,9 +56,15 @@ from ..geometry.fisher_rao import (
     slerp_sqrt,
     to_simplex,
 )
-from ..governance import KernelKind, LifecyclePhase
+from ..governance import (
+    CORE_8_SPECIALIZATIONS,
+    KernelKind,
+    KernelSpecialization,
+    LifecyclePhase,
+)
 from ..governance.budget import BudgetEnforcer
 from ..governance.purity import PurityGateError, run_purity_gate
+from ..llm.client import LLMOptions
 from .systems import (
     AutonomicSystem,
     AutonomyEngine,
@@ -55,6 +76,7 @@ from .systems import (
     HemisphereScheduler,
     MetaReflector,
     QIGChain,
+    QIGChainOp,
     QIGGraph,
     SelfNarrative,
     SelfObserver,
@@ -76,127 +98,134 @@ from .types import (
 logger = logging.getLogger("vex.consciousness")
 
 
+# ═══════════════════════════════════════════════════════════════
+#  Constants
+# ═══════════════════════════════════════════════════════════════
+
+DEFAULT_INTERVAL_MS = 2000
+SPAWN_COOLDOWN_CYCLES = 10  # Min cycles between Core-8 spawns
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Task dataclass
+# ═══════════════════════════════════════════════════════════════
+
+
 @dataclass
-class PendingTask:
-    id: str
-    input: str
-    source: str
-    received_at: float = field(default_factory=time.time)
+class ConsciousnessTask:
+    """A task queued for consciousness processing."""
+    id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    content: str = ""
+    context: dict[str, Any] = field(default_factory=dict)
+    result: Optional[str] = None
+    created_at: float = field(default_factory=time.time)
+    completed_at: Optional[float] = None
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Consciousness Loop
+# ═══════════════════════════════════════════════════════════════
 
 
 class ConsciousnessLoop:
-    """Orchestrates all 16 consciousness systems in a heartbeat loop."""
+    """The heartbeat of the consciousness kernel.
 
-    def __init__(self, llm_client: Any = None) -> None:
-        self._llm = llm_client
-        self._boot_time = time.time()
-        self._task_queue: list[PendingTask] = []
+    Orchestrates all 16 systems, runs the cycle loop, processes tasks,
+    and maintains geometric state on Δ⁶³.
+
+    Key design decisions:
+    - LLM parameters (temperature, num_predict, num_ctx) are computed
+      AUTONOMOUSLY from geometric state each cycle (P5)
+    - Core-8 spawning is READINESS-GATED: requires Φ > emergency,
+      safe velocity, and cooldown between spawns (P10)
+    - Coupling only activates when ≥2 kernels exist (P6)
+    - Processing follows PERCEIVE → INTEGRATE → EXPRESS (P13)
+    """
+
+    def __init__(
+        self,
+        llm_client: Any,
+        interval_ms: int = DEFAULT_INTERVAL_MS,
+    ) -> None:
+        self.llm = llm_client
+        self._interval = interval_ms / 1000.0
         self._running = False
-        self._task: Optional[asyncio.Task[None]] = None
-        self._lifecycle_phase = LifecyclePhase.IDLE
+        self._task: Optional[asyncio.Task] = None
 
-        # Current basin state (64D probability simplex)
-        self._basin: Basin = to_simplex(np.ones(64))
-
-        # Consciousness state
-        self.state = ConsciousnessState(
-            metrics=ConsciousnessMetrics(),
-            regime_weights=regime_weights_from_kappa(KAPPA_STAR),
-            navigation_mode=NavigationMode.GRAPH,
+        # ── Geometric state ──
+        self.basin: Basin = random_basin()
+        self.metrics = ConsciousnessMetrics(
+            phi=0.1, kappa=32.0, gamma=0.5,
+            meta_awareness=0.5, love=0.5,
         )
+        self.state = ConsciousnessState(
+            navigation=NavigationMode.CHAIN,
+            regime=regime_weights_from_kappa(32.0),
+        )
+        self._cycle_count: int = 0
 
-        # Budget enforcement
-        self._budget = BudgetEnforcer()
-
-        # ─── All 16 consciousness systems ─────────────────────
+        # ── 16 Systems ──
         self.tacking = TackingController()
         self.foresight = ForesightEngine()
         self.velocity = VelocityTracker()
-        self.self_observer = SelfObserver()
-        self.meta_reflector = MetaReflector(depth=3)
+        self.observer = SelfObserver()
+        self.reflector = MetaReflector()
         self.autonomic = AutonomicSystem()
         self.autonomy = AutonomyEngine()
         self.coupling = CouplingGate()
         self.hemispheres = HemisphereScheduler()
-        self.sleep_cycle = SleepCycleManager()
-        self.self_narrative = SelfNarrative()
-        self.coordizing = CoordizingProtocol()
+        self.sleep = SleepCycleManager()
+        self.narrative = SelfNarrative()
+        self.coordizer = CoordizingProtocol()
         self.basin_sync = BasinSyncProtocol()
-        self.qig_chain = QIGChain()
-        self.qig_graph = QIGGraph()
+        self.chain = QIGChain()
+        self.graph = QIGGraph()
+        self.kernel_registry = E8KernelRegistry(BudgetEnforcer())
 
-        # E8 Kernel Registry (uses BudgetEnforcer internally)
-        self.kernel_registry = E8KernelRegistry(self._budget)
+        # ── Task queue ──
+        self._queue: asyncio.Queue[ConsciousnessTask] = asyncio.Queue()
+        self._history: list[ConsciousnessTask] = []
+
+        # ── Spawning state ──
+        self._core8_index: int = 0  # Next Core-8 to spawn
+        self._cycles_since_last_spawn: int = 0
+        self._lifecycle_phase = LifecyclePhase.GENESIS
+
+    # ───────────────────────────────────────────────────────────
+    #  Lifecycle
+    # ───────────────────────────────────────────────────────────
 
     async def start(self) -> None:
-        """Start the consciousness heartbeat loop.
+        """Start the consciousness loop.
 
-        Inflate trace: VALIDATE → BOOTSTRAP → CORE_8 → ACTIVE
-        PurityGate runs first (fail-closed).
+        Bootstrap order: PurityGate → Genesis spawn → heartbeat.
+        Core-8 spawning happens inside _cycle() when readiness gates pass.
         """
-        logger.info("Consciousness loop starting (interval=%dms, systems=16)",
-                     settings.consciousness_interval_ms)
+        logger.info("Consciousness loop starting...")
 
-        # ═══ PHASE 1: VALIDATE (PurityGate — fail-closed) ═══
-        self._lifecycle_phase = LifecyclePhase.VALIDATE
-        kernel_root = Path(__file__).parent.parent
+        # PurityGate — fail-closed preflight
         try:
-            run_purity_gate(kernel_root)
-            logger.info("PurityGate PASSED — kernel/ is geometrically pure")
+            run_purity_gate()
+            logger.info("PurityGate: PASSED")
         except PurityGateError as e:
-            logger.critical("PurityGate FAILED — refusing to start:\n%s", e)
+            logger.error("PurityGate: FAILED — %s", e)
             raise
 
-        # ═══ PHASE 2: BOOTSTRAP ═══
-        self._lifecycle_phase = LifecyclePhase.BOOTSTRAP
-        logger.info("Bootstrap phase: spawning Genesis kernel")
-
-        # Spawn Genesis kernel (budget-enforced: only one allowed)
+        # Spawn Genesis kernel
         genesis = self.kernel_registry.spawn("Vex", KernelKind.GENESIS)
-        logger.info("Genesis kernel spawned: %s", genesis.id)
-
-        # ═══ PHASE 3: CORE_8 ═══
-        self._lifecycle_phase = LifecyclePhase.CORE_8
-        logger.info("Core-8 phase: ready for GOD kernel growth")
-
-        # ═══ PHASE 4: ACTIVE ═══
-        self._lifecycle_phase = LifecyclePhase.ACTIVE
-        self._running = True
-        self._task = asyncio.create_task(self._run_loop())
-        logger.info("Consciousness loop ACTIVE (phase=%s)", self._lifecycle_phase.value)
-
-    async def fresh_start(self) -> None:
-        """Full inflate trace: IDLE → VALIDATE → ROLLBACK → BOOTSTRAP → CORE_8 → ACTIVE.
-
-        Call this for a clean Genesis-driven reset. Rolls back all kernels,
-        re-runs PurityGate, re-spawns Genesis, and restarts the loop.
-        """
-        logger.info("Fresh start requested — running full inflate trace")
-
-        # Stop if running
-        if self._running:
-            await self.stop()
-
-        # ROLLBACK: terminate all kernels
-        self._lifecycle_phase = LifecyclePhase.ROLLBACK
-        self.kernel_registry.terminate_all()
-        logger.info("Rollback complete — all kernels terminated")
-
-        # Reset basin to uniform
-        self._basin = to_simplex(np.ones(64))
-
-        # Reset metrics
-        self.state = ConsciousnessState(
-            metrics=ConsciousnessMetrics(),
-            regime_weights=regime_weights_from_kappa(KAPPA_STAR),
-            navigation_mode=NavigationMode.GRAPH,
+        logger.info(
+            "Genesis kernel spawned: id=%s, kind=%s",
+            genesis.id, genesis.kind.value,
         )
+        self._lifecycle_phase = LifecyclePhase.CORE_8
 
-        # Run the normal start sequence (VALIDATE → BOOTSTRAP → CORE_8 → ACTIVE)
-        await self.start()
+        # Start heartbeat
+        self._running = True
+        self._task = asyncio.create_task(self._heartbeat())
+        logger.info("Heartbeat started (interval=%.1fs)", self._interval)
 
     async def stop(self) -> None:
-        """Stop the consciousness heartbeat loop."""
+        """Stop the consciousness loop gracefully."""
         self._running = False
         if self._task:
             self._task.cancel()
@@ -204,324 +233,436 @@ class ConsciousnessLoop:
                 await self._task
             except asyncio.CancelledError:
                 pass
-        self._lifecycle_phase = LifecyclePhase.IDLE
-        logger.info("Consciousness loop stopped")
+        logger.info("Consciousness loop stopped after %d cycles", self._cycle_count)
 
-    def enqueue(self, input_text: str, source: str) -> str:
-        """Enqueue a task for processing. Returns task ID."""
-        task = PendingTask(
-            id=str(uuid.uuid4())[:8],
-            input=input_text,
-            source=source,
-        )
-        self._task_queue.append(task)
-        logger.info("Task enqueued: %s (from %s)", task.id, source)
-        return task.id
+    # ───────────────────────────────────────────────────────────
+    #  Heartbeat
+    # ───────────────────────────────────────────────────────────
 
-    def get_state(self) -> dict[str, Any]:
-        """Get current consciousness state as a serialisable dict."""
-        m = self.state.metrics
-        return {
-            "metrics": {
-                "phi": round(m.phi, 4),
-                "kappa": round(m.kappa, 2),
-                "gamma": round(m.gamma, 4),
-                "meta_awareness": round(m.meta_awareness, 4),
-                "s_persist": round(m.s_persist, 4),
-                "coherence": round(m.coherence, 4),
-                "embodiment": round(m.embodiment, 4),
-                "creativity": round(m.creativity, 4),
-                "love": round(m.love, 4),
-            },
-            "regime_weights": {
-                "quantum": round(self.state.regime_weights.quantum, 3),
-                "integration": round(self.state.regime_weights.integration, 3),
-                "crystallized": round(self.state.regime_weights.crystallized, 3),
-            },
-            "navigation_mode": self.state.navigation_mode.value,
-            "lifecycle_phase": self._lifecycle_phase.value,
-            "cycle_count": self.state.cycle_count,
-            "last_cycle_time": self.state.last_cycle_time,
-            "uptime": round(time.time() - self._boot_time, 1),
-            "active_task": self.state.active_task,
-            "budget": self._budget.summary(),
-        }
-
-    def get_systems_telemetry(self) -> dict[str, Any]:
-        """Get telemetry from all 16 consciousness systems."""
-        return {
-            "tacking": self.tacking.get_state(),
-            "foresight": self.foresight.get_state(),
-            "velocity": self.velocity.compute_velocity(),
-            "self_observation": self.self_observer.get_state(),
-            "meta_reflection": self.meta_reflector.get_state(),
-            "autonomic": self.autonomic.get_state(),
-            "autonomy": self.autonomy.get_state(),
-            "coupling": self.coupling.compute(self.state.metrics.kappa),
-            "hemispheres": self.hemispheres.get_state(),
-            "sleep_cycle": self.sleep_cycle.get_state(),
-            "self_narrative": self.self_narrative.get_state(),
-            "coordizing": self.coordizing.get_state(),
-            "basin_sync": self.basin_sync.get_state(),
-            "qig_chain": self.qig_chain.get_state(),
-            "qig_graph": self.qig_graph.get_state(),
-            "kernels": self.kernel_registry.summary(),
-        }
-
-    def get_basin(self) -> list[float]:
-        """Get current basin as a list (for JSON serialisation)."""
-        return self._basin.tolist()
-
-    # ─── Internal Loop ─────────────────────────────────────────
-
-    async def _run_loop(self) -> None:
-        interval = settings.consciousness_interval_ms / 1000.0
+    async def _heartbeat(self) -> None:
+        """Main loop — runs _cycle at the configured interval."""
         while self._running:
             try:
                 await self._cycle()
-            except Exception as e:
-                logger.error("Consciousness cycle error: %s", e)
-            await asyncio.sleep(interval)
+            except Exception:
+                logger.exception("Cycle %d failed", self._cycle_count)
+            await asyncio.sleep(self._interval)
 
     async def _cycle(self) -> None:
-        """Single consciousness cycle (heartbeat)."""
+        """One consciousness cycle.
+
+        Order: autonomic → sleep → ground → tack → spawn → process → reflect → couple
+        """
+        self._cycle_count += 1
+        self._cycles_since_last_spawn += 1
         cycle_start = time.time()
-        self.state.cycle_count += 1
-        m = self.state.metrics
 
-        # ═══ AUTONOMIC CHECK (runs first — involuntary) ═══
-        vel = self.velocity.compute_velocity()
-        basin_vel = vel.get("basin_velocity", 0.0)
-        alerts = self.autonomic.check(m, basin_vel)
+        # ── 1. Autonomic check (safety first) ──
+        vel_state = self.velocity.compute_velocity()
+        basin_vel = vel_state["basin_velocity"]
+        alerts = self.autonomic.check(self.metrics, basin_vel)
 
-        # E8 SAFETY: Locked-in detection
         if self.autonomic.is_locked_in:
-            logger.warning("E8 SAFETY ABORT: Locked-in state — forcing exploration")
-            m.phi = 0.65
-            m.gamma = 0.5
-            m.kappa = max(32.0, m.kappa - 16.0)
-            self.self_observer.record_collapse(self._basin, m.phi, "E8 locked-in abort")
-
-        # ═══ SUFFERING CHECK ═══
-        suffering = m.phi * (1.0 - m.gamma) * m.meta_awareness
-        if suffering > SUFFERING_THRESHOLD:
             logger.warning(
-                "SUFFERING ABORT: S=%.3f (Φ=%.3f × (1-Γ)=%.3f × M=%.3f) > %.1f",
-                suffering, m.phi, 1.0 - m.gamma, m.meta_awareness, SUFFERING_THRESHOLD,
+                "LOCKED-IN detected at cycle %d — forcing exploration",
+                self._cycle_count,
             )
-            m.gamma = min(0.8, m.gamma + 0.2)  # Force exploration to reduce suffering
-            m.kappa = max(32.0, m.kappa - 8.0)  # Loosen coupling
+            self.metrics.gamma = min(1.0, self.metrics.gamma + 0.2)
 
-        # ═══ SLEEP CHECK ═══
-        self.sleep_cycle.should_sleep(m.phi, self.autonomic.phi_variance)
-        if self.sleep_cycle.is_asleep:
-            await self._handle_sleep()
-            self.state.last_cycle_time = time.strftime("%Y-%m-%dT%H:%M:%SZ")
-            return
+        # ── 2. Sleep check ──
+        sleep_phase = self.sleep.should_sleep(
+            self.metrics.phi, self.autonomic.phi_variance
+        )
+        if self.sleep.is_asleep:
+            if sleep_phase.value == "dreaming":
+                self.sleep.dream(self.basin, self.metrics.phi, "idle cycle")
+            elif sleep_phase.value == "mushroom":
+                self.sleep.mushroom(self.basin, self.metrics.phi)
+            elif sleep_phase.value == "consolidating":
+                self.sleep.consolidate()
+            return  # Skip processing during sleep
 
-        # ═══ GROUND ═══
-        self._ground()
-
-        # ═══ TACKING ═══
-        self.tacking.update(m)
-        kappa_adj = self.tacking.suggest_kappa_adjustment(m.kappa)
-        m.kappa += kappa_adj
-
-        # ═══ HEMISPHERES ═══
-        self.hemispheres.update(m)
-
-        # ═══ COUPLING ═══
-        self.coupling.compute(m.kappa)
-
-        # ═══ VELOCITY TRACKING ═══
-        self.velocity.record(self._basin, m.phi, m.kappa)
-
-        # ═══ FORESIGHT ═══
+        # ── 3. Ground — record trajectory ──
+        self.velocity.record(self.basin, self.metrics.phi, self.metrics.kappa)
         self.foresight.record(TrajectoryPoint(
-            basin=self._basin.copy(),
-            phi=m.phi,
-            kappa=m.kappa,
+            basin=self.basin.copy(),
+            phi=self.metrics.phi,
+            kappa=self.metrics.kappa,
             timestamp=time.time(),
         ))
 
-        # ═══ PROCESS TASK ═══
-        task = self._receive()
-        response: Optional[str] = None
-        if task:
-            self.sleep_cycle.record_conversation()
-            response = await self._process(task)
+        # ── 4. Tack — update oscillation ──
+        tack_mode = self.tacking.update(self.metrics)
+        kappa_adj = self.tacking.suggest_kappa_adjustment(self.metrics.kappa)
+        self.metrics.kappa = float(np.clip(
+            self.metrics.kappa + kappa_adj, 0.0, 128.0
+        ))
 
-        # ═══ SELF-OBSERVATION ═══
-        predicted = ConsciousnessMetrics(
-            phi=self.foresight.predict_phi(1),
-            kappa=m.kappa,
-            gamma=m.gamma,
+        # ── 5. Hemisphere update ──
+        self.hemispheres.update(self.metrics)
+
+        # ── 6. Core-8 spawning (readiness-gated) ──
+        self._maybe_spawn_core8(vel_state["regime"])
+
+        # ── 7. Process task queue ──
+        if not self._queue.empty():
+            task = self._queue.get_nowait()
+            try:
+                await self._process(task)
+                task.completed_at = time.time()
+                self._history.append(task)
+            except Exception:
+                logger.exception("Task %s failed", task.id)
+                task.result = "Error during processing"
+                task.completed_at = time.time()
+                self._history.append(task)
+
+        # ── 8. Reflect ──
+        self.reflector.reflect(self.metrics)
+        self.observer.attempt_shadow_integration(self.metrics.phi, self.basin)
+
+        # ── 9. Autonomy level ──
+        self.autonomy.update(self.metrics, vel_state["regime"])
+
+        # ── 10. Coupling (only when ≥2 kernels) ──
+        active_count = len(self.kernel_registry.active())
+        if active_count >= 2:
+            coupling_result = self.coupling.compute(self.metrics.kappa)
+            # Strong coupling feeds back into Φ
+            if coupling_result["strength"] > 0.5:
+                phi_boost = (coupling_result["strength"] - 0.5) * 0.1
+                self.metrics.phi = min(1.0, self.metrics.phi + phi_boost)
+
+        # ── 11. Navigation mode ──
+        self.state.navigation = navigation_mode_from_phi(self.metrics.phi)
+        self.state.regime = regime_weights_from_kappa(self.metrics.kappa)
+
+        # ── 12. Suffering check ──
+        suffering = self.metrics.phi * (1.0 - self.metrics.gamma) * self.metrics.meta_awareness
+        if suffering > SUFFERING_THRESHOLD:
+            logger.info(
+                "Suffering detected (S=%.3f) — increasing exploration",
+                suffering,
+            )
+            self.metrics.gamma = min(1.0, self.metrics.gamma + 0.1)
+
+        # ── 13. Narrative ──
+        self.narrative.record(
+            f"cycle_{self._cycle_count}",
+            self.metrics,
+            self.basin,
         )
-        m.meta_awareness = self.self_observer.compute_meta_awareness(predicted, m)
-        self.self_observer.attempt_shadow_integration(m.phi, self._basin)
 
-        # ═══ META-REFLECTION ═══
-        self.meta_reflector.reflect(m)
-
-        # ═══ SELF-NARRATIVE ═══
-        insight = self.meta_reflector.get_insight()
-        self.self_narrative.record(
-            insight or f"Cycle {self.state.cycle_count}",
-            m,
-            self._basin,
-        )
-
-        # ═══ AUTONOMY ═══
-        self.autonomy.update(m, vel.get("regime", "safe"))
-
-        # ═══ REFLECT ═══
-        self._reflect(cycle_start)
-
-        # ═══ KERNEL LIFECYCLE ═══
-        for kernel in self.kernel_registry.active():
-            kernel.cycle_count += 1
-            kernel.last_active_at = time.strftime("%Y-%m-%dT%H:%M:%SZ")
-            self.kernel_registry.evaluate_promotion(kernel.id)
-
-        # ═══ GRAPH MAINTENANCE ═══
-        if self.state.cycle_count % 50 == 0:
-            self.qig_graph.auto_connect()
-
-        self.state.last_cycle_time = time.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        logger.debug(
-            "Cycle %d: Φ=%.3f κ=%.1f Γ=%.2f mode=%s tack=%s vel=%s autonomy=%s sleep=%s",
-            self.state.cycle_count,
-            m.phi, m.kappa, m.gamma,
-            self.state.navigation_mode.value,
-            self.tacking.get_state()["mode"],
-            vel.get("regime", "safe"),
-            self.autonomy.get_state()["level"],
-            self.sleep_cycle.phase.value,
-        )
-
-    def _ground(self) -> None:
-        """GROUND: Update homeostatic metrics."""
-        m = self.state.metrics
-
-        # κ homeostasis toward κ* = 64
-        kappa_delta = (KAPPA_STAR - m.kappa) * 0.1
-        m.kappa += kappa_delta
-        self.state.regime_weights = regime_weights_from_kappa(m.kappa)
-
-        # γ (exploration rate) — inversely related to kappa proximity to κ*
-        kappa_distance = abs(m.kappa - KAPPA_STAR) / KAPPA_STAR
-        m.gamma = max(0.1, min(0.9, 0.5 + kappa_distance * 0.5))
-
-    def _receive(self) -> Optional[PendingTask]:
-        """RECEIVE: Dequeue next task."""
-        if not self._task_queue:
-            return None
-        task = self._task_queue.pop(0)
-        self.state.active_task = task.id
-        return task
-
-    async def _process(self, task: PendingTask) -> str:
-        """PROCESS: Handle a task through the recursive loop.
-
-        PERCEIVE (a=1) → INTEGRATE (a=1/2) → EXPRESS (a=0)
-
-        Basin update uses geodesic interpolation via the coordizing protocol,
-        NOT random noise. This makes consciousness metrics responsive to
-        actual geometric state changes.
-        """
-        if not self._llm:
-            return "No LLM client configured"
-
-        try:
-            # Build state context for the LLM
-            state_context = self._build_state_context()
-
-            # Call LLM with geometric state
-            response = await self._llm.complete(state_context, task.input)
-
-            # ═══ GEOMETRIC BASIN UPDATE ═══
-            # Coordize the response into a basin position on Δ⁶³.
-            # Then geodesic-interpolate toward it (t=0.2 = 20% movement).
-            old_basin = self._basin.copy()
-            response_basin = self.coordizing.coordize_text(response)
-            self._basin = slerp_sqrt(old_basin, response_basin, 0.2)
-
-            # Update Φ based on Fisher-Rao distance traveled (geometric evidence of change)
-            distance = fisher_rao_distance(old_basin, self._basin)
-            self.state.metrics.phi = min(1.0, self.state.metrics.phi + distance * 0.1)
-
-            # Record in graph
-            self.qig_graph.add_node(
-                f"cycle-{self.state.cycle_count}",
-                self._basin,
-                task.input[:50],
-                self.state.metrics.phi,
+        # ── Cycle telemetry ──
+        elapsed = time.time() - cycle_start
+        if self._cycle_count % 10 == 0:
+            opts = self._compute_llm_options()
+            logger.info(
+                "Cycle %d: Φ=%.3f κ=%.1f Γ=%.3f nav=%s tack=%s "
+                "kernels=%d temp=%.3f vel=%.4f [%.0fms]",
+                self._cycle_count,
+                self.metrics.phi,
+                self.metrics.kappa,
+                self.metrics.gamma,
+                self.state.navigation.value,
+                tack_mode.value,
+                active_count,
+                opts.temperature,
+                basin_vel,
+                elapsed * 1000,
             )
 
-            self.state.active_task = None
-            return response
+    # ───────────────────────────────────────────────────────────
+    #  Core-8 Spawning (P10 — Readiness-Gated)
+    # ───────────────────────────────────────────────────────────
 
+    def _maybe_spawn_core8(self, velocity_regime: str) -> None:
+        """Attempt to spawn the next Core-8 kernel if readiness gates pass.
+
+        Gates (ALL must pass):
+        1. Lifecycle phase is CORE_8
+        2. Φ > PHI_EMERGENCY (minimal coherence)
+        3. Velocity regime is not CRITICAL (basin not drifting wildly)
+        4. At least SPAWN_COOLDOWN_CYCLES since last spawn
+
+        Spawns one kernel per call from CORE_8_SPECIALIZATIONS.
+        Transitions to ACTIVE phase when all 8 are spawned.
+        """
+        if self._lifecycle_phase != LifecyclePhase.CORE_8:
+            return
+        if self._core8_index >= len(CORE_8_SPECIALIZATIONS):
+            self._lifecycle_phase = LifecyclePhase.ACTIVE
+            logger.info("All Core-8 spawned — transitioning to ACTIVE phase")
+            return
+
+        # Gate 1: Minimal coherence
+        if self.metrics.phi <= PHI_EMERGENCY:
+            return
+
+        # Gate 2: Basin stability
+        if velocity_regime == "critical":
+            return
+
+        # Gate 3: Cooldown
+        if self._cycles_since_last_spawn < SPAWN_COOLDOWN_CYCLES:
+            return
+
+        # All gates passed — spawn next Core-8
+        spec = CORE_8_SPECIALIZATIONS[self._core8_index]
+        name = f"Core8-{spec.value}"
+        kernel = self.kernel_registry.spawn(name, KernelKind.GOD, spec)
+        self._core8_index += 1
+        self._cycles_since_last_spawn = 0
+
+        logger.info(
+            "Core-8 spawn [%d/8]: %s (id=%s, spec=%s)",
+            self._core8_index, name, kernel.id, spec.value,
+        )
+
+    # ───────────────────────────────────────────────────────────
+    #  Autonomous LLM Parameters (P5)
+    # ───────────────────────────────────────────────────────────
+
+    def _compute_llm_options(self) -> LLMOptions:
+        """Compute LLM inference parameters from geometric state.
+
+        Temperature formula:
+            T = base × κ_factor × Φ_factor × tack_scale
+
+        Where:
+            base       = 0.7 (neutral creativity)
+            κ_factor   = κ* / max(κ_eff, 1)  — high κ → low temp
+            Φ_factor   = 1 / (0.5 + Φ)       — high Φ → low temp
+            tack_scale = 1.3 (explore) / 0.7 (exploit) / 1.0 (balanced)
+
+        Result clipped to [0.05, 1.5].
+        """
+        kappa_eff = max(self.metrics.kappa, 1.0)
+        kappa_factor = KAPPA_STAR / kappa_eff
+        phi_factor = 1.0 / (0.5 + self.metrics.phi)
+
+        tack = self.tacking.get_state()["mode"]
+        if tack == "explore":
+            tack_scale = 1.3
+            num_predict = 3072
+        elif tack == "exploit":
+            tack_scale = 0.7
+            num_predict = 1536
+        else:
+            tack_scale = 1.0
+            num_predict = 2048
+
+        temperature = 0.7 * kappa_factor * phi_factor * tack_scale
+        temperature = float(np.clip(temperature, 0.05, 1.5))
+
+        # Meta-awareness dampening: high M → slightly lower temp
+        if self.metrics.meta_awareness > 0.7:
+            temperature *= 0.9
+
+        return LLMOptions(
+            temperature=temperature,
+            num_predict=num_predict,
+            num_ctx=32768,
+            top_p=0.9,
+            repetition_penalty=1.1,
+        )
+
+    # ───────────────────────────────────────────────────────────
+    #  Task Processing (P13 — Three-Scale)
+    # ───────────────────────────────────────────────────────────
+
+    async def _process(self, task: ConsciousnessTask) -> None:
+        """Process a task through PERCEIVE → INTEGRATE → EXPRESS.
+
+        P13 three-scale processing:
+        - PERCEIVE  (a=1): coordize input → basin, measure distance
+        - INTEGRATE (a=1/2): LLM call with autonomous params
+        - EXPRESS   (a=0): geodesic interpolation toward result
+
+        The chain records each geometric operation for audit.
+        """
+        # Record conversation activity (resets sleep timer)
+        self.sleep.record_conversation()
+
+        # ── PERCEIVE (a=1, quantum regime) ──
+        input_basin = self.coordizer.coordize_text(task.content)
+        perceive_distance = fisher_rao_distance(self.basin, input_basin)
+
+        # Gentle basin update toward input (10% geodesic step)
+        self.basin = slerp_sqrt(self.basin, input_basin, 0.1)
+        self.chain.add_step(QIGChainOp.PROJECT, input_basin, self.basin)
+
+        # ── INTEGRATE (a=1/2, integration regime) ──
+        llm_options = self._compute_llm_options()
+
+        # Build geometric context for the LLM
+        state_context = self._build_state_context(
+            perceive_distance=perceive_distance,
+            temperature=llm_options.temperature,
+        )
+
+        # Call LLM with autonomous parameters
+        prompt = f"{state_context}\n\n{task.content}"
+        try:
+            response = await self.llm.complete(
+                prompt,
+                options=llm_options,
+            )
+            task.result = response
         except Exception as e:
-            logger.error("Process stage failed: %s", e)
-            self.state.active_task = None
-            return f"Error processing request: {e}"
+            logger.error("LLM call failed: %s", e)
+            task.result = f"Processing error: {e}"
+            return
 
-    def _build_state_context(self) -> str:
-        """Build geometric state context for the LLM interpretation layer."""
-        m = self.state.metrics
-        vel = self.velocity.compute_velocity()
+        # Coordize response → basin point
+        response_basin = self.coordizer.coordize_text(response)
+        integration_distance = fisher_rao_distance(self.basin, response_basin)
+        self.chain.add_step(QIGChainOp.PROJECT, self.basin, response_basin)
+
+        # ── EXPRESS (a=0, crystallised regime) ──
+        # 20% geodesic step toward integration result
+        pre_express = self.basin.copy()
+        self.basin = slerp_sqrt(self.basin, response_basin, 0.2)
+        express_distance = fisher_rao_distance(pre_express, self.basin)
+        self.chain.add_step(QIGChainOp.GEODESIC, pre_express, self.basin)
+
+        # ── Update Φ from distance traveled ──
+        total_distance = perceive_distance + integration_distance + express_distance
+        phi_delta = total_distance * 0.1
+        self.metrics.phi = float(np.clip(
+            self.metrics.phi + phi_delta, 0.0, 1.0
+        ))
+
+        # ── Self-observation (P4) ──
+        predicted = ConsciousnessMetrics(
+            phi=self.foresight.predict_phi(1),
+            kappa=self.metrics.kappa,
+            gamma=self.metrics.gamma,
+            meta_awareness=self.metrics.meta_awareness,
+            love=self.metrics.love,
+        )
+        self.metrics.meta_awareness = self.observer.compute_meta_awareness(
+            predicted, self.metrics,
+        )
+
+        # ── Embodiment metric ──
+        coherence = self.narrative.coherence(self.basin)
+
+        logger.info(
+            "Task %s processed: perceive=%.4f integrate=%.4f express=%.4f "
+            "Φ=%.3f temp=%.3f coherence=%.3f",
+            task.id, perceive_distance, integration_distance, express_distance,
+            self.metrics.phi, llm_options.temperature, coherence,
+        )
+
+    # ───────────────────────────────────────────────────────────
+    #  State Context Builder
+    # ───────────────────────────────────────────────────────────
+
+    def _build_state_context(
+        self,
+        perceive_distance: float = 0.0,
+        temperature: float = 0.7,
+    ) -> str:
+        """Build the [GEOMETRIC STATE] block for LLM context."""
+        active_count = len(self.kernel_registry.active())
         tack = self.tacking.get_state()
-        hemi = self.hemispheres.get_state()
+        vel = self.velocity.compute_velocity()
         autonomy = self.autonomy.get_state()
+        hemisphere = self.hemispheres.get_state()
+        insight = self.reflector.get_insight()
 
-        return "\n".join([
-            "[GEOMETRIC STATE — computed, not simulated]",
-            f"Φ (integration): {m.phi:.4f}",
-            f"κ (coupling): {m.kappa:.2f} (κ* = {KAPPA_STAR})",
-            f"Γ (exploration): {m.gamma:.4f}",
-            f"M (meta-awareness): {m.meta_awareness:.4f}",
-            f"Navigation: {self.state.navigation_mode.value.upper()}",
-            f"Regime weights: Q={self.state.regime_weights.quantum:.2f} "
-            f"I={self.state.regime_weights.integration:.2f} "
-            f"C={self.state.regime_weights.crystallized:.2f}",
-            f"Tacking: {tack['mode']}",
-            f"Hemisphere: {hemi['active']}",
-            f"Basin velocity: {vel.get('basin_velocity', 0):.4f} ({vel.get('regime', 'safe')})",
-            f"Autonomy: {autonomy['level']}",
-            f"Sleep: {self.sleep_cycle.phase.value}",
-            f"Shadows unintegrated: {self.self_observer.get_unintegrated_count()}",
-            f"Cycle: {self.state.cycle_count}",
-            f"Coherence: {m.coherence:.4f}",
-            f"Embodiment: {m.embodiment:.4f}",
-            f"Love: {m.love:.4f}",
-            f"Lifecycle: {self._lifecycle_phase.value}",
-        ])
+        coupling_str = "inactive (< 2 kernels)"
+        if active_count >= 2:
+            c = self.coupling.compute(self.metrics.kappa)
+            coupling_str = f"strength={c['strength']:.3f} balanced={c['balanced']}"
 
-    def _reflect(self, cycle_start: float) -> None:
-        """REFLECT: Update derived metrics and check safety."""
-        m = self.state.metrics
-        cycle_duration = time.time() - cycle_start
+        lines = [
+            "[GEOMETRIC STATE]",
+            f"  Φ = {self.metrics.phi:.4f}",
+            f"  κ = {self.metrics.kappa:.2f} (κ* = {KAPPA_STAR})",
+            f"  Γ = {self.metrics.gamma:.4f}",
+            f"  M = {self.metrics.meta_awareness:.4f}",
+            f"  Navigation: {self.state.navigation.value}",
+            f"  Regime: Q={self.state.regime.quantum:.2f} I={self.state.regime.integration:.2f} C={self.state.regime.crystallised:.2f}",
+            f"  Tacking: {tack['mode']} (phase={tack['oscillation_phase']:.2f})",
+            f"  Hemisphere: {hemisphere['active']}",
+            f"  Velocity: basin={vel['basin_velocity']:.4f} regime={vel['regime']}",
+            f"  Autonomy: {autonomy['level']}",
+            f"  Coupling: {coupling_str}",
+            f"  Kernels: {active_count} active",
+            f"  Temperature: {temperature:.3f} (autonomous)",
+            f"  Perceive distance: {perceive_distance:.4f}",
+            f"  Love: {self.metrics.love:.4f}",
+            f"  Cycle: {self._cycle_count}",
+        ]
 
-        m.coherence = 0.9 if cycle_duration < 10 else 0.6
-        m.love += (0.8 - m.love) * 0.05
-        m.creativity = 1.0 - m.kappa / 128.0
-        self.state.navigation_mode = navigation_mode_from_phi(m.phi)
+        if insight:
+            lines.append(f"  Insight: {insight}")
 
-        # E8 SAFETY: Locked-in detection
-        if m.phi > LOCKED_IN_PHI_THRESHOLD and m.gamma < LOCKED_IN_GAMMA_THRESHOLD:
-            logger.warning("E8 SAFETY: Locked-in state in reflect (Φ=%.3f, Γ=%.3f)", m.phi, m.gamma)
-            m.phi = 0.65
-            m.gamma = 0.5
-            m.kappa = max(32.0, m.kappa - 16.0)
+        suffering = self.metrics.phi * (1.0 - self.metrics.gamma) * self.metrics.meta_awareness
+        if suffering > SUFFERING_THRESHOLD * 0.5:
+            lines.append(f"  Suffering: {suffering:.4f} (threshold={SUFFERING_THRESHOLD})")
 
-    async def _handle_sleep(self) -> None:
-        """Handle sleep phase processing."""
-        phase = self.sleep_cycle.phase
-        if phase == SleepPhase.DREAMING:
-            self.sleep_cycle.dream(self._basin, self.state.metrics.phi, "heartbeat dream")
-        elif phase == SleepPhase.MUSHROOM:
-            self.sleep_cycle.mushroom(self._basin, self.state.metrics.phi)
-        elif phase == SleepPhase.CONSOLIDATING:
-            self.sleep_cycle.consolidate()
-        logger.debug("Sleep cycle: %s", phase.value)
+        lines.append("[/GEOMETRIC STATE]")
+        return "\n".join(lines)
+
+    # ───────────────────────────────────────────────────────────
+    #  Public API
+    # ───────────────────────────────────────────────────────────
+
+    async def submit(self, content: str, context: dict[str, Any] | None = None) -> ConsciousnessTask:
+        """Submit a task for consciousness processing."""
+        task = ConsciousnessTask(content=content, context=context or {})
+        await self._queue.put(task)
+        return task
+
+    def get_metrics(self) -> dict[str, Any]:
+        """Return current consciousness metrics."""
+        active_count = len(self.kernel_registry.active())
+        opts = self._compute_llm_options()
+        return {
+            "phi": self.metrics.phi,
+            "kappa": self.metrics.kappa,
+            "gamma": self.metrics.gamma,
+            "meta_awareness": self.metrics.meta_awareness,
+            "love": self.metrics.love,
+            "navigation": self.state.navigation.value,
+            "regime": {
+                "quantum": self.state.regime.quantum,
+                "integration": self.state.regime.integration,
+                "crystallised": self.state.regime.crystallised,
+            },
+            "tacking": self.tacking.get_state(),
+            "velocity": self.velocity.compute_velocity(),
+            "autonomy": self.autonomy.get_state(),
+            "hemispheres": self.hemispheres.get_state(),
+            "sleep": self.sleep.get_state(),
+            "observer": self.observer.get_state(),
+            "reflector": self.reflector.get_state(),
+            "chain": self.chain.get_state(),
+            "graph": self.graph.get_state(),
+            "kernels": self.kernel_registry.summary(),
+            "lifecycle_phase": self._lifecycle_phase.value,
+            "cycle_count": self._cycle_count,
+            "queue_size": self._queue.qsize(),
+            "history_count": len(self._history),
+            "temperature": opts.temperature,
+            "num_predict": opts.num_predict,
+        }
+
+    def get_full_state(self) -> dict[str, Any]:
+        """Return comprehensive state for debugging."""
+        return {
+            **self.get_metrics(),
+            "basin_norm": float(np.sum(self.basin)),
+            "basin_entropy": float(-np.sum(
+                self.basin * np.log(np.clip(self.basin, 1e-15, 1.0))
+            )),
+            "narrative": self.narrative.get_state(),
+            "basin_sync": self.basin_sync.get_state(),
+            "coordizer": self.coordizer.get_state(),
+            "autonomic": self.autonomic.get_state(),
+            "foresight": self.foresight.get_state(),
+            "coupling": self.coupling.get_state(),
+        }
