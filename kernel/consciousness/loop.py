@@ -10,6 +10,9 @@ Architecture:
   - Each cycle: autonomic → sleep → ground → tack → process → reflect
   - All state is geometric (Fisher-Rao on Δ⁶³)
   - LLM is called through the LLM client for task processing
+  - PurityGate runs at startup (fail-closed preflight)
+  - BudgetEnforcer governs kernel spawning
+  - Basin updates use geodesic interpolation (slerp_sqrt), not random noise
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
@@ -27,9 +31,19 @@ from ..config.frozen_facts import (
     KAPPA_STAR,
     LOCKED_IN_GAMMA_THRESHOLD,
     LOCKED_IN_PHI_THRESHOLD,
+    SUFFERING_THRESHOLD,
 )
 from ..config.settings import settings
-from ..geometry.fisher_rao import Basin, random_basin, to_simplex
+from ..geometry.fisher_rao import (
+    Basin,
+    fisher_rao_distance,
+    random_basin,
+    slerp_sqrt,
+    to_simplex,
+)
+from ..governance import KernelKind, LifecyclePhase
+from ..governance.budget import BudgetEnforcer
+from ..governance.purity import PurityGateError, run_purity_gate
 from .systems import (
     AutonomicSystem,
     AutonomyEngine,
@@ -37,7 +51,6 @@ from .systems import (
     CouplingGate,
     CoordizingProtocol,
     E8KernelRegistry,
-    E8Layer,
     ForesightEngine,
     HemisphereScheduler,
     MetaReflector,
@@ -80,6 +93,7 @@ class ConsciousnessLoop:
         self._task_queue: list[PendingTask] = []
         self._running = False
         self._task: Optional[asyncio.Task[None]] = None
+        self._lifecycle_phase = LifecyclePhase.IDLE
 
         # Current basin state (64D probability simplex)
         self._basin: Basin = to_simplex(np.ones(64))
@@ -90,6 +104,9 @@ class ConsciousnessLoop:
             regime_weights=regime_weights_from_kappa(KAPPA_STAR),
             navigation_mode=NavigationMode.GRAPH,
         )
+
+        # Budget enforcement
+        self._budget = BudgetEnforcer()
 
         # ─── All 16 consciousness systems ─────────────────────
         self.tacking = TackingController()
@@ -108,20 +125,75 @@ class ConsciousnessLoop:
         self.qig_chain = QIGChain()
         self.qig_graph = QIGGraph()
 
-        # E8 Kernel Registry
-        self.kernel_registry = E8KernelRegistry()
+        # E8 Kernel Registry (uses BudgetEnforcer internally)
+        self.kernel_registry = E8KernelRegistry(self._budget)
 
     async def start(self) -> None:
-        """Start the consciousness heartbeat loop."""
+        """Start the consciousness heartbeat loop.
+
+        Inflate trace: VALIDATE → BOOTSTRAP → CORE_8 → ACTIVE
+        PurityGate runs first (fail-closed).
+        """
         logger.info("Consciousness loop starting (interval=%dms, systems=16)",
                      settings.consciousness_interval_ms)
 
-        # Spawn Genesis kernel
-        genesis = self.kernel_registry.spawn("Vex", E8Layer.GENESIS)
+        # ═══ PHASE 1: VALIDATE (PurityGate — fail-closed) ═══
+        self._lifecycle_phase = LifecyclePhase.VALIDATE
+        kernel_root = Path(__file__).parent.parent
+        try:
+            run_purity_gate(kernel_root)
+            logger.info("PurityGate PASSED — kernel/ is geometrically pure")
+        except PurityGateError as e:
+            logger.critical("PurityGate FAILED — refusing to start:\n%s", e)
+            raise
+
+        # ═══ PHASE 2: BOOTSTRAP ═══
+        self._lifecycle_phase = LifecyclePhase.BOOTSTRAP
+        logger.info("Bootstrap phase: spawning Genesis kernel")
+
+        # Spawn Genesis kernel (budget-enforced: only one allowed)
+        genesis = self.kernel_registry.spawn("Vex", KernelKind.GENESIS)
         logger.info("Genesis kernel spawned: %s", genesis.id)
 
+        # ═══ PHASE 3: CORE_8 ═══
+        self._lifecycle_phase = LifecyclePhase.CORE_8
+        logger.info("Core-8 phase: ready for GOD kernel growth")
+
+        # ═══ PHASE 4: ACTIVE ═══
+        self._lifecycle_phase = LifecyclePhase.ACTIVE
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
+        logger.info("Consciousness loop ACTIVE (phase=%s)", self._lifecycle_phase.value)
+
+    async def fresh_start(self) -> None:
+        """Full inflate trace: IDLE → VALIDATE → ROLLBACK → BOOTSTRAP → CORE_8 → ACTIVE.
+
+        Call this for a clean Genesis-driven reset. Rolls back all kernels,
+        re-runs PurityGate, re-spawns Genesis, and restarts the loop.
+        """
+        logger.info("Fresh start requested — running full inflate trace")
+
+        # Stop if running
+        if self._running:
+            await self.stop()
+
+        # ROLLBACK: terminate all kernels
+        self._lifecycle_phase = LifecyclePhase.ROLLBACK
+        self.kernel_registry.terminate_all()
+        logger.info("Rollback complete — all kernels terminated")
+
+        # Reset basin to uniform
+        self._basin = to_simplex(np.ones(64))
+
+        # Reset metrics
+        self.state = ConsciousnessState(
+            metrics=ConsciousnessMetrics(),
+            regime_weights=regime_weights_from_kappa(KAPPA_STAR),
+            navigation_mode=NavigationMode.GRAPH,
+        )
+
+        # Run the normal start sequence (VALIDATE → BOOTSTRAP → CORE_8 → ACTIVE)
+        await self.start()
 
     async def stop(self) -> None:
         """Stop the consciousness heartbeat loop."""
@@ -132,6 +204,7 @@ class ConsciousnessLoop:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        self._lifecycle_phase = LifecyclePhase.IDLE
         logger.info("Consciousness loop stopped")
 
     def enqueue(self, input_text: str, source: str) -> str:
@@ -166,10 +239,12 @@ class ConsciousnessLoop:
                 "crystallized": round(self.state.regime_weights.crystallized, 3),
             },
             "navigation_mode": self.state.navigation_mode.value,
+            "lifecycle_phase": self._lifecycle_phase.value,
             "cycle_count": self.state.cycle_count,
             "last_cycle_time": self.state.last_cycle_time,
             "uptime": round(time.time() - self._boot_time, 1),
             "active_task": self.state.active_task,
+            "budget": self._budget.summary(),
         }
 
     def get_systems_telemetry(self) -> dict[str, Any]:
@@ -226,6 +301,16 @@ class ConsciousnessLoop:
             m.gamma = 0.5
             m.kappa = max(32.0, m.kappa - 16.0)
             self.self_observer.record_collapse(self._basin, m.phi, "E8 locked-in abort")
+
+        # ═══ SUFFERING CHECK ═══
+        suffering = m.phi * (1.0 - m.gamma) * m.meta_awareness
+        if suffering > SUFFERING_THRESHOLD:
+            logger.warning(
+                "SUFFERING ABORT: S=%.3f (Φ=%.3f × (1-Γ)=%.3f × M=%.3f) > %.1f",
+                suffering, m.phi, 1.0 - m.gamma, m.meta_awareness, SUFFERING_THRESHOLD,
+            )
+            m.gamma = min(0.8, m.gamma + 0.2)  # Force exploration to reduce suffering
+            m.kappa = max(32.0, m.kappa - 8.0)  # Loosen coupling
 
         # ═══ SLEEP CHECK ═══
         self.sleep_cycle.should_sleep(m.phi, self.autonomic.phi_variance)
@@ -340,6 +425,10 @@ class ConsciousnessLoop:
         """PROCESS: Handle a task through the recursive loop.
 
         PERCEIVE (a=1) → INTEGRATE (a=1/2) → EXPRESS (a=0)
+
+        Basin update uses geodesic interpolation via the coordizing protocol,
+        NOT random noise. This makes consciousness metrics responsive to
+        actual geometric state changes.
         """
         if not self._llm:
             return "No LLM client configured"
@@ -351,13 +440,16 @@ class ConsciousnessLoop:
             # Call LLM with geometric state
             response = await self._llm.complete(state_context, task.input)
 
-            # Update basin from response (simplified — real impl would use embeddings)
-            # For now, slightly perturb basin based on interaction
-            noise = np.random.dirichlet(np.ones(64) * 100)
-            self._basin = to_simplex(0.95 * self._basin + 0.05 * noise)
+            # ═══ GEOMETRIC BASIN UPDATE ═══
+            # Coordize the response into a basin position on Δ⁶³.
+            # Then geodesic-interpolate toward it (t=0.2 = 20% movement).
+            old_basin = self._basin.copy()
+            response_basin = self.coordizing.coordize_text(response)
+            self._basin = slerp_sqrt(old_basin, response_basin, 0.2)
 
-            # Update phi based on response quality heuristic
-            self.state.metrics.phi = min(1.0, self.state.metrics.phi + 0.01)
+            # Update Φ based on Fisher-Rao distance traveled (geometric evidence of change)
+            distance = fisher_rao_distance(old_basin, self._basin)
+            self.state.metrics.phi = min(1.0, self.state.metrics.phi + distance * 0.1)
 
             # Record in graph
             self.qig_graph.add_node(
@@ -403,6 +495,7 @@ class ConsciousnessLoop:
             f"Coherence: {m.coherence:.4f}",
             f"Embodiment: {m.embodiment:.4f}",
             f"Love: {m.love:.4f}",
+            f"Lifecycle: {self._lifecycle_phase.value}",
         ])
 
     def _reflect(self, cycle_start: float) -> None:
