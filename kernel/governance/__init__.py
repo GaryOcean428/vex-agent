@@ -3,7 +3,9 @@
 from .budget import BudgetAccountingError, BudgetEnforcer, BudgetExceededError
 from .purity import PurityGateError, run_purity_gate
 from .types import (
+    CORE_8_SPECIALIZATIONS,
     KernelKind,
+    KernelRole,
     KernelSpecialization,
     LifecyclePhase,
     LifecycleState,
@@ -14,7 +16,9 @@ __all__ = [
     "BudgetAccountingError",
     "BudgetEnforcer",
     "BudgetExceededError",
+    "CORE_8_SPECIALIZATIONS",
     "KernelKind",
+    "KernelRole",
     "KernelSpecialization",
     "LifecyclePhase",
     "LifecycleState",
