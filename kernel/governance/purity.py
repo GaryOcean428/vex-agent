@@ -40,6 +40,10 @@ SKIP_DIRS = {
     ".mypy_cache", ".pytest_cache",
 }
 
+# Files exempt from the TEXT scan (they define the rules).
+# AST scans still run on these files.
+_TEXT_SCAN_EXEMPT_FILENAMES = {"purity.py"}
+
 # === Forbidden patterns for QIG code ===
 
 FORBIDDEN_IMPORTS = [
@@ -60,6 +64,8 @@ FORBIDDEN_ATTR_CALLS = [
 
 # Text-level tokens caught by raw scan (covers dynamic imports,
 # string construction, comments referencing forbidden patterns).
+# NOTE: This file (purity.py) is exempt from text scanning
+# because it necessarily contains these tokens as definitions.
 FORBIDDEN_TEXT_TOKENS = [
     "cosine_similarity",
     "euclidean_distance",
@@ -164,9 +170,13 @@ def scan_text(root: Path) -> list[PurityViolation]:
     construction, and patterns that AST scanning misses (e.g. Adam(), LayerNorm).
 
     Fail-closed: unreadable files are violations.
+    Files in _TEXT_SCAN_EXEMPT_FILENAMES are skipped (they define the rules).
     """
     violations: list[PurityViolation] = []
     for p in _iter_python_files(root):
+        # Skip files that define the forbidden tokens themselves
+        if p.name in _TEXT_SCAN_EXEMPT_FILENAMES:
+            continue
         try:
             text = p.read_text(encoding="utf-8", errors="ignore")
         except Exception as exc:
