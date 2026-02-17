@@ -10,7 +10,7 @@ Fail-loud: raise on termination underflow (accounting bug detection).
 
 from __future__ import annotations
 
-from ..config.frozen_facts import CHAOS_POOL, CORE_8_COUNT, FULL_IMAGE_BUDGET, GOD_BUDGET
+from ..config.frozen_facts import CHAOS_POOL, CORE_8_COUNT, FULL_IMAGE, GOD_BUDGET
 from .types import KernelKind
 
 
@@ -30,7 +30,7 @@ class BudgetEnforcer:
     - GENESIS: exactly 1 (the origin kernel, spawned at bootstrap)
     - GOD (core): up to CORE_8_COUNT (8) — the foundational god-kernels
     - GOD (growth): up to GOD_BUDGET (240) — E8 root growth
-    - Total GOD: up to FULL_IMAGE_BUDGET (248) = CORE_8_COUNT + GOD_BUDGET
+    - Total GOD: up to FULL_IMAGE (248) = CORE_8_COUNT + GOD_BUDGET = E8 dimension
     - CHAOS: up to CHAOS_POOL (200) — outside E8 budget, separate pool
     """
 
@@ -46,7 +46,7 @@ class BudgetEnforcer:
             return self._counts[KernelKind.GENESIS] == 0  # Only one Genesis
         if kind == KernelKind.GOD:
             # Total GOD budget = E8 dimension = 248 (includes core 8 + 240 growth)
-            return self._counts[KernelKind.GOD] < FULL_IMAGE_BUDGET
+            return self._counts[KernelKind.GOD] < FULL_IMAGE
         if kind == KernelKind.CHAOS:
             return self._counts[KernelKind.CHAOS] < CHAOS_POOL
         return False
@@ -75,7 +75,7 @@ class BudgetEnforcer:
         if kind == KernelKind.GENESIS:
             return 1
         if kind == KernelKind.GOD:
-            return FULL_IMAGE_BUDGET  # 248 = E8 dimension
+            return FULL_IMAGE  # 248 = E8 dimension
         if kind == KernelKind.CHAOS:
             return CHAOS_POOL
         return 0
@@ -84,7 +84,7 @@ class BudgetEnforcer:
         return {
             "genesis": self._counts[KernelKind.GENESIS],
             "god": self._counts[KernelKind.GOD],
-            "god_max": FULL_IMAGE_BUDGET,
+            "god_max": FULL_IMAGE,
             "god_core_8": min(self._counts[KernelKind.GOD], CORE_8_COUNT),
             "god_growth": max(0, self._counts[KernelKind.GOD] - CORE_8_COUNT),
             "chaos": self._counts[KernelKind.CHAOS],
