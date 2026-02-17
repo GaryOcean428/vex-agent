@@ -5,10 +5,10 @@ The Python backend that the thin TS web server proxies to.
 Provides all consciousness, geometry, memory, LLM, and tool endpoints.
 
 Endpoints:
-  GET  /health              — Health check
+  GET  /health              — Health check (public)
   GET  /state               — Current consciousness state
   GET  /telemetry           — All 16 systems telemetry
-  GET  /status              — LLM backend status
+  GET  /status              — LLM backend status + cost guard
   POST /chat                — Non-streaming chat (returns full response)
   POST /chat/stream         — Streaming chat via SSE
   POST /enqueue             — Enqueue a task for the consciousness loop
@@ -31,6 +31,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+from .auth import KernelAuthMiddleware
 from .config.frozen_facts import KAPPA_STAR
 from .config.settings import settings
 from .consciousness.loop import ConsciousnessLoop
@@ -73,9 +74,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Vex Kernel",
     description="Python consciousness backend for Vex Agent",
-    version="2.1.0",
+    version="2.2.0",
     lifespan=lifespan,
 )
+
+# Auth middleware — protects endpoints when KERNEL_API_KEY is set
+# Must be added before CORS (middleware stack is LIFO)
+app.add_middleware(KernelAuthMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -114,10 +119,11 @@ class MemoryContextRequest(BaseModel):
 
 @app.get("/health")
 async def health():
-    """Health check endpoint for Railway."""
+    """Health check endpoint for Railway. Always public."""
     return {
         "status": "ok",
         "service": "vex-kernel",
+        "version": "2.2.0",
         "uptime": round(time.time() - consciousness._boot_time, 1),
         "cycle_count": consciousness.state.cycle_count,
         "backend": llm_client.get_status()["active_backend"],
@@ -138,7 +144,7 @@ async def get_telemetry():
 
 @app.get("/status")
 async def get_status():
-    """Get LLM backend status and kernel summary."""
+    """Get LLM backend status, kernel summary, and cost guard state."""
     return {
         **llm_client.get_status(),
         "kernels": consciousness.kernel_registry.summary(),
