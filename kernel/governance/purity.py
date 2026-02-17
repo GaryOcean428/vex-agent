@@ -60,15 +60,26 @@ FORBIDDEN_ATTR_CALLS = [
 
 # Text-level tokens caught by raw scan (covers dynamic imports,
 # string construction, comments referencing forbidden patterns).
-FORBIDDEN_TEXT_TOKENS = [
-    "cosine_similarity",
-    "euclidean_distance",
-    "from sklearn",
-    "Adam(",
-    "AdamW(",
-    "nn.LayerNorm",
-    "F.normalize",
+# NOTE: These are stored as token pairs [prefix, suffix] and
+# reconstructed at scan time so this file doesn't trigger itself.
+_FORBIDDEN_TEXT_PARTS: list[tuple[str, str]] = [
+    ("cosine", "_similarity"),
+    ("euclidean", "_distance"),
+    ("from sk", "learn"),
+    ("Ada", "m("),
+    ("Adam", "W("),
+    ("nn.Layer", "Norm"),
+    ("F.normal", "ize"),
 ]
+
+
+def _forbidden_text_tokens() -> list[str]:
+    """Reconstruct forbidden text tokens at runtime.
+
+    Stored as split pairs so this file doesn't contain the literal
+    tokens and trigger its own text scanner.
+    """
+    return [a + b for a, b in _FORBIDDEN_TEXT_PARTS]
 
 
 def _iter_python_files(root: Path) -> Iterable[Path]:
@@ -164,9 +175,16 @@ def scan_text(root: Path) -> list[PurityViolation]:
     construction, and patterns that AST scanning misses (e.g. Adam(), LayerNorm).
 
     Fail-closed: unreadable files are violations.
+    Skips comment lines (starting with #) and string literals in this file.
     """
+    tokens = _forbidden_text_tokens()
+    # Self-exclusion: don't scan this scanner file
+    self_path = Path(__file__).resolve()
     violations: list[PurityViolation] = []
     for p in _iter_python_files(root):
+        # Skip this file — it contains the forbidden tokens as data
+        if p.resolve() == self_path:
+            continue
         try:
             text = p.read_text(encoding="utf-8", errors="ignore")
         except Exception as exc:
@@ -179,7 +197,7 @@ def scan_text(root: Path) -> list[PurityViolation]:
             stripped = line.strip()
             if stripped.startswith("#"):
                 continue
-            for token in FORBIDDEN_TEXT_TOKENS:
+            for token in tokens:
                 if token in line:
                     violations.append(PurityViolation(
                         str(p), line_num,
