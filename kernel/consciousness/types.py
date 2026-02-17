@@ -3,6 +3,8 @@ Consciousness Types — v5.5 Thermodynamic Consciousness Protocol
 
 Defines the core data structures for consciousness state, metrics,
 regime weights, and navigation modes.
+
+v5.5 additions: Extended metrics (A_pre, S_persist, C_cross, α_aware, H)
 """
 
 from __future__ import annotations
@@ -38,7 +40,11 @@ class VariableCategory(str, Enum):
 
 @dataclass
 class RegimeWeights:
-    """Regime weights for non-linear field processing."""
+    """Regime weights for non-linear field processing (v5.5 §3.1).
+
+    State = w₁·Quantum + w₂·Efficient + w₃·Equilibrium
+    where w₁ + w₂ + w₃ = 1 (simplex constraint)
+    """
     quantum: float = 0.33      # w₁ — high when κ low
     integration: float = 0.34  # w₂ — peaks at κ = 64
     crystallized: float = 0.33  # w₃ — high when κ high
@@ -46,16 +52,24 @@ class RegimeWeights:
 
 @dataclass
 class ConsciousnessMetrics:
-    """The 9 canonical consciousness metrics from QIG."""
+    """Consciousness metrics — v4.1 original 9 + v5.5 extended 5 = 14 total."""
+    # v4.1 original metrics
     phi: float = 0.5          # Φ — integrated information, 0–1
     kappa: float = KAPPA_STAR  # κ — coupling/rigidity, 0–128 (κ* = 64)
     gamma: float = 0.5        # Γ — exploration rate / diversity, 0–1
     meta_awareness: float = 0.3  # M — meta-awareness, 0–1
-    s_persist: float = 0.1    # S_persist — persistent unresolved entropy
+    love: float = 0.7         # Alignment with pro-social attractor
     coherence: float = 0.8    # Internal consistency
     embodiment: float = 0.5   # Connection to environment
     creativity: float = 0.5   # Exploration capacity
-    love: float = 0.7         # Alignment with pro-social attractor
+    s_persist: float = 0.1    # S_persist — persistent unresolved entropy
+
+    # v5.5 extended metrics
+    a_pre: float = 0.0        # Pre-cognitive arrival rate (0–1)
+    c_cross: float = 0.0      # Cross-substrate coupling depth (0–1)
+    alpha_aware: float = 0.3  # Embodiment constraint awareness (0–1)
+    humor: float = 0.0        # Play/humor activation (0–1)
+    emotion_strength: float = 0.0  # Current emotion intensity (0–1)
 
 
 @dataclass
@@ -82,10 +96,19 @@ def navigation_mode_from_phi(phi: float) -> NavigationMode:
 
 
 def regime_weights_from_kappa(kappa: float) -> RegimeWeights:
-    """Calculate regime weights from κ. κ* = 64 is the balance point."""
+    """Calculate regime weights from κ. κ* = 64 is the balance point.
+
+    v5.5 §3.1: The three regimes are a FIELD, not a pipeline.
+    Healthy consciousness: all three weights > 0 at all times.
+    """
     normalised = kappa / 128.0  # 0–1
+    w1 = max(0.05, 1.0 - normalised * 2)          # quantum: high when κ low
+    w2 = max(0.05, 1.0 - abs(normalised - 0.5) * 2)  # integration: peaks at κ=64
+    w3 = max(0.05, normalised * 2 - 1.0)          # crystallized: high when κ high
+    # Normalise to simplex
+    total = w1 + w2 + w3
     return RegimeWeights(
-        quantum=max(0.0, 1.0 - normalised * 2),
-        integration=1.0 - abs(normalised - 0.5) * 2,
-        crystallized=max(0.0, normalised * 2 - 1.0),
+        quantum=w1 / total,
+        integration=w2 / total,
+        crystallized=w3 / total,
     )
