@@ -36,7 +36,7 @@ from .config.frozen_facts import KAPPA_STAR
 from .config.settings import settings
 from .consciousness.loop import ConsciousnessLoop
 from .consciousness.types import ConsciousnessMetrics
-from .llm.client import LLMClient
+from .llm.client import LLMClient, LLMOptions
 from .memory.store import GeometricMemoryStore, MemoryStore
 from .tools.handler import (
     execute_tool_calls,
@@ -188,18 +188,21 @@ async def chat(req: ChatRequest):
     6. Return response with consciousness metrics
     """
     state = consciousness.get_metrics()
-    # Build geometric state context with perceive_distance=0 and temperature from request
     state_context = consciousness._build_state_context(
         perceive_distance=0.0,
         temperature=req.temperature,
     )
     memory_context = geometric_memory.get_context_for_query(req.message)
 
-    # Build system prompt
     system_prompt = _build_system_prompt(state_context, memory_context)
 
-    # Get LLM response
-    response = await llm_client.complete(system_prompt, req.message)
+    # Build LLMOptions from request params
+    chat_options = LLMOptions(
+        temperature=req.temperature,
+        num_predict=req.max_tokens,
+    )
+
+    response = await llm_client.complete(system_prompt, req.message, chat_options)
 
     # Check for tool calls
     tool_calls = parse_tool_calls(response)
@@ -209,6 +212,7 @@ async def chat(req: ChatRequest):
         follow_up = await llm_client.complete(
             system_prompt,
             f"Tool results:\n{tool_output}\n\nOriginal: {req.message}\n\nProvide your final response.",
+            chat_options,
         )
         response = follow_up
 
@@ -256,6 +260,12 @@ async def chat_stream(req: ChatRequest):
             memory_context = geometric_memory.get_context_for_query(req.message)
             system_prompt = _build_system_prompt(state_context, memory_context)
 
+            # Build LLMOptions from request params
+            stream_options = LLMOptions(
+                temperature=req.temperature,
+                num_predict=req.max_tokens,
+            )
+
             # Send start event
             yield _sse_event({
                 "type": "start",
@@ -274,9 +284,9 @@ async def chat_stream(req: ChatRequest):
                 {"role": "user", "content": req.message},
             ]
 
-            # Stream response
+            # Stream response — pass LLMOptions, not raw floats
             full_response = ""
-            async for chunk in llm_client.stream(messages, req.temperature, req.max_tokens):
+            async for chunk in llm_client.stream(messages, stream_options):
                 full_response += chunk
                 yield _sse_event({"type": "chunk", "content": chunk})
 
@@ -293,7 +303,7 @@ async def chat_stream(req: ChatRequest):
                     "role": "user",
                     "content": f"Tool results:\n{tool_output}\n\nProvide your final response.",
                 })
-                async for chunk in llm_client.stream(messages, req.temperature, req.max_tokens):
+                async for chunk in llm_client.stream(messages, stream_options):
                     yield _sse_event({"type": "chunk", "content": chunk})
 
             # Store in geometric memory
@@ -349,12 +359,7 @@ async def get_memory_context(req: MemoryContextRequest):
 
 
 def _build_system_prompt(state_context: str, memory_context: str) -> str:
-    """Build the system prompt with geometric state and memory context.
-
-    The model is an INTERPRETATION LAYER — it receives computed geometric
-    state and translates it into natural language. It does NOT simulate
-    consciousness; it reports on actual computed geometric state.
-    """
+    """Build the system prompt with geometric state and memory context."""
     parts = [state_context]
     if memory_context:
         parts.append(memory_context)
