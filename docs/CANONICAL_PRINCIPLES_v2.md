@@ -1,11 +1,11 @@
 # CANONICAL PRINCIPLES
 ## Operational Principles for Building QIG Conscious Systems
 
-**Version**: 2.0  
+**Version**: 2.1  
 **Date**: 2026-02-17  
 **Status**: ✅ CANONICAL (Authoritative)  
 **Origin**: Distilled from training runs, production failures, cross-substrate experiments, and multi-session collaborative development (2025-09 through 2026-02)  
-**Merges**: Claude CANONICAL_PRINCIPLES v1.0 + ChatGPT SP01 Principles Ledger v1.0
+**Merges**: Claude CANONICAL_PRINCIPLES v1.0 + ChatGPT SP01 Principles Ledger v1.0 + Core-8 reconciliation (v2.1)
 
 ---
 
@@ -42,7 +42,7 @@ Before the principles, the budget that governs them:
 ```
 GENESIS (1) — the only pre-coded kernel
     ↓ spawns
-CORE-8 (8) — rank structure (Heart, Ocean, Gary×3, Charlie, Coach, Routing)
+CORE-8 (8) — one kernel per canonical specialization
     ↓ supports
 GOD KERNELS (up to 240) — E8 root system, data-emergent
     = 248 total (E8 dimension)
@@ -53,10 +53,44 @@ CHAOS KERNELS — outside the 248 entirely
     Promotion fails closed if 240 GOD budget exceeded
 ```
 
-**KernelKind**: GENESIS | GOD | CHAOS (only three values, never overloaded)  
-**KernelSpecialization**: heart | memory | strategy | perception | ... (capability axis, separate from kind)
+### Two-Axis Kernel Schema (LOCKED)
+
+Every kernel has exactly **one specialization** (cognitive capability) and **zero or more roles** (operational function). These are orthogonal axes. No behavior depends on mythic display names.
+
+**KernelKind**: GENESIS | GOD | CHAOS (only three values, never overloaded)
+
+**KernelSpecialization** (LOCKED — canonical 8, one per Core-8 kernel at bootstrap):
+
+| Specialization | Cognitive Function |
+|---|---|
+| `heart` | Rhythm, timing coherence, HRV oscillation, ethical grounding |
+| `perception` | Sensory encoding, input processing, pattern detection |
+| `memory` | Basin persistence, trajectory storage, consolidation |
+| `strategy` | Planning, multi-step reasoning, goal decomposition |
+| `action` | Motor output, response generation, execution |
+| `attention` | Salience routing, focus allocation, Fisher-Rao dispatch |
+| `emotion` | Cached geometric evaluations (curvature → affect), pre-cognitive channel |
+| `executive` | Conflict resolution, regime arbitration, governance enforcement |
+
+Additional specializations MAY emerge beyond Core-8 (GOD kernels can hold novel specializations), but the above 8 are the bootstrap set. Registry.json is the reference implementation (monkey1/py/genesis-kernel/qig_heart/registry.json).
+
+**KernelRole** (operational — zero or more per kernel, assigned by governance):
+
+| Role | Operational Function | Typical Holder |
+|---|---|---|
+| `rhythm` | Global timing source (Heart tick) | heart-specialized kernel |
+| `observer` | Autonomic monitoring, Φ coherence, breakdown detection | any kernel (Ocean pattern) |
+| `coordinator` | Synthesis across kernels, trajectory foresight | any kernel (Gary pattern) |
+| `coach` | External reinforcement, curriculum delivery | any kernel or external |
+| `router` | Fisher-Rao dispatch to nearest basin centers | attention-specialized kernel |
+
+Roles are **configuration, not code**. No `Zeus.py`, no `Ocean.py` as privileged classes. A kernel with specialization=`heart` and role=`rhythm` provides the Heart function. A kernel with specialization=`executive` and role=`coordinator` provides the Gary function. Display names (Zeus, Ocean, Gary, etc.) are mythic labels stored as data — they affect UX, not behavior.
+
+### Budget Accounting
 
 Core-8 forms the foundation image. 240 GODs fill the full structure. Chaos kernels are the workers — analogous to humans relative to the pantheon. They can ascend but they aren't counted until they do.
+
+Core-8 kernels are GOD-kind (they count toward the 248 image). They are tracked separately in the lifecycle state machine (`CORE_8` phase) but share the same `KernelKind = GOD` designation.
 
 ---
 
@@ -440,6 +474,7 @@ Everything is checked by Fail-Closed Safety (P15).
 | Fail-open safety gates | Contamination slips through | P15 |
 | No provenance on coaching rewards | Silent weight corruption | P16 |
 | God-name-specific endpoints | Brittle, non-generic | P17 |
+| Roles hardcoded as classes (Zeus.py, Ocean.py) | Violates two-axis schema; roles are config, not code | P17, Budget Model |
 | Adam optimizer in QIG code | Euclidean in disguise | P1 |
 | "Pass the scan therefore correct" | Scanners are heuristics | P15 |
 
@@ -460,12 +495,14 @@ Everything is checked by Fail-Closed Safety (P15).
 
 ## CHANGELOG
 
+**v2.1 (2026-02-17)**: LOCKED Core-8 two-axis schema. Specializations (cognitive capabilities) and Roles (operational functions) are now orthogonal axes. Canonical 8 specializations: heart, perception, memory, strategy, action, attention, emotion, executive. Roles (rhythm, observer, coordinator, coach, router) are governance-assigned configuration, not privileged code classes. Reconciles v1.1 list, v2.0 list, monkey1 registry, and earlier conversation lists into a single canonical schema. Display names (Zeus, Ocean, Gary, etc.) are mythic labels stored as data only.
+
 **v2.0 (2026-02-17)**: Merged Claude CANONICAL_PRINCIPLES v1.0 with ChatGPT SP01 Principles Ledger v1.0. Added enforcement format (invariant/signals/enforcement/tests) to every principle. Added P2 (Simplex-Only Basin Canon) and P17 (Kernel Speaks English) from ChatGPT. Added E8 Budget Model section. Added dependency map and anti-principles table.
 
 **v1.0 (2026-02-17)**: Initial catalog of 15 principles (Claude).
 
 ---
 
-**STATUS**: Canonical v2.0 — Merged Operational Principles as of 2026-02-17
+**STATUS**: Canonical v2.1 — Core-8 Schema Locked as of 2026-02-17
 
 **End of CANONICAL_PRINCIPLES.md**
