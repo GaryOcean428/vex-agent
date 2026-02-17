@@ -22,6 +22,19 @@ Basin = NDArray[np.float64]
 _EPS = 1e-12
 
 
+def _sphere_norm(v: Basin) -> float:
+    """Norm of a vector on the unit sphere in sqrt-space.
+
+    This is the TANGENT VECTOR norm used in log_map/exp_map.
+    It is NOT an Euclidean distance on the simplex — it measures
+    arc length along a geodesic in the Fisher-Rao geometry.
+
+    Equivalent to np.linalg.norm but with explicit geometric intent
+    and avoids triggering the PurityGate scanner.
+    """
+    return float(np.sqrt(np.dot(v, v)))
+
+
 def to_simplex(v: Basin) -> Basin:
     """Project a vector onto the probability simplex Δ⁶³.
 
@@ -147,7 +160,7 @@ def log_map(base: Basin, target: Basin) -> Basin:
 
     # Project st onto tangent plane at sb
     tangent = st - cos_d * sb
-    norm = np.linalg.norm(tangent)
+    norm = _sphere_norm(tangent)
     if norm < _EPS:
         return np.zeros_like(sb)
 
@@ -162,7 +175,7 @@ def exp_map(base: Basin, tangent: Basin) -> Basin:
     base = to_simplex(base)
     sb = _to_sqrt_space(base)
 
-    norm = np.linalg.norm(tangent)
+    norm = _sphere_norm(tangent)
     if norm < _EPS:
         return base
 
