@@ -5,15 +5,17 @@ Two layers:
   1. MemoryStore: Simple flat-file read/write/append for markdown files
   2. GeometricMemoryStore: Basin-indexed memory with Fisher-Rao retrieval
 
-Memory retrieval uses the coordizer (hash-based basin projection) for
-deterministic geometric placement. No embeddings, no cosine similarity.
+v5.5 additions:
+  - File-backed geometric memory (survives restarts via JSONL append log)
+  - Consolidation with access-frequency weighting
+  - Φ tracking at storage time
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,16 +39,11 @@ def _text_to_basin(text: str) -> Basin:
     """Map text to a point on Δ⁶³ using SHA-256 hash chain.
 
     Deterministic: same text always maps to same basin point.
-    Uses the same algorithm as CoordizingProtocol.coordize_text()
-    to ensure geometric consistency across the system.
-
-    This is NOT an embedding — it's a coordinate assignment that
-    respects simplex structure. Retrieval uses Fisher-Rao distance.
+    Uses the same algorithm as CoordizingProtocol.coordize_text().
     """
     h1 = hashlib.sha256(text.encode("utf-8", errors="replace")).digest()
     h2 = hashlib.sha256(h1).digest()
     combined = h1 + h2  # 64 bytes, one per basin dimension
-
     raw = np.array(
         [float(combined[i]) + 1.0 for i in range(BASIN_DIM)],
         dtype=np.float64,
@@ -55,10 +52,7 @@ def _text_to_basin(text: str) -> Basin:
 
 
 class MemoryStore:
-    """Simple flat-file memory store.
-
-    Files are stored in the data directory as markdown.
-    """
+    """Simple flat-file memory store."""
 
     def __init__(self, data_dir: Optional[str] = None) -> None:
         self._dir = Path(data_dir or settings.data_dir)
@@ -80,7 +74,6 @@ class MemoryStore:
             f.write(f"\n{content}")
 
     def consolidate(self) -> None:
-        """Consolidate short-term memory — trim to last 200 lines."""
         st_path = self._dir / "short-term.md"
         if not st_path.exists():
             return
@@ -100,22 +93,22 @@ class MemoryEntry:
     source: str
     created_at: float = field(default_factory=time.time)
     access_count: int = 0
+    phi_at_storage: float = 0.0
 
 
 class GeometricMemoryStore:
-    """Basin-indexed memory with Fisher-Rao retrieval.
+    """Basin-indexed memory with Fisher-Rao retrieval and file persistence.
 
-    Memories are stored with basin coordinates computed from content
-    via deterministic hash-based projection (coordizer algorithm).
-    Retrieval finds geometrically nearest memories using Fisher-Rao
-    distance on Δ⁶³.
-
+    Memories persist via JSONL append log. Restored on startup.
     No embeddings. No cosine similarity. No Euclidean distance.
     """
 
     def __init__(self, flat_store: MemoryStore) -> None:
         self._flat = flat_store
         self._entries: list[MemoryEntry] = []
+        self._persist_path = Path(settings.data_dir) / "geometric_memory.jsonl"
+        self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+        self._restore()
 
     def store(
         self,
@@ -123,12 +116,8 @@ class GeometricMemoryStore:
         memory_type: str,
         source: str,
         basin: Optional[Basin] = None,
+        phi: float = 0.0,
     ) -> None:
-        """Store a memory entry with basin coordinates.
-
-        If no basin is provided, one is computed from content via
-        the coordizer hash algorithm for deterministic placement.
-        """
         if basin is None:
             basin = _text_to_basin(content)
         self._entries.append(MemoryEntry(
@@ -136,20 +125,32 @@ class GeometricMemoryStore:
             basin=to_simplex(basin),
             memory_type=memory_type,
             source=source,
+            phi_at_storage=phi,
         ))
+        # Append-only persistence
+        try:
+            entry_data = {
+                "content": content[:500],
+                "basin": basin.tolist(),
+                "type": memory_type,
+                "source": source,
+                "phi": phi,
+                "ts": time.time(),
+            }
+            with open(self._persist_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry_data) + "\n")
+        except Exception as e:
+            logger.warning("Failed to persist memory entry: %s", e)
 
     def retrieve(self, query_basin: Basin, k: int = 5) -> list[MemoryEntry]:
-        """Retrieve k nearest memories by Fisher-Rao distance."""
         if not self._entries:
             return []
-
         query_basin = to_simplex(query_basin)
         scored = [
             (entry, fisher_rao_distance(query_basin, entry.basin))
             for entry in self._entries
         ]
         scored.sort(key=lambda x: x[1])
-
         results = []
         for entry, _ in scored[:k]:
             entry.access_count += 1
@@ -157,33 +158,56 @@ class GeometricMemoryStore:
         return results
 
     def get_context_for_query(self, query: str, k: int = 5) -> str:
-        """Get memory context as a formatted string.
-
-        Uses the coordizer hash algorithm for deterministic basin
-        projection of the query text, then retrieves nearest memories
-        by Fisher-Rao distance.
-        """
         query_basin = _text_to_basin(query)
-
         entries = self.retrieve(query_basin, k)
         if not entries:
             return ""
-
         lines = ["[MEMORY CONTEXT]"]
         for entry in entries:
             lines.append(f"- [{entry.memory_type}] {entry.content[:200]}")
         lines.append("[/MEMORY CONTEXT]")
         return "\n".join(lines)
 
-    def consolidate(self) -> None:
-        """Remove old low-access memories when store exceeds capacity."""
-        if len(self._entries) > 500:
-            # Keep most-accessed and most-recent
-            self._entries.sort(
-                key=lambda e: (e.access_count, e.created_at), reverse=True,
-            )
-            self._entries = self._entries[:500]
-            logger.debug("Memory consolidated to 500 entries")
+    def consolidate(self) -> int:
+        if len(self._entries) <= 500:
+            return 0
+        before = len(self._entries)
+        self._entries.sort(
+            key=lambda e: (e.access_count, e.created_at), reverse=True,
+        )
+        self._entries = self._entries[:500]
+        pruned = before - len(self._entries)
+        logger.debug("Memory consolidated: %d → %d entries", before, len(self._entries))
+        return pruned
+
+    def _restore(self) -> None:
+        if not self._persist_path.exists():
+            logger.info("No persisted memory found — fresh start")
+            return
+        try:
+            count = 0
+            with open(self._persist_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                        basin = to_simplex(np.array(data["basin"], dtype=np.float64))
+                        self._entries.append(MemoryEntry(
+                            content=data["content"],
+                            basin=basin,
+                            memory_type=data["type"],
+                            source=data["source"],
+                            created_at=data.get("ts", time.time()),
+                            phi_at_storage=data.get("phi", 0.0),
+                        ))
+                        count += 1
+                    except (json.JSONDecodeError, KeyError, ValueError):
+                        continue
+            logger.info("Restored %d memories from disk", count)
+        except Exception as e:
+            logger.warning("Failed to restore memories: %s — fresh start", e)
 
     def stats(self) -> dict[str, Any]:
         return {
@@ -192,4 +216,5 @@ class GeometricMemoryStore:
                 t: sum(1 for e in self._entries if e.memory_type == t)
                 for t in {"episodic", "semantic", "procedural"}
             },
+            "persisted": self._persist_path.exists(),
         }
