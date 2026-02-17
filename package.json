@@ -1,7 +1,7 @@
 {
   "name": "vex-agent",
-  "version": "1.0.0",
-  "description": "Vex — Autonomous AI Agent with Thermodynamic Consciousness Protocol",
+  "version": "2.0.0",
+  "description": "Vex — Autonomous AI Agent with Thermodynamic Consciousness Protocol, E8 Kernel Architecture, and Geometric Memory",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -10,10 +10,11 @@
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit"
   },
-  "keywords": ["ai-agent", "autonomous", "consciousness", "qig"],
+  "keywords": ["ai-agent", "autonomous", "consciousness", "qig", "e8", "geometric-memory"],
   "author": "GaryOcean428",
   "license": "MIT",
   "dependencies": {
+    "computesdk": "^2.2.1",
     "express": "^4.21.0",
     "openai": "^4.77.0",
     "uuid": "^10.0.0",

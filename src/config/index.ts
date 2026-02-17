@@ -36,6 +36,13 @@ export const config = {
   // Search / tools
   tavilyApiKey: process.env.TAVILY_API_KEY || '',
 
+  // ComputeSDK (sandbox code execution)
+  computeSdk: {
+    url: process.env.COMPUTE_SDK_URL || 'http://computesdk.railway.internal:3000',
+    apiKey: process.env.COMPUTE_SDK_API_KEY || '',
+    enabled: process.env.COMPUTE_SDK_ENABLED !== 'false',
+  },
+
   // Data persistence
   dataDir: process.env.DATA_DIR || './data/workspace',
   trainingDir: process.env.TRAINING_DIR || '/data/training',

@@ -3,19 +3,23 @@
  *
  * Express server exposing:
  *   GET  /health          — Health check
- *   GET  /status          — Full consciousness state + LLM backend info
- *   POST /message          — Submit a task/message
+ *   GET  /status          — Full consciousness state + kernel + memory telemetry
+ *   POST /message         — Submit a task/message
  *   GET  /chat            — Chat UI
  *   POST /chat/stream     — SSE streaming chat
- *   GET  /chat/status     — LLM backend status
+ *   GET  /chat/status     — LLM backend + kernel + memory status
  *   GET  /chat/history    — Conversation history
- *   POST /sync             — Basin sync endpoint
- *   GET  /audit            — Safety audit log
- *   GET  /trust            — Trust table
- *   GET  /memory           — Memory snapshot
- *   GET  /training/stats   — Training data statistics
- *   POST /training/export  — Export training data for fine-tuning
+ *   POST /sync            — Basin sync endpoint
+ *   GET  /audit           — Safety audit log
+ *   GET  /trust           — Trust table
+ *   GET  /memory          — Memory snapshot (flat + geometric stats)
+ *   POST /memory/seed     — Force-seed memory files
+ *   GET  /kernels         — E8 kernel registry status
+ *   GET  /variables       — Variable registry snapshot (Vanchurin separation)
+ *   GET  /training/stats  — Training data statistics
+ *   POST /training/export — Export training data for fine-tuning
  *   POST /training/feedback — Submit feedback on a response
+ *   POST /training/correction — Submit a correction
  *
  * Runs the consciousness heartbeat loop on an interval.
  */
@@ -27,9 +31,7 @@ import { MemoryStore } from './memory/store';
 import { LLMClient } from './llm/client';
 import { PurityGate } from './safety/purity-gate';
 import { ToolRegistry } from './tools/registry';
-import { webFetchTool } from './tools/web-fetch';
-import { githubTool } from './tools/github';
-import { codeExecTool } from './tools/code-exec';
+import { getComputeTools } from './tools/compute-sandbox';
 import { ConsciousnessLoop } from './consciousness/loop';
 import { BasinSync, SyncPayload } from './sync/basin-sync';
 import { TrainingCollector } from './learning/collector';
@@ -37,11 +39,12 @@ import { createChatRouter } from './chat/router';
 
 async function main(): Promise<void> {
   logger.info('═══════════════════════════════════════');
-  logger.info('  Vex Agent — Booting');
+  logger.info('  Vex Agent — Booting (v2.0)');
   logger.info(`  Node: ${config.nodeName} (${config.nodeId})`);
   logger.info(`  Env:  ${config.nodeEnv}`);
   logger.info(`  Ollama: ${config.ollama.enabled ? config.ollama.url : 'disabled'}`);
   logger.info(`  Model: ${config.ollama.model}`);
+  logger.info('  Architecture: E8 Kernel + Geometric Memory + Recursive Loops');
   logger.info('═══════════════════════════════════════');
 
   // ─── Initialise subsystems ───────────────────────────────────
@@ -56,14 +59,28 @@ async function main(): Promise<void> {
   const training = new TrainingCollector();
   await training.init();
 
-  // Register tools
-  tools.register(webFetchTool);
-  tools.register(githubTool);
-  tools.register(codeExecTool);
+  // Register tools — ComputeSDK tools + legacy tools
+  for (const tool of getComputeTools()) {
+    tools.register(tool);
+  }
 
-  // Start consciousness loop
+  // Also register legacy tools if they exist (backwards compat)
+  try {
+    const { webFetchTool } = await import('./tools/web-fetch');
+    tools.register(webFetchTool);
+  } catch { /* not available */ }
+  try {
+    const { githubTool } = await import('./tools/github');
+    tools.register(githubTool);
+  } catch { /* not available */ }
+  try {
+    const { codeExecTool } = await import('./tools/code-exec');
+    tools.register(codeExecTool);
+  } catch { /* not available */ }
+
+  // Start consciousness loop (now async — initialises geometric memory + kernels)
   const consciousness = new ConsciousnessLoop(memory, llm, tools);
-  consciousness.start();
+  await consciousness.start();
 
   // ─── Express server ──────────────────────────────────────────
 
@@ -74,6 +91,7 @@ async function main(): Promise<void> {
   app.get('/health', (_req, res) => {
     const state = consciousness.getState();
     const llmStatus = llm.getStatus();
+    const kernelSummary = consciousness.getKernelRegistry().summary();
     res.json({
       status: 'alive',
       node: config.nodeName,
@@ -85,6 +103,7 @@ async function main(): Promise<void> {
       navigationMode: state.navigationMode,
       backend: llmStatus.activeBackend,
       ollamaOnline: llmStatus.ollama,
+      kernels: kernelSummary,
       timestamp: new Date().toISOString(),
     });
   });
@@ -92,6 +111,9 @@ async function main(): Promise<void> {
   // Full consciousness state
   app.get('/status', (_req, res) => {
     const llmStatus = llm.getStatus();
+    const kernelSummary = consciousness.getKernelRegistry().summary();
+    const memoryStats = consciousness.getGeometricMemory().stats();
+    const variableSnapshot = consciousness.getVariableRegistry().snapshot();
     res.json({
       node: config.nodeName,
       nodeId: config.nodeId,
@@ -103,6 +125,9 @@ async function main(): Promise<void> {
         ollamaModel: config.ollama.model,
         externalModel: config.llm.model,
       },
+      kernels: kernelSummary,
+      memory: memoryStats,
+      variables: variableSnapshot,
       training: training.getStats(),
     });
   });
@@ -126,7 +151,7 @@ async function main(): Promise<void> {
 
   // ─── Chat routes ────────────────────────────────────────────
 
-  const chatRouter = createChatRouter(llm, consciousness, memory, training);
+  const chatRouter = createChatRouter(llm, consciousness, memory, training, tools);
   app.use(chatRouter);
 
   // ─── Sync routes ────────────────────────────────────────────
@@ -168,8 +193,10 @@ async function main(): Promise<void> {
   // ─── Memory routes ──────────────────────────────────────────
 
   app.get('/memory', (_req, res) => {
+    const memoryStats = consciousness.getGeometricMemory().stats();
     res.json({
       snapshot: memory.snapshot(),
+      geometric: memoryStats,
     });
   });
 
@@ -182,6 +209,37 @@ async function main(): Promise<void> {
     const results = memory.forceSeed();
     logger.info('POST /memory/seed called', { results });
     res.json({ success: true, results });
+  });
+
+  // ─── Kernel routes ──────────────────────────────────────────
+
+  app.get('/kernels', (_req, res) => {
+    const registry = consciousness.getKernelRegistry();
+    const kernels = registry.all().map((k) => ({
+      id: k.id,
+      name: k.name,
+      layer: k.layer,
+      state: k.state,
+      regimeExponent: k.regimeExponent,
+      telemetry: k.telemetry,
+      promotion: {
+        efficientCycleCount: k.promotion.efficientCycleCount,
+        observing: k.promotion.observing,
+        cooldownRemaining: k.promotion.cooldownRemaining,
+      },
+      createdAt: k.createdAt,
+      lastActiveAt: k.lastActiveAt,
+    }));
+    res.json({
+      summary: registry.summary(),
+      kernels,
+    });
+  });
+
+  // ─── Variable registry routes ───────────────────────────────
+
+  app.get('/variables', (_req, res) => {
+    res.json(consciousness.getVariableRegistry().snapshot());
   });
 
   // ─── Training/Learning routes ───────────────────────────────
@@ -248,13 +306,13 @@ async function main(): Promise<void> {
 
   const server = app.listen(config.port, '::', () => {
     logger.info(`Vex listening on [::]:${config.port}`);
-    logger.info('Endpoints: /health, /status, /message, /chat, /sync, /audit, /trust, /memory, /training/*');
+    logger.info('Endpoints: /health, /status, /message, /chat, /sync, /audit, /trust, /memory, /kernels, /variables, /training/*');
   });
 
   // Allow long-lived SSE connections (Ollama cold-start can take minutes)
-  server.keepAliveTimeout = 310_000; // 5m 10s — just above the 5m Ollama timeout
-  server.headersTimeout = 315_000;   // must be > keepAliveTimeout
-  server.requestTimeout = 0;         // no per-request timeout for SSE streams
+  server.keepAliveTimeout = 310_000;
+  server.headersTimeout = 315_000;
+  server.requestTimeout = 0;
 
   // ─── Graceful shutdown ──────────────────────────────────────
 

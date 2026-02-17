@@ -192,6 +192,7 @@ export function getChatHTML(): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Vex — Geometric Consciousness</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
   <style>
     :root {
       --bg: #0a0a0f;
@@ -442,13 +443,97 @@ export function getChatHTML(): string {
       border-radius: var(--radius);
       line-height: 1.7;
       font-size: 15px;
-      white-space: pre-wrap;
       word-wrap: break-word;
       overflow-wrap: break-word;
       hyphens: auto;
     }
 
     .message.user .message-content {
+      white-space: pre-wrap;
+    }
+
+    /* ─── Markdown Rendering in Vex Messages ─── */
+    .message.vex .message-content p { margin: 0 0 0.75em 0; }
+    .message.vex .message-content p:last-child { margin-bottom: 0; }
+    .message.vex .message-content h1,
+    .message.vex .message-content h2,
+    .message.vex .message-content h3 {
+      margin: 1em 0 0.5em 0;
+      color: var(--text);
+      font-weight: 600;
+    }
+    .message.vex .message-content h1 { font-size: 1.3em; }
+    .message.vex .message-content h2 { font-size: 1.15em; }
+    .message.vex .message-content h3 { font-size: 1.05em; }
+    .message.vex .message-content h1:first-child,
+    .message.vex .message-content h2:first-child,
+    .message.vex .message-content h3:first-child { margin-top: 0; }
+    .message.vex .message-content strong { color: var(--text); font-weight: 600; }
+    .message.vex .message-content em { font-style: italic; color: var(--text-secondary); }
+    .message.vex .message-content code {
+      background: var(--surface-3);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+      font-size: 0.88em;
+      color: var(--phi);
+    }
+    .message.vex .message-content pre {
+      background: var(--surface-3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      overflow-x: auto;
+      margin: 0.75em 0;
+      font-size: 0.88em;
+    }
+    .message.vex .message-content pre code {
+      background: none;
+      padding: 0;
+      border-radius: 0;
+      color: var(--text);
+    }
+    .message.vex .message-content ul,
+    .message.vex .message-content ol {
+      margin: 0.5em 0;
+      padding-left: 1.5em;
+    }
+    .message.vex .message-content li { margin: 0.25em 0; }
+    .message.vex .message-content blockquote {
+      border-left: 3px solid var(--accent);
+      padding: 0.5em 1em;
+      margin: 0.75em 0;
+      background: rgba(99, 102, 241, 0.05);
+      border-radius: 0 6px 6px 0;
+    }
+    .message.vex .message-content table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 0.75em 0;
+      font-size: 0.9em;
+    }
+    .message.vex .message-content th,
+    .message.vex .message-content td {
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      text-align: left;
+    }
+    .message.vex .message-content th {
+      background: var(--surface-3);
+      font-weight: 600;
+    }
+    .message.vex .message-content a {
+      color: var(--accent);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .message.vex .message-content hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 1em 0;
+    }
+
+    .message.user .message-content.user-content {
       background: var(--accent);
       color: #ffffff;
       border-bottom-right-radius: 6px;
@@ -674,6 +759,20 @@ export function getChatHTML(): string {
 
     sendBtn.addEventListener('click', sendMessage);
 
+    // Configure marked.js for safe rendering
+    if (typeof marked !== 'undefined' && marked.setOptions) {
+      marked.setOptions({
+        breaks: true,
+        gfm: true,
+      });
+    }
+
+    function escapeHtml(text) {
+      var div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
     /**
      * Parse SSE lines from a ReadableStream with proper buffering.
      * Handles partial lines split across chunks and ': ping' comments.
@@ -783,11 +882,33 @@ export function getChatHTML(): string {
             fullText += data.content;
             if (vexMessage) {
               var contentEl = vexMessage.querySelector('.message-content');
-              if (contentEl) contentEl.textContent = fullText;
+              if (contentEl) {
+                try {
+                  contentEl.innerHTML = typeof marked !== 'undefined' && marked.parse
+                    ? marked.parse(fullText, { breaks: true, gfm: true })
+                    : escapeHtml(fullText);
+                } catch (e) {
+                  contentEl.textContent = fullText;
+                }
+              }
             }
             scrollToBottom();
           } else if (data.type === 'done') {
             animateStages(['reflect', 'couple']);
+            // Final re-render with markdown now that streaming is complete
+            if (vexMessage && fullText) {
+              var finalEl = vexMessage.querySelector('.message-content');
+              if (finalEl) {
+                finalEl.classList.remove('streaming');
+                try {
+                  finalEl.innerHTML = typeof marked !== 'undefined' && marked.parse
+                    ? marked.parse(fullText, { breaks: true, gfm: true })
+                    : escapeHtml(fullText);
+                } catch (e) {
+                  finalEl.textContent = fullText;
+                }
+              }
+            }
             if (data.metrics) {
               updateMetrics(data.metrics);
             }
@@ -830,7 +951,17 @@ export function getChatHTML(): string {
       header.textContent = role === 'user' ? 'You' : 'Vex';
       var contentDiv = document.createElement('div');
       contentDiv.className = 'message-content' + (streaming ? ' streaming' : '');
-      contentDiv.textContent = content;
+      if (role === 'vex' && content && !streaming) {
+        try {
+          contentDiv.innerHTML = typeof marked !== 'undefined' && marked.parse
+            ? marked.parse(content, { breaks: true, gfm: true })
+            : escapeHtml(content);
+        } catch (e) {
+          contentDiv.textContent = content;
+        }
+      } else {
+        contentDiv.textContent = content;
+      }
       div.appendChild(header);
       div.appendChild(contentDiv);
       chatContainer.appendChild(div);

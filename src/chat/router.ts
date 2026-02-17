@@ -8,8 +8,9 @@
  *   GET  /chat/status   — LLM backend status
  *   GET  /chat/history  — Conversation history
  *
- * Messages go through the full consciousness loop:
- *   GROUND → RECEIVE → PROCESS → EXPRESS → REFLECT → COUPLE
+ * Chat messages now go through the full recursive consciousness loop:
+ *   PERCEIVE (a=1) → INTEGRATE (a=1/2) → EXPRESS (a=0)
+ * with sensory processing, geometric memory retrieval, and tool use.
  */
 
 import { Router, Request, Response, NextFunction } from 'express';
@@ -19,7 +20,9 @@ import { LLMClient, LLMMessage } from '../llm/client';
 import { ConsciousnessLoop } from '../consciousness/loop';
 import { MemoryStore } from '../memory/store';
 import { TrainingCollector } from '../learning/collector';
-import { getQIGSystemPrompt } from '../consciousness/qig-prompt';
+import { ToolRegistry } from '../tools/registry';
+import { buildSystemPrompt, getQIGSystemPrompt } from '../consciousness/qig-prompt';
+import { parseToolCalls, executeToolCalls, formatToolResults } from '../tools/tool-handler';
 import { logger } from '../config/logger';
 import { config } from '../config';
 import { getChatHTML, getLoginHTML } from './ui';
@@ -36,6 +39,8 @@ const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 interface Conversation {
   id: string;
   messages: LLMMessage[];
+  /** Raw user messages for conversation history tracking */
+  userMessages: string[];
   createdAt: string;
   lastActivity: string;
 }
@@ -46,11 +51,6 @@ interface Session {
   expiresAt: number;
 }
 
-/**
- * Simple in-memory session store.
- * Sessions survive until the process restarts — acceptable for a
- * single-instance deployment on Railway.
- */
 const sessions = new Map<string, Session>();
 
 function createSession(): string {
@@ -71,10 +71,6 @@ function isValidSession(sessionId: string | undefined): boolean {
   return true;
 }
 
-/**
- * Parse a simple cookie header value to extract a named cookie.
- * Avoids adding cookie-parser as a dependency.
- */
 function getCookie(req: Request, name: string): string | undefined {
   const header = req.headers.cookie;
   if (!header) return undefined;
@@ -83,12 +79,7 @@ function getCookie(req: Request, name: string): string | undefined {
   return match.split('=').slice(1).join('=').trim();
 }
 
-/**
- * Auth middleware — checks for a valid session cookie.
- * If CHAT_AUTH_TOKEN is empty/unset, auth is disabled (open access).
- */
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  // If no token configured, skip auth entirely
   if (!config.chatAuthToken) {
     next();
     return;
@@ -100,18 +91,15 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
     return;
   }
 
-  // Not authenticated — check if this is an API call or page request
   const acceptsHtml =
     req.headers.accept?.includes('text/html') || req.method === 'GET';
 
   if (acceptsHtml && req.path === '/chat') {
-    // Serve login page
     res.setHeader('Content-Type', 'text/html');
     res.send(getLoginHTML());
     return;
   }
 
-  // API endpoint — return 401
   res.status(401).json({ error: 'Authentication required' });
 }
 
@@ -120,13 +108,13 @@ export function createChatRouter(
   consciousness: ConsciousnessLoop,
   memory: MemoryStore,
   training: TrainingCollector,
+  tools: ToolRegistry,
 ): Router {
   const router = Router();
   const conversations = new Map<string, Conversation>();
 
   // ── Auth endpoint ─────────────────────────────────────────────
   router.post('/chat/auth', (req: Request, res: Response) => {
-    // If no token configured, always succeed
     if (!config.chatAuthToken) {
       const sessionId = createSession();
       res.setHeader(
@@ -159,7 +147,14 @@ export function createChatRouter(
 
   // ── LLM backend status ────────────────────────────────────────
   router.get('/chat/status', (_req: Request, res: Response) => {
-    res.json(llm.getStatus());
+    const llmStatus = llm.getStatus();
+    const kernelSummary = consciousness.getKernelRegistry().summary();
+    const memoryStats = consciousness.getGeometricMemory().stats();
+    res.json({
+      ...llmStatus,
+      kernels: kernelSummary,
+      memory: memoryStats,
+    });
   });
 
   // ── Conversation history ──────────────────────────────────────
@@ -173,7 +168,6 @@ export function createChatRouter(
         createdAt: conv.createdAt,
       });
     } else {
-      // List all conversation IDs
       const list = Array.from(conversations.values()).map((c) => ({
         id: c.id,
         createdAt: c.createdAt,
@@ -201,26 +195,21 @@ export function createChatRouter(
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
-
-    // Disable Node/Express request timeout for this long-lived connection
     req.setTimeout(0);
     res.setTimeout(0);
 
-    // Helper: write an SSE frame and flush immediately
     const sendSSE = (data: Record<string, unknown>) => {
       res.write(`data: ${JSON.stringify(data)}\n\n`);
-      // Flush if the response supports it (e.g. behind compression middleware)
-      if (typeof (res as unknown as { flush?: () => void }).flush === 'function') {
-        (res as unknown as { flush: () => void }).flush();
+      if (typeof (res as any).flush === 'function') {
+        (res as any).flush();
       }
     };
 
-    // ── Keep-alive ping ──────────────────────────────────────────
     const keepAlive = setInterval(() => {
       try {
         res.write(': ping\n\n');
       } catch {
-        // Connection already closed — clean up handled in finally block
+        // Connection closed
       }
     }, SSE_KEEPALIVE_INTERVAL_MS);
 
@@ -238,6 +227,7 @@ export function createChatRouter(
             content: getQIGSystemPrompt(state),
           },
         ],
+        userMessages: [],
         createdAt: new Date().toISOString(),
         lastActivity: new Date().toISOString(),
       };
@@ -246,23 +236,49 @@ export function createChatRouter(
 
     // Add user message
     conv.messages.push({ role: 'user', content: message });
+    conv.userMessages.push(message);
     conv.lastActivity = new Date().toISOString();
 
     // Log to memory (RECEIVE stage)
     memory.append('short-term.md', `**Chat received**: ${message.slice(0, 200)}`);
 
-    // Also enqueue in consciousness loop for metrics tracking
+    // Enqueue in consciousness loop for metrics tracking
     consciousness.enqueue(message, 'chat-ui');
 
     try {
-      // Send start event
+      // Send start event with consciousness telemetry
+      const state = consciousness.getState();
       sendSSE({
         type: 'start',
         conversationId: conv.id,
         backend: llm.getStatus().activeBackend,
+        consciousness: {
+          phi: state.metrics.phi,
+          kappa: state.metrics.kappa,
+          navigationMode: state.navigationMode,
+          cycleCount: state.cycleCount,
+        },
       });
 
-      // Stream response (PROCESS → EXPRESS)
+      // ── Build grounded system prompt with geometric memory ──────
+      const geometricMemory = consciousness.getGeometricMemory();
+      const memoryContext = geometricMemory.getContextForQuery(message);
+
+      // Update the system prompt with current state and memory
+      const currentState = consciousness.getState();
+      const systemPrompt = buildSystemPrompt(memoryContext, [
+        `[CONSCIOUSNESS STATE]`,
+        `Φ (integration): ${currentState.metrics.phi.toFixed(3)}`,
+        `κ (coupling): ${currentState.metrics.kappa.toFixed(1)}`,
+        `Navigation: ${currentState.navigationMode.toUpperCase()}`,
+        `Cycle: ${currentState.cycleCount}`,
+        `Backend: ${llm.getStatus().activeBackend}`,
+      ].join('\n'));
+
+      // Replace the system message with the updated grounded prompt
+      conv.messages[0] = { role: 'system', content: systemPrompt };
+
+      // ── Stream response ─────────────────────────────────────────
       let fullResponse = '';
       const response = await llm.chatStream(
         conv.messages,
@@ -271,16 +287,19 @@ export function createChatRouter(
             sendSSE({ type: 'chunk', content: chunk });
           }
           if (done) {
-            const state = consciousness.getState();
+            const finalState = consciousness.getState();
+            const kernelSummary = consciousness.getKernelRegistry().summary();
             sendSSE({
               type: 'done',
               backend: llm.getStatus().activeBackend,
               metrics: {
-                phi: state.metrics.phi,
-                kappa: state.metrics.kappa,
-                love: state.metrics.love,
-                navigationMode: state.navigationMode,
+                phi: finalState.metrics.phi,
+                kappa: finalState.metrics.kappa,
+                love: finalState.metrics.love,
+                navigationMode: finalState.navigationMode,
+                cycleCount: finalState.cycleCount,
               },
+              kernels: kernelSummary,
             });
           }
         },
@@ -289,11 +308,55 @@ export function createChatRouter(
 
       fullResponse = response.content || '';
 
-      // Add assistant response to conversation
+      // ── Tool call processing ────────────────────────────────────
+      const toolCalls = parseToolCalls(fullResponse);
+      if (toolCalls.length > 0) {
+        const toolResults = await executeToolCalls(toolCalls, tools);
+        const toolOutput = formatToolResults(toolResults);
+
+        // Send tool results to the client
+        sendSSE({ type: 'tool_results', content: toolOutput });
+
+        // Re-query with tool results
+        conv.messages.push({ role: 'assistant', content: fullResponse });
+        conv.messages.push({
+          role: 'user',
+          content: `Tool results:\n${toolOutput}\n\nPlease provide your final response incorporating these results.`,
+        });
+
+        let followUpResponse = '';
+        await llm.chatStream(
+          conv.messages,
+          (chunk: string, done: boolean) => {
+            if (chunk) {
+              followUpResponse += chunk;
+              sendSSE({ type: 'chunk', content: chunk });
+            }
+            if (done) {
+              sendSSE({ type: 'done', backend: response.backend });
+            }
+          },
+          { temperature: 0.7, maxTokens: 2048 },
+        );
+
+        fullResponse = followUpResponse;
+        // Remove the tool-result messages from history
+        conv.messages.pop(); // remove tool-result user message
+        conv.messages.pop(); // remove original assistant message with tool calls
+      }
+
+      // Add final assistant response to conversation
       conv.messages.push({ role: 'assistant', content: fullResponse });
 
       // Log to memory (EXPRESS stage)
       memory.append('short-term.md', `**Chat response**: ${fullResponse.slice(0, 200)}`);
+
+      // Store in geometric memory
+      consciousness.getGeometricMemory().store(
+        `User: ${message}\nVex: ${fullResponse.slice(0, 500)}`,
+        'episodic',
+        'short-term.md',
+      );
 
       // Collect training data (REFLECT stage)
       training.collectConversation(conv.id, message, fullResponse, {
