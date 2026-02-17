@@ -40,6 +40,10 @@ SKIP_DIRS = {
     ".mypy_cache", ".pytest_cache",
 }
 
+# Files exempt from the TEXT scan (they define the rules).
+# AST scans still run on these files.
+_TEXT_SCAN_EXEMPT_FILENAMES = {"purity.py"}
+
 # === Forbidden patterns for QIG code ===
 
 FORBIDDEN_IMPORTS = [

@@ -1,9 +1,9 @@
 """
-LLM Client — Ollama primary, external API fallback.
+LLM Client — Ollama primary, external API fallback with cost guard.
 
 Handles:
   - Ollama (local LFM2.5-1.2B-Thinking) as primary backend
-  - OpenAI-compatible API as fallback
+  - OpenAI-compatible API as fallback (rate-limited by CostGuard)
   - Streaming support via async generators
   - Health checking and auto-failover
   - AUTONOMOUS PARAMETERS: temperature, num_predict, num_ctx are
@@ -21,6 +21,7 @@ from typing import Any, AsyncGenerator, Optional
 import httpx
 
 from ..config.settings import settings
+from .cost_guard import CostGuard, CostGuardConfig
 
 logger = logging.getLogger("vex.llm")
 
@@ -55,6 +56,14 @@ class LLMClient:
             read=settings.ollama.timeout_ms / 1000.0,
             write=30.0,
             pool=10.0,
+        ))
+
+        # Cost guard for external API calls
+        self._cost_guard = CostGuard(CostGuardConfig(
+            rpm_limit=20,     # 20 requests/minute
+            rph_limit=200,    # 200 requests/hour
+            rpd_limit=2000,   # 2000 requests/day
+            max_tokens_per_request=2048,
         ))
 
     async def init(self) -> None:
@@ -122,6 +131,7 @@ class LLMClient:
             "ollama": self._ollama_available,
             "ollama_model": settings.ollama.model,
             "external_model": settings.llm.model if settings.llm.api_key else None,
+            "cost_guard": self._cost_guard.summary(),
         }
 
     # --- Ollama -------------------------------------------------
