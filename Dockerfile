@@ -11,7 +11,7 @@
 #  Railway exposes port 8080 (the web server).
 # ═══════════════════════════════════════════════════════════════
 
-# ── Stage 1: Build TypeScript ──────────────────────────────────
+# ── Stage 1a: Build TypeScript (Express server) ─────────────────
 FROM node:22-alpine AS ts-builder
 
 WORKDIR /app
@@ -23,6 +23,17 @@ RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 COPY tsconfig.json ./
 COPY src/ ./src/
 RUN pnpm run build
+
+# ── Stage 1b: Build React Frontend (Vite) ───────────────────────
+FROM node:22-alpine AS frontend-builder
+
+WORKDIR /app/frontend
+
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci 2>/dev/null || npm install
+
+COPY frontend/ ./
+RUN npm run build
 
 # ── Stage 2: Production image ─────────────────────────────────
 FROM python:3.11-slim
@@ -47,6 +58,9 @@ RUN pnpm install --prod --frozen-lockfile 2>/dev/null || pnpm install --prod
 
 # ── Copy compiled TS ───────────────────────────────────────────
 COPY --from=ts-builder /app/dist ./dist
+
+# ── Copy built React frontend ───────────────────────────────────
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # ── Copy Python kernel ────────────────────────────────────────
 COPY kernel/ ./kernel/
