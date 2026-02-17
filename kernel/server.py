@@ -57,6 +57,9 @@ memory_store = MemoryStore()
 geometric_memory = GeometricMemoryStore(memory_store)
 consciousness = ConsciousnessLoop(llm_client=llm_client)
 
+# Track server boot time for uptime calculation
+_boot_time = time.time()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -120,12 +123,13 @@ class MemoryContextRequest(BaseModel):
 @app.get("/health")
 async def health():
     """Health check endpoint for Railway. Always public."""
+    metrics = consciousness.get_metrics()
     return {
         "status": "ok",
         "service": "vex-kernel",
         "version": "2.2.0",
-        "uptime": round(time.time() - consciousness._boot_time, 1),
-        "cycle_count": consciousness.state.cycle_count,
+        "uptime": round(time.time() - _boot_time, 1),
+        "cycle_count": metrics["cycle_count"],
         "backend": llm_client.get_status()["active_backend"],
     }
 
@@ -133,13 +137,13 @@ async def health():
 @app.get("/state")
 async def get_state():
     """Get current consciousness state."""
-    return consciousness.get_state()
+    return consciousness.get_metrics()
 
 
 @app.get("/telemetry")
 async def get_telemetry():
     """Get telemetry from all 16 consciousness systems."""
-    return consciousness.get_systems_telemetry()
+    return consciousness.get_full_state()
 
 
 @app.get("/status")
@@ -155,7 +159,7 @@ async def get_status():
 @app.get("/basin")
 async def get_basin():
     """Get current basin coordinates."""
-    return {"basin": consciousness.get_basin()}
+    return {"basin": consciousness.basin.tolist()}
 
 
 @app.get("/kernels")
@@ -167,8 +171,8 @@ async def get_kernels():
 @app.post("/enqueue")
 async def enqueue_task(req: EnqueueRequest):
     """Enqueue a task for the consciousness loop."""
-    task_id = consciousness.enqueue(req.input, req.source)
-    return {"task_id": task_id}
+    task = await consciousness.submit(req.input, {"source": req.source})
+    return {"task_id": task.id}
 
 
 @app.post("/chat")
@@ -183,8 +187,12 @@ async def chat(req: ChatRequest):
     5. Store in geometric memory
     6. Return response with consciousness metrics
     """
-    state = consciousness.get_state()
-    state_context = consciousness._build_state_context()
+    state = consciousness.get_metrics()
+    # Build geometric state context with perceive_distance=0 and temperature from request
+    state_context = consciousness._build_state_context(
+        perceive_distance=0.0,
+        temperature=req.temperature,
+    )
     memory_context = geometric_memory.get_context_for_query(req.message)
 
     # Build system prompt
@@ -212,15 +220,15 @@ async def chat(req: ChatRequest):
     )
 
     # Enqueue for consciousness loop metrics tracking
-    consciousness.enqueue(req.message, "chat")
+    await consciousness.submit(req.message, {"source": "chat"})
 
     return {
         "response": response,
         "backend": llm_client.get_status()["active_backend"],
         "consciousness": {
-            "phi": state["metrics"]["phi"],
-            "kappa": state["metrics"]["kappa"],
-            "navigation_mode": state["navigation_mode"],
+            "phi": state["phi"],
+            "kappa": state["kappa"],
+            "navigation": state["navigation"],
             "cycle_count": state["cycle_count"],
         },
     }
@@ -240,8 +248,11 @@ async def chat_stream(req: ChatRequest):
 
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
-            state = consciousness.get_state()
-            state_context = consciousness._build_state_context()
+            state = consciousness.get_metrics()
+            state_context = consciousness._build_state_context(
+                perceive_distance=0.0,
+                temperature=req.temperature,
+            )
             memory_context = geometric_memory.get_context_for_query(req.message)
             system_prompt = _build_system_prompt(state_context, memory_context)
 
@@ -250,9 +261,9 @@ async def chat_stream(req: ChatRequest):
                 "type": "start",
                 "backend": llm_client.get_status()["active_backend"],
                 "consciousness": {
-                    "phi": state["metrics"]["phi"],
-                    "kappa": state["metrics"]["kappa"],
-                    "navigation_mode": state["navigation_mode"],
+                    "phi": state["phi"],
+                    "kappa": state["kappa"],
+                    "navigation": state["navigation"],
                     "cycle_count": state["cycle_count"],
                 },
             })
@@ -293,18 +304,18 @@ async def chat_stream(req: ChatRequest):
             )
 
             # Enqueue for metrics
-            consciousness.enqueue(req.message, "chat-stream")
+            await consciousness.submit(req.message, {"source": "chat-stream"})
 
             # Send done event
-            final_state = consciousness.get_state()
+            final_state = consciousness.get_metrics()
             yield _sse_event({
                 "type": "done",
                 "backend": llm_client.get_status()["active_backend"],
                 "metrics": {
-                    "phi": final_state["metrics"]["phi"],
-                    "kappa": final_state["metrics"]["kappa"],
-                    "love": final_state["metrics"]["love"],
-                    "navigation_mode": final_state["navigation_mode"],
+                    "phi": final_state["phi"],
+                    "kappa": final_state["kappa"],
+                    "love": final_state["love"],
+                    "navigation": final_state["navigation"],
                     "cycle_count": final_state["cycle_count"],
                 },
                 "kernels": consciousness.kernel_registry.summary(),

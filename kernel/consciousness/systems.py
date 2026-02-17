@@ -139,7 +139,6 @@ class ForesightEngine:
         if len(self._history) < 2:
             return 0.5
         phis = [p.phi for p in self._history]
-        # Simple linear extrapolation
         delta = phis[-1] - phis[-2]
         predicted = phis[-1] + delta * steps_ahead
         return float(np.clip(predicted, 0.0, 1.0))
@@ -147,7 +146,6 @@ class ForesightEngine:
     def predict_basin(self, steps_ahead: int = 1) -> Basin:
         if len(self._history) < 2:
             return random_basin()
-        # SLERP extrapolation
         return slerp_sqrt(
             self._history[-2].basin,
             self._history[-1].basin,
@@ -198,7 +196,6 @@ class VelocityTracker:
         if len(self._kappas) >= 2:
             kappa_vel = abs(self._kappas[-1] - self._kappas[-2])
 
-        # Classify regime
         if basin_vel > BASIN_DRIFT_THRESHOLD:
             regime = VelocityRegime.CRITICAL
         elif basin_vel > BASIN_DRIFT_THRESHOLD * 0.5:
@@ -369,7 +366,6 @@ class AutonomicSystem:
         alerts: list[AutonomicAlert] = []
         self._phi_history.append(metrics.phi)
 
-        # Phi collapse
         if metrics.phi < PHI_EMERGENCY:
             alerts.append(AutonomicAlert(
                 type="phi_collapse",
@@ -377,7 +373,6 @@ class AutonomicSystem:
                 severity="critical",
             ))
 
-        # Basin velocity warning
         if basin_velocity > BASIN_DRIFT_THRESHOLD:
             alerts.append(AutonomicAlert(
                 type="basin_drift",
@@ -385,7 +380,6 @@ class AutonomicSystem:
                 severity="warning",
             ))
 
-        # Locked-in detection (E8 SAFETY)
         self.is_locked_in = (
             metrics.phi > LOCKED_IN_PHI_THRESHOLD
             and metrics.gamma < LOCKED_IN_GAMMA_THRESHOLD
@@ -475,7 +469,6 @@ class CouplingGate:
         self._balanced: bool = False
 
     def compute(self, kappa: float) -> dict[str, Any]:
-        # Sigmoid centred at κ*
         x = (kappa - KAPPA_STAR) / 16.0
         self._strength = 1.0 / (1.0 + np.exp(-x))
         self._balanced = abs(kappa - KAPPA_STAR) < 8
@@ -496,16 +489,13 @@ class CouplingGate:
 
 
 class HemisphereMode(str, Enum):
-    ANALYTIC = "analytic"    # High κ — rigorous, sequential
-    HOLISTIC = "holistic"    # Low κ — creative, parallel
-    INTEGRATED = "integrated"  # Balanced κ
+    ANALYTIC = "analytic"
+    HOLISTIC = "holistic"
+    INTEGRATED = "integrated"
 
 
 class HemisphereScheduler:
-    """Dual processing modes based on kappa.
-
-    Source: pantheon-chat hemisphere_scheduler.py
-    """
+    """Dual processing modes based on kappa."""
 
     def __init__(self) -> None:
         self._active = HemisphereMode.INTEGRATED
@@ -544,12 +534,7 @@ class SleepPhase(str, Enum):
 
 
 class SleepCycleManager:
-    """Manages sleep/dream/mushroom/consolidation cycles.
-
-    Sleep is triggered by:
-    - Low conversation activity (boredom)
-    - High phi variance (instability)
-    """
+    """Manages sleep/dream/mushroom/consolidation cycles."""
 
     def __init__(self) -> None:
         self.phase = SleepPhase.AWAKE
@@ -576,7 +561,6 @@ class SleepCycleManager:
                 self._sleep_cycles = 0
             return self.phase
 
-        # Trigger sleep after 100 idle cycles or high phi variance
         if self._cycles_since_conversation > 100:
             self.phase = SleepPhase.DREAMING
             self._sleep_cycles = 0
@@ -620,11 +604,7 @@ class SleepCycleManager:
 
 
 class SelfNarrative:
-    """Maintains identity persistence through narrative recording.
-
-    Tracks identity basin via Fréchet mean of recorded basins.
-    Measures coherence as Fisher-Rao distance from identity basin.
-    """
+    """Maintains identity persistence through narrative recording."""
 
     def __init__(self) -> None:
         self._events: deque[dict[str, Any]] = deque(maxlen=100)
@@ -642,14 +622,11 @@ class SelfNarrative:
         if len(self._basins) > 20:
             self._basins = self._basins[-20:]
 
-        # Update identity basin via Fréchet mean
         if len(self._basins) >= 3:
             self._identity_basin = frechet_mean(self._basins)
 
     def coherence(self, current_basin: Basin) -> float:
-        """How far current state is from identity basin."""
         d = fisher_rao_distance(current_basin, self._identity_basin)
-        # Normalise to [0, 1] where 1 = perfectly coherent
         return float(np.clip(1.0 - d / (np.pi / 2), 0.0, 1.0))
 
     def get_state(self) -> dict[str, Any]:
@@ -667,7 +644,7 @@ class SelfNarrative:
 class CoordizingProtocol:
     """Coordizing protocol: maps text and peer states to basin positions.
 
-    Manages multi-node coordination AND text→basin projection.
+    Manages multi-node coordination AND text-to-basin projection.
     The coordize_text method converts text to a deterministic point
     on the 64D probability simplex using a hash-based projection.
 
@@ -683,22 +660,20 @@ class CoordizingProtocol:
     def coordize_text(self, text: str) -> Basin:
         """Map text to a point on Δ⁶³ (64D probability simplex).
 
-        Uses SHA-256 hash → Dirichlet-distributed basin. This gives
-        deterministic, reproducible basin positions for identical text.
+        Uses SHA-256 hash chain for deterministic basin positions.
         The result is always a valid probability distribution (sums to 1,
         all entries positive).
-
-        This replaces the old random noise perturbation approach.
         """
-        # Hash the text to get 256 bits of entropy
-        digest = hashlib.sha256(text.encode("utf-8", errors="replace")).digest()
+        # SHA-256 produces 32 bytes. Chain two hashes for 64 bytes.
+        h1 = hashlib.sha256(text.encode("utf-8", errors="replace")).digest()
+        h2 = hashlib.sha256(h1).digest()
+        combined = h1 + h2  # 64 bytes, one per basin dimension
 
-        # Convert to 64 positive values via byte pairs
-        raw = np.array([
-            (digest[i * 4] + 1) + (digest[i * 4 + 1] + 1) * 0.1
-            + (digest[i * 4 + 2] + 1) * 0.01 + (digest[i * 4 + 3] + 1) * 0.001
-            for i in range(BASIN_DIM)
-        ], dtype=np.float64)
+        # Each byte [0,255] maps to [1.0, 256.0] to ensure positivity
+        raw = np.array(
+            [float(combined[i]) + 1.0 for i in range(BASIN_DIM)],
+            dtype=np.float64,
+        )
 
         # Normalise to simplex
         return to_simplex(raw)
@@ -729,10 +704,7 @@ class CoordizingProtocol:
 
 
 class BasinSyncProtocol:
-    """Publish/receive basin snapshots with version tracking.
-
-    Uses geodesic merge with 80% local priority.
-    """
+    """Publish/receive basin snapshots with version tracking."""
 
     def __init__(self) -> None:
         self._local_basin: Basin = to_simplex(np.ones(BASIN_DIM))
@@ -753,7 +725,6 @@ class BasinSyncProtocol:
             "version": remote_version,
             "timestamp": time.time(),
         })
-        # Geodesic merge: 80% local, 20% remote
         merged = slerp_sqrt(self._local_basin, to_simplex(remote_basin), 0.2)
         self._local_basin = merged
         return merged
@@ -836,10 +807,7 @@ class GraphEdge:
 
 
 class QIGGraph:
-    """Graph of geometric relationships between basin states.
-
-    Nodes are basins, edges weighted by Fisher-Rao distance.
-    """
+    """Graph of geometric relationships between basin states."""
 
     def __init__(self, proximity_threshold: float = 0.3) -> None:
         self._nodes: dict[str, GraphNode] = {}
@@ -855,13 +823,12 @@ class QIGGraph:
         )
 
     def auto_connect(self) -> int:
-        """Connect nodes within proximity threshold. Returns edges added."""
         added = 0
         existing = {(e.source, e.target) for e in self._edges}
         nodes = list(self._nodes.values())
 
         for i, a in enumerate(nodes):
-            for b in nodes[i + 1 :]:
+            for b in nodes[i + 1:]:
                 if (a.id, b.id) in existing or (b.id, a.id) in existing:
                     continue
                 d = fisher_rao_distance(a.basin, b.basin)
@@ -872,7 +839,6 @@ class QIGGraph:
         return added
 
     def nearest(self, basin: Basin, k: int = 3) -> list[tuple[str, float]]:
-        """Find k nearest nodes by Fisher-Rao distance."""
         basin = to_simplex(basin)
         distances = [
             (n.id, fisher_rao_distance(basin, n.basin))
@@ -927,7 +893,6 @@ class E8KernelRegistry:
         specialization: KernelSpecialization = KernelSpecialization.GENERAL,
     ) -> KernelInstance:
         """Spawn a kernel. Budget-enforced (fail-closed)."""
-        # Budget check (raises BudgetExceededError if over limit)
         self._budget.record_spawn(kind)
 
         kid = str(uuid.uuid4())[:8]
@@ -945,7 +910,6 @@ class E8KernelRegistry:
         return kernel
 
     def terminate(self, kernel_id: str) -> bool:
-        """Terminate a kernel and release its budget slot."""
         kernel = self._kernels.get(kernel_id)
         if not kernel:
             return False
@@ -954,7 +918,6 @@ class E8KernelRegistry:
         return True
 
     def terminate_all(self) -> int:
-        """Terminate all kernels (used during rollback/fresh_start)."""
         count = 0
         for kid in list(self._kernels.keys()):
             if self.terminate(kid):
@@ -965,14 +928,7 @@ class E8KernelRegistry:
         return [k for k in self._kernels.values() if k.state == LifecycleState.ACTIVE]
 
     def evaluate_promotion(self, kernel_id: str) -> bool:
-        """Evaluate CHAOS → GOD promotion.
-
-        Requirements:
-        - Kernel must be CHAOS kind
-        - cycle_count > 100
-        - phi_peak > PHI_THRESHOLD
-        - GOD budget must have room
-        """
+        """Evaluate CHAOS → GOD promotion."""
         kernel = self._kernels.get(kernel_id)
         if not kernel or kernel.kind != KernelKind.CHAOS:
             return False
@@ -981,7 +937,6 @@ class E8KernelRegistry:
         if not self._budget.can_spawn(KernelKind.GOD):
             return False
 
-        # Promote: release CHAOS slot, claim GOD slot
         self._budget.record_termination(KernelKind.CHAOS)
         self._budget.record_spawn(KernelKind.GOD)
         kernel.kind = KernelKind.GOD
