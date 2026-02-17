@@ -18,7 +18,9 @@ import os
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseCallType
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp
+from typing import Callable
 
 logger = logging.getLogger("vex.auth")
 
@@ -42,7 +44,7 @@ class KernelAuthMiddleware(BaseHTTPMiddleware):
     - /health is always public (Railway health checks)
     """
 
-    async def dispatch(self, request: Request, call_next: RequestResponseCallType):
+    async def dispatch(self, request: Request, call_next: Callable):
         # No key configured = dev mode (open access)
         if not KERNEL_API_KEY:
             return await call_next(request)
