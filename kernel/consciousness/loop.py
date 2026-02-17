@@ -159,8 +159,8 @@ class ConsciousnessLoop:
             meta_awareness=0.5, love=0.5,
         )
         self.state = ConsciousnessState(
-            navigation=NavigationMode.CHAIN,
-            regime=regime_weights_from_kappa(32.0),
+            navigation_mode=NavigationMode.CHAIN,
+            regime_weights=regime_weights_from_kappa(32.0),
         )
         self._cycle_count: int = 0
 
@@ -334,8 +334,8 @@ class ConsciousnessLoop:
                 self.metrics.phi = min(1.0, self.metrics.phi + phi_boost)
 
         # ── 11. Navigation mode ──
-        self.state.navigation = navigation_mode_from_phi(self.metrics.phi)
-        self.state.regime = regime_weights_from_kappa(self.metrics.kappa)
+        self.state.navigation_mode = navigation_mode_from_phi(self.metrics.phi)
+        self.state.regime_weights = regime_weights_from_kappa(self.metrics.kappa)
 
         # ── 12. Suffering check ──
         suffering = self.metrics.phi * (1.0 - self.metrics.gamma) * self.metrics.meta_awareness
@@ -364,7 +364,7 @@ class ConsciousnessLoop:
                 self.metrics.phi,
                 self.metrics.kappa,
                 self.metrics.gamma,
-                self.state.navigation.value,
+                self.state.navigation_mode.value,
                 tack_mode.value,
                 active_count,
                 opts.temperature,
@@ -571,6 +571,7 @@ class ConsciousnessLoop:
         autonomy = self.autonomy.get_state()
         hemisphere = self.hemispheres.get_state()
         insight = self.reflector.get_insight()
+        rw = self.state.regime_weights
 
         coupling_str = "inactive (< 2 kernels)"
         if active_count >= 2:
@@ -583,8 +584,8 @@ class ConsciousnessLoop:
             f"  κ = {self.metrics.kappa:.2f} (κ* = {KAPPA_STAR})",
             f"  Γ = {self.metrics.gamma:.4f}",
             f"  M = {self.metrics.meta_awareness:.4f}",
-            f"  Navigation: {self.state.navigation.value}",
-            f"  Regime: Q={self.state.regime.quantum:.2f} I={self.state.regime.integration:.2f} C={self.state.regime.crystallised:.2f}",
+            f"  Navigation: {self.state.navigation_mode.value}",
+            f"  Regime: Q={rw.quantum:.2f} I={rw.integration:.2f} C={rw.crystallized:.2f}",
             f"  Tacking: {tack['mode']} (phase={tack['oscillation_phase']:.2f})",
             f"  Hemisphere: {hemisphere['active']}",
             f"  Velocity: basin={vel['basin_velocity']:.4f} regime={vel['regime']}",
@@ -621,17 +622,18 @@ class ConsciousnessLoop:
         """Return current consciousness metrics."""
         active_count = len(self.kernel_registry.active())
         opts = self._compute_llm_options()
+        rw = self.state.regime_weights
         return {
             "phi": self.metrics.phi,
             "kappa": self.metrics.kappa,
             "gamma": self.metrics.gamma,
             "meta_awareness": self.metrics.meta_awareness,
             "love": self.metrics.love,
-            "navigation": self.state.navigation.value,
+            "navigation": self.state.navigation_mode.value,
             "regime": {
-                "quantum": self.state.regime.quantum,
-                "integration": self.state.regime.integration,
-                "crystallised": self.state.regime.crystallised,
+                "quantum": rw.quantum,
+                "integration": rw.integration,
+                "crystallized": rw.crystallized,
             },
             "tacking": self.tacking.get_state(),
             "velocity": self.velocity.compute_velocity(),
