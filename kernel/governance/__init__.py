@@ -1,6 +1,6 @@
 """Governance — Types, purity enforcement, budget enforcement, lifecycle."""
 
-from .budget import BudgetEnforcer, BudgetExceededError
+from .budget import BudgetAccountingError, BudgetEnforcer, BudgetExceededError
 from .purity import PurityGateError, run_purity_gate
 from .types import (
     KernelKind,
@@ -11,6 +11,7 @@ from .types import (
 )
 
 __all__ = [
+    "BudgetAccountingError",
     "BudgetEnforcer",
     "BudgetExceededError",
     "KernelKind",
