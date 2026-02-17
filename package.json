@@ -5,8 +5,11 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
+    "build:frontend": "cd frontend && npm run build",
+    "build:all": "tsc && cd frontend && npm run build",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
+    "dev:frontend": "cd frontend && npm run dev",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit"
   },

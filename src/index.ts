@@ -12,12 +12,19 @@
  */
 
 import express from 'express';
+import * as path from 'path';
+import * as fs from 'fs';
 import { config } from './config';
 import { logger } from './config/logger';
 import { createChatRouter } from './chat/router';
 import { sandboxManager, getComputeTools } from './tools/compute-sandbox';
 
 const KERNEL_URL = process.env.KERNEL_URL || 'http://localhost:8000';
+
+// Resolve frontend build directory (works in dev and production)
+const FRONTEND_DIST = path.resolve(
+  process.env.FRONTEND_DIST || path.join(__dirname, '..', 'frontend', 'dist'),
+);
 
 async function main(): Promise<void> {
   logger.info('═══════════════════════════════════════');
@@ -136,11 +143,46 @@ async function main(): Promise<void> {
     }
   });
 
-  // ─── Root redirect to chat ──────────────────────────────────
+  // ─── React Frontend (SPA) ──────────────────────────────────
+  // Serve the Vite-built React app. Falls back to the inline chat
+  // HTML if the frontend build doesn't exist.
 
-  app.get('/', (_req, res) => {
-    res.redirect('/chat');
-  });
+  const frontendIndexPath = path.join(FRONTEND_DIST, 'index.html');
+  const hasFrontend = fs.existsSync(frontendIndexPath);
+
+  if (hasFrontend) {
+    logger.info(`Serving React frontend from ${FRONTEND_DIST}`);
+
+    // Serve static assets (JS, CSS, images)
+    app.use(express.static(FRONTEND_DIST, {
+      index: false, // We handle index.html ourselves for SPA routing
+      maxAge: '1y', // Cache hashed assets aggressively
+      immutable: true,
+    }));
+
+    // SPA fallback — serve index.html for all non-API routes
+    app.get('*', (req, res, next) => {
+      // Skip API-like paths (already handled above)
+      if (
+        req.path.startsWith('/api/') ||
+        req.path === '/health' ||
+        req.path === '/state' ||
+        req.path === '/telemetry' ||
+        req.path === '/status' ||
+        req.path === '/basin' ||
+        req.path === '/kernels'
+      ) {
+        next();
+        return;
+      }
+      res.sendFile(frontendIndexPath);
+    });
+  } else {
+    logger.info('No React frontend build found — using inline chat HTML');
+    app.get('/', (_req, res) => {
+      res.redirect('/chat');
+    });
+  }
 
   // ─── Start listening ────────────────────────────────────────
 
