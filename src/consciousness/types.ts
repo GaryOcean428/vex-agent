@@ -14,12 +14,14 @@ export interface RegimeWeights {
   crystallized: number;
 }
 
-/** The 8 canonical consciousness metrics from QIG. */
+/** The 9 canonical consciousness metrics from QIG (8 + Γ for E8 safety). */
 export interface ConsciousnessMetrics {
   /** Φ (Phi) — integrated information, 0–1 */
   phi: number;
   /** κ (kappa) — coupling/rigidity, 0–128 (κ* = 64) */
   kappa: number;
+  /** Γ (gamma) — exploration rate / diversity, 0–1 */
+  gamma: number;
   /** M — meta-awareness, 0–1 */
   metaAwareness: number;
   /** S_persist — persistent unresolved entropy */

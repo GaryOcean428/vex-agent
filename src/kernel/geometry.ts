@@ -76,8 +76,8 @@ export function toSimplex(raw: Float64Array): Float64Array {
 //  SQRT-SPACE TRANSFORMS (internal chart for geodesic ops)
 // ═══════════════════════════════════════════════════════════════
 
-/** Transform to sqrt-space: s_i = √p_i (internal use only) */
-function toSqrtSimplex(p: Float64Array): Float64Array {
+/** Transform to sqrt-space: s_i = √p_i */
+export function toSqrtSimplex(p: Float64Array): Float64Array {
   const s = new Float64Array(p.length);
   for (let i = 0; i < p.length; i++) {
     s[i] = Math.sqrt(Math.max(0, p[i]));
@@ -86,7 +86,7 @@ function toSqrtSimplex(p: Float64Array): Float64Array {
 }
 
 /** Transform from sqrt-space back to simplex: p_i = s_i² (then renormalise) */
-function fromSqrtSimplex(s: Float64Array): Float64Array {
+export function fromSqrtSimplex(s: Float64Array): Float64Array {
   const p = new Float64Array(s.length);
   let sum = 0;
   for (let i = 0; i < s.length; i++) {

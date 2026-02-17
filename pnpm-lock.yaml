@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      computesdk:
+        specifier: ^2.2.1
+        version: 2.2.1
       express:
         specifier: ^4.21.0
         version: 4.22.1
@@ -45,6 +48,9 @@ packages:
   '@colors/colors@1.6.0':
     resolution: {integrity: sha512-Ir+AOibqzrIsL6ajt3Rz3LskB7OiMVHqltZmspbW/TJuTVuyOMirVqAkjfY6JISiLHgyNqicAC8AyHHGzNd/dA==}
     engines: {node: '>=0.1.90'}
+
+  '@computesdk/cmd@0.4.1':
+    resolution: {integrity: sha512-hhcYrwMnOpRSwWma3gkUeAVsDFG56nURwSaQx8vCepv0IuUv39bK4mMkgszolnUQrVjBDdW7b3lV+l5B2S8fRA==}
 
   '@dabh/diagnostics@2.0.8':
     resolution: {integrity: sha512-R4MSXTVnuMzGD7bzHdW2ZhhdPC/igELENcq5IjEverBvq5hn1SXCWcsi6eSsdWP0/Ur+SItRRjAktmdoX/8R/Q==}
@@ -306,6 +312,9 @@ packages:
   combined-stream@1.0.8:
     resolution: {integrity: sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==}
     engines: {node: '>= 0.8'}
+
+  computesdk@2.2.1:
+    resolution: {integrity: sha512-u4xAtvuTNTquaN57hJq030aeGJtmxQ6Pzd/8kXB7uaCgwyyePK4W0hPDeDOFzyNd9QgoDDUD9r1j1sdO+UqVXg==}
 
   content-disposition@0.5.4:
     resolution: {integrity: sha512-FveZTNuGw04cxlAiWbzi6zTAL/lhehaWbTtgluJh4/E95DqMwTmha3KZN1aAWA8cFIhHzMZUvLevkw5Rqk+tSQ==}
@@ -715,6 +724,8 @@ snapshots:
 
   '@colors/colors@1.6.0': {}
 
+  '@computesdk/cmd@0.4.1': {}
+
   '@dabh/diagnostics@2.0.8':
     dependencies:
       '@so-ric/colorspace': 1.1.6
@@ -924,6 +935,10 @@ snapshots:
   combined-stream@1.0.8:
     dependencies:
       delayed-stream: 1.0.0
+
+  computesdk@2.2.1:
+    dependencies:
+      '@computesdk/cmd': 0.4.1
 
   content-disposition@0.5.4:
     dependencies:

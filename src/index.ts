@@ -53,6 +53,7 @@ async function main(): Promise<void> {
   await memory.init();
 
   const llm = new LLMClient();
+  await llm.init(); // Block until Ollama probe completes (fixes streaming race condition)
   const purityGate = new PurityGate();
   const tools = new ToolRegistry(purityGate);
   const basinSync = new BasinSync();

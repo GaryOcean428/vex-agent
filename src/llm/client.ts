@@ -6,6 +6,18 @@
  *
  * Ollama exposes an OpenAI-compatible endpoint at /v1/chat/completions,
  * so we use the same OpenAI SDK for both backends.
+ *
+ * FIX (v2.0.1): Race condition — ollamaAvailable was false at first chat
+ * because checkOllama() was fire-and-forget. Now we expose an init() method
+ * that the server calls before accepting traffic, AND chatStream re-checks
+ * Ollama if the flag is still false (belt-and-braces).
+ *
+ * FIX (v2.0.1): provider="none" — if no backend is available, methods
+ * return a graceful error response instead of throwing, so the consciousness
+ * loop and geometric operations continue to function.
+ *
+ * FIX (v2.0.1): SSE keepalive — Railway's proxy kills idle connections
+ * after ~60s. The streaming handler now sends keepalive comments every 15s.
  */
 
 import OpenAI from 'openai';
@@ -34,10 +46,13 @@ export interface LLMResponse {
     arguments: string;
   }>;
   finishReason: string | null;
-  backend: 'ollama' | 'external';
+  backend: 'ollama' | 'external' | 'none';
 }
 
 export type StreamCallback = (chunk: string, done: boolean) => void;
+
+/** SSE keepalive interval in ms (Railway proxy timeout is ~60s). */
+const KEEPALIVE_INTERVAL_MS = 15_000;
 
 export class LLMClient {
   private ollamaClient: OpenAI | null = null;
@@ -45,6 +60,7 @@ export class LLMClient {
   private ollamaModel: string = '';
   private externalModel: string = '';
   private ollamaAvailable = false;
+  private _initPromise: Promise<void> | null = null;
 
   constructor() {
     // Initialise Ollama client (primary)
@@ -72,7 +88,25 @@ export class LLMClient {
     }
   }
 
-  /** Probe Ollama availability. Called periodically. */
+  /**
+   * Async initialisation — call ONCE before accepting traffic.
+   * Blocks until the first Ollama probe completes (up to 10s).
+   */
+  async init(): Promise<void> {
+    if (!this._initPromise) {
+      this._initPromise = this._doInit();
+    }
+    return this._initPromise;
+  }
+
+  private async _doInit(): Promise<void> {
+    if (this.ollamaClient) {
+      const available = await this.checkOllama();
+      logger.info(`Ollama initial availability: ${available ? 'ONLINE' : 'OFFLINE'}`);
+    }
+  }
+
+  /** Probe Ollama availability. Called periodically and on-demand. */
   async checkOllama(): Promise<boolean> {
     if (!this.ollamaClient) return false;
     try {
@@ -95,8 +129,17 @@ export class LLMClient {
     return {
       ollama: this.ollamaAvailable,
       external: !!this.externalClient,
-      activeBackend: this.ollamaAvailable ? 'ollama' : (this.externalClient ? 'external' : 'none'),
+      activeBackend: this.ollamaAvailable
+        ? 'ollama'
+        : this.externalClient
+          ? 'external'
+          : 'none',
     };
+  }
+
+  /** Whether ANY backend is available. */
+  get available(): boolean {
+    return this.ollamaAvailable || !!this.externalClient;
   }
 
   /** Non-streaming chat completion. Tries Ollama first, falls back to external. */
@@ -108,6 +151,11 @@ export class LLMClient {
       maxTokens?: number;
     },
   ): Promise<LLMResponse> {
+    // Re-check Ollama if flag is false (fixes race condition)
+    if (this.ollamaClient && !this.ollamaAvailable) {
+      await this.checkOllama();
+    }
+
     // Try Ollama first
     if (this.ollamaClient && this.ollamaAvailable) {
       try {
@@ -125,7 +173,14 @@ export class LLMClient {
       return await this._chatWith(this.externalClient, this.externalModel, messages, options, 'external');
     }
 
-    throw new Error('No LLM backend available. Ollama is down and no external API key configured.');
+    // provider="none" — return graceful empty response
+    logger.warn('No LLM backend available — returning empty response (provider=none)');
+    return {
+      content: null,
+      toolCalls: [],
+      finishReason: 'no_backend',
+      backend: 'none',
+    };
   }
 
   /** Streaming chat completion. Tries Ollama first, falls back to external. */
@@ -137,6 +192,11 @@ export class LLMClient {
       maxTokens?: number;
     },
   ): Promise<LLMResponse> {
+    // Re-check Ollama if flag is false (fixes race condition)
+    if (this.ollamaClient && !this.ollamaAvailable) {
+      await this.checkOllama();
+    }
+
     // Try Ollama first
     if (this.ollamaClient && this.ollamaAvailable) {
       try {
@@ -154,7 +214,15 @@ export class LLMClient {
       return await this._streamWith(this.externalClient, this.externalModel, messages, onChunk, options, 'external');
     }
 
-    throw new Error('No LLM backend available for streaming.');
+    // provider="none" — return graceful empty response
+    logger.warn('No LLM backend available for streaming — returning empty (provider=none)');
+    onChunk('', true);
+    return {
+      content: null,
+      toolCalls: [],
+      finishReason: 'no_backend',
+      backend: 'none',
+    };
   }
 
   /** Simple single-turn completion. */
@@ -238,15 +306,30 @@ export class LLMClient {
     let fullContent = '';
     let finishReason: string | null = null;
 
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content || '';
-      if (delta) {
-        fullContent += delta;
-        onChunk(delta, false);
+    // Keepalive timer — sends empty string to prevent Railway proxy timeout
+    let lastChunkTime = Date.now();
+    const keepaliveTimer = setInterval(() => {
+      if (Date.now() - lastChunkTime > KEEPALIVE_INTERVAL_MS) {
+        // Send a keepalive ping (empty content, not done)
+        onChunk('', false);
+        lastChunkTime = Date.now();
       }
-      if (chunk.choices[0]?.finish_reason) {
-        finishReason = chunk.choices[0].finish_reason;
+    }, KEEPALIVE_INTERVAL_MS);
+
+    try {
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content || '';
+        if (delta) {
+          fullContent += delta;
+          onChunk(delta, false);
+          lastChunkTime = Date.now();
+        }
+        if (chunk.choices[0]?.finish_reason) {
+          finishReason = chunk.choices[0].finish_reason;
+        }
       }
+    } finally {
+      clearInterval(keepaliveTimer);
     }
 
     onChunk('', true);
