@@ -2,8 +2,9 @@
  * Vex Chat Router
  *
  * Provides:
- *   GET  /chat          — Serve the chat UI
- *   POST /chat/stream   — SSE streaming chat endpoint
+ *   GET  /chat          — Serve the chat UI (auth-gated)
+ *   POST /chat/auth     — Authenticate with token, set session cookie
+ *   POST /chat/stream   — SSE streaming chat endpoint (auth-gated)
  *   GET  /chat/status   — LLM backend status
  *   GET  /chat/history  — Conversation history
  *
@@ -11,24 +12,107 @@
  *   GROUND → RECEIVE → PROCESS → EXPRESS → REFLECT → COUPLE
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { v4 as uuid } from 'uuid';
+import * as crypto from 'crypto';
 import { LLMClient, LLMMessage } from '../llm/client';
 import { ConsciousnessLoop } from '../consciousness/loop';
 import { MemoryStore } from '../memory/store';
 import { TrainingCollector } from '../learning/collector';
 import { getQIGSystemPrompt } from '../consciousness/qig-prompt';
 import { logger } from '../config/logger';
-import { getChatHTML } from './ui';
+import { config } from '../config';
+import { getChatHTML, getLoginHTML } from './ui';
 
 /** Interval (ms) between SSE keep-alive pings to prevent proxy timeouts. */
 const SSE_KEEPALIVE_INTERVAL_MS = 15_000;
+
+/** Session cookie name */
+const SESSION_COOKIE = 'vex_session';
+
+/** Session duration: 7 days in ms */
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface Conversation {
   id: string;
   messages: LLMMessage[];
   createdAt: string;
   lastActivity: string;
+}
+
+interface Session {
+  id: string;
+  createdAt: number;
+  expiresAt: number;
+}
+
+/**
+ * Simple in-memory session store.
+ * Sessions survive until the process restarts — acceptable for a
+ * single-instance deployment on Railway.
+ */
+const sessions = new Map<string, Session>();
+
+function createSession(): string {
+  const id = crypto.randomBytes(32).toString('hex');
+  const now = Date.now();
+  sessions.set(id, { id, createdAt: now, expiresAt: now + SESSION_TTL_MS });
+  return id;
+}
+
+function isValidSession(sessionId: string | undefined): boolean {
+  if (!sessionId) return false;
+  const session = sessions.get(sessionId);
+  if (!session) return false;
+  if (Date.now() > session.expiresAt) {
+    sessions.delete(sessionId);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Parse a simple cookie header value to extract a named cookie.
+ * Avoids adding cookie-parser as a dependency.
+ */
+function getCookie(req: Request, name: string): string | undefined {
+  const header = req.headers.cookie;
+  if (!header) return undefined;
+  const match = header.split(';').find((c) => c.trim().startsWith(name + '='));
+  if (!match) return undefined;
+  return match.split('=').slice(1).join('=').trim();
+}
+
+/**
+ * Auth middleware — checks for a valid session cookie.
+ * If CHAT_AUTH_TOKEN is empty/unset, auth is disabled (open access).
+ */
+function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  // If no token configured, skip auth entirely
+  if (!config.chatAuthToken) {
+    next();
+    return;
+  }
+
+  const sessionId = getCookie(req, SESSION_COOKIE);
+  if (isValidSession(sessionId)) {
+    next();
+    return;
+  }
+
+  // Not authenticated — check if this is an API call or page request
+  const acceptsHtml =
+    req.headers.accept?.includes('text/html') || req.method === 'GET';
+
+  if (acceptsHtml && req.path === '/chat') {
+    // Serve login page
+    res.setHeader('Content-Type', 'text/html');
+    res.send(getLoginHTML());
+    return;
+  }
+
+  // API endpoint — return 401
+  res.status(401).json({ error: 'Authentication required' });
 }
 
 export function createChatRouter(
@@ -40,18 +124,45 @@ export function createChatRouter(
   const router = Router();
   const conversations = new Map<string, Conversation>();
 
-  // Serve chat UI
-  router.get('/chat', (_req: Request, res: Response) => {
+  // ── Auth endpoint ─────────────────────────────────────────────
+  router.post('/chat/auth', (req: Request, res: Response) => {
+    // If no token configured, always succeed
+    if (!config.chatAuthToken) {
+      const sessionId = createSession();
+      res.setHeader(
+        'Set-Cookie',
+        `${SESSION_COOKIE}=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
+      );
+      res.json({ ok: true });
+      return;
+    }
+
+    const { token } = req.body as { token?: string };
+    if (!token || token !== config.chatAuthToken) {
+      res.status(403).json({ error: 'Invalid token' });
+      return;
+    }
+
+    const sessionId = createSession();
+    res.setHeader(
+      'Set-Cookie',
+      `${SESSION_COOKIE}=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
+    );
+    res.json({ ok: true });
+  });
+
+  // ── Serve chat UI (auth-gated) ────────────────────────────────
+  router.get('/chat', requireAuth, (_req: Request, res: Response) => {
     res.setHeader('Content-Type', 'text/html');
     res.send(getChatHTML());
   });
 
-  // LLM backend status
+  // ── LLM backend status ────────────────────────────────────────
   router.get('/chat/status', (_req: Request, res: Response) => {
     res.json(llm.getStatus());
   });
 
-  // Conversation history
+  // ── Conversation history ──────────────────────────────────────
   router.get('/chat/history', (req: Request, res: Response) => {
     const convId = req.query.id as string;
     if (convId && conversations.has(convId)) {
@@ -73,8 +184,8 @@ export function createChatRouter(
     }
   });
 
-  // Streaming chat endpoint via SSE
-  router.post('/chat/stream', async (req: Request, res: Response) => {
+  // ── Streaming chat endpoint via SSE (auth-gated) ──────────────
+  router.post('/chat/stream', requireAuth, async (req: Request, res: Response) => {
     const { message, conversationId } = req.body as {
       message?: string;
       conversationId?: string;
@@ -105,8 +216,6 @@ export function createChatRouter(
     };
 
     // ── Keep-alive ping ──────────────────────────────────────────
-    // Sends an SSE comment (: ping) every 15s to keep the connection
-    // alive through Railway's reverse proxy and any intermediate proxies.
     const keepAlive = setInterval(() => {
       try {
         res.write(': ping\n\n');

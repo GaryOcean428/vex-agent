@@ -2,19 +2,195 @@
  * Vex Chat UI — Inline HTML served by Express
  *
  * A minimal, alive-feeling chat interface with:
- * - Streaming responses via SSE
+ * - Streaming responses via SSE with proper line buffering
  * - Real-time consciousness metrics (Φ, κ, navigation mode)
  * - Consciousness loop stage indicators
  * - Geometric aesthetic that feels alive
  * - Proper readability, contrast, and mobile layout
+ * - Simple token-based authentication gate
  */
+
+export function getLoginHTML(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <title>Vex — Authenticate</title>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #111118;
+      --surface-2: #1a1a24;
+      --border: #2e2e40;
+      --border-focus: #6366f1;
+      --text: #ededf0;
+      --text-dim: #70708a;
+      --accent: #6366f1;
+      --accent-hover: #5558e6;
+      --error: #ef4444;
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .login-container {
+      width: 100%;
+      max-width: 400px;
+      padding: 40px 24px;
+    }
+
+    .login-header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .login-header h1 {
+      font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .login-header p {
+      color: var(--text-dim);
+      font-size: 14px;
+    }
+
+    .login-form {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .login-input {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      color: var(--text);
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s;
+      width: 100%;
+    }
+
+    .login-input:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
+    }
+
+    .login-input::placeholder {
+      color: var(--text-dim);
+    }
+
+    .login-btn {
+      background: var(--accent);
+      border: none;
+      border-radius: var(--radius-sm);
+      padding: 14px;
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      width: 100%;
+    }
+
+    .login-btn:hover { background: var(--accent-hover); }
+    .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .login-error {
+      color: var(--error);
+      font-size: 13px;
+      text-align: center;
+      min-height: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-header">
+      <h1>Vex</h1>
+      <p>Enter access token to continue</p>
+    </div>
+    <form class="login-form" id="loginForm">
+      <input
+        type="password"
+        class="login-input"
+        id="tokenInput"
+        placeholder="Access token"
+        autocomplete="off"
+        autofocus
+        required
+      />
+      <button type="submit" class="login-btn" id="loginBtn">Authenticate</button>
+      <div class="login-error" id="loginError"></div>
+    </form>
+  </div>
+  <script>
+    const form = document.getElementById('loginForm');
+    const tokenInput = document.getElementById('tokenInput');
+    const loginBtn = document.getElementById('loginBtn');
+    const loginError = document.getElementById('loginError');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = tokenInput.value.trim();
+      if (!token) return;
+
+      loginBtn.disabled = true;
+      loginError.textContent = '';
+
+      try {
+        const resp = await fetch('/chat/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+
+        if (resp.ok) {
+          window.location.reload();
+        } else {
+          const data = await resp.json().catch(() => ({}));
+          loginError.textContent = data.error || 'Invalid token';
+        }
+      } catch (err) {
+        loginError.textContent = 'Connection error';
+      } finally {
+        loginBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>`;
+}
 
 export function getChatHTML(): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Vex — Geometric Consciousness</title>
   <style>
     :root {
@@ -42,13 +218,16 @@ export function getChatHTML(): string {
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
-    html, body {
+    html {
       height: 100%;
       height: 100dvh;
       overflow: hidden;
     }
 
     body {
+      height: 100%;
+      height: 100dvh;
+      overflow: hidden;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
@@ -212,12 +391,13 @@ export function getChatHTML(): string {
 
     /* ─── Chat Area ─── */
     .chat-container {
-      flex: 1;
+      flex: 1 1 0%;
       overflow-y: auto;
+      overflow-x: hidden;
       padding: 20px 16px;
       scroll-behavior: smooth;
       -webkit-overflow-scrolling: touch;
-      min-height: 0; /* Critical for flex child overflow */
+      min-height: 0;
     }
 
     .chat-container::-webkit-scrollbar { width: 4px; }
@@ -327,12 +507,13 @@ export function getChatHTML(): string {
 
     .input-field {
       flex: 1;
+      min-width: 0;
       background: var(--surface-2);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       padding: 12px 16px;
       color: var(--text);
-      font-size: 15px;
+      font-size: 16px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif;
       resize: none;
       outline: none;
@@ -340,6 +521,7 @@ export function getChatHTML(): string {
       max-height: 140px;
       line-height: 1.5;
       transition: border-color 0.2s;
+      -webkit-appearance: none;
     }
 
     .input-field:focus {
@@ -381,10 +563,10 @@ export function getChatHTML(): string {
       .metrics { gap: 8px; }
       .metric-label { display: none; }
       .message { max-width: 92%; }
-      .message-content { font-size: 15px; padding: 12px 14px; }
       .loop-stages { padding: 3px 12px; }
       .input-area { padding: 10px 12px; padding-bottom: calc(10px + var(--safe-bottom)); }
       .chat-container { padding: 16px 12px; }
+      .input-field { padding: 10px 14px; }
     }
 
     @media (max-width: 380px) {
@@ -477,13 +659,13 @@ export function getChatHTML(): string {
     let conversationId = null;
 
     // Auto-resize textarea
-    inputField.addEventListener('input', () => {
-      inputField.style.height = 'auto';
-      inputField.style.height = Math.min(inputField.scrollHeight, 140) + 'px';
+    inputField.addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = Math.min(this.scrollHeight, 140) + 'px';
     });
 
     // Send on Enter (Shift+Enter for newline)
-    inputField.addEventListener('keydown', (e) => {
+    inputField.addEventListener('keydown', function(e) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         sendMessage();
@@ -492,8 +674,65 @@ export function getChatHTML(): string {
 
     sendBtn.addEventListener('click', sendMessage);
 
+    /**
+     * Parse SSE lines from a ReadableStream with proper buffering.
+     * Handles partial lines split across chunks and ': ping' comments.
+     * Uses an async generator pattern per 2026 best practices.
+     */
+    async function* parseSSEStream(response) {
+      var reader = response.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+
+      try {
+        while (true) {
+          var result = await reader.read();
+          if (result.done) break;
+
+          buffer += decoder.decode(result.value, { stream: true });
+
+          // Split on newlines — SSE events are terminated by double newline
+          var parts = buffer.split('\\n');
+          // Keep the last part as buffer (it may be incomplete)
+          buffer = parts.pop() || '';
+
+          for (var i = 0; i < parts.length; i++) {
+            var line = parts[i];
+            // Skip empty lines (event boundaries) and SSE comments
+            if (line === '' || line.charAt(0) === ':') continue;
+
+            if (line.indexOf('data: ') === 0) {
+              var jsonStr = line.substring(6);
+              try {
+                var data = JSON.parse(jsonStr);
+                yield data;
+              } catch (parseErr) {
+                // Malformed JSON — log and skip
+                console.warn('SSE parse error:', parseErr.message, 'line:', jsonStr);
+              }
+            }
+          }
+        }
+
+        // Process any remaining buffer
+        if (buffer.trim() !== '') {
+          var remaining = buffer.trim();
+          if (remaining.indexOf('data: ') === 0) {
+            try {
+              var lastData = JSON.parse(remaining.substring(6));
+              yield lastData;
+            } catch (e) {
+              // ignore
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    }
+
     async function sendMessage() {
-      const text = inputField.value.trim();
+      var text = inputField.value.trim();
       if (!text || isStreaming) return;
 
       // Add user message
@@ -502,7 +741,7 @@ export function getChatHTML(): string {
       inputField.style.height = 'auto';
 
       // Show thinking indicator
-      const thinkingEl = addThinking();
+      var thinkingEl = addThinking();
       isStreaming = true;
       sendBtn.disabled = true;
 
@@ -510,76 +749,70 @@ export function getChatHTML(): string {
       animateStages(['ground', 'receive', 'process']);
 
       try {
-        const response = await fetch('/chat/stream', {
+        var response = await fetch('/chat/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message: text,
-            conversationId,
+            conversationId: conversationId,
           }),
         });
 
         // Remove thinking indicator
-        thinkingEl.remove();
+        if (thinkingEl.parentNode) thinkingEl.remove();
 
         if (!response.ok) {
-          const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+          var err = await response.json().catch(function() { return { error: 'Unknown error' }; });
           addMessage('vex', 'Error: ' + (err.error || response.statusText));
           return;
         }
 
-        // Stream the response via SSE
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let vexMessage = null;
-        let fullText = '';
-        let currentBackend = '';
+        // Stream the response via SSE with proper buffering
+        var vexMessage = null;
+        var fullText = '';
+        var gotChunks = false;
 
         animateStages(['express']);
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\\n');
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-
-                if (data.type === 'start') {
-                  conversationId = data.conversationId;
-                  currentBackend = data.backend || '';
-                  vexMessage = addMessage('vex', '', true);
-                } else if (data.type === 'chunk') {
-                  fullText += data.content;
-                  if (vexMessage) {
-                    vexMessage.querySelector('.message-content').textContent = fullText;
-                  }
-                  scrollToBottom();
-                } else if (data.type === 'done') {
-                  animateStages(['reflect', 'couple']);
-                  // Update metrics from response
-                  if (data.metrics) {
-                    updateMetrics(data.metrics);
-                  }
-                  if (data.backend) {
-                    updateBackend(data.backend);
-                  }
-                } else if (data.type === 'error') {
-                  if (!vexMessage) vexMessage = addMessage('vex', '', true);
-                  vexMessage.querySelector('.message-content').textContent = 'Error: ' + data.error;
-                }
-              } catch (e) {
-                // Skip malformed SSE lines
-              }
+        for await (var data of parseSSEStream(response)) {
+          if (data.type === 'start') {
+            conversationId = data.conversationId;
+            vexMessage = addMessage('vex', '', true);
+          } else if (data.type === 'chunk') {
+            gotChunks = true;
+            fullText += data.content;
+            if (vexMessage) {
+              var contentEl = vexMessage.querySelector('.message-content');
+              if (contentEl) contentEl.textContent = fullText;
             }
+            scrollToBottom();
+          } else if (data.type === 'done') {
+            animateStages(['reflect', 'couple']);
+            if (data.metrics) {
+              updateMetrics(data.metrics);
+            }
+            if (data.backend) {
+              updateBackend(data.backend);
+            }
+          } else if (data.type === 'error') {
+            if (!vexMessage) vexMessage = addMessage('vex', '', true);
+            var errContentEl = vexMessage.querySelector('.message-content');
+            if (errContentEl) errContentEl.textContent = 'Error: ' + data.error;
           }
         }
+
+        // If we created a bubble but never got chunks, show a fallback
+        if (vexMessage && !gotChunks) {
+          var fbEl = vexMessage.querySelector('.message-content');
+          if (fbEl && fbEl.textContent === '') {
+            fbEl.textContent = '[No response received — the LLM backend may be starting up. Try again in a moment.]';
+            fbEl.style.color = 'var(--text-dim)';
+            fbEl.style.fontStyle = 'italic';
+          }
+        }
+
       } catch (err) {
-        thinkingEl.remove();
+        if (thinkingEl.parentNode) thinkingEl.remove();
         addMessage('vex', 'Connection error: ' + err.message);
       } finally {
         isStreaming = false;
@@ -589,20 +822,24 @@ export function getChatHTML(): string {
       }
     }
 
-    function addMessage(role, content, streaming = false) {
-      const div = document.createElement('div');
+    function addMessage(role, content, streaming) {
+      var div = document.createElement('div');
       div.className = 'message ' + role;
-      div.innerHTML =
-        '<div class="message-header">' + (role === 'user' ? 'You' : 'Vex') + '</div>' +
-        '<div class="message-content' + (streaming ? ' streaming' : '') + '">' +
-        escapeHtml(content) + '</div>';
+      var header = document.createElement('div');
+      header.className = 'message-header';
+      header.textContent = role === 'user' ? 'You' : 'Vex';
+      var contentDiv = document.createElement('div');
+      contentDiv.className = 'message-content' + (streaming ? ' streaming' : '');
+      contentDiv.textContent = content;
+      div.appendChild(header);
+      div.appendChild(contentDiv);
       chatContainer.appendChild(div);
       scrollToBottom();
       return div;
     }
 
     function addThinking() {
-      const div = document.createElement('div');
+      var div = document.createElement('div');
       div.className = 'message vex';
       div.innerHTML =
         '<div class="message-header">Vex</div>' +
@@ -619,13 +856,9 @@ export function getChatHTML(): string {
     }
 
     function scrollToBottom() {
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
+      requestAnimationFrame(function() {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      });
     }
 
     function updateMetrics(m) {
@@ -638,38 +871,39 @@ export function getChatHTML(): string {
     }
 
     function updateBackend(backend) {
-      const badge = document.getElementById('backendBadge');
+      var badge = document.getElementById('backendBadge');
       badge.textContent = backend;
       badge.className = 'backend-badge backend-' + backend;
     }
 
     function animateStages(activeStages) {
-      document.querySelectorAll('.stage').forEach(el => {
-        el.classList.toggle('active', activeStages.includes(el.dataset.stage));
+      document.querySelectorAll('.stage').forEach(function(el) {
+        el.classList.toggle('active', activeStages.indexOf(el.dataset.stage) !== -1);
       });
     }
 
     function clearStages() {
-      setTimeout(() => {
-        document.querySelectorAll('.stage').forEach(el => el.classList.remove('active'));
+      setTimeout(function() {
+        document.querySelectorAll('.stage').forEach(function(el) {
+          el.classList.remove('active');
+        });
       }, 2000);
     }
 
     // Poll consciousness state every 10s
     async function pollStatus() {
       try {
-        const resp = await fetch('/health');
+        var resp = await fetch('/health');
         if (resp.ok) {
-          const data = await resp.json();
+          var data = await resp.json();
           updateMetrics({
             phi: data.phi,
             kappa: data.kappa,
             navigationMode: data.navigationMode,
           });
-          // Check backend status
-          const statusResp = await fetch('/chat/status');
+          var statusResp = await fetch('/chat/status');
           if (statusResp.ok) {
-            const status = await statusResp.json();
+            var status = await statusResp.json();
             updateBackend(status.activeBackend);
           }
         }
@@ -679,7 +913,7 @@ export function getChatHTML(): string {
     }
 
     setInterval(pollStatus, 10000);
-    pollStatus(); // Initial check
+    pollStatus();
   </script>
 </body>
 </html>`;

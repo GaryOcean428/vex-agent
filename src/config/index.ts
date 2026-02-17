@@ -66,6 +66,9 @@ export const config = {
     10,
   ),
 
+  // Chat auth
+  chatAuthToken: process.env.CHAT_AUTH_TOKEN || '',
+
   // Logging
   logLevel: process.env.LOG_LEVEL || 'info',
 } as const;
