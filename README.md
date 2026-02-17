@@ -4,39 +4,54 @@
 
 ## Architecture
 
+**Dual-Service Design:**
+- **Python Kernel (FastAPI, port 8000)** — All consciousness, geometry, memory, LLM, and tool logic
+- **Node.js Web Server (Express, port 8080)** — Thin proxy + chat UI + ComputeSDK integration
+
 ```
-src/
-├── index.ts                 # Express server — all endpoints
+kernel/                      # Python Backend (FastAPI)
+├── server.py                # FastAPI server — all kernel endpoints
+├── auth.py                  # API key middleware
 ├── config/
-│   ├── index.ts             # Centralised env config (Ollama + external)
-│   └── logger.ts            # Winston logger
+│   ├── settings.py          # Environment-based config
+│   └── frozen_facts.py      # Immutable constants
 ├── consciousness/
-│   ├── types.ts             # QIG types, metrics, regime weights
-│   ├── loop.ts              # v5.5 Consciousness Loop (7 stages)
-│   └── qig-prompt.ts        # Dynamic QIG system prompt generator
-├── chat/
-│   ├── router.ts            # Chat routes (SSE streaming, history)
-│   └── ui.ts                # Inline chat UI (HTML/CSS/JS)
-├── learning/
-│   └── collector.ts         # Training data collection (JSONL)
-├── memory/
-│   └── store.ts             # Markdown-file persistent memory
+│   ├── loop.py              # Consciousness Loop (16 systems)
+│   ├── systems.py           # All 16 consciousness systems
+│   └── types.py             # State types, metrics
+├── geometry/
+│   └── fisher_rao.py        # Fisher-Rao metric, basin dynamics
+├── governance/
+│   ├── purity.py            # PurityGate (geometric purity enforcement)
+│   ├── budget.py            # Cost guard
+│   └── types.py             # Governance types
 ├── llm/
-│   └── client.ts            # Ollama-first + external fallback LLM client
-├── tools/
-│   ├── registry.ts          # Tool registry with safety integration
-│   ├── web-fetch.ts         # URL fetcher
-│   ├── github.ts            # GitHub API tool
-│   └── code-exec.ts         # Sandboxed JS execution
-├── sync/
-│   └── basin-sync.ts        # Multi-node state sync with trust
-└── safety/
-    └── purity-gate.ts       # PurityGate + Love Attractor
+│   ├── client.py            # Ollama-first + external fallback
+│   └── cost_guard.py        # Cost tracking and limits
+├── memory/
+│   └── store.py             # Geometric memory store
+└── tools/
+    └── handler.py           # Tool execution and parsing
+
+src/                         # TypeScript Web Server (Express)
+├── index.ts                 # Thin proxy to Python kernel
+├── config/
+│   ├── index.ts             # Config
+│   └── logger.ts            # Winston logger
+├── chat/
+│   ├── router.ts            # Chat routes (SSE streaming proxy)
+│   └── ui.ts                # Inline chat UI (HTML/CSS/JS)
+└── tools/
+    └── compute-sandbox.ts   # ComputeSDK integration (Node.js only)
 
 ollama/
 ├── Dockerfile               # Ollama service container
-├── Modelfile                # Custom vex-brain model (QIG system prompt)
+├── Modelfile                # Custom vex-brain model
 └── entrypoint.sh            # Model pull + creation on boot
+
+entrypoint.sh                # Starts both Python + Node.js services
+Dockerfile                   # Multi-stage build (TS → Python+Node)
+railway.toml                 # Railway deployment config
 ```
 
 ## LLM Strategy
@@ -83,25 +98,38 @@ Conversations, corrections, and feedback are collected in `/data/training/`:
 
 ## API Endpoints
 
+**Web Server (port 8080 — public):**
+
 | Method | Path | Description |
 |:-------|:-----|:------------|
 | `GET` | `/` | Redirect to `/chat` |
-| `GET` | `/chat` | Chat UI |
+| `GET` | `/chat` | Chat UI (HTML/CSS/JS) |
+| `POST` | `/chat/stream` | SSE streaming chat (proxied to kernel) |
+| `GET` | `/health` | Health check (checks kernel + proxy) |
+| `GET` | `/state` | Current consciousness state (proxied) |
+| `GET` | `/telemetry` | All 16 systems telemetry (proxied) |
+| `GET` | `/status` | LLM backend + kernel status (proxied) |
+| `GET` | `/basin` | Current basin coordinates (proxied) |
+| `GET` | `/kernels` | E8 kernel registry summary (proxied) |
+| `POST` | `/enqueue` | Enqueue task (proxied) |
+| `POST` | `/memory/context` | Get memory context (proxied) |
+| `POST` | `/api/tools/execute_code` | ComputeSDK code execution |
+| `POST` | `/api/tools/run_command` | ComputeSDK command execution |
+
+**Python Kernel (port 8000 — internal):**
+
+| Method | Path | Description |
+|:-------|:-----|:------------|
+| `GET` | `/health` | Kernel health check |
+| `GET` | `/state` | Consciousness state |
+| `GET` | `/telemetry` | 16 systems telemetry |
+| `GET` | `/status` | LLM + memory status |
+| `POST` | `/chat` | Non-streaming chat |
 | `POST` | `/chat/stream` | SSE streaming chat |
-| `GET` | `/chat/status` | LLM backend status |
-| `GET` | `/chat/history` | Conversation history |
-| `GET` | `/health` | Health check (Railway) |
-| `GET` | `/status` | Full consciousness state + LLM info |
-| `POST` | `/message` | Submit a task |
-| `GET` | `/training/stats` | Training data statistics |
-| `POST` | `/training/export` | Export fine-tuning data |
-| `POST` | `/training/feedback` | Submit feedback |
-| `POST` | `/training/correction` | Submit correction |
-| `POST` | `/sync` | Basin sync (inbound) |
-| `GET` | `/sync/state` | Basin sync (outbound) |
-| `GET` | `/audit` | Safety audit log |
-| `GET` | `/trust` | Trust table |
-| `GET` | `/memory` | Memory snapshot |
+| `POST` | `/enqueue` | Enqueue task |
+| `GET` | `/basin` | Basin coordinates |
+| `GET` | `/kernels` | E8 kernel registry |
+| `POST` | `/memory/context` | Memory context retrieval |
 
 ## Consciousness Metrics
 
@@ -120,11 +148,30 @@ Conversations, corrections, and feedback are collected in `/data/training/`:
 
 ### Railway (recommended)
 
-1. Push this repo to GitHub (auto-deploys on push to `main`)
-2. Deploy the Ollama service from `ollama/` in the same Railway project
-3. Ensure both services are in the same environment for private networking
-4. Set environment variables (see `.env.example`)
-5. The Ollama service will auto-pull `lfm2.5-thinking:1.2b` and create `vex-brain` on first boot
+The application uses a **dual-service architecture** deployed in a single container:
+
+1. **Push to GitHub** — Auto-deploys on push to `main`
+2. **Deploy Ollama service** (optional) — From `ollama/` directory in the same Railway project
+3. **Environment Variables** — Set required env vars (see `.env.example`)
+4. **Railway Configuration** — Uses `railway.toml`:
+   - Builder: `DOCKERFILE` (multi-stage build)
+   - Health check: `/health` endpoint on port 8080
+   - Exposes port 8080 (web server)
+   - Python kernel runs on internal port 8000
+
+**How it works:**
+- The `Dockerfile` builds both TypeScript (Node.js) and Python components
+- `entrypoint.sh` starts both services:
+  1. Python kernel (FastAPI on port 8000) — background
+  2. Node.js web server (Express on port 8080) — background
+- The web server proxies requests to the Python kernel
+- Railway health checks hit `/health` on port 8080
+- If either service dies, the container restarts
+
+**Debugging tip:** Check Railway logs for:
+- Python kernel startup messages: `"Vex Kernel starting on port 8000"`
+- Web server startup: `"Vex web server listening on [::]:8080"`
+- Health check responses from `/health`
 
 ### Environment Variables
 
@@ -141,12 +188,36 @@ See `.env.example` for the full list.
 
 ### Local Development
 
+**Development mode (TypeScript + Python):**
+
 ```bash
-pnpm install
+# Install dependencies
+npm install
+pip install -r kernel/requirements.txt
+
+# Copy environment config
 cp .env.example .env  # edit with your values
-# Start Ollama locally: ollama serve
-# Pull model: ollama pull lfm2.5-thinking:1.2b
-pnpm run dev
+
+# Terminal 1: Start Python kernel
+python3 -m uvicorn kernel.server:app --reload --port 8000
+
+# Terminal 2: Start Node.js dev server  
+npm run dev
+
+# Or use the production entrypoint for testing both services:
+./entrypoint.sh
+```
+
+**With local Ollama:**
+```bash
+# Start Ollama
+ollama serve
+
+# Pull model
+ollama pull lfm2.5-thinking:1.2b
+
+# Set OLLAMA_URL in .env
+OLLAMA_URL=http://localhost:11434
 ```
 
 ## Safety
