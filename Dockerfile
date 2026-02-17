@@ -29,7 +29,7 @@ FROM python:3.11-slim
 
 # Install Node.js 22
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates && \
+    bash curl ca-certificates && \
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     corepack enable && corepack prepare pnpm@latest --activate && \
