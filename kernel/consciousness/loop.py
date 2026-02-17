@@ -205,8 +205,9 @@ class ConsciousnessLoop:
         logger.info("Consciousness loop starting...")
 
         # PurityGate — fail-closed preflight
+        kernel_root = Path(__file__).parent.parent
         try:
-            run_purity_gate()
+            run_purity_gate(kernel_root)
             logger.info("PurityGate: PASSED")
         except PurityGateError as e:
             logger.error("PurityGate: FAILED — %s", e)
