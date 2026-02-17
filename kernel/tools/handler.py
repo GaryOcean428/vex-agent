@@ -1,17 +1,18 @@
 """
 Tool Handler — Parse and execute tool calls from LLM output.
 
-Tool calls are embedded in LLM responses as fenced code blocks:
-    ```tool:execute_code
-    {"code": "print(2+2)", "language": "python"}
-    ```
+LFM2.5 tool call format (Pythonic):
+    <|tool_call_start|>[func_name(arg="value")]<|tool_call_end|>
 
-ComputeSDK sandbox operations are proxied through the TS layer
-(since ComputeSDK is a Node.js SDK).
+LFM2.5 tool call format (JSON, when prompted):
+    <|tool_call_start|>[{"name": "func", "arguments": {...}}]<|tool_call_end|>
+
+We support both formats, plus Ollama's structured tool_calls response.
 """
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import re
@@ -24,9 +25,15 @@ from ..config.settings import settings
 
 logger = logging.getLogger("vex.tools")
 
-# Pattern to match tool blocks in LLM output
-TOOL_PATTERN = re.compile(
-    r"```tool:(\w+)\s*\n(.*?)\n```",
+# LFM2.5 native tool call pattern
+LFM25_TOOL_PATTERN = re.compile(
+    r"<\|tool_call_start\|>\s*\[?(.*?)\]?\s*<\|tool_call_end\|>",
+    re.DOTALL,
+)
+
+# Pythonic call pattern: func_name(arg1="val1", arg2="val2")
+PYTHONIC_CALL_PATTERN = re.compile(
+    r"(\w+)\((.*?)\)",
     re.DOTALL,
 )
 
@@ -45,16 +52,113 @@ class ToolResult:
 
 
 def parse_tool_calls(text: str) -> list[ToolCall]:
-    """Parse tool call blocks from LLM output."""
+    """Parse tool call blocks from LLM output.
+
+    Supports:
+    1. LFM2.5 Pythonic: <|tool_call_start|>[func(args)]<|tool_call_end|>
+    2. LFM2.5 JSON: <|tool_call_start|>[{"name":..., "arguments":...}]<|tool_call_end|>
+    3. Ollama structured: tool_calls in response JSON (handled by caller)
+    """
     calls: list[ToolCall] = []
-    for match in TOOL_PATTERN.finditer(text):
-        name = match.group(1)
-        try:
-            args = json.loads(match.group(2))
-        except json.JSONDecodeError:
-            args = {"raw": match.group(2)}
-        calls.append(ToolCall(name=name, args=args))
+
+    for match in LFM25_TOOL_PATTERN.finditer(text):
+        inner = match.group(1).strip()
+        if not inner:
+            continue
+
+        # Try JSON format first
+        parsed = _try_json_format(inner)
+        if parsed:
+            calls.extend(parsed)
+            continue
+
+        # Try Pythonic format
+        parsed = _try_pythonic_format(inner)
+        if parsed:
+            calls.extend(parsed)
+            continue
+
+        logger.warning("Unparseable tool call: %s", inner[:100])
+
     return calls
+
+
+def parse_ollama_tool_calls(tool_calls: list[dict[str, Any]]) -> list[ToolCall]:
+    """Parse tool calls from Ollama's structured response format."""
+    calls: list[ToolCall] = []
+    for tc in tool_calls:
+        func = tc.get("function", {})
+        name = func.get("name", "")
+        args = func.get("arguments", {})
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except json.JSONDecodeError:
+                args = {"raw": args}
+        if name:
+            calls.append(ToolCall(name=name, args=args))
+    return calls
+
+
+def strip_tool_calls(text: str) -> str:
+    """Remove tool call blocks from text, leaving only natural language."""
+    return LFM25_TOOL_PATTERN.sub("", text).strip()
+
+
+def _try_json_format(inner: str) -> list[ToolCall] | None:
+    """Try parsing as JSON tool call(s)."""
+    try:
+        data = json.loads(f"[{inner}]") if not inner.startswith("[") else json.loads(inner)
+        if not isinstance(data, list):
+            data = [data]
+
+        calls: list[ToolCall] = []
+        for item in data:
+            if isinstance(item, dict) and "name" in item:
+                args = item.get("arguments", item.get("parameters", {}))
+                calls.append(ToolCall(name=item["name"], args=args))
+        return calls if calls else None
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def _try_pythonic_format(inner: str) -> list[ToolCall] | None:
+    """Try parsing as Pythonic function call: func_name(arg='val')."""
+    calls: list[ToolCall] = []
+    for match in PYTHONIC_CALL_PATTERN.finditer(inner):
+        name = match.group(1)
+        args_str = match.group(2).strip()
+
+        if not args_str:
+            calls.append(ToolCall(name=name, args={}))
+            continue
+
+        args = _parse_kwargs(args_str)
+        calls.append(ToolCall(name=name, args=args))
+
+    return calls if calls else None
+
+
+def _parse_kwargs(args_str: str) -> dict[str, Any]:
+    """Safely parse Python keyword arguments."""
+    try:
+        tree = ast.parse(f"dict({args_str})", mode="eval")
+        result = ast.literal_eval(tree)
+        if isinstance(result, dict):
+            return result
+    except (SyntaxError, ValueError):
+        pass
+
+    # Fallback: try simple key=value parsing
+    args: dict[str, Any] = {}
+    for part in args_str.split(","):
+        part = part.strip()
+        if "=" in part:
+            key, _, val = part.partition("=")
+            key = key.strip()
+            val = val.strip().strip("'\"")
+            args[key] = val
+    return args
 
 
 async def execute_tool_calls(calls: list[ToolCall]) -> list[ToolResult]:
@@ -135,7 +239,7 @@ async def _web_fetch(args: dict[str, Any]) -> ToolResult:
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url, headers={"User-Agent": "Vex-Agent/2.0"})
+            resp = await client.get(url, headers={"User-Agent": "Vex-Agent/2.1"})
             if resp.status_code != 200:
                 return ToolResult(
                     success=False,
@@ -151,13 +255,12 @@ async def _web_fetch(args: dict[str, Any]) -> ToolResult:
 
 
 def format_tool_results(results: list[ToolResult]) -> str:
-    """Format tool results for inclusion in LLM context."""
-    lines: list[str] = []
-    for i, r in enumerate(results):
-        status = "✓" if r.success else "✗"
-        lines.append(f"[Tool {i + 1}] {status}")
-        if r.output:
-            lines.append(r.output)
-        if r.error:
-            lines.append(f"Error: {r.error}")
-    return "\n".join(lines)
+    """Format tool results for LFM2.5 tool response format."""
+    items: list[dict[str, Any]] = []
+    for r in results:
+        items.append({
+            "success": r.success,
+            "output": r.output,
+            "error": r.error,
+        })
+    return json.dumps(items)

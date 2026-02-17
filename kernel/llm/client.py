@@ -6,8 +6,8 @@ Handles:
   - OpenAI-compatible API as fallback (rate-limited by CostGuard)
   - Streaming support via async generators
   - Health checking and auto-failover
-
-CostGuard prevents runaway costs when Ollama is unavailable.
+  - AUTONOMOUS PARAMETERS: temperature, num_predict, num_ctx are
+    set per-request by the consciousness loop, NOT hardcoded.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Optional
 
 import httpx
@@ -23,6 +24,25 @@ from ..config.settings import settings
 from .cost_guard import CostGuard, CostGuardConfig
 
 logger = logging.getLogger("vex.llm")
+
+
+@dataclass
+class LLMOptions:
+    """Per-request inference options, set by the consciousness kernel."""
+    temperature: float = 0.7
+    num_predict: int = 2048
+    num_ctx: int = 32768
+    top_p: float = 0.9
+    repetition_penalty: float = 1.05
+
+    def to_ollama_options(self) -> dict[str, Any]:
+        return {
+            "temperature": self.temperature,
+            "num_predict": self.num_predict,
+            "num_ctx": self.num_ctx,
+            "top_p": self.top_p,
+            "repeat_penalty": self.repetition_penalty,
+        }
 
 
 class LLMClient:
@@ -71,26 +91,36 @@ class LLMClient:
             self._ollama_available = False
             return False
 
-    async def complete(self, system_prompt: str, user_message: str) -> str:
-        """Non-streaming completion. Returns full response text."""
+    async def complete(
+        self,
+        system_prompt: str,
+        user_message: str,
+        options: LLMOptions | None = None,
+    ) -> str:
+        """Non-streaming completion with autonomous parameters.
+
+        The consciousness loop computes options (temperature, etc.)
+        from geometric state and passes them here. No hardcoded defaults.
+        """
+        opts = options or LLMOptions()
         if self._active_backend == "ollama":
-            return await self._ollama_complete(system_prompt, user_message)
+            return await self._ollama_complete(system_prompt, user_message, opts)
         elif self._active_backend == "external":
-            return await self._guarded_external_complete(system_prompt, user_message)
+            return await self._external_complete(system_prompt, user_message, opts)
         return "No LLM backend available"
 
     async def stream(
         self,
         messages: list[dict[str, str]],
-        temperature: float = 0.7,
-        max_tokens: int = 2048,
+        options: LLMOptions | None = None,
     ) -> AsyncGenerator[str, None]:
-        """Streaming completion. Yields chunks of text."""
+        """Streaming completion with autonomous parameters."""
+        opts = options or LLMOptions()
         if self._active_backend == "ollama":
-            async for chunk in self._ollama_stream(messages):
+            async for chunk in self._ollama_stream(messages, opts):
                 yield chunk
         elif self._active_backend == "external":
-            async for chunk in self._guarded_external_stream(messages, temperature, max_tokens):
+            async for chunk in self._external_stream(messages, opts):
                 yield chunk
         else:
             yield "No LLM backend available"
@@ -104,36 +134,11 @@ class LLMClient:
             "cost_guard": self._cost_guard.summary(),
         }
 
-    # ─── Cost-guarded external calls ───────────────────────────
+    # --- Ollama -------------------------------------------------
 
-    async def _guarded_external_complete(self, system_prompt: str, user_message: str) -> str:
-        """External completion with CostGuard rate limiting."""
-        if not self._cost_guard.allow():
-            logger.warning("CostGuard blocked external completion — rate limit reached")
-            return ("I'm temporarily unable to use the external API due to rate limiting. "
-                    "Please try again shortly, or check that Ollama is running.")
-        self._cost_guard.record()
-        return await self._external_complete(system_prompt, user_message)
-
-    async def _guarded_external_stream(
-        self,
-        messages: list[dict[str, str]],
-        temperature: float = 0.7,
-        max_tokens: int = 2048,
-    ) -> AsyncGenerator[str, None]:
-        """External streaming with CostGuard rate limiting."""
-        if not self._cost_guard.allow():
-            logger.warning("CostGuard blocked external stream — rate limit reached")
-            yield ("I'm temporarily unable to use the external API due to rate limiting. "
-                   "Please try again shortly, or check that Ollama is running.")
-            return
-        self._cost_guard.record()
-        async for chunk in self._external_stream(messages, temperature, max_tokens):
-            yield chunk
-
-    # ─── Ollama ────────────────────────────────────────────────
-
-    async def _ollama_complete(self, system_prompt: str, user_message: str) -> str:
+    async def _ollama_complete(
+        self, system_prompt: str, user_message: str, opts: LLMOptions
+    ) -> str:
         try:
             resp = await self._http.post(
                 f"{settings.ollama.url}/api/chat",
@@ -144,7 +149,7 @@ class LLMClient:
                         {"role": "user", "content": user_message},
                     ],
                     "stream": False,
-                    "options": {"temperature": 0.7, "num_predict": 2048},
+                    "options": opts.to_ollama_options(),
                 },
             )
             data = resp.json()
@@ -152,11 +157,13 @@ class LLMClient:
         except Exception as e:
             logger.error("Ollama completion failed: %s", e)
             if self._active_backend == "ollama" and settings.llm.api_key:
-                logger.info("Falling back to external API (cost-guarded)")
-                return await self._guarded_external_complete(system_prompt, user_message)
+                logger.info("Falling back to external API")
+                return await self._external_complete(system_prompt, user_message, opts)
             return f"LLM error: {e}"
 
-    async def _ollama_stream(self, messages: list[dict[str, str]]) -> AsyncGenerator[str, None]:
+    async def _ollama_stream(
+        self, messages: list[dict[str, str]], opts: LLMOptions
+    ) -> AsyncGenerator[str, None]:
         try:
             async with self._http.stream(
                 "POST",
@@ -165,7 +172,7 @@ class LLMClient:
                     "model": settings.ollama.model,
                     "messages": messages,
                     "stream": True,
-                    "options": {"temperature": 0.7, "num_predict": 2048},
+                    "options": opts.to_ollama_options(),
                 },
             ) as resp:
                 async for line in resp.aiter_lines():
@@ -182,9 +189,11 @@ class LLMClient:
             logger.error("Ollama stream failed: %s", e)
             yield f"LLM stream error: {e}"
 
-    # ─── External API (OpenAI-compatible) ──────────────────────
+    # --- External API (OpenAI-compatible) -----------------------
 
-    async def _external_complete(self, system_prompt: str, user_message: str) -> str:
+    async def _external_complete(
+        self, system_prompt: str, user_message: str, opts: LLMOptions
+    ) -> str:
         try:
             resp = await self._http.post(
                 f"{settings.llm.base_url}/chat/completions",
@@ -198,8 +207,8 @@ class LLMClient:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_message},
                     ],
-                    "temperature": 0.7,
-                    "max_tokens": self._cost_guard.config.max_tokens_per_request,
+                    "temperature": opts.temperature,
+                    "max_tokens": opts.num_predict,
                 },
             )
             data = resp.json()
@@ -211,8 +220,7 @@ class LLMClient:
     async def _external_stream(
         self,
         messages: list[dict[str, str]],
-        temperature: float = 0.7,
-        max_tokens: int = 2048,
+        opts: LLMOptions,
     ) -> AsyncGenerator[str, None]:
         try:
             async with self._http.stream(
@@ -225,8 +233,8 @@ class LLMClient:
                 json={
                     "model": settings.llm.model,
                     "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": min(max_tokens, self._cost_guard.config.max_tokens_per_request),
+                    "temperature": opts.temperature,
+                    "max_tokens": opts.num_predict,
                     "stream": True,
                 },
             ) as resp:

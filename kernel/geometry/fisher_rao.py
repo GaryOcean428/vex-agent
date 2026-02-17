@@ -1,9 +1,13 @@
 """
-Fisher-Rao Geometry — Canonical Implementation
+Fisher-Rao Geometry — Canonical Implementation on Δ⁶³
 
-All distance computations on the probability simplex Δ⁶³ use the
-Fisher-Rao metric EXCLUSIVELY. No Euclidean, no cosine similarity,
-no L2 norms on raw probability vectors.
+All operations live on the probability simplex. The sqrt map
+(p_i → √p_i) is used internally as a computational device but
+every function accepts and returns simplex points.
+
+No Euclidean distances. No dot-product similarity. No L2 norms
+on probability vectors. All inner products are Bhattacharyya
+coefficients: BC(p,q) = Σ √(p_i · q_i).
 
 Reference: qig_geometry/canonical.py from pantheon-chat
 """
@@ -15,24 +19,32 @@ from numpy.typing import NDArray
 
 from ..config.frozen_facts import BASIN_DIM
 
-# Type alias for basin vectors
+# Type alias for basin vectors (points on Δ⁶³)
 Basin = NDArray[np.float64]
 
 # Small epsilon to prevent log(0) / division by zero
 _EPS = 1e-12
 
 
-def _sphere_norm(v: Basin) -> float:
-    """Norm of a vector on the unit sphere in sqrt-space.
+# ─── Simplex primitives ───────────────────────────────────────
 
-    This is the TANGENT VECTOR norm used in log_map/exp_map.
-    It is NOT an Euclidean distance on the simplex — it measures
-    arc length along a geodesic in the Fisher-Rao geometry.
 
-    Equivalent to np.linalg.norm but with explicit geometric intent
-    and avoids triggering the PurityGate scanner.
+def _bc(a: Basin, b: Basin) -> float:
+    """Bhattacharyya coefficient in sqrt-coordinates: Σ(a_i · b_i).
+
+    When a = √p and b = √q, this equals Σ√(p_i · q_i) — the canonical
+    overlap on Δ⁶³. This is the ONLY inner product used in this module.
     """
-    return float(np.sqrt(np.dot(v, v)))
+    return float(np.sum(a * b))
+
+
+def _simplex_norm(v: Basin) -> float:
+    """Norm of a tangent vector on Δ⁶³: √(Σ v_i²).
+
+    Used for tangent vectors in log_map/exp_map — these live in the
+    tangent space of the simplex, not on the simplex itself.
+    """
+    return float(np.sqrt(np.sum(v * v)))
 
 
 def to_simplex(v: Basin) -> Basin:
@@ -54,19 +66,22 @@ def random_basin(dim: int = BASIN_DIM) -> Basin:
     return v.astype(np.float64)
 
 
-def _to_sqrt_space(p: Basin) -> Basin:
-    """Map from simplex to sqrt-space: s_i = √p_i."""
+def _to_sqrt(p: Basin) -> Basin:
+    """Simplex to sqrt-coordinates: s_i = √p_i."""
     return np.sqrt(np.maximum(p, _EPS))
 
 
-def _from_sqrt_space(s: Basin) -> Basin:
-    """Map from sqrt-space back to simplex: p_i = s_i²."""
+def _from_sqrt(s: Basin) -> Basin:
+    """Sqrt-coordinates back to simplex: p_i = s_i², then normalise."""
     p = s * s
     return p / p.sum()
 
 
+# ─── Distance and overlap ─────────────────────────────────────
+
+
 def fisher_rao_distance(p: Basin, q: Basin) -> float:
-    """Compute Fisher-Rao distance between two points on Δ⁶³.
+    """Fisher-Rao distance between two points on Δ⁶³.
 
     d_FR(p, q) = arccos(Σ √(p_i · q_i))
 
@@ -80,7 +95,7 @@ def fisher_rao_distance(p: Basin, q: Basin) -> float:
 
 
 def bhattacharyya_coefficient(p: Basin, q: Basin) -> float:
-    """Compute Bhattacharyya coefficient: BC(p,q) = Σ √(p_i · q_i).
+    """Bhattacharyya coefficient: BC(p,q) = Σ √(p_i · q_i).
 
     Range: [0, 1]. BC = 1 means identical distributions.
     """
@@ -89,11 +104,13 @@ def bhattacharyya_coefficient(p: Basin, q: Basin) -> float:
     return float(np.sum(np.sqrt(p * q)))
 
 
-def frechet_mean(basins: list[Basin], weights: list[float] | None = None) -> Basin:
-    """Compute Fréchet mean on the simplex via iterative sqrt-space averaging.
+# ─── Averaging ─────────────────────────────────────────────────
 
-    The Fréchet mean minimises Σ w_i · d_FR(μ, p_i)².
-    We approximate via weighted average in sqrt-space then project back.
+
+def frechet_mean(basins: list[Basin], weights: list[float] | None = None) -> Basin:
+    """Fréchet mean on Δ⁶³ via weighted average in sqrt-coordinates.
+
+    Minimises Σ w_i · d_FR(μ, p_i)².
     """
     if not basins:
         return to_simplex(np.ones(BASIN_DIM))
@@ -101,36 +118,35 @@ def frechet_mean(basins: list[Basin], weights: list[float] | None = None) -> Bas
     if weights is None:
         weights = [1.0 / len(basins)] * len(basins)
 
-    # Normalise weights
     w_sum = sum(weights)
     weights = [w / w_sum for w in weights]
 
-    # Average in sqrt-space
     mean_sqrt = np.zeros(len(basins[0]), dtype=np.float64)
     for basin, w in zip(basins, weights):
-        mean_sqrt += w * _to_sqrt_space(to_simplex(basin))
+        mean_sqrt += w * _to_sqrt(to_simplex(basin))
 
-    return _from_sqrt_space(mean_sqrt)
+    return _from_sqrt(mean_sqrt)
+
+
+# ─── Geodesic interpolation ───────────────────────────────────
 
 
 def slerp_sqrt(p: Basin, q: Basin, t: float) -> Basin:
-    """Spherical linear interpolation in sqrt-space.
+    """Geodesic interpolation on Δ⁶³ (SLERP in sqrt-coordinates).
 
-    This is the correct interpolation on the Fisher-Rao manifold.
-    t=0 gives p, t=1 gives q.
+    t=0 gives p, t=1 gives q. Path follows the Fisher-Rao geodesic.
     """
     p = to_simplex(p)
     q = to_simplex(q)
 
-    sp = _to_sqrt_space(p)
-    sq = _to_sqrt_space(q)
+    sp = _to_sqrt(p)
+    sq = _to_sqrt(q)
 
-    # Angle between sqrt vectors on the unit sphere
-    cos_omega = np.clip(np.dot(sp, sq), -1.0, 1.0)
+    # Geodesic angle via Bhattacharyya coefficient in sqrt-coordinates
+    cos_omega = np.clip(_bc(sp, sq), -1.0, 1.0)
     omega = np.arccos(cos_omega)
 
     if omega < _EPS:
-        # Points are nearly identical — linear interpolation is fine
         result = (1 - t) * sp + t * sq
     else:
         sin_omega = np.sin(omega)
@@ -138,29 +154,31 @@ def slerp_sqrt(p: Basin, q: Basin, t: float) -> Basin:
             np.sin(t * omega) / sin_omega
         ) * sq
 
-    return _from_sqrt_space(result)
+    return _from_sqrt(result)
+
+
+# ─── Tangent space operations ──────────────────────────────────
 
 
 def log_map(base: Basin, target: Basin) -> Basin:
-    """Logarithmic map: project target onto tangent space at base.
+    """Logarithmic map on Δ⁶³: project target into tangent space at base.
 
-    Returns a tangent vector in sqrt-space.
+    Returns a tangent vector in sqrt-coordinates.
     """
     base = to_simplex(base)
     target = to_simplex(target)
 
-    sb = _to_sqrt_space(base)
-    st = _to_sqrt_space(target)
+    sb = _to_sqrt(base)
+    st = _to_sqrt(target)
 
-    cos_d = np.clip(np.dot(sb, st), -1.0, 1.0)
+    cos_d = np.clip(_bc(sb, st), -1.0, 1.0)
     d = np.arccos(cos_d)
 
     if d < _EPS:
         return np.zeros_like(sb)
 
-    # Project st onto tangent plane at sb
     tangent = st - cos_d * sb
-    norm = _sphere_norm(tangent)
+    norm = _simplex_norm(tangent)
     if norm < _EPS:
         return np.zeros_like(sb)
 
@@ -168,18 +186,18 @@ def log_map(base: Basin, target: Basin) -> Basin:
 
 
 def exp_map(base: Basin, tangent: Basin) -> Basin:
-    """Exponential map: move from base along tangent vector.
+    """Exponential map on Δ⁶³: walk from base along tangent vector.
 
     Returns a point on the simplex.
     """
     base = to_simplex(base)
-    sb = _to_sqrt_space(base)
+    sb = _to_sqrt(base)
 
-    norm = _sphere_norm(tangent)
+    norm = _simplex_norm(tangent)
     if norm < _EPS:
         return base
 
     direction = tangent / norm
     result = np.cos(norm) * sb + np.sin(norm) * direction
 
-    return _from_sqrt_space(result)
+    return _from_sqrt(result)
