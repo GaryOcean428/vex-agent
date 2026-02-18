@@ -85,7 +85,18 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
   res.status(401).json({ error: 'Authentication required' });
 }
 
-export function createChatRouter(kernelUrl: string): Router {
+export interface ChatRouterOptions {
+  kernelUrl: string;
+  /** When true, skip serving inline HTML for GET /chat (React SPA handles it) */
+  hasReactFrontend?: boolean;
+}
+
+export function createChatRouter(options: ChatRouterOptions): Router;
+export function createChatRouter(kernelUrl: string): Router;
+export function createChatRouter(arg: string | ChatRouterOptions): Router {
+  const options: ChatRouterOptions =
+    typeof arg === 'string' ? { kernelUrl: arg } : arg;
+  const { kernelUrl, hasReactFrontend = false } = options;
   const router = Router();
 
   // ── Auth endpoint ─────────────────────────────────────────────
@@ -115,10 +126,14 @@ export function createChatRouter(kernelUrl: string): Router {
   });
 
   // ── Serve chat UI (auth-gated) ────────────────────────────────
-  router.get('/chat', requireAuth, (_req: Request, res: Response) => {
-    res.setHeader('Content-Type', 'text/html');
-    res.send(getChatHTML());
-  });
+  // Only serve inline HTML fallback when the React frontend is not available.
+  // When the React SPA exists, /chat is handled by the SPA fallback route.
+  if (!hasReactFrontend) {
+    router.get('/chat', requireAuth, (_req: Request, res: Response) => {
+      res.setHeader('Content-Type', 'text/html');
+      res.send(getChatHTML());
+    });
+  }
 
   // ── Kernel status (proxied) ───────────────────────────────────
   router.get('/chat/status', async (_req: Request, res: Response) => {
