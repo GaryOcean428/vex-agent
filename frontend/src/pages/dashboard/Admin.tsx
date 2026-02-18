@@ -20,6 +20,7 @@ export default function Admin() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input: taskInput, source: 'admin-ui' }),
       });
+      if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
       const data = await resp.json();
       setTaskResult(`Task enqueued: ${data.task_id ?? 'unknown'}`);
       setTaskInput('');
@@ -147,7 +148,7 @@ export default function Admin() {
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Total conversations</span>
-            <span className="dash-row-value">{state?.total_conversations ?? 0}</span>
+            <span className="dash-row-value">{state?.conversations_total ?? 0}</span>
           </div>
         </div>
       </div>

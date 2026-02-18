@@ -31,13 +31,15 @@ export default function Graph() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Initialize nodes if empty
-    if (nodesRef.current.length === 0) {
+    // Rebuild nodes when active kernel count changes
+    const active = state.kernels?.active ?? 1;
+    const expectedNodeCount = 1 + Math.min(active - 1, 8);
+    if (nodesRef.current.length !== expectedNodeCount) {
       const centerX = 250;
       const centerY = 200;
 
       // Genesis node at center
-      nodesRef.current = [{
+      const nodes: Node[] = [{
         id: 'genesis',
         label: 'GENESIS',
         kind: 'genesis',
@@ -49,14 +51,15 @@ export default function Graph() {
       }];
 
       // Core-8 nodes in circle around genesis
-      const active = state.kernels?.active ?? 1;
       for (let i = 0; i < Math.min(active - 1, 8); i++) {
         const angle = (i / 8) * Math.PI * 2 - Math.PI / 2;
         const dist = 120;
-        nodesRef.current.push({
+        // Reuse existing node position if available
+        const existing = nodesRef.current.find(n => n.id === (CORE_8_SPECS[i] ?? `kernel-${i}`));
+        nodes.push(existing ?? {
           id: CORE_8_SPECS[i] ?? `kernel-${i}`,
           label: CORE_8_SPECS[i] ?? `K${i}`,
-          kind: 'god',
+          kind: 'GOD',
           x: centerX + Math.cos(angle) * dist,
           y: centerY + Math.sin(angle) * dist,
           vx: 0,
@@ -64,6 +67,8 @@ export default function Graph() {
           radius: 14,
         });
       }
+
+      nodesRef.current = nodes;
     }
 
     const draw = () => {
@@ -108,21 +113,20 @@ export default function Graph() {
       // Draw nodes
       for (const node of nodes) {
         const isGenesis = node.kind === 'genesis';
-        const color = isGenesis ? '#6366f1' : node.kind === 'god' ? '#22d3ee' : '#f59e0b';
+        const color = isGenesis ? '#6366f1' : node.kind === 'GOD' ? '#22d3ee' : '#f59e0b';
 
-        // Glow
+        // Glow — save/restore to isolate shadow state
+        ctx.save();
         ctx.shadowColor = color;
         ctx.shadowBlur = isGenesis ? 15 : 8;
 
-        // Circle
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
         ctx.fill();
+        ctx.restore(); // Clears shadow state
 
-        ctx.shadowBlur = 0;
-
-        // Label
+        // Label (no shadow)
         ctx.fillStyle = '#ededf0';
         ctx.font = `${isGenesis ? 'bold ' : ''}${isGenesis ? 10 : 9}px monospace`;
         ctx.textAlign = 'center';

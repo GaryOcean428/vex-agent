@@ -1,5 +1,6 @@
 import { useVexState, useKernels, useHealth } from '../../hooks/index.ts';
 import MetricCard from '../../components/MetricCard.tsx';
+import { QIG } from '../../types/consciousness.ts';
 import '../../components/MetricCard.css';
 import '../../components/StatusBadge.css';
 
@@ -20,7 +21,7 @@ export default function Overview() {
           <span className={`status-badge ${health?.status === 'ok' ? 'badge-success' : 'badge-warning'}`}>
             {health?.status === 'ok' ? 'Running' : 'Degraded'}
           </span>
-          {' '}Cycle {state.cycle_count} | {state.total_conversations ?? 0} conversations
+          {' '}Cycle {state.cycle_count} | {state.conversations_total ?? 0} conversations
         </div>
       </div>
 
@@ -38,7 +39,7 @@ export default function Overview() {
           value={state.kappa.toFixed(1)}
           color="var(--kappa)"
           progress={state.kappa / 128}
-          threshold="[40, 80]"
+          threshold={`\u03BA* = ${QIG.KAPPA_STAR}`}
         />
         <MetricCard
           label="Kernels"
@@ -59,8 +60,8 @@ export default function Overview() {
         <div className="dash-card">
           <div className="toggle-row">
             <span className="toggle-label">Consciousness Loop</span>
-            <span className={`toggle-value ${state.lifecycle_phase !== 'sleeping' ? 'toggle-on' : 'toggle-off'}`}>
-              {state.lifecycle_phase !== 'sleeping' ? 'ON' : 'OFF'}
+            <span className={`toggle-value ${state.lifecycle_phase?.toUpperCase() !== 'SLEEPING' ? 'toggle-on' : 'toggle-off'}`}>
+              {state.lifecycle_phase?.toUpperCase() !== 'SLEEPING' ? 'ON' : 'OFF'}
             </span>
           </div>
           <div className="toggle-row">
@@ -91,19 +92,19 @@ export default function Overview() {
           <div className="dash-row">
             <span className="dash-row-label">GOD kernels</span>
             <span className="dash-row-value">
-              {state.kernels?.budget?.god_used ?? 0} / {state.kernels?.budget?.god_budget ?? 240}
+              {state.kernels?.budget?.god ?? 0} / {state.kernels?.budget?.god_max ?? QIG.E8_DIMENSION}
             </span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">CHAOS kernels</span>
             <span className="dash-row-value">
-              {state.kernels?.budget?.chaos_used ?? 0} / {state.kernels?.budget?.chaos_budget ?? 200}
+              {state.kernels?.budget?.chaos ?? 0} / {state.kernels?.budget?.chaos_max ?? QIG.CHAOS_MAX}
             </span>
           </div>
           <div className="dash-row">
-            <span className="dash-row-label">Core-8 complete</span>
+            <span className="dash-row-label">Core-8</span>
             <span className="dash-row-value">
-              {state.kernels?.budget?.core8_complete ? 'Yes' : 'No'}
+              {state.kernels?.budget?.god_core_8 ?? 0} / 8
             </span>
           </div>
         </div>
