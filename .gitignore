@@ -5,6 +5,10 @@ dist/
 data/workspace/*.md
 .DS_Store
 
+# Frontend build output
+frontend/dist/
+frontend/node_modules/
+
 # Python
 __pycache__/
 *.pyc

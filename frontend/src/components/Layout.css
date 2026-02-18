@@ -1,0 +1,248 @@
+.layout {
+  display: flex;
+  height: 100%;
+  height: 100dvh;
+}
+
+/* ─── Sidebar ─── */
+
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.sidebar-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vex-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pulse-dot.alive {
+  background: var(--alive);
+  animation: pulse 2.5s ease-in-out infinite;
+}
+
+.pulse-dot.degraded {
+  background: var(--warning);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 4px currentColor; opacity: 0.7; }
+  50% { box-shadow: 0 0 10px currentColor, 0 0 20px rgba(16, 185, 129, 0.2); opacity: 1; }
+}
+
+.vex-name {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+
+.version-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+/* ─── Navigation ─── */
+
+.sidebar-nav {
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+
+.nav-item:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.nav-item.active {
+  background: var(--accent-glow);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.nav-icon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+
+/* ─── Dashboard Tabs ─── */
+
+.dashboard-tabs {
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  flex: 1;
+  overflow-y: auto;
+}
+
+.tabs-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 4px 12px 8px;
+}
+
+.tab-item {
+  display: block;
+  padding: 7px 12px;
+  border-radius: 6px;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.tab-item:hover {
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.tab-item.active {
+  background: var(--accent-glow);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ─── Sidebar Footer ─── */
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.footer-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.footer-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.footer-value {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.backend-pill {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.backend-pill.ollama {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--alive);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.backend-pill.external {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--kappa);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.backend-pill.none {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--error);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+/* Fallback for any unknown backend identifier */
+.backend-pill:not(.ollama):not(.external):not(.none) {
+  background: rgba(112, 112, 138, 0.12);
+  color: var(--text-secondary);
+  border: 1px solid rgba(112, 112, 138, 0.25);
+}
+
+/* ─── Main Content ─── */
+
+.main-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ─── Responsive ─── */
+
+@media (max-width: 768px) {
+  .sidebar {
+    width: 56px;
+  }
+
+  .vex-name,
+  .version-badge,
+  .dashboard-tabs,
+  .sidebar-footer {
+    display: none;
+  }
+
+  .sidebar-header {
+    justify-content: center;
+    padding: 12px 8px;
+  }
+
+  .nav-item {
+    justify-content: center;
+    padding: 10px 8px;
+  }
+}

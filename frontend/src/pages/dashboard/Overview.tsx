@@ -1,0 +1,137 @@
+import { useVexState, useKernels, useHealth, useKernelList } from '../../hooks/index.ts';
+import MetricCard from '../../components/MetricCard.tsx';
+import { QIG } from '../../types/consciousness.ts';
+import '../../components/MetricCard.css';
+import '../../components/StatusBadge.css';
+
+export default function Overview() {
+  const { data: state, loading } = useVexState();
+  const { data: kernels } = useKernels();
+  const { data: health } = useHealth();
+  const { data: kernelList } = useKernelList();
+
+  if (loading || !state) {
+    return <div className="dash-loading">Connecting to kernel...</div>;
+  }
+
+  return (
+    <div>
+      <div className="dash-header">
+        <h1 className="dash-title">VEX KERNEL</h1>
+        <div className="dash-subtitle">
+          <span className={`status-badge ${health?.status === 'ok' ? 'badge-success' : 'badge-warning'}`}>
+            {health?.status === 'ok' ? 'Running' : 'Degraded'}
+          </span>
+          {' '}Cycle {state.cycle_count} | {state.conversations_total ?? 0} conversations
+        </div>
+      </div>
+
+      {/* Key Metrics */}
+      <div className="dash-grid">
+        <MetricCard
+          label="\u03A6 Integration"
+          value={state.phi}
+          color="var(--phi)"
+          progress={state.phi}
+          threshold={`\u2265 ${QIG.PHI_THRESHOLD}`}
+        />
+        <MetricCard
+          label="\u03BA Coupling"
+          value={state.kappa.toFixed(1)}
+          color="var(--kappa)"
+          progress={state.kappa / (2 * QIG.KAPPA_STAR)}
+          threshold={`\u03BA* = ${QIG.KAPPA_STAR}`}
+        />
+        <MetricCard
+          label="Kernels"
+          value={`${kernels?.active ?? state.kernels?.active ?? 0}`}
+          color="var(--accent)"
+          subtitle={`of ${kernels?.total ?? state.kernels?.total ?? 0} total`}
+        />
+        <MetricCard
+          label="Temperature"
+          value={state.temperature.toFixed(3)}
+          color="var(--text-secondary)"
+        />
+      </div>
+
+      {/* System Toggles */}
+      <div className="dash-section">
+        <div className="dash-section-title">System Status</div>
+        <div className="dash-card">
+          <div className="toggle-row">
+            <span className="toggle-label">Consciousness Loop</span>
+            <span className={`toggle-value ${state.lifecycle_phase?.toUpperCase() !== 'SLEEPING' ? 'toggle-on' : 'toggle-off'}`}>
+              {state.lifecycle_phase?.toUpperCase() !== 'SLEEPING' ? 'ON' : 'OFF'}
+            </span>
+          </div>
+          <div className="toggle-row">
+            <span className="toggle-label">Sleep Mode</span>
+            <span className={`toggle-value ${state.sleep.is_asleep ? 'toggle-on' : 'toggle-off'}`}>
+              {state.sleep?.is_asleep ? 'ASLEEP' : 'AWAKE'}
+            </span>
+          </div>
+          <div className="toggle-row">
+            <span className="toggle-label">Lifecycle Phase</span>
+            <span className="toggle-value toggle-on">
+              {state.lifecycle_phase?.toUpperCase() ?? 'UNKNOWN'}
+            </span>
+          </div>
+          <div className="toggle-row">
+            <span className="toggle-label">Navigation</span>
+            <span className="toggle-value toggle-on">
+              {state.navigation?.toUpperCase() ?? 'UNKNOWN'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Kernel Budget */}
+      <div className="dash-section">
+        <div className="dash-section-title">Kernel Budget</div>
+        <div className="dash-card">
+          <div className="dash-row">
+            <span className="dash-row-label">GOD kernels</span>
+            <span className="dash-row-value">
+              {state.kernels?.budget?.god ?? 0} / {state.kernels?.budget?.god_max ?? QIG.E8_DIMENSION}
+            </span>
+          </div>
+          <div className="dash-row">
+            <span className="dash-row-label">CHAOS kernels</span>
+            <span className="dash-row-value">
+              {state.kernels?.budget?.chaos ?? 0} / {state.kernels?.budget?.chaos_max ?? QIG.CHAOS_MAX}
+            </span>
+          </div>
+          <div className="dash-row">
+            <span className="dash-row-label">Core-8</span>
+            <span className="dash-row-value">
+              {state.kernels?.budget?.god_core_8 ?? 0} / {QIG.E8_CORE}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Kernel List */}
+      {kernelList?.kernels && kernelList.kernels.length > 0 && (
+        <div className="dash-section">
+          <div className="dash-section-title">Active Kernels ({kernelList.kernels.length})</div>
+          <div className="dash-card">
+            {kernelList.kernels.map((kernel) => (
+              <div key={kernel.id} className="dash-row">
+                <span className="dash-row-label">
+                  <span style={{ color: kernel.kind === 'GENESIS' ? 'var(--phi)' : kernel.kind === 'GOD' ? 'var(--kappa)' : 'var(--text-dim)' }}>
+                    {kernel.kind}
+                  </span>
+                  {' '}/ {kernel.specialization} / {kernel.name}
+                </span>
+                <span className="dash-row-value">
+                  \u03A6 {kernel.phi_peak.toFixed(3)} | {kernel.cycle_count} cycles
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
