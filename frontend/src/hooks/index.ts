@@ -1,6 +1,17 @@
 import { useState, useEffect } from 'react';
 import { usePolledData } from './usePolledData.ts';
-import type { VexState, VexTelemetry, HealthStatus, KernelSummary, BasinData } from '../types/consciousness.ts';
+import type { 
+  VexState, 
+  VexTelemetry, 
+  HealthStatus, 
+  KernelSummary, 
+  BasinData,
+  KernelListResponse,
+  BasinHistoryResponse,
+  GraphNodesResponse,
+  MemoryStatsResponse,
+  SleepStateResponse,
+} from '../types/consciousness.ts';
 
 export { usePolledData } from './usePolledData.ts';
 
@@ -9,6 +20,13 @@ export const useTelemetry = () => usePolledData<VexTelemetry>('/telemetry', 3000
 export const useHealth = () => usePolledData<HealthStatus>('/health', 5000);
 export const useKernels = () => usePolledData<KernelSummary>('/kernels', 2000);
 export const useBasin = () => usePolledData<BasinData>('/basin', 2000);
+
+// New hooks for Phase 1 dashboard endpoints
+export const useKernelList = () => usePolledData<KernelListResponse>('/kernels/list', 2000);
+export const useBasinHistory = () => usePolledData<BasinHistoryResponse>('/basin/history', 5000);
+export const useGraphNodes = () => usePolledData<GraphNodesResponse>('/graph/nodes', 3000);
+export const useMemoryStats = () => usePolledData<MemoryStatsResponse>('/memory/stats', 5000);
+export const useSleepState = () => usePolledData<SleepStateResponse>('/sleep/state', 3000);
 
 /**
  * Accumulate polled VexState snapshots into a time-series array.
