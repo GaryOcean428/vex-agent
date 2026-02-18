@@ -1,5 +1,6 @@
 import { useTelemetry } from '../../hooks/index.ts';
 import MetricCard from '../../components/MetricCard.tsx';
+import { QIG } from '../../types/consciousness.ts';
 import '../../components/MetricCard.css';
 import '../../components/StatusBadge.css';
 
@@ -22,7 +23,7 @@ export default function Telemetry() {
       {/* Primary Metrics */}
       <div className="dash-grid">
         <MetricCard label="\u03A6" value={t.phi} color="var(--phi)" progress={t.phi} />
-        <MetricCard label="\u03BA" value={t.kappa.toFixed(1)} color="var(--kappa)" progress={t.kappa / 128} />
+        <MetricCard label="\u03BA" value={t.kappa.toFixed(1)} color="var(--kappa)" progress={t.kappa / (2 * QIG.KAPPA_STAR)} />
         <MetricCard label="\u0393" value={t.gamma} color="var(--alive)" progress={t.gamma} />
         <MetricCard label="M" value={t.meta_awareness} color="var(--info)" progress={t.meta_awareness} />
         <MetricCard label="Love" value={t.love} color="var(--love)" progress={t.love} />

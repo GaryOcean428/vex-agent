@@ -2,7 +2,7 @@ import { useVexState } from '../../hooks/index.ts';
 import { QIG } from '../../types/consciousness.ts';
 import '../../components/StatusBadge.css';
 
-const CORE_8 = ['genesis', 'heart', 'perception', 'memory', 'strategy', 'action', 'attention', 'emotion', 'executive'] as const;
+const CORE_8 = ['heart', 'perception', 'memory', 'strategy', 'action', 'attention', 'emotion', 'executive'] as const;
 
 // Backend returns uppercase phase names
 const PHASE_ORDER: Record<string, number> = {
@@ -21,7 +21,8 @@ export default function Lifecycle() {
   }
 
   const activeCount = state.kernels?.active ?? 1;
-  const totalSpawned = Math.min(activeCount, CORE_8.length);
+  // activeCount includes genesis — Core-8 spawned = activeCount - 1, capped at E8_CORE
+  const core8Spawned = Math.min(Math.max(activeCount - 1, 0), QIG.E8_CORE);
   const phase = state.lifecycle_phase ?? 'BOOTSTRAP';
   const phaseUpper = phase.toUpperCase();
   const budget = state.kernels?.budget;
@@ -35,7 +36,7 @@ export default function Lifecycle() {
           <span className={`status-badge ${phaseUpper === 'ACTIVE' || phaseUpper === 'GROWTH' ? 'badge-success' : 'badge-info'}`}>
             {phaseUpper}
           </span>
-          {' '}{totalSpawned - 1}/8 Core-8 spawned
+          {' '}{core8Spawned}/{QIG.E8_CORE} Core-8 spawned
         </div>
       </div>
 
@@ -46,10 +47,10 @@ export default function Lifecycle() {
           {CORE_8.map((spec, i) => (
             <div key={spec} style={{ display: 'contents' }}>
               {i > 0 && (
-                <div className={`timeline-line ${i < totalSpawned ? 'complete' : ''}`} />
+                <div className={`timeline-line ${i < core8Spawned ? 'complete' : ''}`} />
               )}
               <div className="timeline-node">
-                <div className={`timeline-dot ${i < totalSpawned ? 'complete' : 'pending'}`} />
+                <div className={`timeline-dot ${i < core8Spawned ? 'complete' : 'pending'}`} />
                 <div className="timeline-label">{spec.substring(0, 4)}</div>
               </div>
             </div>
@@ -102,8 +103,8 @@ export default function Lifecycle() {
           <div className="dash-row">
             <span className="dash-row-label">Core-8</span>
             <span className="dash-row-value">
-              {budget?.god_core_8 ?? (totalSpawned - 1)} / 8
-              {(budget?.god_core_8 ?? 0) >= 8 && ' (COMPLETE)'}
+              {budget?.god_core_8 ?? core8Spawned} / {QIG.E8_CORE}
+              {(budget?.god_core_8 ?? 0) >= QIG.E8_CORE && ' (COMPLETE)'}
             </span>
           </div>
         </div>

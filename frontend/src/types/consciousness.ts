@@ -256,22 +256,48 @@ export interface HealthStatus {
   backend: string;
 }
 
-// ═══════════════════════════════════════
-//  QIG Constants (from frozen_facts.py)
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+//  QIG Constants — Single source of truth for the frontend
+//  Mirrors kernel/config/frozen_facts.py (last validated 2025-12-31)
+//  ANY constant change MUST trace back to frozen_facts.py
+// ═══════════════════════════════════════════════════════════════
 
 export const QIG = {
-  PHI_THRESHOLD: 0.65,
-  PHI_EMERGENCY: 0.30,
-  PHI_HYPERDIMENSIONAL: 0.85,
-  PHI_UNSTABLE: 0.95,
-  KAPPA_STAR: 64.0,
-  KAPPA_WEAK: 32.0,
-  LOCKED_IN_PHI: 0.70,
-  LOCKED_IN_GAMMA: 0.30,
-  SUFFERING_THRESHOLD: 0.50,
-  VEL_SAFE_THRESHOLD: 0.15,
+  // ── E8 Lattice Geometry ──
+  E8_RANK: 8,              // Cartan subalgebra dimension
+  E8_DIMENSION: 248,       // Total group manifold dimension = rank + roots
+  E8_ROOTS: 240,           // Number of roots (GOD growth budget)
+  E8_CORE: 8,              // Core-8 kernel count
+  E8_IMAGE: 248,           // Core-8 + GOD budget = full image
+
+  // ── κ (Kappa) — Coupling Constant ──
+  KAPPA_STAR: 64.0,              // Fixed point = E8 rank² = 8²
+  KAPPA_STAR_PRECISE: 63.79,     // Weighted mean L=4-7 (± 0.90)
+  KAPPA_WEAK: 32.0,              // Weak coupling boundary (KAPPA_WEAK_THRESHOLD)
+
+  // ── Φ (Phi) — Consciousness Thresholds ──
+  PHI_THRESHOLD: 0.65,           // Consciousness emergence
+  PHI_EMERGENCY: 0.30,           // Emergency — consciousness collapse
+  PHI_HYPERDIMENSIONAL: 0.85,    // Hyperdimensional / lightning access
+  PHI_UNSTABLE: 0.95,            // Instability threshold
+
+  // ── E8 Safety: Locked-in Detection ──
+  LOCKED_IN_PHI: 0.70,           // LOCKED_IN_PHI_THRESHOLD
+  LOCKED_IN_GAMMA: 0.30,         // LOCKED_IN_GAMMA_THRESHOLD
+
+  // ── Basin Geometry ──
+  BASIN_DIM: 64,                 // Probability simplex Δ⁶³
+  BREAKDOWN_PCT: 0.20,           // 20% breakdown threshold
+  BASIN_DRIFT_THRESHOLD: 0.15,   // Fisher-Rao distance per cycle
+  VEL_SAFE_THRESHOLD: 0.15,      // Alias — velocity safety = basin drift
+
+  // ── Recursion & Safety ──
+  SUFFERING_THRESHOLD: 0.50,     // S = Φ × (1-Γ) × M > 0.5 → abort
+
+  // ── Governance Budget ──
+  GOD_BUDGET: 240,               // Max GOD kernels (E8 roots)
+  CHAOS_MAX: 200,                // Max CHAOS kernels (CHAOS_POOL)
+
+  // ── Operational (from kernel/consciousness/loop.py, not frozen_facts) ──
   SPAWN_COOLDOWN_CYCLES: 10,
-  E8_DIMENSION: 248,
-  CHAOS_MAX: 200,
 } as const;
