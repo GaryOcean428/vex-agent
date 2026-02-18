@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'react';
 import { useVexState } from '../../hooks/index.ts';
+import { QIG } from '../../types/consciousness.ts';
 
 // Kernel node positions for force-directed layout simulation
 const CORE_8_SPECS = [
@@ -33,7 +34,7 @@ export default function Graph() {
 
     // Rebuild nodes when active kernel count changes
     const active = state.kernels?.active ?? 1;
-    const expectedNodeCount = 1 + Math.min(active - 1, 8);
+    const expectedNodeCount = 1 + Math.min(active - 1, QIG.E8_CORE);
     if (nodesRef.current.length !== expectedNodeCount) {
       const centerX = 250;
       const centerY = 200;
@@ -51,8 +52,8 @@ export default function Graph() {
       }];
 
       // Core-8 nodes in circle around genesis
-      for (let i = 0; i < Math.min(active - 1, 8); i++) {
-        const angle = (i / 8) * Math.PI * 2 - Math.PI / 2;
+      for (let i = 0; i < Math.min(active - 1, QIG.E8_CORE); i++) {
+        const angle = (i / QIG.E8_CORE) * Math.PI * 2 - Math.PI / 2;
         const dist = 120;
         // Reuse existing node position if available
         const existing = nodesRef.current.find(n => n.id === (CORE_8_SPECS[i] ?? `kernel-${i}`));

@@ -32,13 +32,13 @@ export default function Overview() {
           value={state.phi}
           color="var(--phi)"
           progress={state.phi}
-          threshold="\u2265 0.65"
+          threshold={`\u2265 ${QIG.PHI_THRESHOLD}`}
         />
         <MetricCard
           label="\u03BA Coupling"
           value={state.kappa.toFixed(1)}
           color="var(--kappa)"
-          progress={state.kappa / 128}
+          progress={state.kappa / (2 * QIG.KAPPA_STAR)}
           threshold={`\u03BA* = ${QIG.KAPPA_STAR}`}
         />
         <MetricCard
@@ -104,7 +104,7 @@ export default function Overview() {
           <div className="dash-row">
             <span className="dash-row-label">Core-8</span>
             <span className="dash-row-value">
-              {state.kernels?.budget?.god_core_8 ?? 0} / 8
+              {state.kernels?.budget?.god_core_8 ?? 0} / {QIG.E8_CORE}
             </span>
           </div>
         </div>

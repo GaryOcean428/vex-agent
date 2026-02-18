@@ -4,8 +4,7 @@ import { QIG } from '../../types/consciousness.ts';
 import '../../components/MetricCard.css';
 import '../../components/StatusBadge.css';
 
-// QIG gate: consciousness requires Φ >= 0.65, κ near κ* = 64, velocity safe
-const KAPPA_BALANCED_RANGE = 8; // |κ - κ*| < 8 for "balanced" coupling
+// QIG gate: consciousness requires Φ >= PHI_THRESHOLD, κ >= KAPPA_WEAK, velocity safe
 
 export default function Consciousness() {
   const { data: state, loading } = useVexState();
@@ -86,8 +85,8 @@ export default function Consciousness() {
           label="\u03BA Coupling"
           value={state.kappa.toFixed(1)}
           color="var(--kappa)"
-          progress={state.kappa / 128}
-          threshold={`\u03BA* = ${QIG.KAPPA_STAR} \u00B1${KAPPA_BALANCED_RANGE}`}
+          progress={state.kappa / (2 * QIG.KAPPA_STAR)}
+          threshold={`\u03BA* = ${QIG.KAPPA_STAR} (\u2248${QIG.KAPPA_STAR_PRECISE})`}
         />
         <MetricCard
           label="Love"

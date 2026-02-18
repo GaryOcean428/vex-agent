@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { useBasin, useMetricsHistory } from '../../hooks/index.ts';
+import { QIG } from '../../types/consciousness.ts';
 
 type ViewMode = 'heatmap' | 'pca';
 
@@ -24,12 +25,12 @@ export default function Basins() {
     ctx.scale(dpr, dpr);
 
     const basin = basinData.basin;
-    const gridSize = 8;
+    const gridSize = QIG.E8_CORE; // 8×8 grid = 64 = BASIN_DIM
     const cellW = rect.width / gridSize;
     const cellH = rect.height / gridSize;
     const maxVal = Math.max(...basin, 0.001);
 
-    for (let i = 0; i < 64 && i < basin.length; i++) {
+    for (let i = 0; i < QIG.BASIN_DIM && i < basin.length; i++) {
       const row = Math.floor(i / gridSize);
       const col = i % gridSize;
       const intensity = basin[i] / maxVal;
@@ -83,7 +84,7 @@ export default function Basins() {
     }
 
     // Use phi and kappa as 2D projection (actual PCA would require basin history)
-    const points = history.map(h => ({ x: h.phi, y: h.kappa / 128 }));
+    const points = history.map(h => ({ x: h.phi, y: h.kappa / (2 * QIG.KAPPA_STAR) }));
     const margin = 40;
     const w = rect.width - margin * 2;
     const h = rect.height - margin * 2;
@@ -161,7 +162,7 @@ export default function Basins() {
       <div className="dash-header">
         <h1 className="dash-title">Basin Coordinates (\u0394\u2076\u00B3)</h1>
         <div className="dash-subtitle">
-          64-dimensional probability simplex
+          {QIG.BASIN_DIM}-dimensional probability simplex
         </div>
       </div>
 
