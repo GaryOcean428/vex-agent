@@ -214,7 +214,12 @@ export default function Chat() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
+    // Constants for chart rendering
+    const MIN_RANGE_PHI = 0.1;
+    const MIN_RANGE_KAPPA = 1.0;
+    const MIN_RANGE_GAMMA = 0.1;
+
+    const dpr = window.devicePixelRatio;
     const rect = canvas.getBoundingClientRect();
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
@@ -236,15 +241,17 @@ export default function Chat() {
     // Calculate ranges
     const phiMin = Math.min(...phiValues) * 0.9;
     const phiMax = Math.max(...phiValues) * 1.1;
-    const phiRange = phiMax - phiMin || 0.1;
+    const phiRange = phiMax - phiMin || MIN_RANGE_PHI;
 
+    // Kappa uses tighter scaling (0.95-1.05) because it converges to κ*=64
+    // and we want to see fine-grained variation around the attractor
     const kappaMin = Math.min(...kappaValues) * 0.95;
     const kappaMax = Math.max(...kappaValues) * 1.05;
-    const kappaRange = kappaMax - kappaMin || 1;
+    const kappaRange = kappaMax - kappaMin || MIN_RANGE_KAPPA;
 
     const gammaMin = Math.min(...gammaValues) * 0.9;
     const gammaMax = Math.max(...gammaValues) * 1.1;
-    const gammaRange = gammaMax - gammaMin || 0.1;
+    const gammaRange = gammaMax - gammaMin || MIN_RANGE_GAMMA;
 
     // Normalize all to 0-1 range for unified display
     const normalizeX = (i: number) => margin.left + (i / (history.length - 1)) * w;
