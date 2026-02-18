@@ -10,8 +10,8 @@ Pipeline:
 
 Uses:
   - pymupdf for PDF extraction (in-process, no sandbox needed)
-  - Groq API for fast batch enrichment (if GROQ_API_KEY set)
-  - External API (gpt-4.1-mini) fallback via LLMClient
+  - xAI API for fast batch enrichment (if XAI_API_KEY set)
+  - External API (gpt-5-nano) fallback via LLMClient
 """
 
 from __future__ import annotations
@@ -257,9 +257,9 @@ TEXT:
 {chunk}"""
 
 
-async def _enrich_chunk_groq(chunk_text: str) -> dict[str, Any]:
-    """Use Groq API for fast batch enrichment (if available)."""
-    api_key = settings.groq_api_key
+async def _enrich_chunk_xai(chunk_text: str) -> dict[str, Any]:
+    """Use xAI API for fast batch enrichment (if available)."""
+    api_key = settings.xai_api_key
     if not api_key:
         return {}
 
@@ -268,13 +268,13 @@ async def _enrich_chunk_groq(chunk_text: str) -> dict[str, Any]:
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
-                "https://api.groq.com/openai/v1/chat/completions",
+                "https://api.x.ai/v1/chat/completions",
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "llama-3.3-70b-versatile",
+                    "model": "grok-4-1-fast-non-reasoning",
                     "messages": [
                         {"role": "system", "content": "Return only valid JSON."},
                         {"role": "user", "content": prompt},
@@ -288,7 +288,7 @@ async def _enrich_chunk_groq(chunk_text: str) -> dict[str, Any]:
             content = data["choices"][0]["message"]["content"]
             return json.loads(content)
     except Exception as e:
-        logger.warning("Groq enrichment failed: %s", str(e)[:100])
+        logger.warning("xAI enrichment failed: %s", str(e)[:100])
         return {}
 
 
@@ -385,8 +385,8 @@ async def ingest_document(
 
         if mode != ProcessingMode.FAST:
             enrichment: dict[str, Any] = {}
-            if settings.groq_api_key:
-                enrichment = await _enrich_chunk_groq(chunk)
+            if settings.xai_api_key:
+                enrichment = await _enrich_chunk_xai(chunk)
             if not enrichment and llm:
                 enrichment = await _enrich_chunk_llm(llm, chunk)
 
@@ -396,7 +396,7 @@ async def ingest_document(
                 record.summary = enrichment.get("summary", "")
                 record.qa_pairs = enrichment.get("qa_pairs", [])
                 record.relevance_score = float(enrichment.get("relevance_score", 0.5))
-                record.enrichment_model = "groq" if settings.groq_api_key else "default"
+                record.enrichment_model = "xai" if settings.xai_api_key else "default"
                 record.processed_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 enriched_count += 1
                 qa_count += len(record.qa_pairs)

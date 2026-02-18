@@ -17,6 +17,7 @@ import * as fs from 'fs';
 import { config } from './config';
 import { logger } from './config/logger';
 import { createChatRouter } from './chat/router';
+import { requireAuth } from './auth/middleware';
 import { sandboxManager, getComputeTools } from './tools/compute-sandbox';
 
 const KERNEL_URL = process.env.KERNEL_URL || 'http://localhost:8000';
@@ -35,7 +36,17 @@ async function main(): Promise<void> {
   logger.info('═══════════════════════════════════════');
 
   const app = express();
-  app.use(express.json({ limit: '1mb' }));
+  // Conditional JSON parsing — skip for multipart requests (training upload)
+  app.use((req, res, next) => {
+    if ((req.headers['content-type'] || '').startsWith('multipart/')) {
+      next();
+    } else {
+      express.json({ limit: '1mb' })(req, res, next);
+    }
+  });
+
+  // ─── Global auth — protects all routes when CHAT_AUTH_TOKEN is set ───
+  app.use(requireAuth);
 
   // ─── Health check (probes kernel health too) ─────────────────
 
