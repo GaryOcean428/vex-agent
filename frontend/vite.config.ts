@@ -17,6 +17,7 @@ export default defineConfig({
       '/graph': 'http://localhost:8080',
       '/sleep': 'http://localhost:8080',
       '/admin': 'http://localhost:8080',
+      '/training': 'http://localhost:8080',
       '/chat/stream': 'http://localhost:8080',
       '/chat/auth': 'http://localhost:8080',
       '/chat/status': 'http://localhost:8080',
