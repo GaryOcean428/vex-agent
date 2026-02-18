@@ -30,6 +30,7 @@ export default function App() {
             <Route path="telemetry" element={<Telemetry />} />
             <Route path="admin" element={<Admin />} />
           </Route>
+          <Route path="*" element={<Navigate to="/chat" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>

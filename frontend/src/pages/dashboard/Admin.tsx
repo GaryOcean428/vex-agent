@@ -26,7 +26,7 @@ export default function Admin() {
       setTaskInput('');
       refetchState();
     } catch (err) {
-      setTaskResult(`Error: ${(err as Error).message}`);
+      setTaskResult(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSubmitting(false);
     }

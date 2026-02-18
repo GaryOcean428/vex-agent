@@ -21,6 +21,16 @@ export default function Chat() {
   const [backend, setBackend] = useState('checking');
   const chatRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const stageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup stream and timers on unmount
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      if (stageTimerRef.current) clearTimeout(stageTimerRef.current);
+    };
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -62,10 +72,15 @@ export default function Chat() {
     }]);
 
     try {
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       const resp = await fetch('/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text }),
+        signal: controller.signal,
       });
 
       if (!resp.ok) {
@@ -128,22 +143,26 @@ export default function Chat() {
         }
       };
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split('\n');
-        buffer = parts.pop() ?? '';
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split('\n');
+          buffer = parts.pop() ?? '';
 
-        for (const line of parts) {
-          processLine(line);
+          for (const line of parts) {
+            processLine(line);
+          }
         }
-      }
 
-      // Process any remaining buffer after stream ends
-      if (buffer.trim()) {
-        processLine(buffer);
+        // Process any remaining buffer after stream ends
+        if (buffer.trim()) {
+          processLine(buffer);
+        }
+      } finally {
+        reader.releaseLock();
       }
 
       // If no content was received
@@ -153,12 +172,14 @@ export default function Chat() {
         ));
       }
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      const errMsg = err instanceof Error ? err.message : String(err);
       setMessages(prev => prev.map(m =>
-        m.id === vexMsgId ? { ...m, content: `Connection error: ${(err as Error).message}` } : m
+        m.id === vexMsgId ? { ...m, content: `Connection error: ${errMsg}` } : m
       ));
     } finally {
       setIsStreaming(false);
-      setTimeout(() => setActiveStages([]), 2000);
+      stageTimerRef.current = setTimeout(() => setActiveStages([]), 2000);
       inputRef.current?.focus();
     }
   }, [input, isStreaming, scrollToBottom]);

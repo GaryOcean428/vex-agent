@@ -47,8 +47,8 @@ export default function Consciousness() {
       {/* Safety Alerts */}
       {alerts.length > 0 && (
         <div className="dash-section">
-          {alerts.map((alert, i) => (
-            <div key={i} className={`dash-alert ${alert.severity}`}>
+          {alerts.map((alert) => (
+            <div key={`${alert.severity}-${alert.message}`} className={`dash-alert ${alert.severity}`}>
               {alert.severity === 'critical' ? '\u26A0' : '\u24D8'} {alert.message}
             </div>
           ))}

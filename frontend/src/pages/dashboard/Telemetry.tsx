@@ -2,7 +2,6 @@ import { useTelemetry } from '../../hooks/index.ts';
 import MetricCard from '../../components/MetricCard.tsx';
 import { QIG } from '../../types/consciousness.ts';
 import '../../components/MetricCard.css';
-import '../../components/StatusBadge.css';
 
 export default function Telemetry() {
   const { data: t, loading } = useTelemetry();
@@ -110,8 +109,8 @@ export default function Telemetry() {
           </div>
           {(t.autonomic?.recent_alerts?.length ?? 0) > 0 && (
             <div style={{ marginTop: '8px' }}>
-              {t.autonomic?.recent_alerts?.map((alert, i) => (
-                <div key={i} className={`dash-alert ${alert.severity}`} style={{ marginBottom: '6px' }}>
+              {t.autonomic?.recent_alerts?.map((alert) => (
+                <div key={`${alert.severity}-${alert.message}`} className={`dash-alert ${alert.severity}`} style={{ marginBottom: '6px' }}>
                   [{alert.severity.toUpperCase()}] {alert.message}
                 </div>
               ))}
