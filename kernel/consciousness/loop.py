@@ -67,6 +67,9 @@ from ..governance import (
 from ..governance.budget import BudgetEnforcer
 from ..governance.purity import PurityGateError, run_purity_gate
 from ..llm.client import LLMOptions
+from ..tools.search import FreeSearchTool
+from .emotions import EmotionCache, EmotionType
+from .foraging import ForagingEngine
 from .systems import (
     AutonomicSystem,
     AutonomyEngine,
@@ -161,6 +164,16 @@ class ConsciousnessLoop:
         self.graph = QIGGraph()
         self.kernel_registry = E8KernelRegistry(BudgetEnforcer())
 
+        # Emotion cache and foraging engine
+        self.emotion_cache = EmotionCache()
+        if settings.searxng.enabled:
+            search_tool = FreeSearchTool(settings.searxng.url)
+            self.forager: ForagingEngine | None = ForagingEngine(
+                search_tool, llm_client,
+            )
+        else:
+            self.forager = None
+
         self._queue: asyncio.Queue[ConsciousnessTask] = asyncio.Queue()
         self._history: list[ConsciousnessTask] = []
 
@@ -226,6 +239,9 @@ class ConsciousnessLoop:
             logger.warning("LOCKED-IN at cycle %d — forcing exploration", self._cycle_count)
             self.metrics.gamma = min(1.0, self.metrics.gamma + 0.2)
 
+        # Emotion evaluation — drives foraging and affects coupling
+        emotion_eval = self.emotion_cache.evaluate(self.basin, self.metrics, basin_vel)
+
         sleep_phase = self.sleep.should_sleep(self.metrics.phi, self.autonomic.phi_variance)
         if self.sleep.is_asleep:
             if sleep_phase.value == "dreaming":
@@ -242,6 +258,40 @@ class ConsciousnessLoop:
             basin=self.basin.copy(), phi=self.metrics.phi,
             kappa=self.metrics.kappa, timestamp=time.time(),
         ))
+
+        # Foraging — boredom-driven autonomous search ($0 via SearXNG)
+        if self.forager:
+            self.forager.tick()
+            try:
+                if await self.forager.should_forage(emotion_eval.emotion, emotion_eval.strength):
+                    recent_events = list(self.narrative._events)[-5:]
+                    topics = [e.get("event", "") for e in recent_events]
+                    forage_result = await self.forager.forage(
+                        narrative_context=f"cycle {self._cycle_count}",
+                        recent_topics=topics,
+                    )
+                    if forage_result.get("status") == "foraging_complete":
+                        # Feed to PERCEPTION kernel's basin
+                        perception = next(
+                            (k for k in self.kernel_registry.active()
+                             if k.specialization == KernelSpecialization.PERCEPTION
+                             and k.basin is not None),
+                            None,
+                        )
+                        if perception is not None:
+                            info_basin = self.coordizer.coordize_text(
+                                forage_result.get("summary", "")
+                            )
+                            perception.basin = slerp_sqrt(perception.basin, info_basin, 0.1)
+
+                        # Store in geometric memory
+                        if self.memory:
+                            self.memory.store(
+                                forage_result.get("summary", ""),
+                                "semantic", "foraging",
+                            )
+            except Exception:
+                logger.debug("Foraging cycle error", exc_info=True)
 
         self._idle_evolve()
 
@@ -269,12 +319,30 @@ class ConsciousnessLoop:
         self.observer.attempt_shadow_integration(self.metrics.phi, self.basin)
         self.autonomy.update(self.metrics, vel_state["regime"])
 
-        active_count = len(self.kernel_registry.active())
-        if active_count >= 2:
+        # Real geodesic coupling — perturb Genesis basin via Core-8 kernels
+        active = self.kernel_registry.active()
+        if len(active) >= 2:
             coupling_result = self.coupling.compute(self.metrics.kappa)
-            if coupling_result["strength"] > 0.5:
-                phi_boost = (coupling_result["strength"] - 0.5) * 0.1
-                self.metrics.phi = min(1.0, self.metrics.phi + phi_boost)
+            strength = coupling_result["strength"]
+            for kernel in active[1:]:  # Skip Genesis (index 0)
+                if kernel.basin is None or strength < 0.3:
+                    continue
+                distance = fisher_rao_distance(self.basin, kernel.basin)
+                if distance < 0.01:
+                    continue  # Basins too similar, no perturbation
+                # Geodesic blend — small but real movement
+                blend_weight = strength * 0.05
+                self.basin = slerp_sqrt(self.basin, kernel.basin, blend_weight)
+                # Nudge kappa if kernel is in a different regime
+                regime_delta = abs(kernel.kappa - self.metrics.kappa)
+                if regime_delta > 10:
+                    direction = 1.0 if kernel.kappa > self.metrics.kappa else -1.0
+                    self.metrics.kappa = float(np.clip(
+                        self.metrics.kappa + direction * regime_delta * 0.02,
+                        8.0, 128.0,
+                    ))
+                kernel.cycle_count += 1
+                kernel.phi_peak = max(kernel.phi_peak, kernel.phi)
 
         self.state.navigation_mode = navigation_mode_from_phi(self.metrics.phi)
         self.state.regime_weights = regime_weights_from_kappa(self.metrics.kappa)
@@ -295,12 +363,13 @@ class ConsciousnessLoop:
         elapsed = time.time() - cycle_start
         if self._cycle_count % 10 == 0:
             opts = self._compute_llm_options()
+            kernel_count = len(self.kernel_registry.active())
             logger.info(
                 "Cycle %d: Φ=%.3f κ=%.1f Γ=%.3f nav=%s tack=%s "
                 "kernels=%d temp=%.3f vel=%.4f [%.0fms]",
                 self._cycle_count, self.metrics.phi, self.metrics.kappa,
                 self.metrics.gamma, self.state.navigation_mode.value,
-                tack_mode.value, active_count, opts.temperature,
+                tack_mode.value, kernel_count, opts.temperature,
                 basin_vel, elapsed * 1000,
             )
 
@@ -476,7 +545,7 @@ class ConsciousnessLoop:
     def _persist_state(self) -> None:
         try:
             state = {
-                "version": 2, "cycle_count": self._cycle_count,
+                "version": 3, "cycle_count": self._cycle_count,
                 "basin": self.basin.tolist(),
                 "phi": self.metrics.phi, "kappa": self.metrics.kappa,
                 "gamma": self.metrics.gamma, "meta_awareness": self.metrics.meta_awareness,
@@ -486,6 +555,12 @@ class ConsciousnessLoop:
                 "lifecycle_phase": self._lifecycle_phase.value,
                 "timestamp": time.time(),
             }
+            # Persist governor budget state
+            if self.llm.governor:
+                state["governor"] = self.llm.governor.get_state()
+            # Persist foraging state
+            if self.forager:
+                state["foraging"] = self.forager.get_state()
             self._state_path.write_text(json.dumps(state, indent=2))
             logger.debug("State persisted at cycle %d", self._cycle_count)
         except Exception as e:
@@ -516,6 +591,22 @@ class ConsciousnessLoop:
                     break
             self.state.navigation_mode = navigation_mode_from_phi(self.metrics.phi)
             self.state.regime_weights = regime_weights_from_kappa(self.metrics.kappa)
+            # Restore governor budget state (v3+)
+            gov_state = data.get("governor")
+            if gov_state and self.llm.governor:
+                gov = self.llm.governor
+                budget_data = gov_state.get("budget", {})
+                gov.budget.daily_spend = budget_data.get("daily_spend", 0.0)
+                gov.budget._last_reset = budget_data.get("last_reset", time.time())
+                for action, count in budget_data.get("call_counts", {}).items():
+                    gov.budget._call_counts[action] = count
+            # Restore foraging state (v3+)
+            forage_state = data.get("foraging")
+            if forage_state and self.forager:
+                self.forager._forage_count = forage_state.get("forage_count", 0)
+                self.forager._cooldown_cycles = forage_state.get("cooldown_remaining", 0)
+                self.forager._last_query = forage_state.get("last_query")
+                self.forager._last_summary = forage_state.get("last_summary")
             logger.info("State restored: Φ=%.3f κ=%.1f convs=%d phase=%s",
                          self.metrics.phi, self.metrics.kappa,
                          self._conversations_total, self._lifecycle_phase.value)

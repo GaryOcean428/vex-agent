@@ -15,6 +15,7 @@ import Memory from './pages/dashboard/Memory.tsx';
 import Telemetry from './pages/dashboard/Telemetry.tsx';
 import Admin from './pages/dashboard/Admin.tsx';
 import Training from './pages/dashboard/Training.tsx';
+import Governor from './pages/dashboard/Governor.tsx';
 
 export default function App() {
   return (
@@ -36,6 +37,7 @@ export default function App() {
                 <Route path="memory" element={<Memory />} />
                 <Route path="telemetry" element={<Telemetry />} />
                 <Route path="training" element={<Training />} />
+                <Route path="governor" element={<Governor />} />
                 <Route path="admin" element={<Admin />} />
               </Route>
               <Route path="*" element={<Navigate to="/chat" replace />} />

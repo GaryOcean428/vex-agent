@@ -25,7 +25,7 @@ interface Session {
 const sessions = new Map<string, Session>();
 
 /** Paths that never require authentication */
-const AUTH_EXEMPT_PATHS = new Set(['/health', '/chat/auth']);
+const AUTH_EXEMPT_PATHS = new Set(['/health', '/chat/auth', '/login']);
 
 /** Check if a path looks like a static asset (has a file extension) */
 function isStaticAsset(path: string): boolean {

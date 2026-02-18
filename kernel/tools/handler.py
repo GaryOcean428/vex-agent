@@ -22,6 +22,7 @@ from typing import Any
 import httpx
 
 from ..config.settings import settings
+from ..llm.governor import GovernorStack
 
 logger = logging.getLogger("vex.tools")
 
@@ -161,16 +162,22 @@ def _parse_kwargs(args_str: str) -> dict[str, Any]:
     return args
 
 
-async def execute_tool_calls(calls: list[ToolCall]) -> list[ToolResult]:
+async def execute_tool_calls(
+    calls: list[ToolCall],
+    governor: GovernorStack | None = None,
+) -> list[ToolResult]:
     """Execute a list of tool calls and return results."""
     results: list[ToolResult] = []
     for call in calls:
-        result = await _execute_single(call)
+        result = await _execute_single(call, governor)
         results.append(result)
     return results
 
 
-async def _execute_single(call: ToolCall) -> ToolResult:
+async def _execute_single(
+    call: ToolCall,
+    governor: GovernorStack | None = None,
+) -> ToolResult:
     """Execute a single tool call."""
     try:
         if call.name == "execute_code":
@@ -180,9 +187,9 @@ async def _execute_single(call: ToolCall) -> ToolResult:
         elif call.name == "web_fetch":
             return await _web_fetch(call.args)
         elif call.name == "web_search":
-            return await _xai_web_search(call.args)
+            return await _xai_web_search(call.args, governor)
         elif call.name == "x_search":
-            return await _xai_x_search(call.args)
+            return await _xai_x_search(call.args, governor)
         else:
             return ToolResult(
                 success=False,
@@ -258,7 +265,10 @@ async def _web_fetch(args: dict[str, Any]) -> ToolResult:
         return ToolResult(success=False, output="", error=f"Fetch failed: {e}")
 
 
-async def _xai_web_search(args: dict[str, Any]) -> ToolResult:
+async def _xai_web_search(
+    args: dict[str, Any],
+    governor: GovernorStack | None = None,
+) -> ToolResult:
     """Search the web via xAI's built-in web_search tool."""
     query = args.get("query", "")
     if not query:
@@ -267,6 +277,13 @@ async def _xai_web_search(args: dict[str, Any]) -> ToolResult:
     api_key = settings.xai_api_key
     if not api_key:
         return ToolResult(success=False, output="", error="XAI_API_KEY not set")
+
+    # Governor gate — blocks if kill switch, budget exceeded, or rate limited
+    if governor:
+        allowed, reason = governor.gate("web_search", "xai_web_search", query, True)
+        if not allowed:
+            logger.warning("Governor blocked web_search: %s", reason)
+            return ToolResult(success=False, output="", error=f"Governor blocked: {reason}")
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -285,6 +302,10 @@ async def _xai_web_search(args: dict[str, Any]) -> ToolResult:
             )
             data = resp.json()
             output_text = data.get("output_text", "")
+
+            # Record with governor after successful call
+            if governor:
+                governor.record("xai_web_search")
 
             # Extract citations from web_search_results output items
             citations: list[str] = []
@@ -305,7 +326,10 @@ async def _xai_web_search(args: dict[str, Any]) -> ToolResult:
         return ToolResult(success=False, output="", error=f"xAI web search failed: {e}")
 
 
-async def _xai_x_search(args: dict[str, Any]) -> ToolResult:
+async def _xai_x_search(
+    args: dict[str, Any],
+    governor: GovernorStack | None = None,
+) -> ToolResult:
     """Search X (Twitter) posts via xAI's built-in x_search tool."""
     query = args.get("query", "")
     if not query:
@@ -314,6 +338,13 @@ async def _xai_x_search(args: dict[str, Any]) -> ToolResult:
     api_key = settings.xai_api_key
     if not api_key:
         return ToolResult(success=False, output="", error="XAI_API_KEY not set")
+
+    # Governor gate — blocks if kill switch, budget exceeded, or rate limited
+    if governor:
+        allowed, reason = governor.gate("x_search", "xai_x_search", query, True)
+        if not allowed:
+            logger.warning("Governor blocked x_search: %s", reason)
+            return ToolResult(success=False, output="", error=f"Governor blocked: {reason}")
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -331,6 +362,11 @@ async def _xai_x_search(args: dict[str, Any]) -> ToolResult:
                 },
             )
             data = resp.json()
+
+            # Record with governor after successful call
+            if governor:
+                governor.record("xai_x_search")
+
             return ToolResult(success=True, output=data.get("output_text", ""))
     except Exception as e:
         return ToolResult(success=False, output="", error=f"xAI X search failed: {e}")
