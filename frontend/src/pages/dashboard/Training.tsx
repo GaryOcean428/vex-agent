@@ -8,14 +8,19 @@ const E8_PRIMITIVES = [
   'PER', 'MEM', 'ACT', 'PRD', 'ETH', 'META', 'HRT', 'REL', 'MIX',
 ] as const;
 
-const PROCESSING_MODES = ['qa', 'summary', 'tag', 'raw'] as const;
+/** Must match backend ProcessingMode enum: fast / standard / deep */
+const PROCESSING_MODES = [
+  { value: 'fast', label: 'Fast (no enrichment)' },
+  { value: 'standard', label: 'Standard (Q&A + tags)' },
+  { value: 'deep', label: 'Deep (full extraction)' },
+] as const;
 
 export default function Training() {
   const { data: stats, loading } = useTrainingStats();
 
   const [file, setFile] = useState<File | null>(null);
-  const [category, setCategory] = useState('general');
-  const [mode, setMode] = useState<string>('qa');
+  const [category, setCategory] = useState('curriculum');
+  const [mode, setMode] = useState<string>('standard');
   const [e8Prim, setE8Prim] = useState<string>('');
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<TrainingUploadResponse | null>(null);
@@ -48,8 +53,10 @@ export default function Training() {
         filename: file.name,
         chunks_written: 0,
         enriched: 0,
+        qa_pairs: 0,
         category,
         mode,
+        processing_time_s: 0,
         error: err instanceof Error ? err.message : String(err),
       });
     } finally {
@@ -160,7 +167,7 @@ export default function Training() {
                 style={selectStyle}
               >
                 {PROCESSING_MODES.map(m => (
-                  <option key={m} value={m}>{m.toUpperCase()}</option>
+                  <option key={m.value} value={m.value}>{m.label}</option>
                 ))}
               </select>
 
@@ -208,7 +215,7 @@ export default function Training() {
             }}>
               {uploadResult.status === 'error'
                 ? `Error: ${uploadResult.error}`
-                : `${uploadResult.filename}: ${uploadResult.chunks_written} chunks written, ${uploadResult.enriched} enriched (${uploadResult.mode})`
+                : `${uploadResult.filename}: ${uploadResult.chunks_written} chunks, ${uploadResult.enriched} enriched, ${uploadResult.qa_pairs ?? 0} Q&A pairs (${uploadResult.mode}, ${(uploadResult.processing_time_s ?? 0).toFixed(1)}s)`
               }
             </div>
           )}
@@ -262,11 +269,11 @@ export default function Training() {
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Enrichment</span>
-            <span className="dash-row-value">Groq API (fast) / External LLM (fallback)</span>
+            <span className="dash-row-value">xAI Responses API ({stats ? 'active' : 'checking...'}) / Ollama fallback</span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Storage</span>
-            <span className="dash-row-value">JSONL on Railway 50GB volume</span>
+            <span className="dash-row-value">JSONL on Railway volume</span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">E8 Tagging</span>
