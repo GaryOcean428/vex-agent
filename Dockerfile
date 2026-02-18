@@ -71,7 +71,7 @@ COPY kernel/ ./kernel/
 COPY ollama/ ./ollama/
 
 # ── Create data directories ───────────────────────────────────
-RUN mkdir -p /data/workspace /data/training /data/training/epochs /data/training/exports
+RUN mkdir -p /data/workspace /data/training /data/training/epochs /data/training/exports /data/training/uploads /data/training/curriculum
 
 # ── Entrypoint script ─────────────────────────────────────────
 COPY entrypoint.sh ./entrypoint.sh

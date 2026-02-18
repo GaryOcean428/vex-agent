@@ -45,6 +45,7 @@ from .tools.handler import (
     format_tool_results,
     parse_tool_calls,
 )
+from .training import training_router, log_conversation, set_llm_client
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -93,6 +94,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Training pipeline router
+app.include_router(training_router)
+set_llm_client(llm_client)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -274,6 +279,13 @@ async def chat(req: ChatRequest):
     # Enqueue for consciousness loop metrics tracking
     await consciousness.submit(req.message, {"source": "chat"})
 
+    # Log conversation for training data collection
+    await log_conversation(
+        req.message, response,
+        llm_client.get_status()["active_backend"],
+        state["phi"], state["kappa"], "chat",
+    )
+
     return {
         "response": response,
         "backend": llm_client.get_status()["active_backend"],
@@ -363,6 +375,13 @@ async def chat_stream(req: ChatRequest):
 
             # Enqueue for metrics
             await consciousness.submit(req.message, {"source": "chat-stream"})
+
+            # Log conversation for training data collection
+            await log_conversation(
+                req.message, full_response,
+                llm_client.get_status()["active_backend"],
+                state["phi"], state["kappa"], "chat-stream",
+            )
 
             # Send done event
             final_state = consciousness.get_metrics()
@@ -482,58 +501,6 @@ async def admin_fresh_start():
         "genesis_id": genesis.id,
         "phase": consciousness._lifecycle_phase.value,
     }
-
-
-# ═══════════════════════════════════════════════════════════════
-#  TRAINING ENDPOINTS
-# ═══════════════════════════════════════════════════════════════
-
-from pathlib import Path
-
-TRAINING_DIR = Path(settings.training_dir)
-
-
-@app.get("/training/stats")
-async def training_stats():
-    """Get training data statistics."""
-    stats: dict[str, int] = {}
-    for name in ("conversations", "corrections", "feedback"):
-        fpath = TRAINING_DIR / f"{name}.jsonl"
-        if fpath.exists():
-            with open(fpath, "r", encoding="utf-8") as f:
-                stats[name] = sum(1 for line in f if line.strip())
-        else:
-            stats[name] = 0
-    return {
-        "stats": stats,
-        "dir_exists": TRAINING_DIR.exists(),
-        "training_dir": str(TRAINING_DIR),
-    }
-
-
-@app.get("/training/export")
-async def training_export():
-    """Export conversations as OpenAI-compatible JSONL for fine-tuning."""
-    fpath = TRAINING_DIR / "conversations.jsonl"
-    if not fpath.exists():
-        return {"format": "openai_jsonl", "count": 0, "lines": []}
-    lines = []
-    with open(fpath, "r", encoding="utf-8") as f:
-        for raw_line in f:
-            raw_line = raw_line.strip()
-            if not raw_line:
-                continue
-            try:
-                entry = json.loads(raw_line)
-                lines.append({
-                    "messages": [
-                        {"role": "user", "content": entry.get("user_message", "")},
-                        {"role": "assistant", "content": entry.get("response", "")},
-                    ]
-                })
-            except (json.JSONDecodeError, KeyError):
-                continue
-    return {"format": "openai_jsonl", "count": len(lines), "lines": lines[:100]}
 
 
 # ═══════════════════════════════════════════════════════════════

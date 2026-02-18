@@ -34,7 +34,7 @@ This copies:
 Use the `/training/export` endpoint to export collected conversations in OpenAI-compatible JSONL format:
 
 ```bash
-curl -X POST https://vex-agent-production.up.railway.app/training/export
+curl https://vex-agent-production.up.railway.app/training/export
 ```
 
 The exported file can be used to fine-tune the Liquid model on Vex's conversation patterns and geometric language.

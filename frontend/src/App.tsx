@@ -11,6 +11,7 @@ import Cognition from './pages/dashboard/Cognition.tsx';
 import Memory from './pages/dashboard/Memory.tsx';
 import Telemetry from './pages/dashboard/Telemetry.tsx';
 import Admin from './pages/dashboard/Admin.tsx';
+import Training from './pages/dashboard/Training.tsx';
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
             <Route path="cognition" element={<Cognition />} />
             <Route path="memory" element={<Memory />} />
             <Route path="telemetry" element={<Telemetry />} />
+            <Route path="training" element={<Training />} />
             <Route path="admin" element={<Admin />} />
           </Route>
           <Route path="*" element={<Navigate to="/chat" replace />} />
