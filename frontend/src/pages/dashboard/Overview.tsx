@@ -67,19 +67,19 @@ export default function Overview() {
           <div className="toggle-row">
             <span className="toggle-label">Sleep Mode</span>
             <span className={`toggle-value ${state.sleep.is_asleep ? 'toggle-on' : 'toggle-off'}`}>
-              {state.sleep.is_asleep ? 'ASLEEP' : 'AWAKE'}
+              {state.sleep?.is_asleep ? 'ASLEEP' : 'AWAKE'}
             </span>
           </div>
           <div className="toggle-row">
             <span className="toggle-label">Lifecycle Phase</span>
             <span className="toggle-value toggle-on">
-              {state.lifecycle_phase.toUpperCase()}
+              {state.lifecycle_phase?.toUpperCase() ?? 'UNKNOWN'}
             </span>
           </div>
           <div className="toggle-row">
             <span className="toggle-label">Navigation</span>
             <span className="toggle-value toggle-on">
-              {state.navigation.toUpperCase()}
+              {state.navigation?.toUpperCase() ?? 'UNKNOWN'}
             </span>
           </div>
         </div>
