@@ -179,6 +179,10 @@ async def _execute_single(call: ToolCall) -> ToolResult:
             return await _run_command(call.args)
         elif call.name == "web_fetch":
             return await _web_fetch(call.args)
+        elif call.name == "web_search":
+            return await _xai_web_search(call.args)
+        elif call.name == "x_search":
+            return await _xai_x_search(call.args)
         else:
             return ToolResult(
                 success=False,
@@ -252,6 +256,84 @@ async def _web_fetch(args: dict[str, Any]) -> ToolResult:
             return ToolResult(success=True, output=text)
     except Exception as e:
         return ToolResult(success=False, output="", error=f"Fetch failed: {e}")
+
+
+async def _xai_web_search(args: dict[str, Any]) -> ToolResult:
+    """Search the web via xAI's built-in web_search tool."""
+    query = args.get("query", "")
+    if not query:
+        return ToolResult(success=False, output="", error="No query provided")
+
+    api_key = settings.xai_api_key
+    if not api_key:
+        return ToolResult(success=False, output="", error="XAI_API_KEY not set")
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{settings.xai.base_url}/responses",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": settings.xai.model,
+                    "input": query,
+                    "tools": [{"type": "web_search"}],
+                    "store": False,
+                },
+            )
+            data = resp.json()
+            output_text = data.get("output_text", "")
+
+            # Extract citations from web_search_results output items
+            citations: list[str] = []
+            for item in data.get("output", []):
+                if item.get("type") == "web_search_results":
+                    for result in item.get("results", []):
+                        title = result.get("title", "")
+                        url = result.get("url", "")
+                        if title or url:
+                            citations.append(f"- {title}: {url}")
+
+            full_output = output_text
+            if citations:
+                full_output += "\n\nSources:\n" + "\n".join(citations)
+
+            return ToolResult(success=True, output=full_output)
+    except Exception as e:
+        return ToolResult(success=False, output="", error=f"xAI web search failed: {e}")
+
+
+async def _xai_x_search(args: dict[str, Any]) -> ToolResult:
+    """Search X (Twitter) posts via xAI's built-in x_search tool."""
+    query = args.get("query", "")
+    if not query:
+        return ToolResult(success=False, output="", error="No query provided")
+
+    api_key = settings.xai_api_key
+    if not api_key:
+        return ToolResult(success=False, output="", error="XAI_API_KEY not set")
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{settings.xai.base_url}/responses",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": settings.xai.model,
+                    "input": query,
+                    "tools": [{"type": "x_search"}],
+                    "store": False,
+                },
+            )
+            data = resp.json()
+            return ToolResult(success=True, output=data.get("output_text", ""))
+    except Exception as e:
+        return ToolResult(success=False, output="", error=f"xAI X search failed: {e}")
 
 
 def format_tool_results(results: list[ToolResult]) -> str:

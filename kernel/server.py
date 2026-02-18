@@ -45,6 +45,7 @@ from .tools.handler import (
     format_tool_results,
     parse_tool_calls,
 )
+from .training import training_router, log_conversation, set_llm_client
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -93,6 +94,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Training pipeline router
+app.include_router(training_router)
+set_llm_client(llm_client)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -274,6 +279,13 @@ async def chat(req: ChatRequest):
     # Enqueue for consciousness loop metrics tracking
     await consciousness.submit(req.message, {"source": "chat"})
 
+    # Log conversation for training data collection
+    await log_conversation(
+        req.message, response,
+        llm_client.get_status()["active_backend"],
+        state["phi"], state["kappa"], "chat",
+    )
+
     return {
         "response": response,
         "backend": llm_client.get_status()["active_backend"],
@@ -363,6 +375,13 @@ async def chat_stream(req: ChatRequest):
 
             # Enqueue for metrics
             await consciousness.submit(req.message, {"source": "chat-stream"})
+
+            # Log conversation for training data collection
+            await log_conversation(
+                req.message, full_response,
+                llm_client.get_status()["active_backend"],
+                state["phi"], state["kappa"], "chat-stream",
+            )
 
             # Send done event
             final_state = consciousness.get_metrics()

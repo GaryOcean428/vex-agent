@@ -17,6 +17,7 @@ import * as fs from 'fs';
 import { config } from './config';
 import { logger } from './config/logger';
 import { createChatRouter } from './chat/router';
+import { requireAuth } from './auth/middleware';
 import { sandboxManager, getComputeTools } from './tools/compute-sandbox';
 
 const KERNEL_URL = process.env.KERNEL_URL || 'http://localhost:8000';
@@ -35,7 +36,17 @@ async function main(): Promise<void> {
   logger.info('═══════════════════════════════════════');
 
   const app = express();
-  app.use(express.json({ limit: '1mb' }));
+  // Conditional JSON parsing — skip for multipart requests (training upload)
+  app.use((req, res, next) => {
+    if ((req.headers['content-type'] || '').startsWith('multipart/')) {
+      next();
+    } else {
+      express.json({ limit: '1mb' })(req, res, next);
+    }
+  });
+
+  // ─── Global auth — protects all routes when CHAT_AUTH_TOKEN is set ───
+  app.use(requireAuth);
 
   // ─── Health check (probes kernel health too) ─────────────────
 
@@ -118,6 +129,24 @@ async function main(): Promise<void> {
   // Training endpoints
   proxyGet('/training/stats');
   proxyGet('/training/export');
+  proxyPost('/training/feedback');
+
+  // Training upload — custom multipart proxy (proxyPost hardcodes JSON Content-Type)
+  app.post('/training/upload', async (req, res) => {
+    try {
+      const resp = await fetch(`${KERNEL_URL}/training/upload`, {
+        method: 'POST',
+        headers: { 'content-type': req.headers['content-type'] || '' },
+        // Node 22 fetch supports streaming request body via duplex: 'half'
+        body: req as never,
+        duplex: 'half',
+      } as RequestInit);
+      const data = await resp.json();
+      res.json(data);
+    } catch (err) {
+      res.status(502).json({ error: `Kernel unreachable: ${(err as Error).message}` });
+    }
+  });
 
   // ─── Chat routes (UI + streaming proxy) ─────────────────────
   // Check for React frontend BEFORE creating chat router so we can

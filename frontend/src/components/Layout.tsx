@@ -16,6 +16,7 @@ const DASHBOARD_TABS = [
   { to: '/dashboard/cognition', label: 'Cognition' },
   { to: '/dashboard/memory', label: 'Memory' },
   { to: '/dashboard/telemetry', label: 'Telemetry' },
+  { to: '/dashboard/training', label: 'Training' },
   { to: '/dashboard/admin', label: 'Admin' },
 ] as const;
 

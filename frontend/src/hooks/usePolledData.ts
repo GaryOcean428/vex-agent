@@ -24,6 +24,11 @@ export function usePolledData<T>(
 
     try {
       const res = await fetch(endpoint, { signal: controller.signal });
+      if (res.status === 401) {
+        // Session expired — redirect to login
+        window.location.href = '/login';
+        return;
+      }
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const json = await res.json();
       if (!controller.signal.aborted) {

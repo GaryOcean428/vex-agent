@@ -12,78 +12,19 @@
  * Python kernel. This router only handles auth and SSE proxying.
  */
 
-import { Router, Request, Response, NextFunction } from 'express';
-import * as crypto from 'crypto';
+import { Router, Request, Response } from 'express';
 import { config } from '../config';
 import { logger } from '../config/logger';
-import { getChatHTML, getLoginHTML } from './ui';
-
-/** Session cookie name */
-const SESSION_COOKIE = 'vex_session';
-
-/** Session duration: 7 days in ms */
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+import { getChatHTML } from './ui';
+import {
+  requireAuth,
+  createSession,
+  SESSION_COOKIE,
+  SESSION_TTL_MS,
+} from '../auth/middleware';
 
 /** Interval (ms) between SSE keep-alive pings */
 const SSE_KEEPALIVE_INTERVAL_MS = 15_000;
-
-interface Session {
-  id: string;
-  createdAt: number;
-  expiresAt: number;
-}
-
-const sessions = new Map<string, Session>();
-
-function createSession(): string {
-  const id = crypto.randomBytes(32).toString('hex');
-  const now = Date.now();
-  sessions.set(id, { id, createdAt: now, expiresAt: now + SESSION_TTL_MS });
-  return id;
-}
-
-function isValidSession(sessionId: string | undefined): boolean {
-  if (!sessionId) return false;
-  const session = sessions.get(sessionId);
-  if (!session) return false;
-  if (Date.now() > session.expiresAt) {
-    sessions.delete(sessionId);
-    return false;
-  }
-  return true;
-}
-
-function getCookie(req: Request, name: string): string | undefined {
-  const header = req.headers.cookie;
-  if (!header) return undefined;
-  const match = header.split(';').find((c) => c.trim().startsWith(name + '='));
-  if (!match) return undefined;
-  return match.split('=').slice(1).join('=').trim();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  if (!config.chatAuthToken) {
-    next();
-    return;
-  }
-
-  const sessionId = getCookie(req, SESSION_COOKIE);
-  if (isValidSession(sessionId)) {
-    next();
-    return;
-  }
-
-  const acceptsHtml =
-    req.headers.accept?.includes('text/html') || req.method === 'GET';
-
-  if (acceptsHtml && req.path === '/chat') {
-    res.setHeader('Content-Type', 'text/html');
-    res.send(getLoginHTML());
-    return;
-  }
-
-  res.status(401).json({ error: 'Authentication required' });
-}
 
 export interface ChatRouterOptions {
   kernelUrl: string;

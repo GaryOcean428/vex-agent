@@ -25,6 +25,13 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
+class XAIConfig:
+    api_key: str = os.environ.get("XAI_API_KEY", "")
+    base_url: str = os.environ.get("XAI_BASE_URL", "https://api.x.ai/v1")
+    model: str = os.environ.get("XAI_MODEL", "grok-4-1-fast-non-reasoning")
+
+
+@dataclass(frozen=True)
 class ComputeSDKConfig:
     """ComputeSDK is managed by the TS proxy layer (Node SDK).
     Python backend calls TS proxy for sandbox operations."""
@@ -68,6 +75,7 @@ class Settings:
     # Sub-configs
     ollama: OllamaConfig = field(default_factory=OllamaConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
+    xai: XAIConfig = field(default_factory=XAIConfig)
     compute_sdk: ComputeSDKConfig = field(default_factory=ComputeSDKConfig)
 
 
