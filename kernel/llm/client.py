@@ -124,6 +124,9 @@ class LLMClient:
         # Governance stack — gates external calls through 5 layers
         self._governor = governor
 
+        # Per-response attribution — which backend actually served the last call
+        self._last_backend: str = "none"
+
     async def init(self) -> None:
         """Initialise the client — check Ollama availability, set fallback chain."""
         self._ollama_available = await self.check_ollama()
@@ -206,6 +209,11 @@ class LLMClient:
     def governor(self) -> GovernorStack | None:
         return self._governor
 
+    @property
+    def last_backend(self) -> str:
+        """Which backend actually served the most recent completion."""
+        return self._last_backend
+
     # --- Ollama -------------------------------------------------
 
     async def _ollama_complete(
@@ -225,6 +233,7 @@ class LLMClient:
                 },
             )
             data = resp.json()
+            self._last_backend = "ollama"
             return data.get("message", {}).get("content", "")
         except Exception as e:
             logger.error("Ollama completion failed: %s", e)
@@ -241,6 +250,7 @@ class LLMClient:
         self, messages: list[dict[str, str]], opts: LLMOptions
     ) -> AsyncGenerator[str, None]:
         try:
+            self._last_backend = "ollama"
             async with self._http.stream(
                 "POST",
                 f"{settings.ollama.url}/api/chat",
@@ -306,6 +316,7 @@ class LLMClient:
 
             if self._governor:
                 self._governor.record("xai_completion")
+            self._last_backend = "xai"
             return _extract_responses_text(data)
         except Exception as e:
             logger.error("xAI completion failed: %s", e)
@@ -337,6 +348,7 @@ class LLMClient:
                 input_msgs.append(m)
 
         try:
+            self._last_backend = "xai"
             async with self._http.stream(
                 "POST",
                 f"{settings.xai.base_url}/responses",
@@ -415,6 +427,7 @@ class LLMClient:
 
             if self._governor:
                 self._governor.record("openai_completion")
+            self._last_backend = "openai"
             return _extract_responses_text(data)
         except Exception as e:
             logger.error("OpenAI completion failed: %s", e)
@@ -444,6 +457,7 @@ class LLMClient:
                 input_msgs.append(m)
 
         try:
+            self._last_backend = "openai"
             async with self._http.stream(
                 "POST",
                 f"{settings.llm.base_url}/responses",
