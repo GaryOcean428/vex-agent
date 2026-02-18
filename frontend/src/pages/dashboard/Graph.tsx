@@ -22,7 +22,7 @@ interface Node {
 
 export default function Graph() {
   const { data: state, loading } = useVexState();
-  const { data: graphData } = useGraphNodes();
+  const { data: _graphData } = useGraphNodes();  // TODO: Use graphData for enhanced force-directed layout
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nodesRef = useRef<Node[]>([]);
   const animRef = useRef<number>(0);
