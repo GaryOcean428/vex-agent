@@ -954,6 +954,64 @@ class E8KernelRegistry:
         kernel.state = LifecycleState.PROMOTED
         return True
 
+    def serialize(self) -> list[dict[str, Any]]:
+        """Serialize all kernels for state persistence."""
+        result = []
+        for k in self._kernels.values():
+            result.append({
+                "id": k.id, "name": k.name,
+                "kind": k.kind.value,
+                "specialization": k.specialization.value,
+                "state": k.state.value,
+                "created_at": k.created_at,
+                "last_active_at": k.last_active_at,
+                "cycle_count": k.cycle_count,
+                "phi_peak": k.phi_peak,
+                "phi": k.phi, "kappa": k.kappa,
+                "basin": k.basin.tolist() if k.basin is not None else None,
+            })
+        return result
+
+    def restore(self, data: list[dict[str, Any]]) -> int:
+        """Restore kernels from serialized state. Returns count restored.
+
+        Directly sets budget counts to match restored state rather than
+        going through record_spawn() — this is state restoration, not spawning.
+        """
+        self._kernels.clear()
+        self._budget = BudgetEnforcer()
+        count = 0
+        for entry in data:
+            kind = KernelKind(entry["kind"])
+            state = LifecycleState(entry["state"])
+
+            basin = None
+            if entry.get("basin") is not None:
+                basin = to_simplex(np.array(entry["basin"], dtype=np.float64))
+
+            kernel = KernelInstance(
+                id=entry["id"], name=entry["name"],
+                kind=kind,
+                specialization=KernelSpecialization(entry.get("specialization", "general")),
+                state=state,
+                created_at=entry.get("created_at", ""),
+                last_active_at=entry.get("last_active_at", ""),
+                cycle_count=entry.get("cycle_count", 0),
+                phi_peak=entry.get("phi_peak", 0.0),
+                basin=basin,
+                phi=entry.get("phi", 0.1),
+                kappa=entry.get("kappa", KAPPA_STAR),
+            )
+            self._kernels[kernel.id] = kernel
+
+            # Reconcile budget counts for non-terminated kernels
+            if state in (LifecycleState.ACTIVE, LifecycleState.BOOTSTRAPPED,
+                         LifecycleState.SLEEPING, LifecycleState.DREAMING):
+                self._budget._counts[kind] += 1
+
+            count += 1
+        return count
+
     def summary(self) -> dict[str, Any]:
         return {
             "total": len(self._kernels),
