@@ -1,4 +1,4 @@
-import { useVexState, useKernels, useHealth } from '../../hooks/index.ts';
+import { useVexState, useKernels, useHealth, useKernelList } from '../../hooks/index.ts';
 import MetricCard from '../../components/MetricCard.tsx';
 import { QIG } from '../../types/consciousness.ts';
 import '../../components/MetricCard.css';
@@ -8,6 +8,7 @@ export default function Overview() {
   const { data: state, loading } = useVexState();
   const { data: kernels } = useKernels();
   const { data: health } = useHealth();
+  const { data: kernelList } = useKernelList();
 
   if (loading || !state) {
     return <div className="dash-loading">Connecting to kernel...</div>;
@@ -109,6 +110,28 @@ export default function Overview() {
           </div>
         </div>
       </div>
+
+      {/* Kernel List */}
+      {kernelList?.kernels && kernelList.kernels.length > 0 && (
+        <div className="dash-section">
+          <div className="dash-section-title">Active Kernels ({kernelList.kernels.length})</div>
+          <div className="dash-card">
+            {kernelList.kernels.map((kernel) => (
+              <div key={kernel.id} className="dash-row">
+                <span className="dash-row-label">
+                  <span style={{ color: kernel.kind === 'GENESIS' ? 'var(--phi)' : kernel.kind === 'GOD' ? 'var(--kappa)' : 'var(--text-dim)' }}>
+                    {kernel.kind}
+                  </span>
+                  {' '}/ {kernel.specialization} / {kernel.name}
+                </span>
+                <span className="dash-row-value">
+                  \u03A6 {kernel.phi_peak.toFixed(3)} | {kernel.cycle_count} cycles
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

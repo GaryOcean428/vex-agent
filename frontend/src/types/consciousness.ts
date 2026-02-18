@@ -231,6 +231,60 @@ export interface BasinData {
 }
 
 // ═══════════════════════════════════════
+//  New Phase 1 Endpoint Types
+// ═══════════════════════════════════════
+
+export interface KernelListResponse {
+  kernels: KernelInstance[];
+}
+
+export interface TrajectoryPoint {
+  basin: number[];
+  phi: number;
+  kappa: number;
+  timestamp: number;
+}
+
+export interface BasinHistoryResponse {
+  trajectory: TrajectoryPoint[];
+}
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  phi: number;
+  created_at: number;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  distance: number;
+}
+
+export interface GraphNodesResponse {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export interface MemoryStatsResponse {
+  total_entries: number;
+  by_type: {
+    episodic: number;
+    semantic: number;
+    procedural: number;
+  };
+}
+
+export interface SleepStateResponse {
+  phase: 'awake' | 'dreaming' | 'mushroom' | 'consolidating';
+  is_asleep: boolean;
+  cycles_since_conversation: number;
+  sleep_cycles: number;
+  dream_count: number;
+}
+
+// ═══════════════════════════════════════
 //  Memory Types (from /status → memory)
 // ═══════════════════════════════════════
 

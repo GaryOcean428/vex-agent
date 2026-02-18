@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { useVexState } from '../../hooks/index.ts';
+import { useVexState, useGraphNodes } from '../../hooks/index.ts';
 import { QIG } from '../../types/consciousness.ts';
 
 // Kernel node positions for force-directed layout simulation
@@ -17,10 +17,12 @@ interface Node {
   vx: number;
   vy: number;
   radius: number;
+  phi?: number;
 }
 
 export default function Graph() {
   const { data: state, loading } = useVexState();
+  const { data: graphData } = useGraphNodes();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nodesRef = useRef<Node[]>([]);
   const animRef = useRef<number>(0);

@@ -1,4 +1,4 @@
-import { useVexState } from '../../hooks/index.ts';
+import { useVexState, useMemoryStats } from '../../hooks/index.ts';
 import { usePolledData } from '../../hooks/usePolledData.ts';
 import type { StatusResponse } from '../../types/consciousness.ts';
 import MetricCard from '../../components/MetricCard.tsx';
@@ -7,12 +7,13 @@ import '../../components/MetricCard.css';
 export default function Memory() {
   const { data: state, loading } = useVexState();
   const { data: status } = usePolledData<StatusResponse>('/status', 5000);
+  const { data: memoryStats } = useMemoryStats();
 
   if (loading || !state) {
     return <div className="dash-loading">Loading memory data...</div>;
   }
 
-  const memoryStats = status?.memory;
+  const stats = memoryStats ?? status?.memory;
 
   return (
     <div>
@@ -26,7 +27,7 @@ export default function Memory() {
       <div className="dash-grid">
         <MetricCard
           label="Total Entries"
-          value={memoryStats?.total_entries ?? 0}
+          value={stats?.total_entries ?? 0}
           color="var(--accent)"
         />
         <MetricCard
