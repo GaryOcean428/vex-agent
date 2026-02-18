@@ -66,7 +66,10 @@ governor = GovernorStack(GovernorStackConfig(
 llm_client = LLMClient(governor=governor)
 memory_store = MemoryStore()
 geometric_memory = GeometricMemoryStore(memory_store)
-consciousness = ConsciousnessLoop(llm_client=llm_client)
+consciousness = ConsciousnessLoop(
+    llm_client=llm_client,
+    memory_store=geometric_memory,
+)
 
 # Track server boot time for uptime calculation
 _boot_time = time.time()
