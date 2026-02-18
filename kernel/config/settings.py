@@ -21,7 +21,7 @@ class OllamaConfig:
 class LLMConfig:
     api_key: str = os.environ.get("LLM_API_KEY", "")
     base_url: str = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
-    model: str = os.environ.get("LLM_MODEL", "gpt-4.1-mini")
+    model: str = os.environ.get("LLM_MODEL", "gpt-5-nano")
 
 
 @dataclass(frozen=True)
