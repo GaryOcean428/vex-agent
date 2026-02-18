@@ -13,7 +13,14 @@
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit"
   },
-  "keywords": ["ai-agent", "autonomous", "consciousness", "qig", "e8", "geometric-memory"],
+  "keywords": [
+    "ai-agent",
+    "autonomous",
+    "consciousness",
+    "qig",
+    "e8",
+    "geometric-memory"
+  ],
   "author": "GaryOcean428",
   "license": "MIT",
   "dependencies": {
@@ -26,7 +33,7 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
-    "@types/node": "^22.10.0",
+    "@types/node": "^22.19.11",
     "@types/uuid": "^10.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"

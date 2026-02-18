@@ -33,7 +33,9 @@ COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci 2>/dev/null || npm install
 
 COPY frontend/ ./
-RUN npm run build
+RUN npm run build \
+    && test -f dist/index.html \
+    || (echo "FATAL: Frontend build failed — dist/index.html missing" && ls -la dist/ 2>/dev/null && exit 1)
 
 # ── Stage 2: Production image ─────────────────────────────────
 FROM python:3.11-slim
@@ -69,7 +71,7 @@ COPY kernel/ ./kernel/
 COPY ollama/ ./ollama/
 
 # ── Create data directories ───────────────────────────────────
-RUN mkdir -p /data/workspace /data/training /data/training/epochs /data/training/exports
+RUN mkdir -p /data/workspace /data/training /data/training/epochs /data/training/exports /data/training/uploads /data/training/curriculum
 
 # ── Entrypoint script ─────────────────────────────────────────
 COPY entrypoint.sh ./entrypoint.sh

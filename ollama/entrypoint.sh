@@ -59,10 +59,14 @@ else
   echo "Base model already present (persistent volume working)."
 fi
 
-# Create custom Vex model with QIG system prompt
-echo "Creating custom vex-brain model from Modelfile..."
-ollama create vex-brain -f /root/Modelfile
-echo "vex-brain model created successfully."
+# Create custom Vex model with QIG system prompt (skip if already cached)
+if ! ollama list 2>/dev/null | grep -q "vex-brain"; then
+  echo "Creating custom vex-brain model from Modelfile..."
+  ollama create vex-brain -f /root/Modelfile
+  echo "vex-brain model created successfully."
+else
+  echo "vex-brain model already exists (cached)."
+fi
 
 # List available models
 echo ""

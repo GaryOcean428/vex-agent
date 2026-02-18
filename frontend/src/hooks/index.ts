@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
 import { usePolledData } from './usePolledData.ts';
-import type { 
-  VexState, 
-  VexTelemetry, 
-  HealthStatus, 
-  KernelSummary, 
+import type {
+  VexState,
+  VexTelemetry,
+  HealthStatus,
+  KernelSummary,
   BasinData,
   KernelListResponse,
   BasinHistoryResponse,
   GraphNodesResponse,
   MemoryStatsResponse,
   SleepStateResponse,
+  TrainingStats,
 } from '../types/consciousness.ts';
 
 export { usePolledData } from './usePolledData.ts';
@@ -27,6 +28,7 @@ export const useBasinHistory = () => usePolledData<BasinHistoryResponse>('/basin
 export const useGraphNodes = () => usePolledData<GraphNodesResponse>('/graph/nodes', 3000);
 export const useMemoryStats = () => usePolledData<MemoryStatsResponse>('/memory/stats', 5000);
 export const useSleepState = () => usePolledData<SleepStateResponse>('/sleep/state', 3000);
+export const useTrainingStats = () => usePolledData<TrainingStats>('/training/stats', 10000);
 
 /**
  * Accumulate polled VexState snapshots into a time-series array.

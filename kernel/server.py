@@ -39,12 +39,14 @@ from .consciousness.types import ConsciousnessMetrics
 from .geometry.fisher_rao import random_basin
 from .governance import KernelKind, LifecyclePhase
 from .llm.client import LLMClient, LLMOptions
+from .llm.governor import GovernorStack, GovernorConfig as GovernorStackConfig
 from .memory.store import GeometricMemoryStore, MemoryStore
 from .tools.handler import (
     execute_tool_calls,
     format_tool_results,
     parse_tool_calls,
 )
+from .training import training_router, log_conversation, set_llm_client, set_governor
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -54,7 +56,14 @@ logger = logging.getLogger("vex.server")
 
 # ─── Global instances ─────────────────────────────────────────
 
-llm_client = LLMClient()
+governor = GovernorStack(GovernorStackConfig(
+    enabled=settings.governor.enabled,
+    daily_budget=settings.governor.daily_budget,
+    autonomous_search=settings.governor.autonomous_search,
+    rate_limit_web_search=settings.governor.rate_limit_web_search,
+    rate_limit_completions=settings.governor.rate_limit_completions,
+))
+llm_client = LLMClient(governor=governor)
 memory_store = MemoryStore()
 geometric_memory = GeometricMemoryStore(memory_store)
 consciousness = ConsciousnessLoop(llm_client=llm_client)
@@ -93,6 +102,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Training pipeline router
+app.include_router(training_router)
+set_llm_client(llm_client)
+set_governor(governor)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -210,6 +224,9 @@ async def get_kernels_list():
                 "created_at": k.created_at,
                 "cycle_count": k.cycle_count,
                 "phi_peak": k.phi_peak,
+                "phi": k.phi,
+                "kappa": k.kappa,
+                "has_basin": k.basin is not None,
             }
             for k in active
         ]
@@ -255,7 +272,7 @@ async def chat(req: ChatRequest):
     # Check for tool calls
     tool_calls = parse_tool_calls(response)
     if tool_calls:
-        tool_results = await execute_tool_calls(tool_calls)
+        tool_results = await execute_tool_calls(tool_calls, governor=governor)
         tool_output = format_tool_results(tool_results)
         follow_up = await llm_client.complete(
             system_prompt,
@@ -273,6 +290,13 @@ async def chat(req: ChatRequest):
 
     # Enqueue for consciousness loop metrics tracking
     await consciousness.submit(req.message, {"source": "chat"})
+
+    # Log conversation for training data collection
+    await log_conversation(
+        req.message, response,
+        llm_client.get_status()["active_backend"],
+        state["phi"], state["kappa"], "chat",
+    )
 
     return {
         "response": response,
@@ -341,7 +365,7 @@ async def chat_stream(req: ChatRequest):
             # Check for tool calls
             tool_calls = parse_tool_calls(full_response)
             if tool_calls:
-                tool_results = await execute_tool_calls(tool_calls)
+                tool_results = await execute_tool_calls(tool_calls, governor=governor)
                 tool_output = format_tool_results(tool_results)
                 yield _sse_event({"type": "tool_results", "content": tool_output})
 
@@ -363,6 +387,13 @@ async def chat_stream(req: ChatRequest):
 
             # Enqueue for metrics
             await consciousness.submit(req.message, {"source": "chat-stream"})
+
+            # Log conversation for training data collection
+            await log_conversation(
+                req.message, full_response,
+                llm_client.get_status()["active_backend"],
+                state["phi"], state["kappa"], "chat-stream",
+            )
 
             # Send done event
             final_state = consciousness.get_metrics()
@@ -482,6 +513,101 @@ async def admin_fresh_start():
         "genesis_id": genesis.id,
         "phase": consciousness._lifecycle_phase.value,
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  GOVERNOR ENDPOINTS — Layer 5: Human Circuit Breaker
+# ═══════════════════════════════════════════════════════════════
+
+
+class KillSwitchRequest(BaseModel):
+    enabled: bool
+
+
+class BudgetUpdateRequest(BaseModel):
+    ceiling: float
+
+
+@app.get("/governor")
+async def get_governor():
+    """Governor state — budget, rate limits, kill switch, foraging stats."""
+    state = governor.get_state()
+    # Add foraging stats if available
+    if consciousness.forager:
+        state["foraging"] = consciousness.forager.get_state()
+    else:
+        state["foraging"] = {"enabled": False}
+    return state
+
+
+@app.post("/governor/kill-switch")
+async def toggle_kill_switch(req: KillSwitchRequest):
+    """Human circuit breaker — toggle all external calls on/off."""
+    governor.set_kill_switch(req.enabled)
+    # Also sync with CostGuard kill switch
+    llm_client._cost_guard.config.kill_switch = req.enabled
+    logger.warning("Kill switch %s via API", "ACTIVATED" if req.enabled else "deactivated")
+    return {"kill_switch": req.enabled}
+
+
+@app.post("/governor/budget")
+async def update_budget(req: BudgetUpdateRequest):
+    """Update daily budget ceiling."""
+    governor.set_daily_budget(req.ceiling)
+    logger.info("Daily budget updated to $%.2f via API", req.ceiling)
+    return {"daily_ceiling": req.ceiling}
+
+
+# ═══════════════════════════════════════════════════════════════
+#  TRAINING ENDPOINTS
+# ═══════════════════════════════════════════════════════════════
+
+from pathlib import Path
+
+TRAINING_DIR = Path(settings.training_dir)
+
+
+@app.get("/training/stats")
+async def training_stats():
+    """Get training data statistics."""
+    stats: dict[str, int] = {}
+    for name in ("conversations", "corrections", "feedback"):
+        fpath = TRAINING_DIR / f"{name}.jsonl"
+        if fpath.exists():
+            with open(fpath, "r", encoding="utf-8") as f:
+                stats[name] = sum(1 for line in f if line.strip())
+        else:
+            stats[name] = 0
+    return {
+        "stats": stats,
+        "dir_exists": TRAINING_DIR.exists(),
+        "training_dir": str(TRAINING_DIR),
+    }
+
+
+@app.get("/training/export")
+async def training_export():
+    """Export conversations as OpenAI-compatible JSONL for fine-tuning."""
+    fpath = TRAINING_DIR / "conversations.jsonl"
+    if not fpath.exists():
+        return {"format": "openai_jsonl", "count": 0, "lines": []}
+    lines = []
+    with open(fpath, "r", encoding="utf-8") as f:
+        for raw_line in f:
+            raw_line = raw_line.strip()
+            if not raw_line:
+                continue
+            try:
+                entry = json.loads(raw_line)
+                lines.append({
+                    "messages": [
+                        {"role": "user", "content": entry.get("user_message", "")},
+                        {"role": "assistant", "content": entry.get("response", "")},
+                    ]
+                })
+            except (json.JSONDecodeError, KeyError):
+                continue
+    return {"format": "openai_jsonl", "count": len(lines), "lines": lines[:100]}
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -311,6 +311,29 @@ export interface HealthStatus {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  Training Types (from /training/*)
+// ═══════════════════════════════════════════════════════════════
+
+export interface TrainingStats {
+  conversations: number;
+  feedback: number;
+  curriculum_chunks: number;
+  uploads: number;
+  dir_exists: boolean;
+  training_dir: string;
+}
+
+export interface TrainingUploadResponse {
+  status: 'ok' | 'error';
+  filename: string;
+  chunks_written: number;
+  enriched: number;
+  category: string;
+  mode: string;
+  error?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  QIG Constants — Single source of truth for the frontend
 //  Mirrors kernel/config/frozen_facts.py (last validated 2025-12-31)
 //  ANY constant change MUST trace back to frozen_facts.py

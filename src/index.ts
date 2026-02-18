@@ -17,6 +17,7 @@ import * as fs from 'fs';
 import { config } from './config';
 import { logger } from './config/logger';
 import { createChatRouter } from './chat/router';
+import { requireAuth } from './auth/middleware';
 import { sandboxManager, getComputeTools } from './tools/compute-sandbox';
 
 const KERNEL_URL = process.env.KERNEL_URL || 'http://localhost:8000';
@@ -35,26 +36,42 @@ async function main(): Promise<void> {
   logger.info('═══════════════════════════════════════');
 
   const app = express();
-  app.use(express.json({ limit: '1mb' }));
+  // Conditional JSON parsing — skip for multipart requests (training upload)
+  app.use((req, res, next) => {
+    if ((req.headers['content-type'] || '').startsWith('multipart/')) {
+      next();
+    } else {
+      express.json({ limit: '1mb' })(req, res, next);
+    }
+  });
+
+  // ─── Global auth — protects all routes when CHAT_AUTH_TOKEN is set ───
+  app.use(requireAuth);
 
   // ─── Health check (probes kernel health too) ─────────────────
 
   app.get('/health', async (_req, res) => {
     try {
       const kernelResp = await fetch(`${KERNEL_URL}/health`);
-      const kernelHealth = await kernelResp.json();
+      const kernelHealth = await kernelResp.json() as Record<string, unknown>;
+      // Spread kernel fields at top level so the React frontend gets
+      // the flat shape it expects: { status, version, uptime, cycle_count, backend }
       res.json({
-        status: 'alive',
+        ...kernelHealth,
         proxy: 'ok',
-        kernel: kernelHealth,
         computeSdk: sandboxManager.isAvailable(),
         timestamp: new Date().toISOString(),
       });
     } catch (err) {
       res.json({
         status: 'degraded',
+        service: 'vex-kernel',
+        version: '2.2.0',
+        uptime: 0,
+        cycle_count: 0,
+        backend: 'unknown',
         proxy: 'ok',
-        kernel: { status: 'unreachable', error: (err as Error).message },
+        kernel_error: (err as Error).message,
         computeSdk: sandboxManager.isAvailable(),
         timestamp: new Date().toISOString(),
       });
@@ -101,9 +118,47 @@ async function main(): Promise<void> {
   proxyPost('/enqueue');
   proxyPost('/memory/context');
 
-  // ─── Chat routes (UI + streaming proxy) ─────────────────────
+  // Phase 1 dashboard endpoints
+  proxyGet('/kernels/list');
+  proxyGet('/basin/history');
+  proxyGet('/graph/nodes');
+  proxyGet('/memory/stats');
+  proxyGet('/sleep/state');
+  proxyPost('/admin/fresh-start');
 
-  const chatRouter = createChatRouter(KERNEL_URL);
+  // Training endpoints
+  proxyGet('/training/stats');
+  proxyGet('/training/export');
+  proxyPost('/training/feedback');
+
+  // Training upload — custom multipart proxy (proxyPost hardcodes JSON Content-Type)
+  app.post('/training/upload', async (req, res) => {
+    try {
+      const resp = await fetch(`${KERNEL_URL}/training/upload`, {
+        method: 'POST',
+        headers: { 'content-type': req.headers['content-type'] || '' },
+        // Node 22 fetch supports streaming request body via duplex: 'half'
+        body: req as never,
+        duplex: 'half',
+      } as RequestInit);
+      const data = await resp.json();
+      res.json(data);
+    } catch (err) {
+      res.status(502).json({ error: `Kernel unreachable: ${(err as Error).message}` });
+    }
+  });
+
+  // ─── Chat routes (UI + streaming proxy) ─────────────────────
+  // Check for React frontend BEFORE creating chat router so we can
+  // skip the inline HTML fallback when the SPA handles /chat.
+
+  const frontendIndexPath = path.join(FRONTEND_DIST, 'index.html');
+  const hasFrontend = fs.existsSync(frontendIndexPath);
+
+  const chatRouter = createChatRouter({
+    kernelUrl: KERNEL_URL,
+    hasReactFrontend: hasFrontend,
+  });
   app.use(chatRouter);
 
   // ─── ComputeSDK proxy endpoints ─────────────────────────────
@@ -147,9 +202,6 @@ async function main(): Promise<void> {
   // Serve the Vite-built React app. Falls back to the inline chat
   // HTML if the frontend build doesn't exist.
 
-  const frontendIndexPath = path.join(FRONTEND_DIST, 'index.html');
-  const hasFrontend = fs.existsSync(frontendIndexPath);
-
   if (hasFrontend) {
     logger.info(`Serving React frontend from ${FRONTEND_DIST}`);
 
@@ -165,12 +217,21 @@ async function main(): Promise<void> {
       // Skip API-like paths (already handled above)
       if (
         req.path.startsWith('/api/') ||
+        req.path.startsWith('/chat/') ||
         req.path === '/health' ||
         req.path === '/state' ||
         req.path === '/telemetry' ||
         req.path === '/status' ||
         req.path === '/basin' ||
-        req.path === '/kernels'
+        req.path === '/kernels' ||
+        req.path === '/enqueue' ||
+        req.path.startsWith('/memory/') ||
+        req.path.startsWith('/kernels/') ||
+        req.path.startsWith('/basin/') ||
+        req.path.startsWith('/graph/') ||
+        req.path.startsWith('/sleep/') ||
+        req.path.startsWith('/admin/') ||
+        req.path.startsWith('/training/')
       ) {
         next();
         return;
