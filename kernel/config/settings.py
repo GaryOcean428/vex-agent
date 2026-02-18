@@ -83,6 +83,22 @@ class Settings:
     perplexity_api_key: str = os.environ.get("PERPLEXITY_API_KEY", "")
     hf_token: str = os.environ.get("HF_TOKEN", "")
 
+    # Tool API keys
+    tavily_api_key: str = os.environ.get("TAVILY_API_KEY", "")
+    github_token: str = os.environ.get("GITHUB_TOKEN", "")
+    github_username: str = os.environ.get("GITHUB_USERNAME", "")
+    github_useremail: str = os.environ.get("GITHUB_USEREMAIL", "")
+
+    # Auth
+    kernel_api_key: str = os.environ.get("KERNEL_API_KEY", "")
+    sync_secret: str = os.environ.get("SYNC_SECRET", "")
+
+    # ComputeSDK / Railway
+    computesdk_api_key: str = os.environ.get("COMPUTESDK_API_KEY", "")
+    railway_api_key: str = os.environ.get("RAILWAY_API_KEY", "")
+    railway_project_id: str = os.environ.get("RAILWAY_PROJECT_ID", "")
+    railway_environment_id: str = os.environ.get("RAILWAY_ENVIRONMENT_ID", "")
+
     # Safety
     safety_mode: str = os.environ.get("SAFETY_MODE", "standard")
 
