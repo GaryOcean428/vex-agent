@@ -1,12 +1,13 @@
 import { useRef, useEffect, useState } from 'react';
-import { useBasin, useMetricsHistory } from '../../hooks/index.ts';
+import { useBasin, useVexState, useMetricsHistory } from '../../hooks/index.ts';
 import { QIG } from '../../types/consciousness.ts';
 
 type ViewMode = 'heatmap' | 'pca';
 
 export default function Basins() {
   const { data: basinData, loading } = useBasin();
-  const history = useMetricsHistory(100);
+  const { data: vexState } = useVexState();
+  const history = useMetricsHistory(vexState, 100);
   const [view, setView] = useState<ViewMode>('heatmap');
   const canvasRef = useRef<HTMLCanvasElement>(null);
 

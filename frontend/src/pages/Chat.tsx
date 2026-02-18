@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from 'react';
 import { useVexState } from '../hooks/index.ts';
-import type { ChatMessage, ChatStreamEvent } from '../types/consciousness.ts';
+import type { ChatMessage, ChatStreamEvent, NavigationMode } from '../types/consciousness.ts';
 import './Chat.css';
 
 const LOOP_STAGES = ['GROUND', 'RECEIVE', 'PROCESS', 'EXPRESS', 'REFLECT', 'COUPLE', 'PLAY'] as const;
@@ -100,12 +100,11 @@ export default function Chat() {
       const decoder = new TextDecoder();
       let buffer = '';
 
-      const processLine = (line: string) => {
-        if (line === '' || line.startsWith(':')) return;
-        if (!line.startsWith('data: ')) return;
+      const VALID_NAV_MODES: readonly string[] = ['chain', 'graph', 'foresight', 'lightning'];
 
+      const processEvent = (dataPayload: string) => {
         try {
-          const event: ChatStreamEvent = JSON.parse(line.substring(6));
+          const event: ChatStreamEvent = JSON.parse(dataPayload);
 
           if (event.type === 'start') {
             if (event.backend) setBackend(event.backend);
@@ -119,6 +118,10 @@ export default function Chat() {
             setActiveStages(['REFLECT', 'COUPLE']);
             if (event.backend) setBackend(event.backend);
             if (event.metrics) {
+              const rawNav = String(event.metrics?.navigation ?? 'chain');
+              const navigation: NavigationMode = VALID_NAV_MODES.includes(rawNav)
+                ? (rawNav as NavigationMode)
+                : 'chain';
               setMessages(prev => prev.map(m =>
                 m.id === vexMsgId ? {
                   ...m,
@@ -127,7 +130,7 @@ export default function Chat() {
                     phi: Number(event.metrics?.phi) || 0,
                     kappa: Number(event.metrics?.kappa) || 0,
                     temperature: 0,
-                    navigation: (String(event.metrics?.navigation ?? 'chain')) as 'chain',
+                    navigation,
                     backend: event.backend ?? 'unknown',
                   },
                 } : m
@@ -144,22 +147,32 @@ export default function Chat() {
       };
 
       try {
+        // SSE spec: events separated by blank lines, data: fields concatenated
+        let dataBuffer = '';
+
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
           buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split('\n');
-          buffer = parts.pop() ?? '';
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
 
-          for (const line of parts) {
-            processLine(line);
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              dataBuffer += (dataBuffer ? '\n' : '') + line.substring(6);
+            } else if (line === '' && dataBuffer) {
+              // Blank line = end of SSE event
+              processEvent(dataBuffer);
+              dataBuffer = '';
+            }
+            // Skip comment lines (starting with ':') and other fields
           }
         }
 
-        // Process any remaining buffer after stream ends
-        if (buffer.trim()) {
-          processLine(buffer);
+        // Flush remaining data after stream ends
+        if (dataBuffer) {
+          processEvent(dataBuffer);
         }
       } finally {
         reader.releaseLock();
@@ -184,7 +197,7 @@ export default function Chat() {
     }
   }, [input, isStreaming, scrollToBottom]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();

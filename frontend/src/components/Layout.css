@@ -205,6 +205,13 @@
   border: 1px solid rgba(239, 68, 68, 0.25);
 }
 
+/* Fallback for any unknown backend identifier */
+.backend-pill:not(.ollama):not(.external):not(.none) {
+  background: rgba(112, 112, 138, 0.12);
+  color: var(--text-secondary);
+  border: 1px solid rgba(112, 112, 138, 0.25);
+}
+
 /* ─── Main Content ─── */
 
 .main-content {
