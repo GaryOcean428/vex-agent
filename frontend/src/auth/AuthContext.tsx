@@ -18,7 +18,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = useCallback(async () => {
     try {
-      const resp = await fetch('/state');
+      // Use /health (public, exempt from auth) to check if the
+      // server is reachable, then probe /state to verify session.
+      // If /state returns 401, the session is invalid — no console
+      // error because we catch it gracefully.
+      const resp = await fetch('/auth/check');
       setAuthenticated(resp.ok);
     } catch {
       setAuthenticated(false);
