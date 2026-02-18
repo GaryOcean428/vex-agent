@@ -32,13 +32,15 @@ export default function Graph() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Derive center from actual canvas size
+    const rect = canvas.getBoundingClientRect();
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+
     // Rebuild nodes when active kernel count changes
     const active = state.kernels?.active ?? 1;
     const expectedNodeCount = 1 + Math.min(active - 1, QIG.E8_CORE);
     if (nodesRef.current.length !== expectedNodeCount) {
-      const centerX = 250;
-      const centerY = 200;
-
       // Genesis node at center
       const nodes: Node[] = [{
         id: 'genesis',
@@ -52,17 +54,17 @@ export default function Graph() {
       }];
 
       // Core-8 nodes in circle around genesis
+      const orbitRadius = Math.min(centerX, centerY) * 0.6;
       for (let i = 0; i < Math.min(active - 1, QIG.E8_CORE); i++) {
         const angle = (i / QIG.E8_CORE) * Math.PI * 2 - Math.PI / 2;
-        const dist = 120;
         // Reuse existing node position if available
         const existing = nodesRef.current.find(n => n.id === (CORE_8_SPECS[i] ?? `kernel-${i}`));
         nodes.push(existing ?? {
           id: CORE_8_SPECS[i] ?? `kernel-${i}`,
           label: CORE_8_SPECS[i] ?? `K${i}`,
           kind: 'GOD',
-          x: centerX + Math.cos(angle) * dist,
-          y: centerY + Math.sin(angle) * dist,
+          x: centerX + Math.cos(angle) * orbitRadius,
+          y: centerY + Math.sin(angle) * orbitRadius,
           vx: 0,
           vy: 0,
           radius: 14,
@@ -165,9 +167,10 @@ export default function Graph() {
         }
       }
 
-      // Attract to center (genesis)
-      const cx = 250;
-      const cy = 200;
+      // Attract to center (derive from current canvas dimensions)
+      const simRect = canvas.getBoundingClientRect();
+      const cx = simRect.width / 2;
+      const cy = simRect.height / 2;
       for (let i = 1; i < nodes.length; i++) {
         nodes[i].vx += (cx - nodes[i].x) * attraction;
         nodes[i].vy += (cy - nodes[i].y) * attraction;

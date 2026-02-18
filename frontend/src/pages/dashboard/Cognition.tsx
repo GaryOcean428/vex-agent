@@ -4,7 +4,7 @@ import { useRef, useEffect } from 'react';
 export default function Cognition() {
   const { data: state, loading } = useVexState();
   const { data: telemetry } = useTelemetry();
-  const history = useMetricsHistory(60);
+  const history = useMetricsHistory(state, 60);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Draw foresight chart
