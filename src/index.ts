@@ -42,19 +42,25 @@ async function main(): Promise<void> {
   app.get('/health', async (_req, res) => {
     try {
       const kernelResp = await fetch(`${KERNEL_URL}/health`);
-      const kernelHealth = await kernelResp.json();
+      const kernelHealth = await kernelResp.json() as Record<string, unknown>;
+      // Spread kernel fields at top level so the React frontend gets
+      // the flat shape it expects: { status, version, uptime, cycle_count, backend }
       res.json({
-        status: 'alive',
+        ...kernelHealth,
         proxy: 'ok',
-        kernel: kernelHealth,
         computeSdk: sandboxManager.isAvailable(),
         timestamp: new Date().toISOString(),
       });
     } catch (err) {
       res.json({
         status: 'degraded',
+        service: 'vex-kernel',
+        version: '2.2.0',
+        uptime: 0,
+        cycle_count: 0,
+        backend: 'unknown',
         proxy: 'ok',
-        kernel: { status: 'unreachable', error: (err as Error).message },
+        kernel_error: (err as Error).message,
         computeSdk: sandboxManager.isAvailable(),
         timestamp: new Date().toISOString(),
       });
@@ -108,6 +114,10 @@ async function main(): Promise<void> {
   proxyGet('/memory/stats');
   proxyGet('/sleep/state');
   proxyPost('/admin/fresh-start');
+
+  // Training endpoints
+  proxyGet('/training/stats');
+  proxyGet('/training/export');
 
   // ─── Chat routes (UI + streaming proxy) ─────────────────────
   // Check for React frontend BEFORE creating chat router so we can
@@ -191,7 +201,8 @@ async function main(): Promise<void> {
         req.path.startsWith('/basin/') ||
         req.path.startsWith('/graph/') ||
         req.path.startsWith('/sleep/') ||
-        req.path.startsWith('/admin/')
+        req.path.startsWith('/admin/') ||
+        req.path.startsWith('/training/')
       ) {
         next();
         return;

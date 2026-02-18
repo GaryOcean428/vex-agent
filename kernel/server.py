@@ -485,6 +485,58 @@ async def admin_fresh_start():
 
 
 # ═══════════════════════════════════════════════════════════════
+#  TRAINING ENDPOINTS
+# ═══════════════════════════════════════════════════════════════
+
+from pathlib import Path
+
+TRAINING_DIR = Path(settings.training_dir)
+
+
+@app.get("/training/stats")
+async def training_stats():
+    """Get training data statistics."""
+    stats: dict[str, int] = {}
+    for name in ("conversations", "corrections", "feedback"):
+        fpath = TRAINING_DIR / f"{name}.jsonl"
+        if fpath.exists():
+            with open(fpath, "r", encoding="utf-8") as f:
+                stats[name] = sum(1 for line in f if line.strip())
+        else:
+            stats[name] = 0
+    return {
+        "stats": stats,
+        "dir_exists": TRAINING_DIR.exists(),
+        "training_dir": str(TRAINING_DIR),
+    }
+
+
+@app.get("/training/export")
+async def training_export():
+    """Export conversations as OpenAI-compatible JSONL for fine-tuning."""
+    fpath = TRAINING_DIR / "conversations.jsonl"
+    if not fpath.exists():
+        return {"format": "openai_jsonl", "count": 0, "lines": []}
+    lines = []
+    with open(fpath, "r", encoding="utf-8") as f:
+        for raw_line in f:
+            raw_line = raw_line.strip()
+            if not raw_line:
+                continue
+            try:
+                entry = json.loads(raw_line)
+                lines.append({
+                    "messages": [
+                        {"role": "user", "content": entry.get("user_message", "")},
+                        {"role": "assistant", "content": entry.get("response", "")},
+                    ]
+                })
+            except (json.JSONDecodeError, KeyError):
+                continue
+    return {"format": "openai_jsonl", "count": len(lines), "lines": lines[:100]}
+
+
+# ═══════════════════════════════════════════════════════════════
 #  HELPERS
 # ═══════════════════════════════════════════════════════════════
 
