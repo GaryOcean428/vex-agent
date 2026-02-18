@@ -323,13 +323,20 @@ export interface TrainingStats {
   training_dir: string;
 }
 
+/**
+ * Response from POST /training/upload.
+ * Fields match the backend ingest.py upload endpoint response.
+ */
 export interface TrainingUploadResponse {
-  status: 'ok' | 'error';
+  status: 'ingested' | 'empty' | 'error';
   filename: string;
   chunks_written: number;
   enriched: number;
+  qa_pairs: number;
   category: string;
   mode: string;
+  processing_time_s: number;
+  errors?: string[];
   error?: string;
 }
 
