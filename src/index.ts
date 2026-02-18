@@ -101,9 +101,25 @@ async function main(): Promise<void> {
   proxyPost('/enqueue');
   proxyPost('/memory/context');
 
-  // ─── Chat routes (UI + streaming proxy) ─────────────────────
+  // Phase 1 dashboard endpoints
+  proxyGet('/kernels/list');
+  proxyGet('/basin/history');
+  proxyGet('/graph/nodes');
+  proxyGet('/memory/stats');
+  proxyGet('/sleep/state');
+  proxyPost('/admin/fresh-start');
 
-  const chatRouter = createChatRouter(KERNEL_URL);
+  // ─── Chat routes (UI + streaming proxy) ─────────────────────
+  // Check for React frontend BEFORE creating chat router so we can
+  // skip the inline HTML fallback when the SPA handles /chat.
+
+  const frontendIndexPath = path.join(FRONTEND_DIST, 'index.html');
+  const hasFrontend = fs.existsSync(frontendIndexPath);
+
+  const chatRouter = createChatRouter({
+    kernelUrl: KERNEL_URL,
+    hasReactFrontend: hasFrontend,
+  });
   app.use(chatRouter);
 
   // ─── ComputeSDK proxy endpoints ─────────────────────────────
@@ -147,9 +163,6 @@ async function main(): Promise<void> {
   // Serve the Vite-built React app. Falls back to the inline chat
   // HTML if the frontend build doesn't exist.
 
-  const frontendIndexPath = path.join(FRONTEND_DIST, 'index.html');
-  const hasFrontend = fs.existsSync(frontendIndexPath);
-
   if (hasFrontend) {
     logger.info(`Serving React frontend from ${FRONTEND_DIST}`);
 
@@ -165,12 +178,20 @@ async function main(): Promise<void> {
       // Skip API-like paths (already handled above)
       if (
         req.path.startsWith('/api/') ||
+        req.path.startsWith('/chat/') ||
         req.path === '/health' ||
         req.path === '/state' ||
         req.path === '/telemetry' ||
         req.path === '/status' ||
         req.path === '/basin' ||
-        req.path === '/kernels'
+        req.path === '/kernels' ||
+        req.path === '/enqueue' ||
+        req.path.startsWith('/memory/') ||
+        req.path.startsWith('/kernels/') ||
+        req.path.startsWith('/basin/') ||
+        req.path.startsWith('/graph/') ||
+        req.path.startsWith('/sleep/') ||
+        req.path.startsWith('/admin/')
       ) {
         next();
         return;
