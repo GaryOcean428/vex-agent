@@ -25,7 +25,12 @@ interface Session {
 const sessions = new Map<string, Session>();
 
 /** Paths that never require authentication */
-const AUTH_EXEMPT_PATHS = new Set(['/health', '/chat/auth', '/login']);
+const AUTH_EXEMPT_PATHS = new Set([
+  '/health',
+  '/chat/auth',
+  '/auth/check',
+  '/login',
+]);
 
 /** Check if a path looks like a static asset (has a file extension) */
 function isStaticAsset(path: string): boolean {
@@ -62,7 +67,7 @@ export function getCookie(req: Request, name: string): string | undefined {
  * Global auth middleware.
  *
  * - No-op when CHAT_AUTH_TOKEN is empty (dev mode).
- * - Always allows /health, /chat/auth, and static asset requests.
+ * - Always allows /health, /chat/auth, /auth/check, and static asset requests.
  * - Browser navigation requests (HTML accept) → redirect to /login.
  * - API requests → 401 JSON.
  */
