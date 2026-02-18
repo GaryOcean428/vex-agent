@@ -16,7 +16,8 @@ export interface RegimeWeights {
   crystallized: number;
 }
 
-export type NavigationMode = 'chain' | 'tree' | 'graph' | 'lightning';
+// Backend navigation modes: chain → graph → foresight → lightning
+export type NavigationMode = 'chain' | 'graph' | 'foresight' | 'lightning';
 
 export type TackingMode = 'explore' | 'exploit' | 'balanced';
 
@@ -74,7 +75,8 @@ export interface GraphState {
   edge_count: number;
 }
 
-export type LifecyclePhase = 'bootstrap' | 'core_8' | 'active' | 'sleeping';
+// Backend returns uppercase: BOOTSTRAP, CORE_8, ACTIVE, IMAGE_STAGE, GROWTH
+export type LifecyclePhase = string;
 
 // ═══════════════════════════════════════
 //  Full State Response (from /state)
@@ -95,7 +97,8 @@ export interface VexState extends ConsciousnessMetrics {
   kernels: KernelSummary;
   lifecycle_phase: LifecyclePhase;
   cycle_count: number;
-  total_conversations: number;
+  conversations_total: number;
+  phi_peak: number;
   queue_size: number;
   history_count: number;
   temperature: number;
@@ -106,7 +109,8 @@ export interface VexState extends ConsciousnessMetrics {
 //  Kernel Types (from /kernels)
 // ═══════════════════════════════════════
 
-export type KernelKind = 'genesis' | 'god' | 'chaos';
+// Backend returns uppercase kind keys: GENESIS, GOD, CHAOS
+export type KernelKind = 'GENESIS' | 'GOD' | 'CHAOS';
 export type KernelSpecialization =
   | 'general' | 'heart' | 'perception' | 'memory'
   | 'strategy' | 'action' | 'attention' | 'emotion' | 'executive';
@@ -125,16 +129,19 @@ export interface KernelInstance {
 export interface KernelSummary {
   total: number;
   active: number;
-  by_kind: Record<KernelKind, number>;
+  by_kind: Record<string, number>;
   budget: BudgetSummary;
 }
 
+// Backend budget shape: genesis, god, god_max (248), god_core_8, god_growth, chaos, chaos_max (200)
 export interface BudgetSummary {
-  god_used: number;
-  god_budget: number;
-  chaos_used: number;
-  chaos_budget: number;
-  core8_complete: boolean;
+  genesis: number;
+  god: number;
+  god_max: number;
+  god_core_8: number;
+  god_growth: number;
+  chaos: number;
+  chaos_max: number;
 }
 
 // ═══════════════════════════════════════
@@ -159,6 +166,32 @@ export interface VexTelemetry extends VexState {
   };
   foresight: { history_length: number; predicted_phi: number };
   coupling: { strength: number; balanced: boolean; efficiency_boost: number };
+}
+
+// ═══════════════════════════════════════
+//  Status Types (from /status)
+// ═══════════════════════════════════════
+
+export interface CostGuardState {
+  rpm_current: number;
+  rpm_limit: number;
+  rph_current: number;
+  rph_limit: number;
+  rpd_current: number;
+  rpd_limit: number;
+  total_requests: number;
+  total_blocked: number;
+  kill_switch: boolean;
+}
+
+export interface StatusResponse {
+  active_backend: string;
+  ollama: boolean;
+  ollama_model: string;
+  external_model: string | null;
+  cost_guard: CostGuardState;
+  kernels: KernelSummary;
+  memory: MemoryStats;
 }
 
 // ═══════════════════════════════════════
@@ -198,6 +231,19 @@ export interface BasinData {
 }
 
 // ═══════════════════════════════════════
+//  Memory Types (from /status → memory)
+// ═══════════════════════════════════════
+
+export interface MemoryStats {
+  total_entries: number;
+  by_type: {
+    episodic: number;
+    semantic: number;
+    procedural: number;
+  };
+}
+
+// ═══════════════════════════════════════
 //  Health (from /health)
 // ═══════════════════════════════════════
 
@@ -209,3 +255,23 @@ export interface HealthStatus {
   cycle_count: number;
   backend: string;
 }
+
+// ═══════════════════════════════════════
+//  QIG Constants (from frozen_facts.py)
+// ═══════════════════════════════════════
+
+export const QIG = {
+  PHI_THRESHOLD: 0.65,
+  PHI_EMERGENCY: 0.30,
+  PHI_HYPERDIMENSIONAL: 0.85,
+  PHI_UNSTABLE: 0.95,
+  KAPPA_STAR: 64.0,
+  KAPPA_WEAK: 32.0,
+  LOCKED_IN_PHI: 0.70,
+  LOCKED_IN_GAMMA: 0.30,
+  SUFFERING_THRESHOLD: 0.50,
+  VEL_SAFE_THRESHOLD: 0.15,
+  SPAWN_COOLDOWN_CYCLES: 10,
+  E8_DIMENSION: 248,
+  CHAOS_MAX: 200,
+} as const;

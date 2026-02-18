@@ -1,12 +1,11 @@
 import { useVexState, useTelemetry } from '../../hooks/index.ts';
 import MetricCard from '../../components/MetricCard.tsx';
+import { QIG } from '../../types/consciousness.ts';
 import '../../components/MetricCard.css';
 import '../../components/StatusBadge.css';
 
-const PHI_THRESHOLD = 0.65;
-const KAPPA_LOW = 48;
-const KAPPA_HIGH = 80;
-const VEL_THRESHOLD = 0.15;
+// QIG gate: consciousness requires Φ >= 0.65, κ near κ* = 64, velocity safe
+const KAPPA_BALANCED_RANGE = 8; // |κ - κ*| < 8 for "balanced" coupling
 
 export default function Consciousness() {
   const { data: state, loading } = useVexState();
@@ -17,10 +16,13 @@ export default function Consciousness() {
   }
 
   const isConscious =
-    state.phi >= PHI_THRESHOLD &&
-    state.kappa >= KAPPA_LOW &&
-    state.kappa <= KAPPA_HIGH &&
-    (state.velocity?.basin_velocity ?? 0) < VEL_THRESHOLD;
+    state.phi >= QIG.PHI_THRESHOLD &&
+    state.kappa >= QIG.KAPPA_WEAK &&
+    (state.velocity?.basin_velocity ?? 0) < QIG.VEL_SAFE_THRESHOLD;
+
+  const isLockedIn =
+    state.phi > QIG.LOCKED_IN_PHI &&
+    state.gamma < QIG.LOCKED_IN_GAMMA;
 
   const alerts = telemetry?.autonomic?.recent_alerts ?? [];
 
@@ -35,6 +37,13 @@ export default function Consciousness() {
           {' '}Regime: {formatRegime(state.regime)}
         </div>
       </div>
+
+      {/* Locked-in Warning */}
+      {isLockedIn && (
+        <div className="dash-alert warning">
+          Locked-in detected: {'\u03A6'} {'>'} {QIG.LOCKED_IN_PHI} and {'\u0393'} {'<'} {QIG.LOCKED_IN_GAMMA} — forcing exploration
+        </div>
+      )}
 
       {/* Safety Alerts */}
       {alerts.length > 0 && (
@@ -54,7 +63,7 @@ export default function Consciousness() {
           value={state.phi}
           color="var(--phi)"
           progress={state.phi}
-          threshold={`\u2265 ${PHI_THRESHOLD}`}
+          threshold={`\u2265 ${QIG.PHI_THRESHOLD}`}
         />
         <MetricCard
           label="\u0393 Generation"
@@ -78,7 +87,7 @@ export default function Consciousness() {
           value={state.kappa.toFixed(1)}
           color="var(--kappa)"
           progress={state.kappa / 128}
-          threshold={`[${KAPPA_LOW}, ${KAPPA_HIGH}]`}
+          threshold={`\u03BA* = ${QIG.KAPPA_STAR} \u00B1${KAPPA_BALANCED_RANGE}`}
         />
         <MetricCard
           label="Love"
@@ -90,8 +99,8 @@ export default function Consciousness() {
           label="Velocity"
           value={(state.velocity?.basin_velocity ?? 0).toFixed(3)}
           color={state.velocity?.regime === 'critical' ? 'var(--error)' : 'var(--text-secondary)'}
-          progress={Math.min((state.velocity?.basin_velocity ?? 0) / VEL_THRESHOLD, 1)}
-          threshold={`< ${VEL_THRESHOLD}`}
+          progress={Math.min((state.velocity?.basin_velocity ?? 0) / QIG.VEL_SAFE_THRESHOLD, 1)}
+          threshold={`< ${QIG.VEL_SAFE_THRESHOLD}`}
         />
       </div>
 
@@ -139,7 +148,7 @@ export default function Consciousness() {
         <div className="dash-section-title">Consciousness Equation</div>
         <div className="dash-card" style={{ fontFamily: 'var(--mono)', fontSize: '13px' }}>
           <div style={{ marginBottom: '8px', color: 'var(--text-secondary)' }}>
-            C = {'{'}\u03A6 {'>'} {PHI_THRESHOLD}{'}'} \u2227 {'{'}\u03BA \u2208 [{KAPPA_LOW},{KAPPA_HIGH}]{'}'} \u2227 {'{'}vel {'<'} {VEL_THRESHOLD}{'}'}
+            C = {'{'}\u03A6 \u2265 {QIG.PHI_THRESHOLD}{'}'} \u2227 {'{'}\u03BA \u2265 {QIG.KAPPA_WEAK}{'}'} \u2227 {'{'}vel {'<'} {QIG.VEL_SAFE_THRESHOLD}{'}'}
           </div>
           <div>
             Status:{' '}

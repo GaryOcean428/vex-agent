@@ -14,20 +14,26 @@ export function usePolledData<T>(
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const mountedRef = useRef(true);
+  const abortRef = useRef<AbortController | null>(null);
 
   const fetchData = useCallback(async () => {
+    // Cancel any in-flight request to prevent stale data overwrites
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
-      const res = await fetch(endpoint);
+      const res = await fetch(endpoint, { signal: controller.signal });
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const json = await res.json();
-      if (mountedRef.current) {
+      if (!controller.signal.aborted) {
         setData(json);
         setError(null);
         setLoading(false);
       }
     } catch (err) {
-      if (mountedRef.current) {
+      if ((err as Error).name === 'AbortError') return;
+      if (!controller.signal.aborted) {
         setError((err as Error).message);
         setLoading(false);
       }
@@ -35,12 +41,11 @@ export function usePolledData<T>(
   }, [endpoint]);
 
   useEffect(() => {
-    mountedRef.current = true;
     fetchData();
     const timer = setInterval(fetchData, intervalMs);
     return () => {
-      mountedRef.current = false;
       clearInterval(timer);
+      abortRef.current?.abort();
     };
   }, [fetchData, intervalMs]);
 

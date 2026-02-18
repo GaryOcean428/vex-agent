@@ -1,19 +1,8 @@
 import { useVexState } from '../../hooks/index.ts';
 import { usePolledData } from '../../hooks/usePolledData.ts';
+import type { StatusResponse } from '../../types/consciousness.ts';
 import MetricCard from '../../components/MetricCard.tsx';
 import '../../components/MetricCard.css';
-
-interface StatusResponse {
-  active_backend: string;
-  kernels: {
-    total: number;
-    active: number;
-  };
-  memory: {
-    total_entries: number;
-    store_path: string;
-  };
-}
 
 export default function Memory() {
   const { data: state, loading } = useVexState();
@@ -71,10 +60,12 @@ export default function Memory() {
             <span className="dash-row-label">Interpolation</span>
             <span className="dash-row-value">slerp_sqrt</span>
           </div>
-          {memoryStats?.store_path && (
+          {memoryStats?.by_type && (
             <div className="dash-row">
-              <span className="dash-row-label">Store Path</span>
-              <span className="dash-row-value" style={{ fontSize: '10px' }}>{memoryStats.store_path}</span>
+              <span className="dash-row-label">By Type</span>
+              <span className="dash-row-value">
+                E:{memoryStats.by_type.episodic} S:{memoryStats.by_type.semantic} P:{memoryStats.by_type.procedural}
+              </span>
             </div>
           )}
         </div>
@@ -95,7 +86,7 @@ export default function Memory() {
             <div className="dash-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
               <span className="dash-row-label">Latest Insight</span>
               <span className="dash-row-value" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                {state.reflector.insight}
+                {state.reflector?.insight}
               </span>
             </div>
           )}

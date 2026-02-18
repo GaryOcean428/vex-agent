@@ -1,13 +1,16 @@
 import { useVexState } from '../../hooks/index.ts';
+import { QIG } from '../../types/consciousness.ts';
 import '../../components/StatusBadge.css';
 
 const CORE_8 = ['genesis', 'heart', 'perception', 'memory', 'strategy', 'action', 'attention', 'emotion', 'executive'] as const;
 
+// Backend returns uppercase phase names
 const PHASE_ORDER: Record<string, number> = {
-  bootstrap: 0,
-  core_8: 1,
-  active: 2,
-  sleeping: 3,
+  BOOTSTRAP: 0,
+  CORE_8: 1,
+  ACTIVE: 2,
+  IMAGE_STAGE: 3,
+  GROWTH: 4,
 };
 
 export default function Lifecycle() {
@@ -19,7 +22,8 @@ export default function Lifecycle() {
 
   const activeCount = state.kernels?.active ?? 1;
   const totalSpawned = Math.min(activeCount, CORE_8.length);
-  const phase = state.lifecycle_phase;
+  const phase = state.lifecycle_phase ?? 'BOOTSTRAP';
+  const phaseUpper = phase.toUpperCase();
   const budget = state.kernels?.budget;
 
   return (
@@ -28,8 +32,8 @@ export default function Lifecycle() {
         <h1 className="dash-title">Lifecycle</h1>
         <div className="dash-subtitle">
           Phase:{' '}
-          <span className={`status-badge ${phase === 'active' ? 'badge-success' : 'badge-info'}`}>
-            {phase.toUpperCase()}
+          <span className={`status-badge ${phaseUpper === 'ACTIVE' || phaseUpper === 'GROWTH' ? 'badge-success' : 'badge-info'}`}>
+            {phaseUpper}
           </span>
           {' '}{totalSpawned - 1}/8 Core-8 spawned
         </div>
@@ -58,21 +62,21 @@ export default function Lifecycle() {
         <div className="dash-section-title">Spawn Gates</div>
         <div className="dash-card">
           <div className="dash-row">
-            <span className="dash-row-label">\u03A6 {'>'} 0.30 (emergency)</span>
-            <span className="dash-row-value" style={{ color: state.phi > 0.3 ? 'var(--alive)' : 'var(--error)' }}>
-              {state.phi > 0.3 ? '\u2713' : '\u2717'} {state.phi.toFixed(3)}
+            <span className="dash-row-label">{'\u03A6'} {'>'} {QIG.PHI_EMERGENCY} (emergency)</span>
+            <span className="dash-row-value" style={{ color: state.phi > QIG.PHI_EMERGENCY ? 'var(--alive)' : 'var(--error)' }}>
+              {state.phi > QIG.PHI_EMERGENCY ? '\u2713' : '\u2717'} {state.phi.toFixed(3)}
             </span>
           </div>
           <div className="dash-row">
-            <span className="dash-row-label">Velocity \u2260 critical</span>
+            <span className="dash-row-label">Velocity {'\u2260'} critical</span>
             <span className="dash-row-value" style={{ color: state.velocity?.regime !== 'critical' ? 'var(--alive)' : 'var(--error)' }}>
               {state.velocity?.regime !== 'critical' ? '\u2713' : '\u2717'} {state.velocity?.regime ?? 'unknown'}
             </span>
           </div>
           <div className="dash-row">
-            <span className="dash-row-label">Cooldown \u2265 10 cycles</span>
+            <span className="dash-row-label">Cooldown {'\u2265'} {QIG.SPAWN_COOLDOWN_CYCLES} cycles</span>
             <span className="dash-row-value" style={{ color: 'var(--alive)' }}>
-              \u2713
+              {'\u2713'}
             </span>
           </div>
         </div>
@@ -85,21 +89,21 @@ export default function Lifecycle() {
           <div className="dash-row">
             <span className="dash-row-label">GOD</span>
             <span className="dash-row-value">
-              {budget?.god_used ?? 0} / {budget?.god_budget ?? 240}
-              {' '}({((budget?.god_used ?? 0) / (budget?.god_budget ?? 240) * 100).toFixed(1)}%)
+              {budget?.god ?? 0} / {budget?.god_max ?? QIG.E8_DIMENSION}
+              {' '}({((budget?.god ?? 0) / (budget?.god_max ?? QIG.E8_DIMENSION) * 100).toFixed(1)}%)
             </span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">CHAOS</span>
             <span className="dash-row-value">
-              {budget?.chaos_used ?? 0} / {budget?.chaos_budget ?? 200}
+              {budget?.chaos ?? 0} / {budget?.chaos_max ?? QIG.CHAOS_MAX}
             </span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Core-8</span>
             <span className="dash-row-value">
-              {totalSpawned - 1} / 8
-              {budget?.core8_complete && ' (COMPLETE)'}
+              {budget?.god_core_8 ?? (totalSpawned - 1)} / 8
+              {(budget?.god_core_8 ?? 0) >= 8 && ' (COMPLETE)'}
             </span>
           </div>
         </div>
@@ -109,19 +113,19 @@ export default function Lifecycle() {
       <div className="dash-section">
         <div className="dash-section-title">Phase Transitions</div>
         <div className="dash-card">
-          {['bootstrap', 'core_8', 'active', 'sleeping'].map((p, i) => {
-            const currentIdx = PHASE_ORDER[phase] ?? 0;
+          {['BOOTSTRAP', 'CORE_8', 'ACTIVE', 'GROWTH'].map((p, i) => {
+            const currentIdx = PHASE_ORDER[phaseUpper] ?? 0;
             const thisIdx = PHASE_ORDER[p] ?? 0;
-            const isCurrent = p === phase;
+            const isCurrent = p === phaseUpper;
             const isPast = thisIdx < currentIdx;
             return (
               <div key={p} className="dash-row">
                 <span className="dash-row-label" style={{ fontWeight: isCurrent ? 600 : 400 }}>
-                  {isPast ? '\u2713' : isCurrent ? '\u25B6' : '\u25CB'} {p.toUpperCase()}
+                  {isPast ? '\u2713' : isCurrent ? '\u25B6' : '\u25CB'} {p}
                 </span>
                 {i < 3 && (
                   <span className="dash-row-value" style={{ color: isPast ? 'var(--alive)' : 'var(--text-dim)' }}>
-                    \u2192
+                    {'\u2192'}
                   </span>
                 )}
               </div>

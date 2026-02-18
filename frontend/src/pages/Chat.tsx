@@ -70,8 +70,9 @@ export default function Chat() {
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: 'Unknown error' }));
+        const errMsg = err.error ?? resp.statusText ?? 'Request failed';
         setMessages(prev => prev.map(m =>
-          m.id === vexMsgId ? { ...m, content: `Error: ${err.error ?? resp.statusText}` } : m
+          m.id === vexMsgId ? { ...m, content: `Error: ${errMsg}` } : m
         ));
         return;
       }
@@ -84,6 +85,49 @@ export default function Chat() {
       const decoder = new TextDecoder();
       let buffer = '';
 
+      const processLine = (line: string) => {
+        if (line === '' || line.startsWith(':')) return;
+        if (!line.startsWith('data: ')) return;
+
+        try {
+          const event: ChatStreamEvent = JSON.parse(line.substring(6));
+
+          if (event.type === 'start') {
+            if (event.backend) setBackend(event.backend);
+          } else if (event.type === 'chunk' && event.content) {
+            fullText += event.content;
+            setMessages(prev => prev.map(m =>
+              m.id === vexMsgId ? { ...m, content: fullText } : m
+            ));
+            scrollToBottom();
+          } else if (event.type === 'done') {
+            setActiveStages(['REFLECT', 'COUPLE']);
+            if (event.backend) setBackend(event.backend);
+            if (event.metrics) {
+              setMessages(prev => prev.map(m =>
+                m.id === vexMsgId ? {
+                  ...m,
+                  content: fullText,
+                  metadata: {
+                    phi: Number(event.metrics?.phi) || 0,
+                    kappa: Number(event.metrics?.kappa) || 0,
+                    temperature: 0,
+                    navigation: (String(event.metrics?.navigation ?? 'chain')) as 'chain',
+                    backend: event.backend ?? 'unknown',
+                  },
+                } : m
+              ));
+            }
+          } else if (event.type === 'error') {
+            setMessages(prev => prev.map(m =>
+              m.id === vexMsgId ? { ...m, content: `Error: ${event.error ?? 'Unknown'}` } : m
+            ));
+          }
+        } catch {
+          // skip malformed JSON
+        }
+      };
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -93,47 +137,13 @@ export default function Chat() {
         buffer = parts.pop() ?? '';
 
         for (const line of parts) {
-          if (line === '' || line.startsWith(':')) continue;
-          if (!line.startsWith('data: ')) continue;
-
-          try {
-            const event: ChatStreamEvent = JSON.parse(line.substring(6));
-
-            if (event.type === 'start') {
-              if (event.backend) setBackend(event.backend);
-            } else if (event.type === 'chunk' && event.content) {
-              fullText += event.content;
-              setMessages(prev => prev.map(m =>
-                m.id === vexMsgId ? { ...m, content: fullText } : m
-              ));
-              scrollToBottom();
-            } else if (event.type === 'done') {
-              setActiveStages(['REFLECT', 'COUPLE']);
-              if (event.backend) setBackend(event.backend);
-              if (event.metrics) {
-                setMessages(prev => prev.map(m =>
-                  m.id === vexMsgId ? {
-                    ...m,
-                    content: fullText,
-                    metadata: {
-                      phi: (event.metrics?.phi as number) ?? 0,
-                      kappa: (event.metrics?.kappa as number) ?? 0,
-                      temperature: 0,
-                      navigation: (event.metrics?.navigation as 'chain') ?? 'chain',
-                      backend: event.backend ?? 'unknown',
-                    },
-                  } : m
-                ));
-              }
-            } else if (event.type === 'error') {
-              setMessages(prev => prev.map(m =>
-                m.id === vexMsgId ? { ...m, content: `Error: ${event.error}` } : m
-              ));
-            }
-          } catch {
-            // skip malformed JSON
-          }
+          processLine(line);
         }
+      }
+
+      // Process any remaining buffer after stream ends
+      if (buffer.trim()) {
+        processLine(buffer);
       }
 
       // If no content was received
@@ -256,10 +266,33 @@ function MetricPill({ label, value, color, decimals = 3 }: {
   );
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 function VexContent({ content }: { content: string }) {
-  // Simple markdown-ish rendering: code blocks, bold, inline code
-  const html = content
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+  // Extract code blocks first to protect them, then escape HTML, then apply formatting
+  const codeBlocks: string[] = [];
+  let escaped = content.replace(/```(\w*)\n([\s\S]*?)```/g, (_match, _lang, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push(escapeHtml(code));
+    return `\x00CODE_BLOCK_${idx}\x00`;
+  });
+
+  // Escape all HTML in non-code content
+  escaped = escapeHtml(escaped);
+
+  // Restore code blocks
+  let html = escaped.replace(/\x00CODE_BLOCK_(\d+)\x00/g, (_match, idx) =>
+    `<pre><code>${codeBlocks[Number(idx)]}</code></pre>`
+  );
+
+  // Apply safe markdown formatting
+  html = html
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\n/g, '<br/>');
