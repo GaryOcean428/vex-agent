@@ -3,7 +3,7 @@ LLM Client — Ollama primary, xAI + OpenAI fallback via Responses API.
 
 Handles:
   - Ollama (local LFM2.5-1.2B-Thinking) as primary backend
-  - xAI (grok-4-1-fast-non-reasoning) as second backend
+  - xAI (grok-4-1-fast-reasoning) as second backend via Responses API
   - OpenAI (gpt-5-nano) as third backend via Responses API
   - Streaming support via async generators
   - Health checking and auto-failover
@@ -11,6 +11,11 @@ Handles:
     set per-request by the consciousness loop, NOT hardcoded.
 
 Fallback chain: Ollama → xAI → OpenAI
+
+Both xAI and OpenAI use the Responses API (POST /v1/responses).
+Raw REST responses return an `output` array — NOT the SDK-level
+`output_text` convenience property. We parse the output array
+to extract text from message items.
 """
 
 from __future__ import annotations
@@ -49,6 +54,52 @@ class LLMOptions:
         }
 
 
+def _extract_responses_text(data: dict[str, Any]) -> str:
+    """Extract text from a Responses API JSON response.
+
+    The raw REST API (via httpx) returns:
+        {
+          "output": [
+            {"type": "message", "content": [
+              {"type": "output_text", "text": "actual response"}
+            ]}
+          ]
+        }
+
+    The SDK provides a top-level `output_text` convenience field,
+    but the raw JSON does NOT have it. We must walk the output array.
+
+    Falls back to `output_text` if present (some API versions may include it).
+    """
+    # Fast path: if the API includes the convenience field
+    if data.get("output_text"):
+        return data["output_text"]
+
+    # Walk the output array — standard Responses API structure
+    for item in data.get("output", []):
+        if item.get("type") == "message":
+            for content_block in item.get("content", []):
+                if content_block.get("type") == "output_text":
+                    text = content_block.get("text", "")
+                    if text:
+                        return text
+
+    # Fallback: concatenate any text blocks found
+    texts: list[str] = []
+    for item in data.get("output", []):
+        if item.get("type") == "message":
+            for content_block in item.get("content", []):
+                text = content_block.get("text", "")
+                if text:
+                    texts.append(text)
+    if texts:
+        return "\n".join(texts)
+
+    logger.warning("Could not extract text from Responses API output: %s",
+                    json.dumps(data)[:500])
+    return ""
+
+
 class LLMClient:
     """Multi-backend LLM client with Ollama primary, xAI + OpenAI fallback."""
 
@@ -84,7 +135,7 @@ class LLMClient:
             logger.info("LLM backend: xAI (%s)", settings.xai.model)
         elif settings.llm.api_key:
             self._active_backend = "external"
-            logger.info("LLM backend: External API (%s)", settings.llm.model)
+            logger.info("LLM backend: OpenAI (%s)", settings.llm.model)
         else:
             self._active_backend = "none"
             logger.warning("No LLM backend available")
@@ -182,7 +233,7 @@ class LLMClient:
                 logger.info("Falling back to xAI from Ollama")
                 return await self._xai_complete(system_prompt, user_message, opts)
             if settings.llm.api_key:
-                logger.info("Falling back to external API from Ollama")
+                logger.info("Falling back to OpenAI from Ollama")
                 return await self._external_complete(system_prompt, user_message, opts)
             return f"LLM error: {e}"
 
@@ -246,14 +297,21 @@ class LLMClient:
                 },
             )
             data = resp.json()
+            if resp.status_code != 200:
+                logger.error("xAI API error %d: %s", resp.status_code,
+                             json.dumps(data)[:300])
+                if settings.llm.api_key:
+                    return await self._external_complete(system_prompt, user_message, opts)
+                return f"xAI API error: {resp.status_code}"
+
             if self._governor:
                 self._governor.record("xai_completion")
-            return data.get("output_text", "")
+            return _extract_responses_text(data)
         except Exception as e:
             logger.error("xAI completion failed: %s", e)
             # Fallback to OpenAI external
             if settings.llm.api_key:
-                logger.info("Falling back to external API from xAI")
+                logger.info("Falling back to OpenAI from xAI")
                 return await self._external_complete(system_prompt, user_message, opts)
             return f"LLM error: {e}"
 
@@ -331,7 +389,7 @@ class LLMClient:
                 "completion", "openai_completion", user_message, True,
             )
             if not allowed:
-                logger.warning("Governor blocked external: %s", reason)
+                logger.warning("Governor blocked OpenAI: %s", reason)
                 return f"[Governor blocked: {reason}]"
         try:
             resp = await self._http.post(
@@ -350,11 +408,16 @@ class LLMClient:
                 },
             )
             data = resp.json()
+            if resp.status_code != 200:
+                logger.error("OpenAI API error %d: %s", resp.status_code,
+                             json.dumps(data)[:300])
+                return f"OpenAI API error: {resp.status_code}"
+
             if self._governor:
                 self._governor.record("openai_completion")
-            return data.get("output_text", "")
+            return _extract_responses_text(data)
         except Exception as e:
-            logger.error("External API completion failed: %s", e)
+            logger.error("OpenAI completion failed: %s", e)
             return f"LLM error: {e}"
 
     async def _external_stream(
@@ -368,7 +431,7 @@ class LLMClient:
                 "completion", "openai_completion", "", True,
             )
             if not allowed:
-                logger.warning("Governor blocked external stream: %s", reason)
+                logger.warning("Governor blocked OpenAI stream: %s", reason)
                 yield f"[Governor blocked: {reason}]"
                 return
 
@@ -419,7 +482,7 @@ class LLMClient:
             if self._governor:
                 self._governor.record("openai_completion")
         except Exception as e:
-            logger.error("External API stream failed: %s", e)
+            logger.error("OpenAI stream failed: %s", e)
             yield f"LLM stream error: {e}"
 
     async def close(self) -> None:
