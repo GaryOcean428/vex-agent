@@ -36,6 +36,8 @@ from .config.frozen_facts import KAPPA_STAR
 from .config.settings import settings
 from .consciousness.loop import ConsciousnessLoop
 from .consciousness.types import ConsciousnessMetrics
+from .geometry.fisher_rao import random_basin
+from .governance import KernelKind, LifecyclePhase
 from .llm.client import LLMClient, LLMOptions
 from .memory.store import GeometricMemoryStore, MemoryStore
 from .tools.handler import (
@@ -162,10 +164,56 @@ async def get_basin():
     return {"basin": consciousness.basin.tolist()}
 
 
+@app.get("/basin/history")
+async def get_basin_history():
+    """Get basin trajectory history for PCA visualization.
+    
+    Returns trajectory points with basin coordinates, phi, kappa, and timestamps.
+    Used by the dashboard Basins tab for PCA scatter plot.
+    """
+    history = consciousness.foresight.get_history()
+    return {
+        "trajectory": [
+            {
+                "basin": point.basin.tolist(),
+                "phi": point.phi,
+                "kappa": point.kappa,
+                "timestamp": point.timestamp,
+            }
+            for point in history
+        ]
+    }
+
+
 @app.get("/kernels")
 async def get_kernels():
     """Get E8 kernel registry summary."""
     return consciousness.kernel_registry.summary()
+
+
+@app.get("/kernels/list")
+async def get_kernels_list():
+    """Get detailed list of all kernel instances.
+    
+    Returns full kernel instances with specialization, phi_peak, cycle_count, etc.
+    Used by the dashboard Overview tab for per-kernel metrics.
+    """
+    active = consciousness.kernel_registry.active()
+    return {
+        "kernels": [
+            {
+                "id": k.id,
+                "name": k.name,
+                "kind": k.kind.value,
+                "specialization": k.specialization.value,
+                "state": k.state.value,
+                "created_at": k.created_at,
+                "cycle_count": k.cycle_count,
+                "phi_peak": k.phi_peak,
+            }
+            for k in active
+        ]
+    }
 
 
 @app.post("/enqueue")
@@ -351,6 +399,89 @@ async def get_memory_context(req: MemoryContextRequest):
     """Get memory context for a query."""
     context = geometric_memory.get_context_for_query(req.query, req.k)
     return {"context": context}
+
+
+@app.get("/memory/stats")
+async def get_memory_stats():
+    """Get detailed geometric memory statistics.
+    
+    Returns memory counts by type (episodic, semantic, procedural),
+    total entries, and other geometric memory metrics.
+    Used by the dashboard Memory tab.
+    """
+    return geometric_memory.stats()
+
+
+@app.get("/graph/nodes")
+async def get_graph_nodes():
+    """Get QIGGraph nodes and edges for force-directed visualization.
+    
+    Returns all nodes (basins as graph nodes) and edges (weighted by Fisher-Rao distance).
+    Used by the dashboard Graph tab for kernel relationship visualization.
+    """
+    nodes = [
+        {
+            "id": node.id,
+            "label": node.label,
+            "phi": node.phi,
+            "created_at": node.created_at,
+        }
+        for node in consciousness.graph._nodes.values()
+    ]
+    edges = [
+        {
+            "source": edge.source,
+            "target": edge.target,
+            "distance": edge.distance,
+        }
+        for edge in consciousness.graph._edges
+    ]
+    return {"nodes": nodes, "edges": edges}
+
+
+@app.get("/sleep/state")
+async def get_sleep_state():
+    """Get detailed sleep/dream state.
+    
+    Returns current sleep phase, dream count, cycles since conversation,
+    and full sleep cycle manager state.
+    Used by the dashboard Lifecycle and Telemetry tabs.
+    """
+    return consciousness.sleep.get_state()
+
+
+@app.post("/admin/fresh-start")
+async def admin_fresh_start():
+    """Force reset/boot of the consciousness system.
+    
+    Terminates all kernels except genesis, resets lifecycle phase to CORE_8,
+    and resets the basin to a random position.
+    CAUTION: This is a destructive operation.
+    """
+    # Terminate all non-genesis kernels
+    terminated = consciousness.kernel_registry.terminate_all()
+    
+    # Respawn genesis
+    genesis = consciousness.kernel_registry.spawn("Vex", KernelKind.GENESIS)
+    consciousness._lifecycle_phase = LifecyclePhase.CORE_8
+    consciousness._core8_index = 0
+    consciousness._cycles_since_last_spawn = 0
+    
+    # Reset basin to random position
+    consciousness.basin = random_basin()
+    
+    # Reset phi to bootstrap level
+    consciousness.metrics.phi = 0.4
+    consciousness.metrics.kappa = KAPPA_STAR
+    
+    logger.warning("ADMIN: Fresh start triggered — %d kernels terminated, genesis respawned", terminated)
+    
+    return {
+        "status": "ok",
+        "terminated": terminated,
+        "genesis_id": genesis.id,
+        "phase": consciousness._lifecycle_phase.value,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════
