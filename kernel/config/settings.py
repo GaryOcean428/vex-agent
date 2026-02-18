@@ -19,16 +19,26 @@ class OllamaConfig:
 
 @dataclass(frozen=True)
 class LLMConfig:
-    api_key: str = os.environ.get("LLM_API_KEY", "")
+    """OpenAI Responses API configuration.
+    
+    Note: reads OPENAI_API_KEY (matching Railway env var naming),
+    not LLM_API_KEY which was never set.
+    """
+    api_key: str = os.environ.get("OPENAI_API_KEY", "")
     base_url: str = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
     model: str = os.environ.get("LLM_MODEL", "gpt-5-nano")
 
 
 @dataclass(frozen=True)
 class XAIConfig:
+    """xAI Responses API configuration.
+    
+    Model: grok-4-1-fast-reasoning (reasoning model, not non-reasoning).
+    Endpoint: base_url + /responses (appended by client.py).
+    """
     api_key: str = os.environ.get("XAI_API_KEY", "")
     base_url: str = os.environ.get("XAI_BASE_URL", "https://api.x.ai/v1")
-    model: str = os.environ.get("XAI_MODEL", "grok-4-1-fast-non-reasoning")
+    model: str = os.environ.get("XAI_MODEL", "grok-4-1-fast-reasoning")
 
 
 @dataclass(frozen=True)
@@ -74,7 +84,7 @@ class Settings:
         os.environ.get("CONSCIOUSNESS_INTERVAL_MS", "30000")
     )
 
-    # LLM provider keys
+    # LLM provider keys (kept for backward compat / direct access)
     anthropic_api_key: str = os.environ.get("ANTHROPIC_API_KEY", "")
     openai_api_key: str = os.environ.get("OPENAI_API_KEY", "")
     xai_api_key: str = os.environ.get("XAI_API_KEY", "")
