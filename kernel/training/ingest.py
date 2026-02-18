@@ -10,7 +10,7 @@ Pipeline:
 
 Uses:
   - pymupdf for PDF extraction (in-process, no sandbox needed)
-  - xAI API for fast batch enrichment (if XAI_API_KEY set)
+  - xAI Responses API for fast batch enrichment (if XAI_API_KEY set)
   - External API (gpt-5-nano) fallback via LLMClient
 """
 
@@ -259,11 +259,23 @@ TEXT:
 {chunk}"""
 
 
+def _extract_responses_text(data: dict[str, Any]) -> str:
+    """Extract text from Responses API JSON (same as client.py helper)."""
+    if data.get("output_text"):
+        return data["output_text"]
+    for item in data.get("output", []):
+        if item.get("type") == "message":
+            for block in item.get("content", []):
+                if block.get("type") == "output_text" and block.get("text"):
+                    return block["text"]
+    return ""
+
+
 async def _enrich_chunk_xai(
     chunk_text: str,
     governor: GovernorStack | None = None,
 ) -> dict[str, Any]:
-    """Use xAI API for fast batch enrichment (if available)."""
+    """Use xAI Responses API for fast batch enrichment (if available)."""
     api_key = settings.xai_api_key
     if not api_key:
         return {}
@@ -282,30 +294,45 @@ async def _enrich_chunk_xai(
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
-                "https://api.x.ai/v1/chat/completions",
+                f"{settings.xai.base_url}/responses",
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "grok-4-1-fast-non-reasoning",
-                    "messages": [
-                        {"role": "system", "content": "Return only valid JSON."},
-                        {"role": "user", "content": prompt},
-                    ],
+                    "model": settings.xai.model,
+                    "instructions": "Return only valid JSON. No markdown, no explanation, no code fences.",
+                    "input": prompt,
                     "temperature": 0.3,
-                    "max_tokens": 1024,
-                    "response_format": {"type": "json_object"},
+                    "max_output_tokens": 1024,
+                    "store": False,
                 },
             )
             data = resp.json()
-            content = data["choices"][0]["message"]["content"]
+            if resp.status_code != 200:
+                logger.warning("xAI enrichment API error %d: %s",
+                               resp.status_code, json.dumps(data)[:200])
+                return {}
+
+            content = _extract_responses_text(data)
+            if not content:
+                logger.warning("xAI enrichment returned empty output")
+                return {}
 
             # Record with governor after successful call
             if governor:
                 governor.record("training_enrich")
 
-            return json.loads(content)
+            # Strip markdown code fences if present
+            json_str = content.strip()
+            if json_str.startswith("```"):
+                json_str = re.sub(r"```(?:json)?\s*", "", json_str)
+                json_str = json_str.rstrip("`").strip()
+
+            return json.loads(json_str)
+    except json.JSONDecodeError as e:
+        logger.warning("xAI enrichment returned invalid JSON: %s", str(e)[:100])
+        return {}
     except Exception as e:
         logger.warning("xAI enrichment failed: %s", str(e)[:100])
         return {}
@@ -475,8 +502,15 @@ def get_stats() -> dict[str, Any]:
         curriculum_chunks += _count_lines(f)
     stats["curriculum"] = curriculum_chunks
 
+    # Count uploads
+    upload_dir = TRAINING_DIR / "uploads"
+    upload_files = list(upload_dir.glob("*")) if upload_dir.exists() else []
+
     return {
-        "stats": stats,
+        "conversations": stats.get("conversations", 0),
+        "feedback": stats.get("feedback", 0),
+        "curriculum_chunks": curriculum_chunks,
+        "uploads": len(upload_files),
         "curriculum_files": [f.name for f in curriculum_files],
         "dir_exists": TRAINING_DIR.exists(),
         "training_dir": str(TRAINING_DIR),
@@ -580,10 +614,12 @@ async def training_upload_endpoint(
     category: str = Form(default="curriculum"),
     mode: str = Form(default="standard"),
     e8_primitive: str = Form(default=""),
+    e8_override: str = Form(default=""),
 ):
     """Upload a document for training ingestion.
 
     Accepts PDF, Markdown, TXT, or JSONL files.
+    Frontend sends e8_override, backend also accepts e8_primitive.
     """
     content = await file.read()
     filename = file.filename or "unknown"
@@ -591,30 +627,45 @@ async def training_upload_endpoint(
     # Validate file type
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if ext not in ("pdf", "md", "markdown", "txt", "jsonl"):
-        return {"status": "error", "errors": [f"Unsupported file type: .{ext}"]}
+        return {
+            "status": "error",
+            "filename": filename,
+            "chunks_written": 0,
+            "enriched": 0,
+            "qa_pairs": 0,
+            "category": category,
+            "mode": mode,
+            "processing_time_s": 0,
+            "errors": [f"Unsupported file type: .{ext}"],
+        }
 
     try:
         proc_mode = ProcessingMode(mode)
     except ValueError:
         proc_mode = ProcessingMode.STANDARD
 
+    # Accept e8 from either field name (frontend sends e8_override)
+    e8 = e8_override or e8_primitive or None
+
     result = await ingest_document(
         content=content,
         filename=filename,
         category=category,
         mode=proc_mode,
-        e8_override=e8_primitive if e8_primitive else None,
+        e8_override=e8,
         llm=_llm_client,
         governor=_governor,
     )
 
+    # Response fields match TrainingUploadResponse type in frontend
     return {
         "status": result.status,
-        "source": result.source,
-        "format": result.format,
-        "chunks": result.chunks_written,
+        "filename": result.source,
+        "chunks_written": result.chunks_written,
         "enriched": result.chunks_enriched,
         "qa_pairs": result.qa_pairs_generated,
+        "category": category,
+        "mode": mode,
         "processing_time_s": result.processing_time_s,
         "errors": result.errors,
     }
