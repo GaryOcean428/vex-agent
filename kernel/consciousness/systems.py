@@ -158,6 +158,10 @@ class ForesightEngine:
             "predicted_phi": self.predict_phi(),
         }
 
+    def get_history(self) -> list[TrajectoryPoint]:
+        """Return the full trajectory history for visualization."""
+        return list(self._history)
+
 
 # ═══════════════════════════════════════════════════════════════
 #  3. VELOCITY — rate of change tracking
