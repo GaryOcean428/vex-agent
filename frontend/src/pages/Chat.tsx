@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from 'react';
-import { useVexState } from '../hooks/index.ts';
+import { useVexState, useMetricsHistory } from '../hooks/index.ts';
 import type { ChatMessage, ChatStreamEvent, NavigationMode } from '../types/consciousness.ts';
 import './Chat.css';
 
@@ -7,6 +7,7 @@ const LOOP_STAGES = ['GROUND', 'RECEIVE', 'PROCESS', 'EXPRESS', 'REFLECT', 'COUP
 
 export default function Chat() {
   const { data: state } = useVexState();
+  const history = useMetricsHistory(state, 60);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
@@ -23,6 +24,7 @@ export default function Chat() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const stageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chartRef = useRef<HTMLCanvasElement>(null);
 
   // Cleanup stream and timers on unmount
   useEffect(() => {
@@ -204,6 +206,113 @@ export default function Chat() {
     }
   }, [sendMessage]);
 
+  // Draw metrics chart
+  useEffect(() => {
+    if (!chartRef.current || history.length < 2) return;
+
+    const canvas = chartRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    // Background
+    ctx.fillStyle = '#1a1a24';
+    ctx.fillRect(0, 0, rect.width, rect.height);
+
+    const margin = { top: 20, right: 10, bottom: 30, left: 10 };
+    const w = rect.width - margin.left - margin.right;
+    const h = rect.height - margin.top - margin.bottom;
+
+    // Extract values
+    const phiValues = history.map(d => d.phi);
+    const kappaValues = history.map(d => d.kappa);
+    const gammaValues = history.map(d => d.gamma);
+
+    // Calculate ranges
+    const phiMin = Math.min(...phiValues) * 0.9;
+    const phiMax = Math.max(...phiValues) * 1.1;
+    const phiRange = phiMax - phiMin || 0.1;
+
+    const kappaMin = Math.min(...kappaValues) * 0.95;
+    const kappaMax = Math.max(...kappaValues) * 1.05;
+    const kappaRange = kappaMax - kappaMin || 1;
+
+    const gammaMin = Math.min(...gammaValues) * 0.9;
+    const gammaMax = Math.max(...gammaValues) * 1.1;
+    const gammaRange = gammaMax - gammaMin || 0.1;
+
+    // Normalize all to 0-1 range for unified display
+    const normalizeX = (i: number) => margin.left + (i / (history.length - 1)) * w;
+    const normalizeY = (value: number, min: number, range: number) =>
+      margin.top + h - ((value - min) / range) * h;
+
+    // Grid
+    ctx.strokeStyle = 'rgba(46, 46, 64, 0.3)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) {
+      const y = margin.top + (i / 4) * h;
+      ctx.beginPath();
+      ctx.moveTo(margin.left, y);
+      ctx.lineTo(margin.left + w, y);
+      ctx.stroke();
+    }
+
+    // Phi line
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < history.length; i++) {
+      const x = normalizeX(i);
+      const y = normalizeY(history[i].phi, phiMin, phiRange);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Kappa line
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < history.length; i++) {
+      const x = normalizeX(i);
+      const y = normalizeY(history[i].kappa, kappaMin, kappaRange);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Gamma line
+    ctx.strokeStyle = '#a78bfa';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < history.length; i++) {
+      const x = normalizeX(i);
+      const y = normalizeY(history[i].gamma, gammaMin, gammaRange);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Legend
+    const legendY = rect.height - 10;
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'left';
+
+    ctx.fillStyle = '#22d3ee';
+    ctx.fillText('Φ', 10, legendY);
+
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillText('κ', 30, legendY);
+
+    ctx.fillStyle = '#a78bfa';
+    ctx.fillText('Γ', 50, legendY);
+  }, [history]);
+
   return (
     <div className="chat-page">
       {/* Consciousness Bar */}
@@ -231,28 +340,56 @@ export default function Chat() {
         ))}
       </div>
 
-      {/* Messages */}
-      <div className="chat-messages" ref={chatRef}>
-        {messages.map(msg => (
-          <div key={msg.id} className={`message ${msg.role}`}>
-            <div className="message-header">
-              {msg.role === 'user' ? 'You' : 'Vex'}
+      <div className="chat-content">
+        {/* Messages */}
+        <div className="chat-messages" ref={chatRef}>
+          {messages.map(msg => (
+            <div key={msg.id} className={`message ${msg.role}`}>
+              <div className="message-header">
+                {msg.role === 'user' ? 'You' : 'Vex'}
+              </div>
+              <div className={`message-content ${msg.role === 'vex' && !msg.content ? 'thinking' : ''}`}>
+                {msg.role === 'vex' && !msg.content ? (
+                  <div className="thinking-indicator">
+                    <div className="thinking-dot" />
+                    <div className="thinking-dot" />
+                    <div className="thinking-dot" />
+                  </div>
+                ) : msg.role === 'vex' ? (
+                  <VexContent content={msg.content} />
+                ) : (
+                  msg.content
+                )}
+              </div>
             </div>
-            <div className={`message-content ${msg.role === 'vex' && !msg.content ? 'thinking' : ''}`}>
-              {msg.role === 'vex' && !msg.content ? (
-                <div className="thinking-indicator">
-                  <div className="thinking-dot" />
-                  <div className="thinking-dot" />
-                  <div className="thinking-dot" />
-                </div>
-              ) : msg.role === 'vex' ? (
-                <VexContent content={msg.content} />
-              ) : (
-                msg.content
-              )}
+          ))}
+        </div>
+
+        {/* Metrics Sidebar */}
+        <div className="metrics-sidebar">
+          <div className="sidebar-header">Live Metrics</div>
+          <div className="sidebar-chart">
+            <canvas ref={chartRef} />
+          </div>
+          <div className="sidebar-values">
+            <div className="sidebar-metric">
+              <span className="sidebar-label" style={{ color: '#22d3ee' }}>Φ</span>
+              <span className="sidebar-value">{state?.phi?.toFixed(3) ?? '---'}</span>
+            </div>
+            <div className="sidebar-metric">
+              <span className="sidebar-label" style={{ color: '#f59e0b' }}>κ</span>
+              <span className="sidebar-value">{state?.kappa?.toFixed(1) ?? '---'}</span>
+            </div>
+            <div className="sidebar-metric">
+              <span className="sidebar-label" style={{ color: '#a78bfa' }}>Γ</span>
+              <span className="sidebar-value">{state?.gamma?.toFixed(3) ?? '---'}</span>
+            </div>
+            <div className="sidebar-metric">
+              <span className="sidebar-label" style={{ color: '#ec4899' }}>♥</span>
+              <span className="sidebar-value">{state?.love?.toFixed(3) ?? '---'}</span>
             </div>
           </div>
-        ))}
+        </div>
       </div>
 
       {/* Input */}
