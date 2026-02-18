@@ -17,7 +17,7 @@ import * as fs from 'fs';
 import { config } from './config';
 import { logger } from './config/logger';
 import { createChatRouter } from './chat/router';
-import { requireAuth } from './auth/middleware';
+import { requireAuth, getCookie, isValidSession, SESSION_COOKIE } from './auth/middleware';
 import { sandboxManager, getComputeTools } from './tools/compute-sandbox';
 
 const KERNEL_URL = process.env.KERNEL_URL || 'http://localhost:8000';
@@ -29,7 +29,7 @@ const FRONTEND_DIST = path.resolve(
 
 async function main(): Promise<void> {
   logger.info('═══════════════════════════════════════');
-  logger.info('  Vex Agent — Web Server (v2.1)');
+  logger.info('  Vex Agent — Web Server (v2.2)');
   logger.info('  Role: Thin proxy → Python kernel');
   logger.info(`  Kernel: ${KERNEL_URL}`);
   logger.info(`  Port: ${config.port}`);
@@ -47,6 +47,18 @@ async function main(): Promise<void> {
 
   // ─── Global auth — protects all routes when CHAT_AUTH_TOKEN is set ───
   app.use(requireAuth);
+
+  // ─── Auth check (no 401 — returns JSON status) ──────────────
+  // Used by AuthContext.tsx to check session without triggering
+  // a 401 console error. Always returns 200.
+  app.get('/auth/check', (req, res) => {
+    if (!config.chatAuthToken) {
+      res.json({ authenticated: true });
+      return;
+    }
+    const sessionId = getCookie(req, SESSION_COOKIE);
+    res.json({ authenticated: isValidSession(sessionId) });
+  });
 
   // ─── Health check (probes kernel health too) ─────────────────
 
@@ -109,7 +121,7 @@ async function main(): Promise<void> {
     });
   };
 
-  // Proxy kernel endpoints
+  // Proxy kernel endpoints — consciousness state
   proxyGet('/state');
   proxyGet('/telemetry');
   proxyGet('/status');
@@ -125,6 +137,11 @@ async function main(): Promise<void> {
   proxyGet('/memory/stats');
   proxyGet('/sleep/state');
   proxyPost('/admin/fresh-start');
+
+  // Governor endpoints (PR #13)
+  proxyGet('/governor');
+  proxyPost('/governor/kill-switch');
+  proxyPost('/governor/budget');
 
   // Training endpoints
   proxyGet('/training/stats');
@@ -218,6 +235,7 @@ async function main(): Promise<void> {
       if (
         req.path.startsWith('/api/') ||
         req.path.startsWith('/chat/') ||
+        req.path.startsWith('/auth/') ||
         req.path === '/health' ||
         req.path === '/state' ||
         req.path === '/telemetry' ||
@@ -231,7 +249,8 @@ async function main(): Promise<void> {
         req.path.startsWith('/graph/') ||
         req.path.startsWith('/sleep/') ||
         req.path.startsWith('/admin/') ||
-        req.path.startsWith('/training/')
+        req.path.startsWith('/training/') ||
+        req.path.startsWith('/governor')
       ) {
         next();
         return;
@@ -250,7 +269,7 @@ async function main(): Promise<void> {
   const server = app.listen(config.port, '::', () => {
     logger.info(`Vex web server listening on [::]:${config.port}`);
     logger.info(`Proxying to Python kernel at ${KERNEL_URL}`);
-    logger.info('Endpoints: /health, /chat, /state, /telemetry, /status, /basin, /kernels');
+    logger.info('Endpoints: /health, /chat, /state, /telemetry, /status, /basin, /kernels, /governor');
   });
 
   // Allow long-lived SSE connections
