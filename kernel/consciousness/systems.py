@@ -874,6 +874,10 @@ class KernelInstance:
     last_active_at: str = ""
     cycle_count: int = 0
     phi_peak: float = 0.0
+    # Independent geometric state for real coupling
+    basin: Basin | None = None
+    phi: float = 0.1
+    kappa: float = KAPPA_STAR
 
 
 class E8KernelRegistry:
@@ -909,6 +913,9 @@ class E8KernelRegistry:
             state=LifecycleState.ACTIVE,
             created_at=now,
             last_active_at=now,
+            basin=random_basin(),
+            phi=0.1,
+            kappa=KAPPA_STAR,
         )
         self._kernels[kid] = kernel
         return kernel

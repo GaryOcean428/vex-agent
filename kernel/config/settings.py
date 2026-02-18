@@ -40,12 +40,29 @@ class ComputeSDKConfig:
 
 
 @dataclass(frozen=True)
+class GovernorConfig:
+    """Governance stack configuration — 5-layer protection against runaway costs."""
+    enabled: bool = os.environ.get("GOVERNOR_ENABLED", "true").lower() != "false"
+    daily_budget: float = float(os.environ.get("DAILY_LLM_BUDGET", "1.00"))
+    autonomous_search: bool = os.environ.get("AUTONOMOUS_SEARCH_ALLOWED", "false").lower() == "true"
+    rate_limit_web_search: int = int(os.environ.get("RATE_LIMIT_WEB_SEARCH", "20"))
+    rate_limit_completions: int = int(os.environ.get("RATE_LIMIT_COMPLETIONS", "50"))
+
+
+@dataclass(frozen=True)
+class SearXNGConfig:
+    """SearXNG free search — self-hosted, zero cost."""
+    url: str = os.environ.get("SEARXNG_URL", "")
+    enabled: bool = bool(os.environ.get("SEARXNG_URL", ""))
+
+
+@dataclass(frozen=True)
 class Settings:
     port: int = int(os.environ.get("KERNEL_PORT", "8000"))
     node_env: str = os.environ.get("NODE_ENV", "development")
 
     # Data persistence
-    data_dir: str = os.environ.get("DATA_DIR", "./data/workspace")
+    data_dir: str = os.environ.get("DATA_DIR", "/data/workspace")
     training_dir: str = os.environ.get("TRAINING_DIR", "/data/training")
 
     # Identity
@@ -77,6 +94,8 @@ class Settings:
     llm: LLMConfig = field(default_factory=LLMConfig)
     xai: XAIConfig = field(default_factory=XAIConfig)
     compute_sdk: ComputeSDKConfig = field(default_factory=ComputeSDKConfig)
+    governor: GovernorConfig = field(default_factory=GovernorConfig)
+    searxng: SearXNGConfig = field(default_factory=SearXNGConfig)
 
 
 settings = Settings()

@@ -25,6 +25,7 @@ import httpx
 
 from ..config.settings import settings
 from .cost_guard import CostGuard, CostGuardConfig
+from .governor import GovernorStack
 
 logger = logging.getLogger("vex.llm")
 
@@ -51,7 +52,7 @@ class LLMOptions:
 class LLMClient:
     """Multi-backend LLM client with Ollama primary, xAI + OpenAI fallback."""
 
-    def __init__(self) -> None:
+    def __init__(self, governor: GovernorStack | None = None) -> None:
         self._ollama_available = False
         self._active_backend = "none"
         self._http = httpx.AsyncClient(timeout=httpx.Timeout(
@@ -68,6 +69,9 @@ class LLMClient:
             rpd_limit=2000,   # 2000 requests/day
             max_tokens_per_request=2048,
         ))
+
+        # Governance stack — gates external calls through 5 layers
+        self._governor = governor
 
     async def init(self) -> None:
         """Initialise the client — check Ollama availability, set fallback chain."""
@@ -144,7 +148,12 @@ class LLMClient:
             "xai_model": settings.xai.model if settings.xai.api_key else None,
             "external_model": settings.llm.model if settings.llm.api_key else None,
             "cost_guard": self._cost_guard.summary(),
+            "governor": self._governor.get_state() if self._governor else None,
         }
+
+    @property
+    def governor(self) -> GovernorStack | None:
+        return self._governor
 
     # --- Ollama -------------------------------------------------
 
@@ -210,6 +219,16 @@ class LLMClient:
     async def _xai_complete(
         self, system_prompt: str, user_message: str, opts: LLMOptions
     ) -> str:
+        # Governor gate check
+        if self._governor:
+            allowed, reason = self._governor.gate(
+                "completion", "xai_completion", user_message, True,
+            )
+            if not allowed:
+                logger.warning("Governor blocked xAI: %s", reason)
+                if settings.llm.api_key:
+                    return await self._external_complete(system_prompt, user_message, opts)
+                return f"[Governor blocked: {reason}]"
         try:
             resp = await self._http.post(
                 f"{settings.xai.base_url}/responses",
@@ -227,6 +246,8 @@ class LLMClient:
                 },
             )
             data = resp.json()
+            if self._governor:
+                self._governor.record("xai_completion")
             return data.get("output_text", "")
         except Exception as e:
             logger.error("xAI completion failed: %s", e)
@@ -239,6 +260,16 @@ class LLMClient:
     async def _xai_stream(
         self, messages: list[dict[str, str]], opts: LLMOptions
     ) -> AsyncGenerator[str, None]:
+        # Governor gate check for streaming
+        if self._governor:
+            allowed, reason = self._governor.gate(
+                "completion", "xai_completion", "", True,
+            )
+            if not allowed:
+                logger.warning("Governor blocked xAI stream: %s", reason)
+                yield f"[Governor blocked: {reason}]"
+                return
+
         system_msg = ""
         input_msgs: list[dict[str, str]] = []
         for m in messages:
@@ -282,6 +313,9 @@ class LLMClient:
                             break
                     except (json.JSONDecodeError, KeyError):
                         continue
+            # Record after successful stream completion
+            if self._governor:
+                self._governor.record("xai_completion")
         except Exception as e:
             logger.error("xAI stream failed: %s", e)
             yield f"LLM stream error: {e}"
@@ -291,6 +325,14 @@ class LLMClient:
     async def _external_complete(
         self, system_prompt: str, user_message: str, opts: LLMOptions
     ) -> str:
+        # Governor gate check
+        if self._governor:
+            allowed, reason = self._governor.gate(
+                "completion", "openai_completion", user_message, True,
+            )
+            if not allowed:
+                logger.warning("Governor blocked external: %s", reason)
+                return f"[Governor blocked: {reason}]"
         try:
             resp = await self._http.post(
                 f"{settings.llm.base_url}/responses",
@@ -308,6 +350,8 @@ class LLMClient:
                 },
             )
             data = resp.json()
+            if self._governor:
+                self._governor.record("openai_completion")
             return data.get("output_text", "")
         except Exception as e:
             logger.error("External API completion failed: %s", e)
@@ -318,6 +362,16 @@ class LLMClient:
         messages: list[dict[str, str]],
         opts: LLMOptions,
     ) -> AsyncGenerator[str, None]:
+        # Governor gate check for streaming
+        if self._governor:
+            allowed, reason = self._governor.gate(
+                "completion", "openai_completion", "", True,
+            )
+            if not allowed:
+                logger.warning("Governor blocked external stream: %s", reason)
+                yield f"[Governor blocked: {reason}]"
+                return
+
         system_msg = ""
         input_msgs: list[dict[str, str]] = []
         for m in messages:
@@ -361,6 +415,9 @@ class LLMClient:
                             break
                     except (json.JSONDecodeError, KeyError, IndexError):
                         continue
+            # Record after successful stream completion
+            if self._governor:
+                self._governor.record("openai_completion")
         except Exception as e:
             logger.error("External API stream failed: %s", e)
             yield f"LLM stream error: {e}"

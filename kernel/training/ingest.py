@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+from ..llm.governor import GovernorStack
 from fastapi import APIRouter, File, Form, UploadFile
 from pydantic import BaseModel
 
@@ -257,11 +259,23 @@ TEXT:
 {chunk}"""
 
 
-async def _enrich_chunk_xai(chunk_text: str) -> dict[str, Any]:
+async def _enrich_chunk_xai(
+    chunk_text: str,
+    governor: GovernorStack | None = None,
+) -> dict[str, Any]:
     """Use xAI API for fast batch enrichment (if available)."""
     api_key = settings.xai_api_key
     if not api_key:
         return {}
+
+    # Governor gate — blocks if kill switch, budget exceeded, or rate limited
+    if governor:
+        allowed, reason = governor.gate(
+            "training_enrich", "training_enrich", chunk_text[:100], False,
+        )
+        if not allowed:
+            logger.debug("Governor blocked enrichment: %s", reason)
+            return {}
 
     prompt = ENRICHMENT_PROMPT.format(chunk=chunk_text[:3000])
 
@@ -286,6 +300,11 @@ async def _enrich_chunk_xai(chunk_text: str) -> dict[str, Any]:
             )
             data = resp.json()
             content = data["choices"][0]["message"]["content"]
+
+            # Record with governor after successful call
+            if governor:
+                governor.record("training_enrich")
+
             return json.loads(content)
     except Exception as e:
         logger.warning("xAI enrichment failed: %s", str(e)[:100])
@@ -328,6 +347,7 @@ async def ingest_document(
     mode: ProcessingMode = ProcessingMode.STANDARD,
     e8_override: str | None = None,
     llm: LLMClient | None = None,
+    governor: GovernorStack | None = None,
 ) -> IngestionResult:
     """Full pipeline: extract → chunk → enrich → write JSONL."""
     start = time.time()
@@ -386,7 +406,7 @@ async def ingest_document(
         if mode != ProcessingMode.FAST:
             enrichment: dict[str, Any] = {}
             if settings.xai_api_key:
-                enrichment = await _enrich_chunk_xai(chunk)
+                enrichment = await _enrich_chunk_xai(chunk, governor=governor)
             if not enrichment and llm:
                 enrichment = await _enrich_chunk_llm(llm, chunk)
 
@@ -522,14 +542,21 @@ def export_openai_format() -> dict[str, Any]:
 #  FASTAPI ROUTER
 # ═══════════════════════════════════════════════════════════════
 
-# llm_client is injected by server.py after include_router
+# llm_client and governor are injected by server.py after include_router
 _llm_client: LLMClient | None = None
+_governor: GovernorStack | None = None
 
 
 def set_llm_client(client: LLMClient) -> None:
     """Called by server.py to inject the shared LLMClient."""
     global _llm_client
     _llm_client = client
+
+
+def set_governor(gov: GovernorStack) -> None:
+    """Called by server.py to inject the shared GovernorStack."""
+    global _governor
+    _governor = gov
 
 
 training_router = APIRouter()
@@ -578,6 +605,7 @@ async def training_upload_endpoint(
         mode=proc_mode,
         e8_override=e8_primitive if e8_primitive else None,
         llm=_llm_client,
+        governor=_governor,
     )
 
     return {
