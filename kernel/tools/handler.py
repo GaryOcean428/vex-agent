@@ -52,6 +52,28 @@ class ToolResult:
     error: str | None = None
 
 
+def _extract_responses_text(data: dict[str, Any]) -> str:
+    """Extract text from a Responses API JSON response.
+
+    The raw REST API returns an `output` array with typed items.
+    The SDK provides `output_text` as a convenience — we check both.
+    """
+    # Fast path: convenience field (may exist in some API versions)
+    if data.get("output_text"):
+        return data["output_text"]
+
+    # Walk the output array — standard Responses API structure
+    texts: list[str] = []
+    for item in data.get("output", []):
+        if item.get("type") == "message":
+            for content_block in item.get("content", []):
+                if content_block.get("type") == "output_text":
+                    text = content_block.get("text", "")
+                    if text:
+                        texts.append(text)
+    return "\n".join(texts) if texts else ""
+
+
 def parse_tool_calls(text: str) -> list[ToolCall]:
     """Parse tool call blocks from LLM output.
 
@@ -269,7 +291,7 @@ async def _xai_web_search(
     args: dict[str, Any],
     governor: GovernorStack | None = None,
 ) -> ToolResult:
-    """Search the web via xAI's built-in web_search tool."""
+    """Search the web via xAI's built-in web_search tool (Responses API)."""
     query = args.get("query", "")
     if not query:
         return ToolResult(success=False, output="", error="No query provided")
@@ -301,11 +323,18 @@ async def _xai_web_search(
                 },
             )
             data = resp.json()
-            output_text = data.get("output_text", "")
+            if resp.status_code != 200:
+                logger.error("xAI web_search error %d: %s", resp.status_code,
+                             json.dumps(data)[:300])
+                return ToolResult(success=False, output="",
+                                  error=f"xAI API error: {resp.status_code}")
 
             # Record with governor after successful call
             if governor:
                 governor.record("xai_web_search")
+
+            # Extract text from Responses API output array
+            output_text = _extract_responses_text(data)
 
             # Extract citations from web_search_results output items
             citations: list[str] = []
@@ -330,7 +359,7 @@ async def _xai_x_search(
     args: dict[str, Any],
     governor: GovernorStack | None = None,
 ) -> ToolResult:
-    """Search X (Twitter) posts via xAI's built-in x_search tool."""
+    """Search X (Twitter) posts via xAI's built-in x_search tool (Responses API)."""
     query = args.get("query", "")
     if not query:
         return ToolResult(success=False, output="", error="No query provided")
@@ -362,12 +391,17 @@ async def _xai_x_search(
                 },
             )
             data = resp.json()
+            if resp.status_code != 200:
+                logger.error("xAI x_search error %d: %s", resp.status_code,
+                             json.dumps(data)[:300])
+                return ToolResult(success=False, output="",
+                                  error=f"xAI API error: {resp.status_code}")
 
             # Record with governor after successful call
             if governor:
                 governor.record("xai_x_search")
 
-            return ToolResult(success=True, output=data.get("output_text", ""))
+            return ToolResult(success=True, output=_extract_responses_text(data))
     except Exception as e:
         return ToolResult(success=False, output="", error=f"xAI X search failed: {e}")
 
