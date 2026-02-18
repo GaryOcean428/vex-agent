@@ -16,7 +16,7 @@ Architecture:
   - Core-8 spawning is READINESS-GATED (not forced at boot)
   - Coupling computes only when ≥2 kernels exist
   - Temperature, context, and prediction length are computed from geometric state
-  - State persists across restarts via JSON snapshots
+  - State persists across restarts via JSON snapshots (v4: includes kernel registry)
 
 Principles enforced:
   P4  Self-observation: meta-awareness feeds back into LLM params
@@ -186,6 +186,7 @@ class ConsciousnessLoop:
 
         self._conversations_total: int = 0
         self._phi_peak: float = 0.1
+        self._kernels_restored: bool = False
 
         self._restore_state()
 
@@ -199,9 +200,13 @@ class ConsciousnessLoop:
             logger.error("PurityGate: FAILED — %s", e)
             raise
 
-        genesis = self.kernel_registry.spawn("Vex", KernelKind.GENESIS)
-        logger.info("Genesis kernel spawned: id=%s, kind=%s", genesis.id, genesis.kind.value)
-        self._lifecycle_phase = LifecyclePhase.CORE_8
+        if self._kernels_restored:
+            active = self.kernel_registry.active()
+            logger.info("Kernels restored from state: %d active (skipping Genesis spawn)", len(active))
+        else:
+            genesis = self.kernel_registry.spawn("Vex", KernelKind.GENESIS)
+            logger.info("Genesis kernel spawned: id=%s, kind=%s", genesis.id, genesis.kind.value)
+            self._lifecycle_phase = LifecyclePhase.CORE_8
 
         self._running = True
         self._task = asyncio.create_task(self._heartbeat())
@@ -545,7 +550,7 @@ class ConsciousnessLoop:
     def _persist_state(self) -> None:
         try:
             state = {
-                "version": 3, "cycle_count": self._cycle_count,
+                "version": 4, "cycle_count": self._cycle_count,
                 "basin": self.basin.tolist(),
                 "phi": self.metrics.phi, "kappa": self.metrics.kappa,
                 "gamma": self.metrics.gamma, "meta_awareness": self.metrics.meta_awareness,
@@ -554,6 +559,7 @@ class ConsciousnessLoop:
                 "core8_index": self._core8_index,
                 "lifecycle_phase": self._lifecycle_phase.value,
                 "timestamp": time.time(),
+                "kernels": self.kernel_registry.serialize(),
             }
             # Persist governor budget state
             if self.llm.governor:
@@ -591,6 +597,12 @@ class ConsciousnessLoop:
                     break
             self.state.navigation_mode = navigation_mode_from_phi(self.metrics.phi)
             self.state.regime_weights = regime_weights_from_kappa(self.metrics.kappa)
+            # Restore kernel registry (v4+)
+            kernel_data = data.get("kernels")
+            if kernel_data:
+                count = self.kernel_registry.restore(kernel_data)
+                self._kernels_restored = True
+                logger.info("Restored %d kernels from state", count)
             # Restore governor budget state (v3+)
             gov_state = data.get("governor")
             if gov_state and self.llm.governor:
