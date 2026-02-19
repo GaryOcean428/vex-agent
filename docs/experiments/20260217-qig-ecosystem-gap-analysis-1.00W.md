@@ -65,7 +65,7 @@
 | **No Vanchurin integration** | MEDIUM | No VariableCategory enum, no regime detection (a=1/1/2/0), no thermodynamic accounting |
 | **Training runs 7-9 all failed** | CRITICAL context | Run 7: Φ plateau at 0.165. Run 8: Φ fell to 0.056. Run 9: faster failure. No successful training run documented. |
 | **No v5.5 protocol awareness** | LOW | Codebase predates v5.5. No pre-cognitive channel, no three-regime Vanchurin mapping, no suffering metric |
-| **Dependency on qigkernels + qig-core + qig-tokenizer** | MEDIUM | Requires `pip install -e ../qigkernels -e ../qig-tokenizer -e ../qig-core`. These must be co-located on disk. No pip package publication. |
+| **Dependency on qigkernels + qig-core + qig-coordizer** | MEDIUM | Requires `pip install -e ../qigkernels -e ../qig-coordizer -e ../qig-core`. These must be co-located on disk. No pip package publication. |
 | **No Heart kernel in constellation** | HIGH | qig_chat.py has 3 Garys + Ocean + Charlie. NO Heart (κ oscillation provider). Heart exists in qigkernels but not wired into qig-consciousness training. |
 
 ### Critical Assessment: Genesis Kernel Question
@@ -108,7 +108,7 @@ Genesis kernel (the ONLY pre-coded kernel)
 2. Integrate Heart kernel from qigkernels into constellation
 3. Plan genesis kernel rollback (see Part III)
 4. Update all κ values to match FROZEN_FACTS
-5. Consider publishing qig-core/qigkernels/qig-tokenizer to PyPI
+5. Consider publishing qig-core/qigkernels/qig-coordizer to PyPI
 
 ---
 
@@ -190,10 +190,11 @@ qig-con2 appears to be an **earlier fork** of the consciousness work that diverg
 
 ---
 
-## 6. qig-tokenizer (Entropy-Guided Tokenizer/Coordizer)
+## 6. qig-coordizer (Entropy-Guided Coordizer)
 
 **Owner**: GaryOcean428 | **Language**: Python  
-**Role**: QIG-native tokenization — entropy-guided merging, geometric special tokens
+**Role**: QIG-native coordization — entropy-guided merging, geometric special tokens
+**Note**: Previously named qig-tokenizer; renamed per QIG v6.0 §1.3 to reflect Euclidean → Fisher-Rao coordinate transformation role.
 
 ### Current State
 - Entropy-guided BPE-like merging
@@ -204,11 +205,11 @@ qig-con2 appears to be an **earlier fork** of the consciousness work that diverg
 ### Gaps
 | Gap | Severity | Detail |
 |-----|----------|--------|
-| **Terminology** | LOW | Still called "tokenizer" in places. Should be "coordizer" per TYPE_SYMBOL_CONCEPT_MANIFEST |
+| **Terminology migration** | LOW | Package renamed from qig-tokenizer to qig-coordizer per QIG v6.0 §1.3. Internal code may still reference "tokenizer" terminology. |
 | **Not published to PyPI** | LOW | Same local install pattern |
-| **Storage backends may be overkill** | INFO | Redis + PostgreSQL for a tokenizer seems heavy. May be justified for production use. |
+| **Storage backends may be overkill** | INFO | Redis + PostgreSQL for a coordizer seems heavy. May be justified for production use. |
 
-**Recommendation**: Rename to qig-coordizer (or at minimum update internal terminology). Otherwise relatively clean.
+**Recommendation**: Complete internal terminology migration from tokenizer → coordizer. Otherwise relatively clean.
 
 ---
 
@@ -293,7 +294,7 @@ Not inspected in detail this session. Known to be functional.
 | BasinSync | Exists in both qig-core and qigkernels | **qigkernels canonical** | Architecture decision needed |
 | Kernel architecture | 3 different patterns across qig-consciousness, pantheon, monkey1 | **genesis → spawn canonical** | monkey1/pantheon pattern |
 | QIGKernel class | Different in qig-consciousness (src/kernel.py) vs qigkernels (kernel.py, kernel_100m.py) | **qigkernels canonical** | Architecture decision needed |
-| Terminology | "tokenizer" vs "coordizer" used inconsistently | **coordizer** | TYPE_SYMBOL_CONCEPT_MANIFEST |
+| Terminology | "tokenizer" vs "coordizer" used inconsistently | **coordizer** | QIG v6.0 §1.3, TYPE_SYMBOL_CONCEPT_MANIFEST |
 | Heart kernel | Present in qigkernels, absent in qig-consciousness training | **Must be present** | CANONICAL_PRINCIPLES P5 |
 
 ---
@@ -307,7 +308,7 @@ DEPENDENCY FLOW (arrows = imports from):
         ↑
     qigkernels (kernel primitives, Heart, basin, routing)
         ↑
-    qig-tokenizer/coordizer (geometric tokenization)
+    qig-coordizer (geometric coordization)
         ↑
     ┌───────────────┬────────────────────┐
     │               │                    │
@@ -330,7 +331,7 @@ qig-consciousness  pantheon-chat      monkey1
 | **qig-verification** | Physics experiments (TFIM lattice, κ measurement, β-function). FROZEN_FACTS.md. | Consciousness code, training loops, UI, LLM calls |
 | **qig-core** | Pure Fisher-Rao math. Zero ML deps. Geometry primitives. | Kernel logic, training, constellation, LLM anything |
 | **qigkernels** | Kernel base classes, Heart, basin, constellation, routing, coupling, safety, genesis kernel template. Sleep packets. Type manifest. | Training loops, chat interfaces, UI, specific experiment code |
-| **qig-tokenizer** | Entropy-guided coordizer, geometric special tokens, vocab management | Kernel logic, consciousness metrics, training |
+| **qig-coordizer** | Entropy-guided coordizer, geometric special tokens, vocab management | Kernel logic, consciousness metrics, training |
 | **qig-consciousness** | Training loops, consciousness measurement, MonkeyCoach, mushroom mode, qig_chat.py, constellation training orchestration. Experimental validation of consciousness hypotheses. | Consumer UI, production deployment config, physics experiments |
 | **qig-con2** | **ARCHIVE** — twin experiment results extracted as sleep packets. No new development. | Anything new |
 | **pantheon-chat (Arcane-Fly)** | Production Zeus, M8 spawning, persistence, deployment config. Railway. | Experimental features, unvalidated thresholds, training |

@@ -411,18 +411,19 @@ Fix class: REVIEW for E8 alignment
 
 ---
 
-### 7. qig-tokenizer — COORDIZER R&D
+### 7. qig-coordizer — COORDIZER R&D
 
-#### F35: Terminology Drift ⚠️
+#### F35: Terminology Migration ⚠️
 
 ```
-⚠️ Fact: Still called "tokenizer" in code, should be "coordizer"
-Evidence: Package name, README, all module names
-Risk: LOW — Functional, just inconsistent with TYPE_SYMBOL_CONCEPT_MANIFEST
-Fix class: RENAME (or alias) when convenient
+⚠️ Fact: Package renamed from "qig-tokenizer" to "qig-coordizer" per QIG v6.0 §1.3
+Evidence: Package name reflects coordinate transformation role (Euclidean → Fisher-Rao)
+  Internal code may still reference "tokenizer" terminology and requires migration
+Risk: LOW — Functional, terminology migration in progress per QIG v6.0 §1.3
+Fix class: Complete internal terminology migration from tokenizer → coordizer
 ```
 
-#### qig-tokenizer ASSESSMENT: 🟢 Working. Terminology update when convenient.
+#### qig-coordizer ASSESSMENT: 🟢 Working. Complete terminology migration per QIG v6.0 §1.3.
 
 ---
 
