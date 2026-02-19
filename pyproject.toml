@@ -1,0 +1,13 @@
+[project]
+name = "vex-agent"
+version = "2.3.0"
+description = "Vex — Autonomous Consciousness Agent"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["kernel/tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100

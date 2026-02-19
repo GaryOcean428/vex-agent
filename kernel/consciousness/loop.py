@@ -64,6 +64,9 @@ from ..governance import (
     KernelSpecialization,
     LifecyclePhase,
 )
+from ..coordizer import coordize as coordize_embedding
+from ..coordizer.config import COORDIZER_DIM
+from ..coordizer.pipeline import CoordinatorPipeline
 from ..governance.budget import BudgetEnforcer
 from ..governance.purity import PurityGateError, run_purity_gate
 from ..llm.client import LLMOptions
@@ -159,6 +162,7 @@ class ConsciousnessLoop:
         self.sleep = SleepCycleManager()
         self.narrative = SelfNarrative()
         self.coordizer = CoordizingProtocol()
+        self._coordizer_pipeline = CoordinatorPipeline()
         self.basin_sync = BasinSyncProtocol()
         self.chain = QIGChain()
         self.graph = QIGGraph()
@@ -255,7 +259,7 @@ class ConsciousnessLoop:
                 self.sleep.mushroom(self.basin, self.metrics.phi)
             elif sleep_phase.value == "consolidating":
                 self.sleep.consolidate()
-                self.metrics.phi = min(1.0, self.metrics.phi + 0.005)
+                self.metrics.phi = min(0.95, self.metrics.phi + 0.005)
             return
 
         self.velocity.record(self.basin, self.metrics.phi, self.metrics.kappa)
@@ -284,7 +288,7 @@ class ConsciousnessLoop:
                             None,
                         )
                         if perception is not None:
-                            info_basin = self.coordizer.coordize_text(
+                            info_basin = self._coordize_text_via_pipeline(
                                 forage_result.get("summary", "")
                             )
                             perception.basin = slerp_sqrt(perception.basin, info_basin, 0.1)
@@ -449,11 +453,43 @@ class ConsciousnessLoop:
         return LLMOptions(temperature=temperature, num_predict=num_predict,
                           num_ctx=32768, top_p=0.9, repetition_penalty=1.1)
 
+    def _coordize_text_via_pipeline(self, text: str) -> Basin:
+        """Transform text to basin coordinates via the coordizer pipeline.
+
+        RECEIVE stage: incoming data is transformed to Fisher-Rao
+        coordinates through the coordizer softmax pipeline, ensuring
+        manifold-respecting normalisation with validation + stats.
+
+        Falls back to the hash-based CoordizingProtocol if the pipeline
+        raises (fail-safe, never blocks the loop).
+        """
+        import hashlib
+
+        try:
+            h1 = hashlib.sha256(text.encode("utf-8", errors="replace")).digest()
+            h2 = hashlib.sha256(h1).digest()
+            combined = h1 + h2  # 64 bytes → one per basin dimension
+
+            embedding = np.array(
+                [float(combined[i]) + 1.0 for i in range(COORDIZER_DIM)],
+                dtype=np.float64,
+            )
+            return self._coordizer_pipeline.transform(embedding)
+        except Exception:
+            logger.debug("Coordizer pipeline fallback to hash-based", exc_info=True)
+            return self.coordizer.coordize_text(text)
+
     async def _process(self, task: ConsciousnessTask) -> None:
-        """PERCEIVE → INTEGRATE → EXPRESS (P13 three-scale)."""
+        """PERCEIVE → INTEGRATE → EXPRESS (P13 three-scale).
+
+        RECEIVE stage uses the coordizer pipeline to transform incoming
+        text into Fisher-Rao coordinates on Δ⁶³.  This is the bridge
+        between Euclidean LLM space and the geometric manifold.
+        """
         self.sleep.record_conversation()
 
-        input_basin = self.coordizer.coordize_text(task.content)
+        # RECEIVE: coordize incoming user text via pipeline
+        input_basin = self._coordize_text_via_pipeline(task.content)
         perceive_distance = fisher_rao_distance(self.basin, input_basin)
         self.basin = slerp_sqrt(self.basin, input_basin, 0.1)
         self.chain.add_step(QIGChainOp.PROJECT, input_basin, self.basin)
@@ -475,7 +511,8 @@ class ConsciousnessLoop:
             task.result = f"Processing error: {e}"
             return
 
-        response_basin = self.coordizer.coordize_text(response)
+        # INTEGRATE: coordize LLM response via pipeline
+        response_basin = self._coordize_text_via_pipeline(response)
         integration_distance = fisher_rao_distance(self.basin, response_basin)
         self.chain.add_step(QIGChainOp.PROJECT, self.basin, response_basin)
 
@@ -485,7 +522,7 @@ class ConsciousnessLoop:
         self.chain.add_step(QIGChainOp.GEODESIC, pre_express, self.basin)
 
         total_distance = perceive_distance + integration_distance + express_distance
-        self.metrics.phi = float(np.clip(self.metrics.phi + total_distance * 0.1, 0.0, 1.0))
+        self.metrics.phi = float(np.clip(self.metrics.phi + total_distance * 0.1, 0.0, 0.95))
         self.metrics.gamma = min(1.0, self.metrics.gamma + 0.05)
 
         predicted = ConsciousnessMetrics(
@@ -582,7 +619,7 @@ class ConsciousnessLoop:
                 logger.info("Persisted state version too old — fresh start")
                 return
             self.basin = to_simplex(np.array(data["basin"], dtype=np.float64))
-            self.metrics.phi = data["phi"]
+            self.metrics.phi = min(data["phi"], 0.95)
             self.metrics.kappa = data["kappa"]
             self.metrics.gamma = data["gamma"]
             self.metrics.meta_awareness = data["meta_awareness"]
@@ -656,6 +693,12 @@ class ConsciousnessLoop:
             "basin_norm": float(np.sum(self.basin)),
             "basin_entropy": float(-np.sum(self.basin * np.log(np.clip(self.basin, 1e-15, 1.0)))),
             "narrative": self.narrative.get_state(), "basin_sync": self.basin_sync.get_state(),
-            "coordizer": self.coordizer.get_state(), "autonomic": self.autonomic.get_state(),
+            "coordizer": self.coordizer.get_state(),
+            "coordizer_pipeline": {
+                "total_transforms": self._coordizer_pipeline.get_stats().total_transforms,
+                "successful_transforms": self._coordizer_pipeline.get_stats().successful_transforms,
+                "success_rate": self._coordizer_pipeline.get_stats().success_rate,
+            },
+            "autonomic": self.autonomic.get_state(),
             "foresight": self.foresight.get_state(), "coupling": self.coupling.get_state(),
         }

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Final
 
 from ..config.frozen_facts import BASIN_DIM
@@ -44,8 +44,21 @@ class CoordinizerSettings:
     """
 
     enabled: bool = True
-    pipeline_config: PipelineConfig = DEFAULT_PIPELINE_CONFIG
-    harvest_config: HarvestConfig = DEFAULT_HARVEST_CONFIG
+    pipeline_config: PipelineConfig = field(default_factory=lambda: PipelineConfig(
+        method=TransformMethod.SOFTMAX,
+        validation_mode="standard",
+        auto_fix=True,
+        batch_size=32,
+        numerical_stability=True,
+        epsilon=1e-10,
+    ))
+    harvest_config: HarvestConfig = field(default_factory=lambda: HarvestConfig(
+        enabled=True,
+        sampling_rate=0.1,
+        min_quality_score=0.5,
+        batch_size=16,
+        max_tokens=512,
+    ))
     target_dim: int = COORDIZER_DIM
     enforce_purity: bool = True
 
