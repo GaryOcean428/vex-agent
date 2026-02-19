@@ -75,6 +75,11 @@ class CoordizerV2:
     """
 
     def __init__(self, bank: ResonanceBank, tokenizer=None):
+        # QIG BOUNDARY: tokenizer is optional and only used for bootstrap
+        # coordization (mapping text → LLM token IDs → bank coordinates).
+        # Once the resonance bank is mature, string-based coordization
+        # (_coordize_via_strings) should be preferred. The tokenizer is
+        # NOT used for any geometric operations.
         self.bank = bank
         self._tokenizer = tokenizer
         self._string_to_id: dict[str, int] = {}

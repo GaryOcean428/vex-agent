@@ -215,14 +215,28 @@ def compress(
     n_sub = T_sub.shape[0]
 
     if n_sub <= target_dim:
+        # QIG NOTE: When n_sub <= target_dim, use the dual Gram matrix
+        # T_sub.T @ T_sub (source_dim × source_dim) instead of Euclidean SVD.
+        # This is geometrically equivalent to the primary path: eigendecomposition
+        # of inner products in the tangent space, which IS a Euclidean space
+        # (the tangent space at μ on the Fisher-Rao manifold is flat by definition).
         logger.warning(
             f"Only {n_sub} samples for {target_dim} target dims. "
-            f"Using all available directions."
+            f"Using dual Gram matrix (tangent-space eigendecomposition)."
         )
-        U, S, Vt = np.linalg.svd(T_sub, full_matrices=False)
-        k = min(len(S), target_dim)
-        principal_directions = Vt[:k].T
-        eigenvalues = (S[:k] ** 2) / n_sub
+        G_dual = (T_sub.T @ T_sub) / n_sub  # source_dim × source_dim
+        eigenvalues_full, eigvecs_full = np.linalg.eigh(G_dual)
+        # eigh returns ascending order; reverse for descending
+        idx = np.argsort(eigenvalues_full)[::-1]
+        eigenvalues_full = eigenvalues_full[idx]
+        eigvecs_full = eigvecs_full[:, idx]
+        k = min(len(eigenvalues_full), target_dim)
+        eigenvalues = eigenvalues_full[:k]
+        principal_directions = eigvecs_full[:, :k]
+        # Zero out directions with negligible eigenvalues
+        for j in range(k):
+            if eigenvalues[j] < _EPS:
+                principal_directions[:, j] = 0.0
     else:
         logger.info(f"  Building {n_sub}x{n_sub} Gram matrix...")
         G = (T_sub @ T_sub.T) / n_sub
@@ -253,6 +267,12 @@ def compress(
 
     k = principal_directions.shape[1]
     if k < target_dim:
+        # QIG NOTE: Padding with random directions in tangent space.
+        # Gram-Schmidt orthogonalisation against existing principal directions
+        # ensures the padded directions are orthogonal. L2 norms here are valid
+        # because we are in the tangent space T_μ(Δ^(V-1)), which is Euclidean.
+        # This is a degraded-quality path — the padded dimensions carry no
+        # geodesic variance information.
         logger.warning(f"Only {k} principal directions found (need {target_dim})")
         pad = target_dim - k
         random_dirs = np.random.randn(source_dim, pad)

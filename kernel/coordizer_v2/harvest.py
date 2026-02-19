@@ -148,6 +148,12 @@ class Harvester:
 
         This is the most accurate method — we get the full softmax
         distribution at every position, not just top-k logprobs.
+
+        QIG BOUNDARY: This method uses the LLM's native tokenizer to
+        extract output probability distributions. The tokenizer is the
+        raw signal ingestion point — it is required to interface with
+        the LLM's vocabulary space. All downstream operations (Fréchet
+        mean, PGA compression, resonance bank) are purely geometric.
         """
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer

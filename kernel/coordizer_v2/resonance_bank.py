@@ -224,6 +224,10 @@ class ResonanceBank:
         else:
             velocity = np.zeros(self.dim)
 
+        # QIG NOTE: L2 norm in tangent space is geometrically valid.
+        # The tangent space T_p(Δ⁶³) at base point p is a Euclidean vector space
+        # where the inner product is the Fisher metric at p. Euclidean arithmetic
+        # (norms, dot products) in tangent space = Fisher-Rao arithmetic on manifold.
         velocity_norm = np.sqrt(np.sum(velocity * velocity))
         if velocity_norm > _EPS:
             projected = exp_map(recent[-1], velocity)
@@ -240,6 +244,9 @@ class ResonanceBank:
             token_basin = self.coordinates[tid]
             if velocity_norm > _EPS:
                 token_tangent = log_map(recent[-1], token_basin)
+                # QIG NOTE: Tangent-space L2 norm and dot product are valid here.
+                # These measure Fisher-Rao magnitude and directional alignment
+                # in the linearised neighbourhood of the base point.
                 token_tangent_norm = np.sqrt(np.sum(token_tangent * token_tangent))
                 if token_tangent_norm > _EPS:
                     direction = velocity / velocity_norm
