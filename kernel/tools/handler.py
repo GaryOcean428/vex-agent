@@ -212,6 +212,8 @@ async def _execute_single(
             return await _xai_web_search(call.args, governor)
         elif call.name == "x_search":
             return await _xai_x_search(call.args, governor)
+        elif call.name == "deep_research":
+            return await _deep_research(call.args)
         else:
             return ToolResult(
                 success=False,
@@ -404,6 +406,31 @@ async def _xai_x_search(
             return ToolResult(success=True, output=_extract_responses_text(data))
     except Exception as e:
         return ToolResult(success=False, output="", error=f"xAI X search failed: {e}")
+
+
+async def _deep_research(args: dict[str, Any]) -> ToolResult:
+    """Run deep research via Perplexity sonar-pro."""
+    from .research import deep_research
+
+    query = args.get("query", "")
+    if not query:
+        return ToolResult(success=False, output="", error="No query provided")
+
+    result = await deep_research(query)
+    if not result.get("success", False):
+        return ToolResult(
+            success=False, output="",
+            error=result.get("error", "Deep research failed"),
+        )
+
+    # Format answer with citations for the LLM
+    output_parts = [result["answer"]]
+    if result.get("citations"):
+        output_parts.append("\n\nSources:")
+        for i, cite in enumerate(result["citations"], 1):
+            output_parts.append(f"  [{i}] {cite}")
+
+    return ToolResult(success=True, output="\n".join(output_parts))
 
 
 def format_tool_results(results: list[ToolResult]) -> str:
