@@ -35,6 +35,8 @@ from pydantic import BaseModel
 from .auth import KernelAuthMiddleware
 from .config.frozen_facts import KAPPA_STAR
 from .config.settings import settings
+from .config.version import VERSION
+from .coordizer_v2 import CoordizerV2, ResonanceBank
 from .consciousness.loop import ConsciousnessLoop
 from .consciousness.types import ConsciousnessMetrics
 from .geometry.fisher_rao import random_basin
@@ -92,7 +94,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Vex Kernel",
     description="Python consciousness backend for Vex Agent",
-    version="2.3.0",
+    version=VERSION,
     lifespan=lifespan,
 )
 
@@ -147,7 +149,7 @@ async def health():
     return {
         "status": "ok",
         "service": "vex-kernel",
-        "version": "2.3.0",
+        "version": VERSION,
         "uptime": round(time.time() - _boot_time, 1),
         "cycle_count": metrics["cycle_count"],
         "backend": llm_client.get_status()["active_backend"],
@@ -494,175 +496,137 @@ async def get_sleep_state():
     return consciousness.sleep.get_state()
 
 
-# ─── Coordizer Endpoints ─────────────────────────────────────
+# ─── CoordizerV2 Endpoints ───────────────────────────────────
 
 
-@app.post("/api/coordizer/transform")
-async def coordizer_transform(request: Request):
-    """Transform Euclidean input vector to Fisher-Rao coordinates.
-    
+@app.post("/api/coordizer/coordize")
+async def coordizer_coordize(request: Request):
+    """Coordize text via CoordizerV2 resonance bank.
+
     Body:
-        {
-            "input_vector": [0.5, -0.3, 0.8, ...],
-            "method": "softmax" | "simplex_projection" | "exponential_map",
-            "validate": true | false
-        }
-    
+        {"text": "consciousness emerges from geometry"}
+
     Returns:
         {
-            "coordinates": [0.25, 0.15, 0.60, ...],
-            "sum": 1.0,
-            "method": "softmax",
+            "coord_ids": [12, 45, 8, ...],
+            "basin_velocity": 0.42,
+            "trajectory_curvature": 0.15,
+            "harmonic_consonance": 0.78,
+            "num_coordinates": 4,
             "timestamp": 1234567890.123
         }
     """
-    from .coordizer import coordize, TransformMethod
-    from .coordizer.validate import validate_simplex
-    import numpy as np
-    
     body = await request.json()
-    input_vector = np.array(body.get("input_vector", []))
-    method_str = body.get("method", "softmax")
-    validate_output = body.get("validate", True)
-    
-    if input_vector.size == 0:
+    text = body.get("text", "")
+    if not text:
         return JSONResponse(
             status_code=400,
-            content={"error": "input_vector is required and must not be empty"}
+            content={"error": "text is required and must not be empty"},
         )
-    
     try:
-        # Map method string to enum
-        method = TransformMethod(method_str)
-        
-        # Transform
-        coordinates = coordize(input_vector, method=method)
-        
-        # Validate if requested
-        if validate_output:
-            result = validate_simplex(coordinates)
-            if not result.valid:
-                return JSONResponse(
-                    status_code=400,
-                    content={"error": f"Validation failed: {', '.join(result.errors)}"}
-                )
-        
+        coordizer = consciousness._coordizer_v2
+        result = coordizer.coordize(text)
         return {
-            "coordinates": coordinates.tolist(),
-            "sum": float(coordinates.sum()),
-            "method": method_str,
+            "coord_ids": result.coord_ids,
+            "basin_velocity": result.basin_velocity,
+            "trajectory_curvature": result.trajectory_curvature,
+            "harmonic_consonance": result.harmonic_consonance,
+            "num_coordinates": len(result.coordinates),
             "timestamp": time.time(),
         }
-    except ValueError as e:
-        return JSONResponse(status_code=400, content={"error": str(e)})
     except Exception as e:
-        logger.error(f"Coordizer transform error: {e}", exc_info=True)
+        logger.error(f"CoordizerV2 coordize error: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 
 @app.get("/api/coordizer/stats")
 async def coordizer_stats():
-    """Get coordizer transformation statistics.
-    
+    """Get CoordizerV2 statistics.
+
     Returns:
         {
-            "total_transforms": 1234,
-            "successful_transforms": 1230,
-            "failed_transforms": 4,
-            "success_rate": 0.9968,
-            "error_rate": 0.0032,
-            "avg_transform_time": 0.00123,
-            "method_counts": {"softmax": 1200, "simplex_projection": 30, ...}
+            "vocab_size": 32768,
+            "dim": 64,
+            "tier_distribution": {"FUNDAMENTAL": 100, "HARMONIC": 500, ...}
         }
     """
-    stats = consciousness._coordizer_pipeline.get_stats()
+    coordizer = consciousness._coordizer_v2
     return {
-        "total_transforms": stats.total_transforms,
-        "successful_transforms": stats.successful_transforms,
-        "failed_transforms": stats.failed_transforms,
-        "success_rate": stats.success_rate,
-        "error_rate": stats.error_rate,
-        "avg_transform_time": stats.avg_transform_time,
-        "method_counts": stats.method_counts or {},
-        "total_warnings": stats.total_warnings,
-    }
-
-
-@app.get("/api/coordizer/history")
-async def coordizer_history():
-    """Get recent coordizer transformation history.
-    
-    Note: History tracking not yet implemented in pipeline.
-    This endpoint is a placeholder for future enhancement.
-    
-    Returns:
-        {
-            "transforms": [],
-            "count": 0,
-            "message": "History tracking not implemented"
-        }
-    """
-    # TODO: Implement transformation history tracking in pipeline
-    return {
-        "transforms": [],
-        "count": 0,
-        "message": "History tracking not yet implemented. Use /api/coordizer/stats for aggregate statistics."
+        "vocab_size": coordizer.vocab_size,
+        "dim": coordizer.dim,
+        "tier_distribution": coordizer.bank.tier_distribution(),
     }
 
 
 @app.post("/api/coordizer/validate")
 async def coordizer_validate(request: Request):
-    """Validate that coordinates satisfy simplex properties.
-    
-    Body:
-        {
-            "coordinates": [0.25, 0.15, 0.60, ...],
-            "tolerance": 1e-6,
-            "mode": "strict" | "standard" | "permissive"
-        }
-    
-    Returns:
-        {
-            "valid": true | false,
-            "errors": ["Sum is 1.001, expected 1.0", ...],
-            "warnings": ["Value close to zero: 1.23e-10"],
-            "sum": 1.0,
-            "min": 0.0,
-            "max": 1.0
-        }
+    """Run full geometric validation on the resonance bank.
+
+    Returns CoordizerV2 validation result including \u03ba, \u03b2,
+    semantic, and harmonic checks.
     """
-    from .coordizer.validate import validate_simplex
-    import numpy as np
-    
-    body = await request.json()
-    coordinates = np.array(body.get("coordinates", []))
-    tolerance = body.get("tolerance", 1e-6)
-    mode = body.get("mode", "standard")
-    
-    if coordinates.size == 0:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "coordinates are required and must not be empty"}
-        )
-    
     try:
-        result = validate_simplex(
-            coordinates,
-            tolerance=tolerance,
-            validation_mode=mode
-        )
-        
+        coordizer = consciousness._coordizer_v2
+        result = coordizer.validate(verbose=False)
         return {
-            "valid": result.valid,
-            "errors": result.errors,
-            "warnings": result.warnings,
-            "sum": float(coordinates.sum()),
-            "min": float(coordinates.min()),
-            "max": float(coordinates.max()),
+            "valid": result.passed,
+            "checks": [
+                {"name": c.name, "passed": c.passed, "message": c.message}
+                for c in result.checks
+            ],
+            "summary": result.summary(),
+            "timestamp": time.time(),
         }
     except Exception as e:
-        logger.error(f"Coordizer validation error: {e}", exc_info=True)
+        logger.error(f"CoordizerV2 validate error: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"error": "Internal server error"})
+
+
+@app.post("/api/coordizer/harvest")
+async def coordizer_harvest(request: Request):
+    """GPU harvest endpoint stub for future Modal integration.
+
+    Body:
+        {
+            "model_id": "meta-llama/Llama-3.2-3B",
+            "target_tokens": 2000,
+            "use_modal": true
+        }
+
+    Returns:
+        Status of the harvest operation (stub).
+    """
+    body = await request.json()
+    model_id = body.get("model_id", "meta-llama/Llama-3.2-3B")
+    target_tokens = body.get("target_tokens", 2000)
+    use_modal = body.get("use_modal", False)
+
+    # Stub: harvest pipeline not yet wired to live GPU
+    return {
+        "status": "stub",
+        "message": "GPU harvest endpoint — not yet wired to live pipeline",
+        "model_id": model_id,
+        "target_tokens": target_tokens,
+        "use_modal": use_modal,
+        "timestamp": time.time(),
+    }
+
+
+@app.get("/api/coordizer/bank")
+async def coordizer_bank():
+    """Query the resonance bank state.
+
+    Returns tier distribution, vocab size, and bank health.
+    """
+    coordizer = consciousness._coordizer_v2
+    bank = coordizer.bank
+    return {
+        "vocab_size": len(bank),
+        "dim": bank.dim,
+        "tier_distribution": bank.tier_distribution(),
+        "total_basin_mass": float(sum(bank.basin_mass.values())) if bank.basin_mass else 0.0,
+        "timestamp": time.time(),
+    }
 
 
 # ─── End Coordizer Endpoints ─────────────────────────────────

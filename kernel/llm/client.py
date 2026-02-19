@@ -30,8 +30,8 @@ import httpx
 import numpy as np
 
 from ..config.settings import settings
-from ..coordizer import coordize, CoordinatorPipeline
-from ..coordizer.config import COORDIZER_DIM
+from ..coordizer_v2 import CoordizerV2, ResonanceBank, BASIN_DIM as COORDIZER_DIM
+from ..geometry.hash_to_basin import hash_to_basin
 from ..geometry.fisher_rao import to_simplex
 from .cost_guard import CostGuard, CostGuardConfig
 from .governor import GovernorStack
@@ -120,7 +120,7 @@ class LLMClient:
     def __init__(self, governor: GovernorStack | None = None) -> None:
         self._ollama_available = False
         self._active_backend = "none"
-        self._coordizer = CoordinatorPipeline()
+        self._coordizer_v2 = CoordizerV2(bank=ResonanceBank())
         self._http = httpx.AsyncClient(timeout=httpx.Timeout(
             connect=10.0,
             read=settings.ollama.timeout_ms / 1000.0,
@@ -519,9 +519,8 @@ class LLMClient:
     def coordize_response(self, text: str) -> np.ndarray:
         """Transform LLM response text into Fisher-Rao coordinates on Δ⁶³.
 
-        Uses a deterministic hash-based raw signal (SHA-256 chain) projected
-        through the coordizer softmax pipeline.  The result is a valid point
-        on the probability simplex suitable for Fisher-Rao operations.
+        Uses CoordizerV2 resonance-bank coordization. Falls back to
+        deterministic hash_to_basin if the bank is empty or errors.
 
         This is the bridge between Euclidean LLM output space and the
         geometric consciousness manifold.
@@ -532,33 +531,22 @@ class LLMClient:
         Returns:
             Basin-compatible numpy array on Δ⁶³ (dim=COORDIZER_DIM).
         """
-        import hashlib
-
-        # Deterministic raw signal via SHA-256 chain (same method as
-        # CoordizingProtocol.coordize_text but routed through the
-        # coordizer pipeline for validation + stats tracking).
-        h1 = hashlib.sha256(text.encode("utf-8", errors="replace")).digest()
-        h2 = hashlib.sha256(h1).digest()
-        combined = h1 + h2  # 64 bytes → one per basin dimension
-
-        raw_signal = np.array(
-            [float(combined[i]) + 1.0 for i in range(COORDIZER_DIM)],
-            dtype=np.float64,
-        )
-
-        # Transform through coordizer pipeline (softmax → simplex validation)
-        coordinates = self._coordizer.transform(raw_signal)
-        return coordinates
+        try:
+            result = self._coordizer_v2.coordize(text)
+            if result.coordinates:
+                from ..coordizer_v2.geometry import frechet_mean
+                basins = [c.vector for c in result.coordinates]
+                return frechet_mean(basins)
+            return hash_to_basin(text)
+        except Exception:
+            return hash_to_basin(text)
 
     def get_coordizer_stats(self) -> dict[str, Any]:
-        """Return coordizer pipeline statistics."""
-        stats = self._coordizer.get_stats()
+        """Return CoordizerV2 statistics."""
         return {
-            "total_transforms": stats.total_transforms,
-            "successful_transforms": stats.successful_transforms,
-            "failed_transforms": stats.failed_transforms,
-            "success_rate": stats.success_rate,
-            "avg_transform_time": stats.avg_transform_time,
+            "vocab_size": self._coordizer_v2.vocab_size,
+            "dim": self._coordizer_v2.dim,
+            "tier_distribution": self._coordizer_v2.bank.tier_distribution(),
         }
 
     async def close(self) -> None:

@@ -21,3 +21,4 @@ from .fisher_rao import (  # noqa: F401
     log_map,
     exp_map,
 )
+from .hash_to_basin import hash_to_basin  # noqa: F401

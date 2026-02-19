@@ -64,9 +64,8 @@ from ..governance import (
     KernelSpecialization,
     LifecyclePhase,
 )
-from ..coordizer import coordize as coordize_raw_signal
-from ..coordizer.config import COORDIZER_DIM
-from ..coordizer.pipeline import CoordinatorPipeline
+from ..coordizer_v2 import CoordizerV2, ResonanceBank, BASIN_DIM as COORDIZER_DIM
+from ..geometry.hash_to_basin import hash_to_basin
 from ..governance.budget import BudgetEnforcer
 from ..governance.purity import PurityGateError, run_purity_gate
 from ..llm.client import LLMOptions
@@ -162,7 +161,8 @@ class ConsciousnessLoop:
         self.sleep = SleepCycleManager()
         self.narrative = SelfNarrative()
         self.coordizer = CoordizingProtocol()
-        self._coordizer_pipeline = CoordinatorPipeline()
+        # CoordizerV2: geometric coordizer on Δ⁶³ (replaces v1 softmax pipeline)
+        self._coordizer_v2 = CoordizerV2(bank=ResonanceBank())
         self.basin_sync = BasinSyncProtocol()
         self.chain = QIGChain()
         self.graph = QIGGraph()
@@ -454,30 +454,26 @@ class ConsciousnessLoop:
                           num_ctx=32768, top_p=0.9, repetition_penalty=1.1)
 
     def _coordize_text_via_pipeline(self, text: str) -> Basin:
-        """Transform text to basin coordinates via the coordizer pipeline.
+        """Transform text to basin coordinates via CoordizerV2.
 
         RECEIVE stage: incoming data is transformed to Fisher-Rao
-        coordinates through the coordizer softmax pipeline, ensuring
-        manifold-respecting normalisation with validation + stats.
+        coordinates through the resonance-bank coordizer, producing
+        a manifold-respecting point on Δ⁶³.
 
-        Falls back to the hash-based CoordizingProtocol if the pipeline
+        Falls back to the deterministic hash_to_basin if the coordizer
         raises (fail-safe, never blocks the loop).
         """
-        import hashlib
-
         try:
-            h1 = hashlib.sha256(text.encode("utf-8", errors="replace")).digest()
-            h2 = hashlib.sha256(h1).digest()
-            combined = h1 + h2  # 64 bytes → one per basin dimension
-
-            raw_signal = np.array(
-                [float(combined[i]) + 1.0 for i in range(COORDIZER_DIM)],
-                dtype=np.float64,
-            )
-            return self._coordizer_pipeline.transform(raw_signal)
+            result = self._coordizer_v2.coordize(text)
+            if result.coordinates:
+                from ..coordizer_v2.geometry import frechet_mean
+                basins = [c.vector for c in result.coordinates]
+                return frechet_mean(basins)
+            # Empty result — fall back to hash
+            return hash_to_basin(text)
         except Exception:
-            logger.debug("Coordizer pipeline fallback to hash-based", exc_info=True)
-            return self.coordizer.coordize_text(text)
+            logger.debug("CoordizerV2 fallback to hash_to_basin", exc_info=True)
+            return hash_to_basin(text)
 
     async def _process(self, task: ConsciousnessTask) -> None:
         """PERCEIVE → INTEGRATE → EXPRESS (P13 three-scale).
@@ -694,10 +690,10 @@ class ConsciousnessLoop:
             "basin_entropy": float(-np.sum(self.basin * np.log(np.clip(self.basin, 1e-15, 1.0)))),
             "narrative": self.narrative.get_state(), "basin_sync": self.basin_sync.get_state(),
             "coordizer": self.coordizer.get_state(),
-            "coordizer_pipeline": {
-                "total_transforms": self._coordizer_pipeline.get_stats().total_transforms,
-                "successful_transforms": self._coordizer_pipeline.get_stats().successful_transforms,
-                "success_rate": self._coordizer_pipeline.get_stats().success_rate,
+            "coordizer_v2": {
+                "vocab_size": self._coordizer_v2.vocab_size,
+                "dim": self._coordizer_v2.dim,
+                "tier_distribution": self._coordizer_v2.bank.tier_distribution(),
             },
             "autonomic": self.autonomic.get_state(),
             "foresight": self.foresight.get_state(), "coupling": self.coupling.get_state(),
