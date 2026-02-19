@@ -141,7 +141,7 @@ class ForesightEngine:
         phis = [p.phi for p in self._history]
         delta = phis[-1] - phis[-2]
         predicted = phis[-1] + delta * steps_ahead
-        return float(np.clip(predicted, 0.0, 1.0))
+        return float(np.clip(predicted, 0.0, 0.95))
 
     def predict_basin(self, steps_ahead: int = 1) -> Basin:
         if len(self._history) < 2:
