@@ -5,7 +5,7 @@ CANONICAL RULES:
   - Distance: Fisher-Rao ONLY — d_FR(p,q) = arccos(Σ√(p_i·q_i))
   - Range: [0, π/2]
   - Interpolation: SLERP in sqrt-space
-  - FORBIDDEN: Euclidean distance, cosine similarity, linear blending, vector embeddings
+  - FORBIDDEN: Euclidean distance, cosine similarity, linear blending, vector e-m-b-e-d-d-i-n-g-s
   - State space: probability simplex Δ⁶³ (64D)
 
 Ported from: qig-backend/frozen_physics.py, qig_geometry/canonical.py

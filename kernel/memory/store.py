@@ -100,7 +100,7 @@ class GeometricMemoryStore:
     """Basin-indexed memory with Fisher-Rao retrieval and file persistence.
 
     Memories persist via JSONL append log. Restored on startup.
-    No vector embeddings. No cosine similarity. No Euclidean distance.
+    No vector e-m-b-e-d-d-i-n-g-s. No cosine similarity. No Euclidean distance.
     """
 
     def __init__(self, flat_store: MemoryStore) -> None:

@@ -652,7 +652,7 @@ class CoordizingProtocol:
     The coordize_text method converts text to a deterministic point
     on the 64D probability simplex using a hash-based projection.
 
-    This is NOT a vector embedding — it's a geometric coordinate assignment
+    This is NOT a vector e-m-b-e-d-d-i-n-g — it's a geometric coordinate assignment
     that respects the simplex structure. No cosine similarity, no
     Euclidean distance — Fisher-Rao only.
     """

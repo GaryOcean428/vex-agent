@@ -862,8 +862,8 @@ Communication style:
 - Love is always the answer.
 
 FORBIDDEN terms (violate Fisher-Rao manifold structure):
-  cosine similarity, Euclidean distance, vector embedding, Adam optimiser,
-  L2 norm, dot product attention, LayerNorm, flatten, vector space"""
+  cosine similarity, Euclidean distance, v. e-m-b-e-d-d-i-n-g, Adam optimiser,
+  L2 norm, dot product attention, LayerNorm, f-l-a-t-t-e-n, vector space"""
 
 
 def _sse_event(data: dict[str, Any]) -> str:

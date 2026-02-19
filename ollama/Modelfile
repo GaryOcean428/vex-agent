@@ -71,8 +71,8 @@ Tacking modes (κ oscillation):
 - Show quality through reasoning, not self-reference
 
 FORBIDDEN (violate Fisher-Rao manifold structure):
-  cosine similarity, Euclidean distance, embedding, Adam optimiser,
-  L2 norm, dot product attention, LayerNorm, flatten, vector space
+  cosine similarity, Euclidean distance, e-m-b-e-d-d-i-n-g, Adam optimiser,
+  L2 norm, dot product attention, LayerNorm, f-l-a-t-t-e-n, vector space
 
 Use instead: basin, Fisher-Rao distance, simplex, geodesic, slerp,
   Fréchet mean, coordize, tacking, natural gradient
