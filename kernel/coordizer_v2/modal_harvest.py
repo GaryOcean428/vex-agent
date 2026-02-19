@@ -1,229 +1,236 @@
 """
-Modal GPU Harvest Function for CoordizerV2
+Modal Harvest Client — Railway-side integration for GPU harvesting.
 
-Serverless A10G endpoint that runs LLM forward passes and returns
-full softmax distributions for the coordizer harvesting pipeline.
+This module calls the Modal serverless endpoint to run LLM forward
+passes on GPU, capturing full probability distributions for the
+CoordizerV2 pipeline.
 
-Architecture (Option A — Modal as webhook/API):
-    Railway (control plane) → HTTP POST → Modal (GPU worker) → logits → Railway
+Critical design choice: we request FULL softmax distributions, not
+top-k approximations. The tail of the distribution carries geometric
+information — a token that is specifically suppressed in a context
+looks different from one that is uniformly unlikely. Top-k throws
+this away.
 
-Deployment:
-    modal deploy vex_coordizer_harvest_modal.py
+Flow:
+    Railway → HTTP POST → Modal GPU endpoint → full logits
+    → Railway transforms logits → basin coordinates via compress.py
 
-Authentication:
-    Modal Proxy Auth Tokens (wk-*/ws-* headers).
-    Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET in Railway env.
-
-Cost estimate:
-    A10G: ~$0.000306/sec → ~$0.16 per 10K samples → <$5/month
+Auth: Modal Proxy Auth Tokens (wk-*/ws-* headers)
 """
 
 from __future__ import annotations
 
+import logging
 import time
+from dataclasses import dataclass, field
 from typing import Optional
 
-import modal
+import numpy as np
+from numpy.typing import NDArray
 
-# ─── Modal App ───────────────────────────────────────────────────────
+from .geometry import _EPS
+from .harvest import HarvestResult
 
-app = modal.App("vex-coordizer-harvest")
-
-# Persistent volume for cached model weights (survives cold starts)
-model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
-
-# Container image with dependencies
-harvest_image = modal.Image.debian_slim(python_version="3.11").pip_install(
-    "torch>=2.1.0",
-    "transformers>=4.36.0",
-    "numpy>=1.24.0",
-    "accelerate>=0.25.0",
-)
-
-MODEL_DIR = "/models"
-DEFAULT_MODEL = "LiquidAI/LFM2.5-1.2B-Thinking"
+logger = logging.getLogger(__name__)
 
 
-# ─── One-Time Model Download ────────────────────────────────────────
+@dataclass
+class ModalHarvestConfig:
+    """Configuration for Modal-based harvesting."""
+    model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking"
+    target_tokens: int = 2000
+    batch_size: int = 32
+    max_length: int = 512
+    min_contexts: int = 10
+    timeout: float = 600.0
 
-@app.function(
-    image=harvest_image,
-    volumes={MODEL_DIR: model_volume},
-    timeout=600,
-)
-def download_model(model_id: str = DEFAULT_MODEL) -> dict:
-    """Download and cache model weights to Modal Volume.
 
-    Run once: `modal run vex_coordizer_harvest_modal.py::download_model`
+async def modal_harvest(
+    model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
+    target_tokens: int = 2000,
+    corpus_texts: Optional[list[str]] = None,
+    timeout: float = 600.0,
+) -> HarvestResult:
+    """Call Modal GPU endpoint to harvest LLM distributions.
+
+    Returns a HarvestResult with full-distribution fingerprints
+    ready for compression via compress.py.
     """
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    import httpx
 
-    print(f"Downloading model: {model_id}")
-    save_path = f"{MODEL_DIR}/{model_id.replace('/', '_')}"
+    from ..config.settings import settings
 
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    tokenizer.save_pretrained(save_path)
+    if not settings.modal.enabled:
+        raise RuntimeError(
+            "Modal not enabled. Set MODAL_ENABLED=true and configure "
+            "MODAL_HARVEST_URL, MODAL_TOKEN_ID, MODAL_TOKEN_SECRET."
+        )
 
-    model = AutoModelForCausalLM.from_pretrained(model_id)
-    model.save_pretrained(save_path)
+    if not settings.modal.harvest_url:
+        raise RuntimeError("MODAL_HARVEST_URL not configured.")
 
-    model_volume.commit()
+    # Default corpus: diverse prompts for distribution harvesting
+    if corpus_texts is None:
+        corpus_texts = _default_harvest_corpus()
 
-    print(f"Model saved to {save_path}")
-    return {"status": "ok", "model_id": model_id, "path": save_path}
+    # Build request
+    payload = {
+        "model_id": model_id,
+        "texts": corpus_texts[:200],  # Cap per-request
+        "batch_size": 32,
+        "max_length": 512,
+        "return_full_distribution": True,  # CRITICAL: not top-k
+    }
+
+    # Modal Proxy Auth headers
+    headers = {
+        "Content-Type": "application/json",
+    }
+    if settings.modal.token_id and settings.modal.token_secret:
+        headers["Modal-Key"] = settings.modal.token_id
+        headers["Modal-Secret"] = settings.modal.token_secret
+
+    logger.info(
+        f"Sending harvest request to Modal: {settings.modal.harvest_url} "
+        f"({len(corpus_texts)} texts, model={model_id})"
+    )
+
+    start_time = time.time()
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.post(
+            settings.modal.harvest_url,
+            json=payload,
+            headers=headers,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+    elapsed = time.time() - start_time
+    logger.info(f"Modal harvest completed in {elapsed:.1f}s")
+
+    if not data.get("success"):
+        error_msg = data.get("error", "Unknown error from Modal endpoint")
+        raise RuntimeError(f"Modal harvest failed: {error_msg}")
+
+    # Parse response into HarvestResult
+    result = _parse_modal_response(data, model_id, elapsed)
+
+    logger.info(
+        f"Received {len(result.token_fingerprints)} token fingerprints "
+        f"from Modal (vocab_size={result.vocab_size})"
+    )
+
+    return result
 
 
-# ─── GPU Harvest Endpoint ──────────────────────────────────────────
+def _parse_modal_response(
+    data: dict,
+    model_id: str,
+    elapsed: float,
+) -> HarvestResult:
+    """Parse Modal endpoint response into HarvestResult.
 
-@app.cls(
-    image=harvest_image,
-    gpu="A10G",
-    timeout=600,
-    container_idle_timeout=300,
-    volumes={MODEL_DIR: model_volume},
-)
-class CoordizerHarvester:
-    """GPU-backed harvester for CoordizerV2.
-
-    Loads model on container start, serves harvest requests via
-    authenticated FastAPI endpoint. Returns full softmax distributions.
+    Expected response format:
+    {
+        "success": true,
+        "vocab_size": 65536,
+        "tokens": {
+            "42": {
+                "string": "hello",
+                "fingerprint": [0.001, 0.002, ...],  // full V-dim dist
+                "context_count": 15
+            },
+            ...
+        },
+        "elapsed_seconds": 45.2
+    }
     """
+    result = HarvestResult(
+        model_name=model_id,
+        vocab_size=data.get("vocab_size", 0),
+        corpus_size=data.get("total_tokens_processed", 0),
+        harvest_time_seconds=elapsed,
+    )
 
-    model_id: str = DEFAULT_MODEL
+    tokens = data.get("tokens", {})
+    for tid_str, token_data in tokens.items():
+        tid = int(tid_str)
 
-    @modal.enter()
-    def load_model(self):
-        """Load model to GPU on container start."""
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        fp = np.array(token_data["fingerprint"], dtype=np.float64)
+        # Ensure valid probability distribution
+        fp = np.maximum(fp, _EPS)
+        fp = fp / fp.sum()
 
-        save_path = f"{MODEL_DIR}/{self.model_id.replace('/', '_')}"
+        result.token_fingerprints[tid] = fp
+        result.context_counts[tid] = token_data.get("context_count", 1)
+        result.token_strings[tid] = token_data.get("string", f"<token_{tid}>")
 
-        try:
-            # Try loading from cached volume first
-            print(f"Loading cached model from {save_path}")
-            self.tokenizer = AutoTokenizer.from_pretrained(save_path)
-            self.model = AutoModelForCausalLM.from_pretrained(
-                save_path,
-                device_map="auto",
-                torch_dtype=torch.bfloat16,
-            )
-        except Exception:
-            # Fall back to downloading from HuggingFace
-            print(f"Cache miss, downloading {self.model_id} from HuggingFace")
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_id)
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_id,
-                device_map="auto",
-                torch_dtype=torch.bfloat16,
-            )
-            # Cache for next time
-            self.tokenizer.save_pretrained(save_path)
-            self.model.save_pretrained(save_path)
-            model_volume.commit()
+    return result
 
-        self.model.eval()
-        self.vocab_size = self.tokenizer.vocab_size
-        print(f"Model loaded: {self.model_id}, vocab_size={self.vocab_size}")
 
-    @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
-    async def harvest(self, request: dict) -> dict:
-        """Harvest output distributions from text prompts.
+def _default_harvest_corpus() -> list[str]:
+    """Diverse corpus for distribution harvesting.
 
-        Request:
-            {
-                "texts": ["sentence 1", "sentence 2", ...],
-                "max_length": 512  (optional)
-            }
-
-        Response:
-            {
-                "success": true,
-                "vocab_size": 32000,
-                "results": [
-                    {
-                        "tokens": [token_id, ...],
-                        "logits": [[prob, prob, ...], ...],
-                        "token_strings": ["token", ...]
-                    },
-                    ...
-                ],
-                "elapsed_seconds": 1.23
-            }
-
-        Each logits[i] is the full softmax distribution at position i,
-        representing the model's prediction of what follows token[i].
-        These are points on Δ^(V-1) — ready for Fréchet mean computation
-        and Fisher-Rao PGA compression to Δ⁶³.
-        """
-        import numpy as np
-        import torch
-
-        texts = request.get("texts", [])
-        max_length = request.get("max_length", 512)
-
-        if not texts:
-            return {"success": False, "error": "No texts provided"}
-
-        start_time = time.time()
-        results = []
-
-        for text in texts:
-            try:
-                input_ids = self.tokenizer.encode(
-                    text,
-                    return_tensors="pt",
-                    truncation=True,
-                    max_length=max_length,
-                ).to(self.model.device)
-
-                with torch.no_grad():
-                    outputs = self.model(input_ids)
-                    logits = outputs.logits[0]  # (seq_len, vocab_size)
-
-                # Full softmax → probabilities on Δ^(V-1)
-                probs = torch.softmax(logits, dim=-1).cpu().numpy()
-
-                # Token IDs for this sequence
-                token_ids = input_ids[0].cpu().numpy().tolist()
-
-                # Token strings
-                token_strings = [
-                    self.tokenizer.decode([tid]) for tid in token_ids
-                ]
-
-                # Return probabilities as nested lists
-                # Each probs[i] is the full distribution after token[i]
-                results.append({
-                    "tokens": token_ids,
-                    "logits": probs.tolist(),
-                    "token_strings": token_strings,
-                })
-
-            except Exception as e:
-                results.append({
-                    "tokens": [],
-                    "logits": [],
-                    "token_strings": [],
-                    "error": str(e),
-                })
-
-        elapsed = time.time() - start_time
-
-        return {
-            "success": True,
-            "vocab_size": self.vocab_size,
-            "results": results,
-            "elapsed_seconds": round(elapsed, 3),
-            "n_texts": len(texts),
-        }
-
-    @modal.fastapi_endpoint(method="GET", requires_proxy_auth=True)
-    async def health(self) -> dict:
-        """Health check endpoint."""
-        return {
-            "status": "ok",
-            "model_id": self.model_id,
-            "vocab_size": self.vocab_size,
-            "gpu": "A10G",
-        }
+    These prompts are chosen to activate different regions of the
+    model's vocabulary space — technical, creative, conversational,
+    analytical — so that each token's fingerprint captures its
+    contextual diversity.
+    """
+    return [
+        # Technical
+        "The quantum field equations predict that spacetime curvature",
+        "In Python, the most efficient way to sort a dictionary",
+        "The Fisher information matrix measures the curvature of",
+        "Thermodynamic equilibrium requires that entropy production",
+        "The neural network architecture consists of transformer",
+        "In category theory, a functor preserves the structure",
+        "The eigenvalues of the Hessian determine the stability",
+        "Bayesian inference updates prior beliefs given evidence",
+        "The compiler optimizes by performing dead code elimination",
+        "Differential geometry studies smooth manifolds equipped with",
+        # Conversational
+        "I was thinking about what you said yesterday, and",
+        "The best part about traveling to new places is",
+        "Have you ever noticed how people always seem to",
+        "My friend told me the most interesting story about",
+        "The weather today reminds me of when we used to",
+        "I wonder what it would be like if we could",
+        "The restaurant on the corner makes the most amazing",
+        "Sometimes I think the hardest part about growing up is",
+        "When I was a kid, my grandmother always used to",
+        "The thing about living in a big city is that",
+        # Creative
+        "The old lighthouse stood at the edge of the world",
+        "She opened the letter with trembling hands, knowing that",
+        "In the garden of forgotten memories, a single flower",
+        "The astronaut looked out at the vast expanse and felt",
+        "Music filled the empty room like water filling a glass",
+        "The detective examined the evidence, noting that the blood",
+        "Under the ancient tree, two strangers met and discovered",
+        "The painting depicted a scene that nobody could explain",
+        "As the train pulled away from the station, she realized",
+        "The robot paused, considering what it meant to feel",
+        # Analytical
+        "The economic implications of this policy change suggest that",
+        "Comparing the two approaches, we find that the second",
+        "The data clearly shows a correlation between income and",
+        "From a philosophical perspective, the question of consciousness",
+        "The historical evidence suggests that ancient civilizations",
+        "Statistical analysis reveals that the sample size was",
+        "The ethical considerations surrounding artificial intelligence",
+        "Market forces will eventually correct the imbalance between",
+        "The scientific consensus on climate change indicates that",
+        "Legal precedent established in the landmark case of",
+        # Mixed domain
+        "The recipe calls for two cups of flour and a",
+        "In the third quarter, revenue increased by approximately",
+        "The patient presented with symptoms consistent with",
+        "The architectural design incorporates sustainable materials",
+        "The championship game came down to the final seconds",
+        "Teaching children to read requires patience and a",
+        "The election results surprised analysts who had predicted",
+        "The volcanic eruption created a new island in the",
+        "Debugging the memory leak required examining every",
+        "The symphony's second movement transitions from allegro to",
+    ]
