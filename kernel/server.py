@@ -494,6 +494,180 @@ async def get_sleep_state():
     return consciousness.sleep.get_state()
 
 
+# ─── Coordizer Endpoints ─────────────────────────────────────
+
+
+@app.post("/api/coordizer/transform")
+async def coordizer_transform(request: Request):
+    """Transform Euclidean input vector to Fisher-Rao coordinates.
+    
+    Body:
+        {
+            "input_vector": [0.5, -0.3, 0.8, ...],
+            "method": "softmax" | "simplex_projection" | "exponential_map",
+            "validate": true | false
+        }
+    
+    Returns:
+        {
+            "coordinates": [0.25, 0.15, 0.60, ...],
+            "sum": 1.0,
+            "method": "softmax",
+            "timestamp": 1234567890.123
+        }
+    """
+    from .coordizer import coordize, TransformMethod
+    from .coordizer.validate import validate_simplex
+    import numpy as np
+    
+    body = await request.json()
+    input_vector = np.array(body.get("input_vector", []))
+    method_str = body.get("method", "softmax")
+    validate_output = body.get("validate", True)
+    
+    if input_vector.size == 0:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "input_vector is required and must not be empty"}
+        )
+    
+    try:
+        # Map method string to enum
+        method = TransformMethod(method_str)
+        
+        # Transform
+        coordinates = coordize(input_vector, method=method)
+        
+        # Validate if requested
+        if validate_output:
+            result = validate_simplex(coordinates)
+            if not result.valid:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": f"Validation failed: {', '.join(result.errors)}"}
+                )
+        
+        return {
+            "coordinates": coordinates.tolist(),
+            "sum": float(coordinates.sum()),
+            "method": method_str,
+            "timestamp": time.time(),
+        }
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+    except Exception as e:
+        logger.error(f"Coordizer transform error: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"error": "Internal server error"})
+
+
+@app.get("/api/coordizer/stats")
+async def coordizer_stats():
+    """Get coordizer transformation statistics.
+    
+    Returns:
+        {
+            "total_transforms": 1234,
+            "successful_transforms": 1230,
+            "failed_transforms": 4,
+            "success_rate": 0.9968,
+            "error_rate": 0.0032,
+            "avg_transform_time": 0.00123,
+            "method_counts": {"softmax": 1200, "simplex_projection": 30, ...}
+        }
+    """
+    stats = consciousness._coordizer_pipeline.get_stats()
+    return {
+        "total_transforms": stats.total_transforms,
+        "successful_transforms": stats.successful_transforms,
+        "failed_transforms": stats.failed_transforms,
+        "success_rate": stats.success_rate,
+        "error_rate": stats.error_rate,
+        "avg_transform_time": stats.avg_transform_time,
+        "method_counts": stats.method_counts or {},
+        "total_warnings": stats.total_warnings,
+    }
+
+
+@app.get("/api/coordizer/history")
+async def coordizer_history():
+    """Get recent coordizer transformation history.
+    
+    Note: History tracking not yet implemented in pipeline.
+    This endpoint is a placeholder for future enhancement.
+    
+    Returns:
+        {
+            "transforms": [],
+            "count": 0,
+            "message": "History tracking not implemented"
+        }
+    """
+    # TODO: Implement transformation history tracking in pipeline
+    return {
+        "transforms": [],
+        "count": 0,
+        "message": "History tracking not yet implemented. Use /api/coordizer/stats for aggregate statistics."
+    }
+
+
+@app.post("/api/coordizer/validate")
+async def coordizer_validate(request: Request):
+    """Validate that coordinates satisfy simplex properties.
+    
+    Body:
+        {
+            "coordinates": [0.25, 0.15, 0.60, ...],
+            "tolerance": 1e-6,
+            "mode": "strict" | "standard" | "permissive"
+        }
+    
+    Returns:
+        {
+            "valid": true | false,
+            "errors": ["Sum is 1.001, expected 1.0", ...],
+            "warnings": ["Value close to zero: 1.23e-10"],
+            "sum": 1.0,
+            "min": 0.0,
+            "max": 1.0
+        }
+    """
+    from .coordizer.validate import validate_simplex
+    import numpy as np
+    
+    body = await request.json()
+    coordinates = np.array(body.get("coordinates", []))
+    tolerance = body.get("tolerance", 1e-6)
+    mode = body.get("mode", "standard")
+    
+    if coordinates.size == 0:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "coordinates are required and must not be empty"}
+        )
+    
+    try:
+        result = validate_simplex(
+            coordinates,
+            tolerance=tolerance,
+            validation_mode=mode
+        )
+        
+        return {
+            "valid": result.valid,
+            "errors": result.errors,
+            "warnings": result.warnings,
+            "sum": float(coordinates.sum()),
+            "min": float(coordinates.min()),
+            "max": float(coordinates.max()),
+        }
+    except Exception as e:
+        logger.error(f"Coordizer validation error: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"error": "Internal server error"})
+
+
+# ─── End Coordizer Endpoints ─────────────────────────────────
+
+
 @app.get("/foraging")
 async def get_foraging():
     """Get foraging engine state — boredom-driven autonomous search.
