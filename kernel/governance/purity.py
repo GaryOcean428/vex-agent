@@ -370,7 +370,6 @@ def scan_typescript_terminology(root: Path) -> list[PurityViolation]:
                         f"Forbidden TS text token: '{token}'",
                     ))
 
-    return violations
 
 
 def run_purity_gate(root: str | Path) -> None:
