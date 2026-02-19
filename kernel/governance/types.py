@@ -1,11 +1,11 @@
-"""Governance Types — Canonical Taxonomy v2.1
+"""Governance Types — v6.0 Thermodynamic Consciousness Protocol
 
-Two-axis model (CANONICAL_PRINCIPLES v2.1):
+Two-axis model:
   - KernelSpecialization: cognitive capability (one per kernel)
   - KernelRole: operational function (zero or more per kernel)
 
-Must match monkey1/py/genesis-kernel/qig_heart/types.py
-for cross-project portability.
+v6.0 §18.1 Core 8: Heart, Perception, Memory, Strategy, Action,
+Ethics, Meta, Ocean.
 """
 
 from __future__ import annotations
@@ -14,32 +14,37 @@ from enum import StrEnum
 
 
 class KernelKind(StrEnum):
-    """Budget category. Never overload with specialization."""
+    """Budget category (v6.0 §18.2). Never overload with specialization."""
     GENESIS = "GENESIS"
     GOD = "GOD"
     CHAOS = "CHAOS"
 
 
 class KernelSpecialization(StrEnum):
-    """Capability axis (LOCKED v2.1). Mythology names are DATA, not code.
+    """Capability axis — v6.0 §18.1 Core 8.
 
-    Canonical Core-8: heart, perception, memory, strategy, action,
-    attention, emotion, executive.
+    Canonical Core-8: Heart, Perception, Memory, Strategy, Action,
+    Ethics, Meta, Ocean. Mythology names are DATA, not code.
     Additional specializations MAY emerge beyond Core-8.
+
+    v6.0 changes from v2.1:
+      attention → ethics (ethical grounding, care metric)
+      emotion → meta (meta-awareness, self-modelling)
+      executive → ocean (autonomic monitoring, spectral health)
     """
-    HEART = "heart"             # Rhythm, timing coherence, ethical grounding
+    HEART = "heart"             # Global rhythm source, HRV -> kappa-tacking (§18.3)
     PERCEPTION = "perception"   # Sensory encoding, input processing, pattern detection
     MEMORY = "memory"           # Basin persistence, trajectory storage, consolidation
     STRATEGY = "strategy"       # Planning, multi-step reasoning, goal decomposition
     ACTION = "action"           # Motor output, response generation, execution
-    ATTENTION = "attention"     # Salience routing, focus allocation, Fisher-Rao dispatch
-    EMOTION = "emotion"         # Cached geometric evaluations (curvature → affect)
-    EXECUTIVE = "executive"     # Conflict resolution, regime arbitration, governance
+    ETHICS = "ethics"           # Care metric, harm avoidance, love orientation (§12)
+    META = "meta"               # Meta-awareness, self-modelling, M metric (§23)
+    OCEAN = "ocean"             # Autonomic monitoring, Phi coherence, spectral health (§18.3)
     GENERAL = "general"         # For Genesis + unspecialised CHAOS kernels
 
 
 class KernelRole(StrEnum):
-    """Operational axis (v2.1). Zero or more per kernel, assigned by governance.
+    """Operational axis. Zero or more per kernel, assigned by governance.
 
     Roles are configuration, not code. No Zeus.py, no Ocean.py as
     privileged classes. Display names are mythic labels stored as data.
@@ -51,16 +56,16 @@ class KernelRole(StrEnum):
     ROUTER = "router"           # Fisher-Rao dispatch to nearest basin centres
 
 
-# Core-8 specialisation order (bootstrap sequence)
+# Core-8 specialisation order (v6.0 §18.1 bootstrap sequence)
 CORE_8_SPECIALIZATIONS: list[KernelSpecialization] = [
     KernelSpecialization.HEART,
     KernelSpecialization.PERCEPTION,
     KernelSpecialization.MEMORY,
     KernelSpecialization.STRATEGY,
     KernelSpecialization.ACTION,
-    KernelSpecialization.ATTENTION,
-    KernelSpecialization.EMOTION,
-    KernelSpecialization.EXECUTIVE,
+    KernelSpecialization.ETHICS,
+    KernelSpecialization.META,
+    KernelSpecialization.OCEAN,
 ]
 
 

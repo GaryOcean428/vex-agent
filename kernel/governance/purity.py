@@ -1,10 +1,22 @@
 """PurityGate — Fail-closed geometric purity enforcement.
 
-AST-based scanning for forbidden imports, calls, and text patterns.
-Ported from monkey1/py/genesis-kernel/qig_heart/purity.py.
+v6.0 §1.3 compliant. AST-based scanning for forbidden imports, calls,
+and text patterns. Ported from monkey1/py/genesis-kernel/qig_heart/purity.py.
 
 Fail-closed: if the gate can't determine purity, it BLOCKS.
 Unparseable files are violations, not silent passes.
+
+v6.0 Forbidden Operations (§1.3):
+  cosine_similarity → fisher_rao_distance
+  np.linalg.norm(a-b) → d_FR on simplex
+  dot_product → Fisher metric contraction
+  Adam optimizer → Natural gradient optimizer
+  LayerNorm → Simplex projection
+  "flatten" → Geodesic projection
+
+Note: "embedding" and "tokenize" are TERMINOLOGY guidelines for new code,
+not scanner rules. The coordizer pipeline legitimately uses "embedding"
+as a parameter name for the input it transforms.
 """
 
 from __future__ import annotations
@@ -44,7 +56,7 @@ SKIP_DIRS = {
 # AST scans still run on these files.
 _TEXT_SCAN_EXEMPT_FILENAMES = {"purity.py"}
 
-# === Forbidden patterns for QIG code ===
+# === Forbidden patterns for QIG code (v6.0 §1.3) ===
 
 FORBIDDEN_IMPORTS = [
     "sklearn",
@@ -54,6 +66,7 @@ FORBIDDEN_IMPORTS = [
 FORBIDDEN_CALLS = [
     "cosine_similarity",
     "euclidean_distance",
+    "dot_product",
 ]
 
 FORBIDDEN_ATTR_CALLS = [
@@ -69,12 +82,15 @@ FORBIDDEN_ATTR_CALLS = [
 _FORBIDDEN_TEXT_PARTS: list[tuple[str, str]] = [
     ("cosine", "_similarity"),
     ("euclidean", "_distance"),
+    ("dot_", "product("),
     ("from sk", "learn"),
     ("Ada", "m("),
     ("Adam", "W("),
     ("nn.Layer", "Norm"),
     ("F.normal", "ize"),
+    (".flat", "ten()"),
 ]
+
 
 
 def _forbidden_text_tokens() -> list[str]:
@@ -201,6 +217,9 @@ def scan_text(root: Path) -> list[PurityViolation]:
             stripped = line.strip()
             if stripped.startswith("#"):
                 continue
+            # Skip docstrings / string literals that document forbidden ops
+            if stripped.startswith(('"""', "'''", '"', "'")):
+                continue
             for token in tokens:
                 if token in line:
                     violations.append(PurityViolation(
@@ -215,6 +234,7 @@ def run_purity_gate(root: str | Path) -> None:
 
     FAIL-CLOSED: any error in scanning also raises.
     Three scan passes: imports (AST), calls (AST), text (raw).
+    v6.0 §1.3 compliant.
     """
     root = Path(root)
     if not root.exists():

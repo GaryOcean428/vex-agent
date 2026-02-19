@@ -64,7 +64,7 @@ from ..governance import (
     KernelSpecialization,
     LifecyclePhase,
 )
-from ..coordizer import coordize as coordize_embedding
+from ..coordizer import coordize as coordize_raw_signal
 from ..coordizer.config import COORDIZER_DIM
 from ..coordizer.pipeline import CoordinatorPipeline
 from ..governance.budget import BudgetEnforcer
@@ -470,11 +470,11 @@ class ConsciousnessLoop:
             h2 = hashlib.sha256(h1).digest()
             combined = h1 + h2  # 64 bytes → one per basin dimension
 
-            embedding = np.array(
+            raw_signal = np.array(
                 [float(combined[i]) + 1.0 for i in range(COORDIZER_DIM)],
                 dtype=np.float64,
             )
-            return self._coordizer_pipeline.transform(embedding)
+            return self._coordizer_pipeline.transform(raw_signal)
         except Exception:
             logger.debug("Coordizer pipeline fallback to hash-based", exc_info=True)
             return self.coordizer.coordize_text(text)
