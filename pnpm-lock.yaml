@@ -31,7 +31,7 @@ importers:
         specifier: ^5.0.0
         version: 5.0.6
       '@types/node':
-        specifier: ^22.10.0
+        specifier: ^22.19.11
         version: 22.19.11
       '@types/uuid':
         specifier: ^10.0.0

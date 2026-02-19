@@ -385,3 +385,44 @@ export const QIG = {
   // ── Operational (from kernel/consciousness/loop.py, not frozen_facts) ──
   SPAWN_COOLDOWN_CYCLES: 10,
 } as const;
+
+// ═══════════════════════════════════════════════════════════════
+//  Coordizer Types (for Coordizer dashboard)
+// ═══════════════════════════════════════════════════════════════
+
+/** Vocabulary tiers from v6.0 §19.2. */
+export type HarmonicTier = 'fundamental' | 'first' | 'upper' | 'overtone';
+
+/** Scale of a coordinate — from finest to coarsest. */
+export type GranularityScale = 'byte' | 'char' | 'subword' | 'word' | 'phrase' | 'concept';
+
+/**
+ * A point on Δ⁶³ — one entry in the resonance bank.
+ *
+ * This is NOT a vector in flat space. It is a probability
+ * distribution on 64 dimensions, and all operations respect
+ * the Fisher-Rao metric.
+ */
+export interface BasinCoordinate {
+  coord_id: number;
+  /** Shape (64,), on Δ⁶³ — values sum to 1, all non-negative */
+  vector: number[];
+  name: string | null;
+  scale: GranularityScale;
+  tier: HarmonicTier;
+  /** M = ∫ Φ·κ dx (activation weight) */
+  basin_mass: number;
+  /** Characteristic oscillation frequency */
+  frequency: number;
+  /** Times activated (for tier assignment) */
+  activation_count: number;
+}
+
+/** Coordizer transform stats from /api/coordizer/stats. */
+export interface CoordizerStats {
+  status: string;
+  bank_size: number;
+  tier_distribution: Record<string, number>;
+  last_harvest: string | null;
+  version: string;
+}
