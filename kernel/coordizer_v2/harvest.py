@@ -391,3 +391,47 @@ def harvest_model(
     result = harvester.harvest_transformers(model_id)
     result.save(output_dir)
     return result
+
+
+async def harvest_model_auto(
+    model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
+    corpus_path: Optional[str] = None,
+    corpus_texts: Optional[list[str]] = None,
+    output_dir: str = "./harvest_output",
+    target_tokens: int = 2000,
+    device: str = "cpu",
+    min_contexts: int = 10,
+) -> dict:
+    """Auto-routing harvest: Modal (if enabled) or local Transformers.
+
+    Checks settings.modal.enabled and delegates accordingly.
+    Returns a dict with harvest metadata.
+    """
+    from ..config.settings import settings
+
+    if settings.modal.enabled:
+        from .modal_harvest import modal_harvest
+
+        logger.info("Modal enabled — delegating harvest to Modal GPU")
+        result = await modal_harvest(
+            model_id=model_id,
+            target_tokens=target_tokens,
+        )
+        return result.to_dict()
+
+    # Fall back to local harvesting
+    logger.info("Modal not enabled — running local harvest")
+    local_result = harvest_model(
+        model_id=model_id,
+        corpus_path=corpus_path,
+        corpus_texts=corpus_texts,
+        output_dir=output_dir,
+        device=device,
+        min_contexts=min_contexts,
+    )
+    return {
+        "success": True,
+        "token_count": len(local_result.token_fingerprints),
+        "model_name": local_result.model_name,
+        "harvest_time_seconds": local_result.harvest_time_seconds,
+    }

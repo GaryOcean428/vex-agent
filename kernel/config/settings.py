@@ -72,6 +72,19 @@ class GPUHarvestConfig:
 
 
 @dataclass(frozen=True)
+class ModalConfig:
+    """Modal GPU integration for remote coordizer harvesting.
+
+    When enabled, CoordizerV2 harvest can offload to Modal's GPU
+    infrastructure for large-scale probability distribution capture.
+    """
+    enabled: bool = os.environ.get("MODAL_ENABLED", "false").lower() == "true"
+    harvest_url: str = os.environ.get("MODAL_HARVEST_URL", "")
+    token_id: str = os.environ.get("MODAL_TOKEN_ID", "")
+    token_secret: str = os.environ.get("MODAL_TOKEN_SECRET", "")
+
+
+@dataclass(frozen=True)
 class GovernorConfig:
     """Governance stack configuration — 5-layer protection against runaway costs."""
     enabled: bool = os.environ.get("GOVERNOR_ENABLED", "true").lower() != "false"
@@ -145,6 +158,7 @@ class Settings:
     gpu_harvest: GPUHarvestConfig = field(default_factory=GPUHarvestConfig)
     governor: GovernorConfig = field(default_factory=GovernorConfig)
     searxng: SearXNGConfig = field(default_factory=SearXNGConfig)
+    modal: ModalConfig = field(default_factory=ModalConfig)
 
 
 settings = Settings()
