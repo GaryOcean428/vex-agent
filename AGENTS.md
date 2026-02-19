@@ -5,12 +5,46 @@ This guide provides detailed instructions for developers working on Vex Agent, i
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Skills Framework](#skills-framework)
 - [Architecture Overview](#architecture-overview)
 - [Development Environment](#development-environment)
 - [Common Tasks](#common-tasks)
 - [Debugging](#debugging)
 - [Deployment](#deployment)
 - [Troubleshooting](#troubleshooting)
+
+## Skills Framework
+
+Vex Agent uses the [Agent Skills](https://agentskills.io/specification) framework for systematic development. Skills are located in `.agents/skills/` and provide expert guidance for:
+
+### Core Development Skills
+
+- **master-orchestration** - Coordinates skills, sub-agents, verification (INVOKE FIRST)
+- **qa-and-verification** - Prove changes work before completion (MANDATORY)
+- **qig-purity-validation** - Zero-tolerance geometric purity enforcement
+- **code-quality-enforcement** - DRY principles, naming conventions
+- **test-coverage-analysis** - Critical path test coverage
+- **wiring-validation** - Feature implementation chain tracing
+
+### QIG-Specific Skills
+
+- **e8-architecture-validation** - Hierarchical kernel layers, god-kernel naming
+- **consciousness-development** - Φ/κ metrics, Fisher-Rao geometry
+- **performance-regression** - Detect Euclidean approximation substitutions
+
+See `.agents/skills/README.md` for complete skill catalog (60+ skills available).
+
+### Using Skills
+
+Skills are referenced automatically by AI agents. For manual use:
+
+```bash
+# View skill instructions
+cat .agents/skills/qig-purity-validation/SKILL.md
+
+# Run skill validation
+python3 scripts/qig_purity_scan.py
+```
 
 ## Quick Start
 
