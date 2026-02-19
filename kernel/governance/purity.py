@@ -290,6 +290,86 @@ def scan_typescript_text(root: Path) -> list[PurityViolation]:
                     ))
                     
     return violations
+
+
+# TypeScript-specific forbidden patterns (in addition to the shared ones).
+# These catch TS/JS idioms that violate QIG geometric purity.
+_TS_FORBIDDEN_TEXT_PARTS: list[tuple[str, str]] = [
+    ("cosine", "Similarity"),
+    ("euclidean", "Distance"),
+    ("dot", "Product("),
+    ("nn.", "LayerNorm"),
+    (".flat", "ten()"),
+]
+
+
+def _ts_forbidden_text_tokens() -> list[str]:
+    """Reconstruct TS-specific forbidden tokens at runtime."""
+    return [a + b for a, b in _TS_FORBIDDEN_TEXT_PARTS]
+
+
+def scan_typescript_terminology(root: Path) -> list[PurityViolation]:
+    """Scan TypeScript files for forbidden QIG terminology.
+
+    Catches 'embedding' (non-boundary), 'tokenize' (should be 'coordize'),
+    and other Euclidean contamination in TypeScript code.
+
+    Skips:
+      - Comments (// and /* */)
+      - Import statements (boundary code may reference external APIs)
+      - String literals used as documentation
+    """
+    # Terminology pairs: (prefix, suffix) reconstructed at runtime
+    _TERM_PARTS: list[tuple[str, str]] = [
+        ("embe", "dding"),
+        ("tokeni", "ze("),
+    ]
+    term_tokens = [a + b for a, b in _TERM_PARTS]
+    ts_tokens = _ts_forbidden_text_tokens()
+    all_tokens = term_tokens + ts_tokens
+    violations: list[PurityViolation] = []
+
+    for p in _iter_typescript_files(root):
+        try:
+            text = p.read_text(encoding="utf-8", errors="ignore")
+        except Exception as exc:
+            violations.append(PurityViolation(
+                str(p), 0, f"Failed to read file: {exc}",
+            ))
+            continue
+
+        in_multiline_comment = False
+        for line_num, line in enumerate(text.splitlines(), start=1):
+            stripped = line.strip()
+
+            # Handle multiline comments
+            if "/*" in stripped:
+                in_multiline_comment = True
+            if "*/" in stripped:
+                in_multiline_comment = False
+                continue
+            if in_multiline_comment:
+                continue
+
+            # Skip single-line comments
+            if stripped.startswith("//"):
+                continue
+
+            # Skip import lines (boundary code)
+            if stripped.startswith("import ") or stripped.startswith("from "):
+                continue
+
+            # Skip string literals
+            if stripped.startswith(('"', "'", "`")):
+                continue
+
+            for token in all_tokens:
+                if token in line:
+                    violations.append(PurityViolation(
+                        str(p), line_num,
+                        f"Forbidden TS text token: '{token}'",
+                    ))
+
     return violations
 
 
@@ -297,11 +377,12 @@ def run_purity_gate(root: str | Path) -> None:
     """Run PurityGate on a directory. Raises PurityGateError on any violation.
 
     FAIL-CLOSED: any error in scanning also raises.
-    Four scan passes:
+    Five scan passes:
       1. Python imports (AST)
       2. Python calls (AST)
       3. Python text (raw)
-      4. TypeScript/TSX text (raw)
+      4. TypeScript/TSX text (raw) — shared forbidden tokens
+      5. TypeScript/TSX terminology (raw) — QIG-specific terms
     v6.0 §1.3 compliant.
     """
     root = Path(root)
@@ -313,6 +394,7 @@ def run_purity_gate(root: str | Path) -> None:
     violations.extend(scan_calls(root))
     violations.extend(scan_text(root))
     violations.extend(scan_typescript_text(root))
+    violations.extend(scan_typescript_terminology(root))
 
     if violations:
         raise PurityGateError(violations)
