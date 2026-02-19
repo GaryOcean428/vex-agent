@@ -50,6 +50,28 @@ class ComputeSDKConfig:
 
 
 @dataclass(frozen=True)
+class GPUHarvestConfig:
+    """GPU-accelerated coordizer harvest via ComputeSDK/Railway.
+
+    When enabled, the harvest pipeline runs on GPU instances through
+    the ComputeSDK Railway provider for full probability distribution
+    capture from Transformers/vLLM backends.
+
+    v6.0 §19: CoordizerV2 three-phase scoring (256→2K→10K→32K)
+    with four vocabulary tiers.
+    """
+    enabled: bool = os.environ.get("GPU_HARVEST_ENABLED", "false").lower() == "true"
+    model_id: str = os.environ.get("GPU_HARVEST_MODEL", "meta-llama/Llama-3.2-3B")
+    batch_size: int = int(os.environ.get("GPU_HARVEST_BATCH_SIZE", "32"))
+    vocab_target: int = int(os.environ.get("GPU_HARVEST_VOCAB_TARGET", "32768"))
+    artifact_dir: str = os.environ.get("GPU_HARVEST_ARTIFACT_DIR", "/data/resonance-bank")
+    # Three-phase scoring thresholds (v6.0 §19.1)
+    phase1_cutoff: int = int(os.environ.get("GPU_HARVEST_PHASE1_CUTOFF", "2000"))
+    phase2_cutoff: int = int(os.environ.get("GPU_HARVEST_PHASE2_CUTOFF", "10000"))
+    phase3_cutoff: int = int(os.environ.get("GPU_HARVEST_PHASE3_CUTOFF", "32768"))
+
+
+@dataclass(frozen=True)
 class GovernorConfig:
     """Governance stack configuration — 5-layer protection against runaway costs."""
     enabled: bool = os.environ.get("GOVERNOR_ENABLED", "true").lower() != "false"
@@ -120,6 +142,7 @@ class Settings:
     llm: LLMConfig = field(default_factory=LLMConfig)
     xai: XAIConfig = field(default_factory=XAIConfig)
     compute_sdk: ComputeSDKConfig = field(default_factory=ComputeSDKConfig)
+    gpu_harvest: GPUHarvestConfig = field(default_factory=GPUHarvestConfig)
     governor: GovernorConfig = field(default_factory=GovernorConfig)
     searxng: SearXNGConfig = field(default_factory=SearXNGConfig)
 

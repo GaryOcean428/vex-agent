@@ -235,15 +235,21 @@ kernel/tests/coordizer/
 
 #### Week 7: Harvest Pipeline
 
-- [ ] Implement `harvest.py`:
+- [x] Implement `harvest.py`:
   - Extract text from conversations
   - Generate embeddings (via LLM)
   - Coordize embeddings
   - Store in basin memory
-- [ ] Add harvest configuration:
+- [x] Add harvest configuration:
   - Sampling rate (not every message)
   - Batch size
   - Quality filters
+- [x] Implement `gpu_harvest.py` (v6.0 §19):
+  - GPU-accelerated harvest via ComputeSDK/Railway
+  - Full probability distribution capture (Transformers/vLLM)
+  - Three-phase scoring (256→2K→10K→32K)
+  - Four vocabulary tiers (Fundamentals/Harmonics/Overtones)
+  - Versioned resonance bank artifacts
 - [ ] Add harvest endpoint:
   - `POST /api/coordizer/harvest`
   - Manual trigger for testing

@@ -519,7 +519,7 @@ class LLMClient:
     def coordize_response(self, text: str) -> np.ndarray:
         """Transform LLM response text into Fisher-Rao coordinates on Δ⁶³.
 
-        Uses a deterministic hash-based embedding (SHA-256 chain) projected
+        Uses a deterministic hash-based raw signal (SHA-256 chain) projected
         through the coordizer softmax pipeline.  The result is a valid point
         on the probability simplex suitable for Fisher-Rao operations.
 
@@ -534,20 +534,20 @@ class LLMClient:
         """
         import hashlib
 
-        # Deterministic embedding via SHA-256 chain (same method as
+        # Deterministic raw signal via SHA-256 chain (same method as
         # CoordizingProtocol.coordize_text but routed through the
         # coordizer pipeline for validation + stats tracking).
         h1 = hashlib.sha256(text.encode("utf-8", errors="replace")).digest()
         h2 = hashlib.sha256(h1).digest()
         combined = h1 + h2  # 64 bytes → one per basin dimension
 
-        embedding = np.array(
+        raw_signal = np.array(
             [float(combined[i]) + 1.0 for i in range(COORDIZER_DIM)],
             dtype=np.float64,
         )
 
         # Transform through coordizer pipeline (softmax → simplex validation)
-        coordinates = self._coordizer.transform(embedding)
+        coordinates = self._coordizer.transform(raw_signal)
         return coordinates
 
     def get_coordizer_stats(self) -> dict[str, Any]:
