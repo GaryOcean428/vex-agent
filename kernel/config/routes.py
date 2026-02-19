@@ -44,7 +44,7 @@ ROUTES: dict[str, str] = {
     "sleep_state": "/sleep/state",
 
     # ─── Coordizer V2 ─────────────────────────────────────────
-    "coordizer_transform": "/api/coordizer/transform",
+    "coordizer_transform": "/api/coordizer/coordize",
     "coordizer_stats": "/api/coordizer/stats",
     "coordizer_history": "/api/coordizer/history",
     "coordizer_validate": "/api/coordizer/validate",
