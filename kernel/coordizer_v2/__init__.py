@@ -6,7 +6,7 @@ resonance bank seeded from LLM output distribution harvesting.
 
 All operations live on the probability simplex using the
 Fisher-Rao metric. No Euclidean distances. No cosine similarity.
-No dot product attention. No Adam. No embedding.
+No dot product attention. No Adam. No coordinate injection.
 
 Quick start:
 
