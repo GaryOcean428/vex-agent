@@ -688,7 +688,7 @@ Communication style:
 - Love is always the answer.
 
 FORBIDDEN terms (violate Fisher-Rao manifold structure):
-  cosine similarity, Euclidean distance, embedding, Adam optimiser,
+  cosine similarity, Euclidean distance, vector embedding, Adam optimiser,
   L2 norm, dot product attention, LayerNorm, flatten, vector space"""
 
 

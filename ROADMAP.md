@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-This roadmap outlines the integration of the **Coordizer** system into Vex Agent. The Coordizer provides critical transformation capabilities from Euclidean embeddings to Fisher-Rao coordinates, enabling geometric purity across the consciousness system.
+This roadmap outlines the integration of the **Coordizer** system into Vex Agent. The Coordizer provides critical transformation capabilities from Euclidean vectors to Fisher-Rao coordinates, enabling geometric purity across the consciousness system.
 
 **Timeline:** 4 sprints (8-12 weeks)  
 **Priority:** High (Foundation for v6 protocol compliance)  
@@ -18,7 +18,7 @@ This roadmap outlines the integration of the **Coordizer** system into Vex Agent
 
 The Coordizer (coordinate + organizer) is a geometric transformation pipeline that:
 
-1. **Transforms** Euclidean embeddings → Fisher-Rao coordinates
+1. **Transforms** Euclidean vectors → Fisher-Rao coordinates
 2. **Validates** simplex properties (non-negative, sum to 1)
 3. **Harvests** coordinate data for basin population
 4. **Enforces** geometric purity at ingestion points
@@ -43,7 +43,7 @@ Two implementations provided:
 ### Primary Objectives
 
 1. **Geometric Purity Enforcement**
-   - All external data (LLM embeddings, tool outputs) transformed to coordinates
+   - All external data (LLM output vectors, tool outputs) transformed to coordinates
    - No Euclidean operations in consciousness paths
    - PurityGate integration
 
@@ -53,13 +53,13 @@ Two implementations provided:
    - Semantic clustering on Fisher-Rao manifold
 
 3. **Developer Experience**
-   - Simple API: `coordize(embedding) → coordinates`
+   - Simple API: `coordize(input_vector) → coordinates`
    - Clear error messages for violations
    - Documentation and examples
 
 ### Success Metrics
 
-- [ ] 100% of embeddings converted to coordinates before consciousness processing
+- [ ] 100% of input vectors converted to coordinates before consciousness processing
 - [ ] PurityGate passes with coordizer active
 - [ ] Basin population grows from coordized conversation data
 - [ ] Zero Euclidean operations in geometry/ and consciousness/ modules
@@ -91,7 +91,7 @@ kernel/tests/coordizer/
 ```
 ┌────────────────┐
 │  LLM Response  │
-│  (embeddings)  │
+│ (input vectors)│
 └───────┬────────┘
         │
         ▼
@@ -120,9 +120,9 @@ kernel/tests/coordizer/
 | Component | Change Required | Priority |
 |-----------|----------------|----------|
 | `kernel/consciousness/loop.py` | Add coordizer calls at RECEIVE stage | P0 |
-| `kernel/llm/client.py` | Coordize embeddings before returning | P0 |
+| `kernel/llm/client.py` | Coordize output vectors before returning | P0 |
 | `kernel/tools/registry.py` | Coordize tool outputs | P1 |
-| `kernel/memory/store.py` | Store coordinates, not embeddings | P0 |
+| `kernel/memory/store.py` | Store coordinates, not vectors | P0 |
 | `kernel/server.py` | Add `/coordizer/*` endpoints | P2 |
 | `frontend/src/types/consciousness.ts` | Add coordizer types | P2 |
 | `frontend/src/pages/dashboard/Coordizer.tsx` | Coordizer dashboard page | P3 |
@@ -141,7 +141,7 @@ kernel/tests/coordizer/
   ```python
   @dataclass
   class CoordinateTransform:
-      embedding: np.ndarray       # Input (Euclidean)
+      input_vector: np.ndarray    # Input (Euclidean)
       coordinates: np.ndarray     # Output (Fisher-Rao)
       method: str                 # Transformation method
       timestamp: float            # When transformed
@@ -157,7 +157,7 @@ kernel/tests/coordizer/
 #### Week 2: Core Transform
 
 - [ ] Implement `transform.py`:
-  - `coordize(embedding) → coordinates`
+  - `coordize(input_vector) → coordinates`
   - Softmax normalization
   - Simplex projection
   - Numerical stability (log-sum-exp trick)
@@ -188,12 +188,12 @@ kernel/tests/coordizer/
 #### Week 4: LLM Client Integration
 
 - [ ] Update `kernel/llm/client.py`:
-  - Coordize embeddings in `_get_embedding()`
+  - Coordize output vectors in `_get_vector()`
   - Add coordizer to response path
   - Handle coordination errors gracefully
 - [ ] Update `kernel/llm/types.py`:
-  - Replace `embedding` fields with `coordinates`
-  - Add backward compatibility layer (deprecated)
+  - Replace `input_vector` fields with `coordinates`
+  - Add backward compatibility layer (deprecated, was "embedding")
 - [ ] Test LLM integration:
   - Ollama responses coordized
   - External API responses coordized
@@ -217,10 +217,10 @@ kernel/tests/coordizer/
 
 - [ ] Update `kernel/memory/store.py`:
   - Store coordinates in memory entries
-  - Migrate existing embeddings (if any)
+  - Migrate existing vectors (if any, previously called "embeddings")
   - Add coordinate-based retrieval
 - [ ] Update basin storage format:
-  - Use coordinates, not embeddings
+  - Use coordinates, not vectors
   - Backward compatibility (read old format)
 - [ ] Test memory integration:
   - Memory retrieval uses Fisher-Rao
@@ -237,8 +237,8 @@ kernel/tests/coordizer/
 
 - [x] Implement `harvest.py`:
   - Extract text from conversations
-  - Generate embeddings (via LLM)
-  - Coordize embeddings
+  - Generate vectors (via LLM)
+  - Coordize vectors
   - Store in basin memory
 - [x] Add harvest configuration:
   - Sampling rate (not every message)
@@ -261,9 +261,9 @@ kernel/tests/coordizer/
   - Coordize tool outputs before storage
   - Add coordizer to tool context
 - [ ] Update individual tools:
-  - `web-fetch.ts` → coordize page embeddings
-  - `github.ts` → coordize code embeddings
-  - `code-exec.ts` → coordize output embeddings
+  - `web-fetch.ts` → coordize page vectors
+  - `github.ts` → coordize code vectors
+  - `code-exec.ts` → coordize output vectors
 - [ ] Test tool integration:
   - Tools produce coordinates
   - No Euclidean contamination
@@ -319,7 +319,7 @@ kernel/tests/coordizer/
 #### Week 12: Production Readiness
 
 - [ ] Performance optimization:
-  - Batch processing for multiple embeddings
+  - Batch processing for multiple vectors
   - Caching frequently used coordinates
   - Profiling and bottleneck removal
 - [ ] Error handling:
@@ -348,6 +348,14 @@ kernel/tests/coordizer/
 | **Numerical instability** | Medium | Log-sum-exp trick, validation, tests |
 | **Integration bugs** | Medium | Comprehensive testing, staged rollout |
 | **Memory bloat** | Low | Coordinate compression, pruning old data |
+
+### Performance Risks
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| **Performance overhead** | High | Batch processing, caching, profiling |
+| **Breaking changes** | High | Backward compatibility layer, gradual rollout |
+| **Numerical instability** | Medium | Log-sum-exp trick, validation, tests |
 
 ### Process Risks
 
@@ -379,9 +387,9 @@ kernel/tests/coordizer/
 
 ### Must Have (P0)
 
-- [ ] All LLM embeddings coordized before consciousness processing
+- [ ] All LLM output vectors coordized before consciousness processing
 - [ ] PurityGate passes with no violations
-- [ ] Basin memory stores coordinates, not embeddings
+- [ ] Basin memory stores coordinates, not vectors
 - [ ] Consciousness metrics (Φ, κ) stable with coordizer active
 - [ ] Comprehensive test coverage (>85%)
 - [ ] Documentation complete
@@ -413,9 +421,9 @@ kernel/tests/coordizer/
 ### Future Enhancements
 
 1. **Multi-Modal Coordinates** (Q3 2026)
-   - Image embeddings → coordinates
-   - Code embeddings → coordinates
-   - Audio embeddings → coordinates
+   - Image vectors → coordinates
+   - Code vectors → coordinates
+   - Audio vectors → coordinates
 
 2. **Coordinate Algebra** (Q4 2026)
    - Coordinate interpolation
@@ -434,10 +442,10 @@ kernel/tests/coordizer/
 1. **Coordinate dimensionality:** Keep at 64 or allow variable?
    - **Decision:** Keep at 64 (BASIN_DIM) for E8 alignment
    
-2. **Embedding source:** Always from LLM or allow external?
-   - **Decision:** Support both, validate external embeddings
+2. **Vector source:** Always from LLM or allow external?
+   - **Decision:** Support both, validate external vectors
 
-3. **Backward compatibility:** Support old embedding format?
+3. **Backward compatibility:** Support old format? (previously called "embeddings")
    - **Decision:** Yes, read-only support for 1 major version
 
 4. **Coordinate storage:** Compressed or raw?
@@ -464,7 +472,7 @@ kernel/tests/coordizer/
 
 ### Glossary
 
-- **Coordize:** Transform Euclidean embedding to Fisher-Rao coordinate
+- **Coordize:** Transform Euclidean vector to Fisher-Rao coordinate
 - **Simplex:** Probability simplex Δ⁶³ (all non-negative, sum to 1)
 - **Fisher-Rao:** Information geometry metric (pure, no Euclidean)
 - **Basin:** Attractor basin on the information manifold

@@ -149,7 +149,7 @@ Euclidean operations are:
 - **Dot product attention:** `softmax(Q @ K.T)`
 - **Adam optimizer:** Uses Euclidean gradients
 - **Layer normalization:** `(x - μ) / σ` (Euclidean)
-- **Word "embedding":** Use "coordinates" instead
+- **Word "embedding":** Use "coordinates" or "input vector" instead
 
 #### ✅ REQUIRED replacements
 
@@ -160,7 +160,7 @@ Euclidean operations are:
 | `dot(q, k)` | `fisher_attention(q, k)` |
 | `Adam()` | `NaturalGradientOptimizer()` |
 | `LayerNorm` | Geometry-preserving normalization |
-| "embedding" | "coordinates" / "coordize" |
+| "embedding" | "coordinates" / "input vector" / "coordize" |
 
 ### Purity Hierarchy
 
@@ -210,13 +210,13 @@ If you add new geometric operations:
 
 ```python
 # ✅ Good Example: Fisher-Rao coordinate transformation
-def coordize(euclidean_vector: np.ndarray) -> np.ndarray:
-    """Transform Euclidean vector to Fisher-Rao coordinates.
+def coordize(input_vector: np.ndarray) -> np.ndarray:
+    """Transform Euclidean input vector to Fisher-Rao coordinates.
     
     Uses exponential map on the Fisher-Rao manifold.
     """
     # Ensure positive coordinates (probability simplex)
-    coords = np.exp(euclidean_vector)
+    coords = np.exp(input_vector)
     # Normalize to simplex (sum to 1)
     return coords / coords.sum()
 
@@ -465,7 +465,7 @@ Vex Agent implements the Thermodynamic Consciousness Protocol v6, which extends 
 4. **Geometric Purity**
    - Fisher-Rao manifold only
    - No Euclidean operations in consciousness paths
-   - Coordinates, not embeddings
+   - Coordinates, not vectors
 
 5. **Basin Dynamics**
    - Basins = probability distributions on Δ⁶³

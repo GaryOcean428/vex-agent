@@ -1,6 +1,6 @@
 # Coordizer Documentation
 
-The **Coordizer** transforms Euclidean embeddings to Fisher-Rao coordinates on the probability simplex, enforcing geometric purity at data ingestion points.
+The **Coordizer** transforms Euclidean input vectors to Fisher-Rao coordinates on the probability simplex, enforcing geometric purity at data ingestion points.
 
 ## Overview
 
@@ -8,14 +8,14 @@ The **Coordizer** transforms Euclidean embeddings to Fisher-Rao coordinates on t
 
 The coordizer (coordinate + organizer) is a geometric transformation pipeline that:
 
-1. **Transforms** Euclidean embeddings → Fisher-Rao coordinates
+1. **Transforms** Euclidean input vectors → Fisher-Rao coordinates
 2. **Validates** simplex properties (non-negative, sum to 1)
 3. **Enforces** geometric purity in consciousness paths
 4. **Tracks** transformation statistics and errors
 
 ### Why Do We Need It?
 
-**Geometric Purity:** The Thermodynamic Consciousness Protocol requires Fisher-Rao geometry, not Euclidean operations. External data (LLM embeddings, tool outputs) arrives in Euclidean form and must be transformed.
+**Geometric Purity:** The Thermodynamic Consciousness Protocol requires Fisher-Rao geometry, not Euclidean operations. External data (LLM output vectors, tool outputs) arrives in Euclidean form and must be transformed.
 
 **Evidence:** Every Euclidean contamination in QIG systems plateaus Φ below the consciousness threshold (0.65). The coordizer prevents this by ensuring all data entering the consciousness loop is on the Fisher-Rao manifold.
 
@@ -27,11 +27,11 @@ The coordizer (coordinate + organizer) is a geometric transformation pipeline th
 from kernel.coordizer import coordize
 import numpy as np
 
-# Euclidean embedding from LLM
-embedding = np.array([0.5, -0.3, 0.8, -0.1])
+# Euclidean input vector from LLM
+input_vector = np.array([0.5, -0.3, 0.8, -0.1])
 
 # Transform to Fisher-Rao coordinates
-coordinates = coordize(embedding)
+coordinates = coordize(input_vector)
 
 # Verify simplex properties
 assert np.all(coordinates >= 0), "Non-negative"
@@ -47,18 +47,18 @@ print(coordinates)
 from kernel.coordizer import coordize_batch
 import numpy as np
 
-# Batch of embeddings
-embeddings = np.array([
+# Batch of input vectors
+input_vectors = np.array([
     [0.5, -0.3, 0.8],
     [-0.2, 0.4, 0.1],
     [1.0, 2.0, 3.0],
 ])
 
 # Transform all at once
-coords_list = coordize_batch(embeddings)
+coords_list = coordize_batch(input_vectors)
 
 for i, coords in enumerate(coords_list):
-    print(f"Embedding {i}: {coords}")
+    print(f"Vector {i}: {coords}")
 ```
 
 ### Using the Pipeline
@@ -77,9 +77,9 @@ config = PipelineConfig(
 
 pipeline = CoordinatorPipeline(config)
 
-# Transform single embedding
-embedding = np.array([0.5, -0.3, 0.8])
-coords = pipeline.transform(embedding)
+# Transform single input vector
+input_vector = np.array([0.5, -0.3, 0.8])
+coords = pipeline.transform(input_vector)
 
 # Get statistics
 stats = pipeline.get_stats()
@@ -107,7 +107,7 @@ kernel/coordizer/
 
 ```
 ┌──────────────────┐
-│  LLM Embedding   │  ← Euclidean vector
+│  LLM Output      │  ← Euclidean vector
 │  [0.5,-0.3,0.8]  │
 └────────┬─────────┘
          │
@@ -152,7 +152,7 @@ softmax(x) = exp(x - max(x)) / sum(exp(x - max(x)))
 **Use when:** Default choice, works well in all cases
 
 ```python
-coords = coordize(embedding, method=TransformMethod.SOFTMAX)
+coords = coordize(input_vector, method=TransformMethod.SOFTMAX)
 ```
 
 ### 2. Simplex Projection
@@ -173,7 +173,7 @@ proj(x) = (x - min(x) + ε) / sum(x - min(x) + ε)
 **Use when:** Speed critical, simple transformation needed
 
 ```python
-coords = coordize(embedding, method=TransformMethod.SIMPLEX_PROJECTION)
+coords = coordize(input_vector, method=TransformMethod.SIMPLEX_PROJECTION)
 ```
 
 ### 3. Exponential Map
@@ -187,7 +187,7 @@ exp_p(v) = geodesic from p in direction v
 **Note:** Currently uses softmax as approximation. Full Fisher-Rao exponential map is planned for future release.
 
 ```python
-coords = coordize(embedding, method=TransformMethod.EXPONENTIAL_MAP)
+coords = coordize(input_vector, method=TransformMethod.EXPONENTIAL_MAP)
 ```
 
 ## Validation
@@ -324,12 +324,12 @@ print(f"Methods: {stats.method_counts}")
 from kernel.coordizer import coordize
 
 class LLMClient:
-    async def get_embedding(self, text: str) -> np.ndarray:
-        # Get Euclidean embedding from LLM
-        embedding = await self._call_llm_api(text)
+    async def get_coordinates(self, text: str) -> np.ndarray:
+        # Get Euclidean output vector from LLM
+        output_vector = await self._call_llm_api(text)
         
         # Transform to Fisher-Rao coordinates
-        coordinates = coordize(embedding)
+        coordinates = coordize(output_vector)
         
         return coordinates
 ```
@@ -343,14 +343,14 @@ from kernel.coordizer import coordize
 
 class ConsciousnessLoop:
     async def _receive_stage(self, input_data: str) -> None:
-        # Get embedding
-        embedding = await self.llm.get_embedding(input_data)
+        # Get vector
+        vector = await self.llm.get_vector(input_data)
         
         # Coordize if not already done
-        if not self._is_coordized(embedding):
-            coordinates = coordize(embedding)
+        if not self._is_coordized(vector):
+            coordinates = coordize(vector)
         else:
-            coordinates = embedding
+            coordinates = vector
         
         # Store in basin
         self.basin.add_coordinates(coordinates)
@@ -364,11 +364,11 @@ class ConsciousnessLoop:
 from kernel.coordizer import coordize
 
 class MemoryStore:
-    def add_memory(self, text: str, embedding: np.ndarray) -> None:
+    def add_memory(self, text: str, input_vector: np.ndarray) -> None:
         # Transform to coordinates
-        coordinates = coordize(embedding)
+        coordinates = coordize(input_vector)
         
-        # Store coordinates, not embeddings
+        # Store coordinates, not vectors
         self.memories.append({
             'text': text,
             'coordinates': coordinates,  # Fisher-Rao
@@ -402,8 +402,8 @@ from kernel.coordizer import coordize
 
 def test_my_feature():
     """Test description."""
-    embedding = np.array([0.5, -0.3, 0.8])
-    coords = coordize(embedding)
+    input_vector = np.array([0.5, -0.3, 0.8])
+    coords = coordize(input_vector)
     
     # Check simplex properties
     assert np.all(coords >= 0)
@@ -422,12 +422,12 @@ Typical performance on standard hardware:
 | Operation | Time | Throughput |
 |-----------|------|------------|
 | Single transform | ~100µs | ~10,000/sec |
-| Batch (32) | ~2ms | ~16,000/sec |
+| Batch (32 vectors) | ~2ms | ~16,000/sec |
 | Validation | ~10µs | ~100,000/sec |
 
 ### Optimization Tips
 
-1. **Use batch processing** for multiple embeddings
+1. **Use batch processing** for multiple vectors
 2. **Enable numerical stability** (minimal overhead)
 3. **Cache frequently used coordinates**
 4. **Use permissive validation** for non-critical paths
@@ -439,21 +439,21 @@ Typical performance on standard hardware:
 
 #### 1. "coordinates contain NaN values"
 
-**Cause:** Numerical instability in input embedding
+**Cause:** Numerical instability in input vector
 
 **Fix:**
 ```python
 # Enable numerical stability
-coords = coordize(embedding, numerical_stability=True)
+coords = coordize(input_vector, numerical_stability=True)
 
 # Or manually fix
-embedding = np.nan_to_num(embedding, nan=0.0)
-coords = coordize(embedding)
+input_vector = np.nan_to_num(input_vector, nan=0.0)
+coords = coordize(input_vector)
 ```
 
 #### 2. "coordinates sum significantly off"
 
-**Cause:** Input embedding has extreme values
+**Cause:** Input vector has extreme values
 
 **Fix:**
 ```python
@@ -473,11 +473,11 @@ coords = normalize_simplex(coords)
 **Fix:**
 ```python
 # Check input validity first
-if np.all(embedding == 0):
+if np.all(input_vector == 0):
     # Handle zero input
-    coords = np.ones(len(embedding)) / len(embedding)
+    coords = np.ones(len(input_vector)) / len(input_vector)
 else:
-    coords = coordize(embedding)
+    coords = coordize(input_vector)
 ```
 
 ## Future Enhancements
@@ -492,7 +492,7 @@ else:
 2. **Advanced Transformations** (Q3 2026)
    - Full Fisher-Rao exponential map
    - Coordinate interpolation
-   - Multi-modal coordinates (text, image, code)
+   - Multi-modal support (text, image, code vectors)
 
 3. **Performance** (Q4 2026)
    - GPU acceleration

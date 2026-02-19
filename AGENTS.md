@@ -519,18 +519,18 @@ Structure:
 import numpy as np
 from kernel.geometry import ensure_simplex
 
-def coordize(embedding: np.ndarray) -> np.ndarray:
-    """Transform Euclidean embedding to Fisher-Rao coordinates.
+def coordize(input_vector: np.ndarray) -> np.ndarray:
+    """Transform Euclidean vector to Fisher-Rao coordinates.
     
     Args:
-        embedding: Euclidean vector (any dimensionality)
+        input_vector: Euclidean vector (any dimensionality)
         
     Returns:
         Coordinates on probability simplex (sum to 1, all positive)
     """
     # Apply softmax for positive values
-    exp_embed = np.exp(embedding - np.max(embedding))  # Numerical stability
-    coords = exp_embed / exp_embed.sum()
+    exp_vec = np.exp(input_vector - np.max(input_vector))  # Numerical stability
+    coords = exp_vec / exp_vec.sum()
     
     # Validate simplex properties
     coords = ensure_simplex(coords)
