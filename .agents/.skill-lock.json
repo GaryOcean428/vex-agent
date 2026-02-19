@@ -1,0 +1,146 @@
+{
+  "version": 3,
+  "skills": {
+    "central-station": {
+      "source": "railwayapp/railway-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/railwayapp/railway-skills.git",
+      "skillPath": "plugins/railway/skills/central-station/SKILL.md",
+      "skillFolderHash": "fea5003dd4d87be26698b682236ea573f8f73990",
+      "installedAt": "2026-02-14T03:12:35.119Z",
+      "updatedAt": "2026-02-14T03:12:35.119Z"
+    },
+    "database": {
+      "source": "railwayapp/railway-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/railwayapp/railway-skills.git",
+      "skillPath": "plugins/railway/skills/database/SKILL.md",
+      "skillFolderHash": "17cdfabce71b0fa28ae62bbe299254f7ad48779b",
+      "installedAt": "2026-02-14T03:12:35.194Z",
+      "updatedAt": "2026-02-14T03:12:35.194Z"
+    },
+    "deploy": {
+      "source": "railwayapp/railway-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/railwayapp/railway-skills.git",
+      "skillPath": "plugins/railway/skills/deploy/SKILL.md",
+      "skillFolderHash": "55226eb5499e4548eb0bb6110590da3a8cad831a",
+      "installedAt": "2026-02-14T03:12:35.264Z",
+      "updatedAt": "2026-02-14T03:12:35.264Z"
+    },
+    "deployment": {
+      "source": "railwayapp/railway-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/railwayapp/railway-skills.git",
+      "skillPath": "plugins/railway/skills/deployment/SKILL.md",
+      "skillFolderHash": "24f4fb4b6f52e867e466d59ac7e0bddf7bc1ea7a",
+      "installedAt": "2026-02-14T03:12:35.332Z",
+      "updatedAt": "2026-02-14T03:12:35.332Z"
+    },
+    "domain": {
+      "source": "railwayapp/railway-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/railwayapp/railway-skills.git",
+      "skillPath": "plugins/railway/skills/domain/SKILL.md",
+      "skillFolderHash": "96b80395b8e6e0651a2ccb777cbd43b42540c4d7",
+      "installedAt": "2026-02-14T03:12:35.402Z",
+      "updatedAt": "2026-02-14T03:12:35.402Z"
+    },
+    "environment": {
+      "source": "railwayapp/railway-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/railwayapp/railway-skills.git",
+      "skillPath": "plugins/railway/skills/environment/SKILL.md",
+      "skillFolderHash": "d4881c1b0645454f4794c065900f155f0ba4b23c",
+      "installedAt": "2026-02-14T03:12:35.474Z",
+      "updatedAt": "2026-02-14T03:12:35.474Z"
+    },
+    "metrics": {
+      "source": "railwayapp/railway-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/railwayapp/railway-skills.git",
+      "skillPath": "plugins/railway/skills/metrics/SKILL.md",
+      "skillFolderHash": "1e33b470a08587b4fb4c8a0bd0dbee9683f6ace9",
+      "installedAt": "2026-02-14T03:12:35.549Z",
+      "updatedAt": "2026-02-14T03:12:35.549Z"
+    },
+    "new": {
+      "source": "railwayapp/railway-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/railwayapp/railway-skills.git",
+      "skillPath": "plugins/railway/skills/new/SKILL.md",
+      "skillFolderHash": "c751d60915ff8086c42f3f107f4516693258a4aa",
+      "installedAt": "2026-02-14T03:12:35.623Z",
+      "updatedAt": "2026-02-14T03:12:35.623Z"
+    },
+    "projects": {
+      "source": "railwayapp/railway-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/railwayapp/railway-skills.git",
+      "skillPath": "plugins/railway/skills/projects/SKILL.md",
+      "skillFolderHash": "88be5ed7cedab39501d25ec27a74bc2c1ef93ef7",
+      "installedAt": "2026-02-14T03:12:35.694Z",
+      "updatedAt": "2026-02-14T03:12:35.694Z"
+    },
+    "railway-docs": {
+      "source": "railwayapp/railway-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/railwayapp/railway-skills.git",
+      "skillPath": "plugins/railway/skills/railway-docs/SKILL.md",
+      "skillFolderHash": "58f7db941ad1922b10e493f12f9476ad1f9c2614",
+      "installedAt": "2026-02-14T03:12:35.761Z",
+      "updatedAt": "2026-02-14T03:12:35.761Z"
+    },
+    "service": {
+      "source": "railwayapp/railway-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/railwayapp/railway-skills.git",
+      "skillPath": "plugins/railway/skills/service/SKILL.md",
+      "skillFolderHash": "5d42014744890f0d21e0eb540ebc8342f8b6666e",
+      "installedAt": "2026-02-14T03:12:35.828Z",
+      "updatedAt": "2026-02-14T03:12:35.828Z"
+    },
+    "status": {
+      "source": "railwayapp/railway-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/railwayapp/railway-skills.git",
+      "skillPath": "plugins/railway/skills/status/SKILL.md",
+      "skillFolderHash": "affb0e27cbf427798a97aac697526a2eed834828",
+      "installedAt": "2026-02-14T03:12:35.899Z",
+      "updatedAt": "2026-02-14T03:12:35.899Z"
+    },
+    "templates": {
+      "source": "railwayapp/railway-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/railwayapp/railway-skills.git",
+      "skillPath": "plugins/railway/skills/templates/SKILL.md",
+      "skillFolderHash": "beb37936743a82f0a6458abff15753e5d3cd247b",
+      "installedAt": "2026-02-14T03:12:35.969Z",
+      "updatedAt": "2026-02-14T03:12:35.969Z"
+    },
+    "find-skills": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/vercel-labs/skills.git",
+      "skillPath": "skills/find-skills/SKILL.md",
+      "skillFolderHash": "c2f31172b6f256272305a5e6e7228b258446899f",
+      "installedAt": "2026-02-14T03:12:44.776Z",
+      "updatedAt": "2026-02-14T03:12:44.776Z"
+    }
+  },
+  "dismissed": {
+    "findSkillsPrompt": true
+  },
+  "lastSelectedAgents": [
+    "amp",
+    "codex",
+    "gemini-cli",
+    "github-copilot",
+    "kimi-cli",
+    "opencode",
+    "antigravity",
+    "claude-code",
+    "cline",
+    "windsurf"
+  ]
+}

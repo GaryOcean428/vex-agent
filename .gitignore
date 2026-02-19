@@ -5,6 +5,10 @@ dist/
 data/workspace/*.md
 .DS_Store
 
+# Compressed files
+*.zip
+*.tar.gz
+
 # Frontend build output
 frontend/dist/
 frontend/node_modules/
