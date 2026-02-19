@@ -1,4 +1,10 @@
-"""Coordizer — Euclidean → Fisher-Rao coordinate transformation.
+"""DEPRECATED — Legacy Coordizer v1 (softmax wrapper).
+
+This module is archived for reference only. All live code should
+import from kernel.coordizer_v2 (CoordizerV2 resonance-bank coordizer).
+
+Original description:
+Coordizer — Euclidean → Fisher-Rao coordinate transformation.
 
 The coordizer provides geometric purity enforcement at data ingestion points,
 transforming Euclidean input vectors to Fisher-Rao coordinates on the probability

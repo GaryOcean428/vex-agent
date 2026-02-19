@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from kernel.coordizer.pipeline import CoordinatorPipeline
-from kernel.coordizer.types import PipelineConfig, TransformMethod
+from kernel._legacy_coordizer.pipeline import CoordinatorPipeline
+from kernel._legacy_coordizer.types import PipelineConfig, TransformMethod
 
 
 def test_pipeline_single_transform():

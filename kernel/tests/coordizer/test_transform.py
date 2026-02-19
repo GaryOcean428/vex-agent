@@ -3,13 +3,13 @@
 import numpy as np
 import pytest
 
-from kernel.coordizer.transform import (
+from kernel._legacy_coordizer.transform import (
     coordize,
     coordize_batch,
     _softmax_transform,
     _simplex_projection,
 )
-from kernel.coordizer.types import TransformMethod
+from kernel._legacy_coordizer.types import TransformMethod
 
 
 def test_coordize_basic():

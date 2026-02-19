@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from kernel.coordizer.validate import (
+from kernel._legacy_coordizer.validate import (
     validate_simplex,
     ensure_simplex,
     normalize_simplex,
