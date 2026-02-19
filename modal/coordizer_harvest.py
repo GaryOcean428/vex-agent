@@ -86,6 +86,11 @@ class CoordizerHarvester:
 
     Loads model once on container startup, then serves multiple
     harvest requests from the same container.
+
+    Supports two request formats:
+        1. Legacy: {"prompts": [...], "target_tokens": N}
+        2. JSONL batch: {"texts": [...], "max_length": N}
+           Returns full probability distributions per text.
     """
 
     @modal.enter()
@@ -97,7 +102,7 @@ class CoordizerHarvester:
         model_id = "meta-llama/Llama-3.2-3B"
         model_path = MODEL_DIR / model_id.replace("/", "--")
 
-        print(f"🔄 Loading model from {model_path}...")
+        print(f"Loading model from {model_path}...")
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_path,
             local_files_only=True,
@@ -109,27 +114,33 @@ class CoordizerHarvester:
             torch_dtype=torch.float16,  # Half precision for speed
         )
         self.model.eval()  # Inference mode
-        print(f"✅ Model loaded: {model_id}")
+        self.vocab_size = self.model.config.vocab_size
+        print(f"Model loaded: {model_id} (vocab={self.vocab_size})")
 
     @modal.method()
     @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
     def harvest(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Run coordizer harvest: capture vocabulary probability distributions.
+        """Run coordizer harvest: capture probability distributions.
 
-        Request body:
-            {
-                "prompts": ["The nature of consciousness is", ...],
-                "target_tokens": 2000,
-                "batch_size": 32
-            }
+        Accepts two formats:
 
-        Response:
+        Format 1 — Legacy (top-k tokens):
+            {"prompts": [...], "target_tokens": 2000, "batch_size": 32}
+
+        Format 2 — JSONL batch (full distributions per text):
+            {"texts": ["text1", "text2", ...], "max_length": 512}
+            Returns per-text token IDs and full logit distributions
+            for CoordizerV2 compression to basin coordinates.
+
+        Response (format 2):
             {
                 "success": true,
-                "vocab_size": 2000,
-                "tokens": ["token_0", "token_1", ...],
-                "logits": [[0.1, 0.2, ...], ...],  # Raw logits for each token
-                "elapsed_seconds": 45.2
+                "vocab_size": 32000,
+                "results": [
+                    {"tokens": [42, 17, ...], "logits": [[...], ...], "token_strings": ["hello", ...]},
+                    ...
+                ],
+                "elapsed_seconds": 1.23
             }
         """
         import time
@@ -138,67 +149,157 @@ class CoordizerHarvester:
 
         start_time = time.time()
 
-        # Extract request parameters
+        # ── Format 2: JSONL batch (texts with full distributions) ──
+        texts = data.get("texts", [])
+        if texts:
+            return self._harvest_batch(texts, data, start_time)
+
+        # ── Format 1: Legacy (prompts with top-k) ──
         prompts = data.get("prompts", [])
+        if prompts:
+            return self._harvest_legacy(prompts, data, start_time)
+
+        return {"success": False, "error": "No 'texts' or 'prompts' provided"}
+
+    def _harvest_batch(
+        self,
+        texts: list[str],
+        data: dict[str, Any],
+        start_time: float,
+    ) -> dict[str, Any]:
+        """JSONL batch harvest: full probability distributions per text."""
+        import time
+
+        import torch
+
+        max_length = data.get("max_length", 512)
+        results = []
+
+        try:
+            with torch.no_grad():
+                for text in texts:
+                    try:
+                        inputs = self.tokenizer(
+                            text,
+                            return_tensors="pt",
+                            truncation=True,
+                            max_length=max_length,
+                        ).to(self.model.device)
+
+                        outputs = self.model(**inputs, output_hidden_states=False)
+                        # outputs.logits shape: (1, seq_len, vocab_size)
+                        seq_logits = outputs.logits[0]  # (seq_len, vocab_size)
+
+                        # Convert to probability distributions (softmax)
+                        probs = torch.nn.functional.softmax(seq_logits, dim=-1)
+
+                        # Get input token IDs and their string representations
+                        token_ids = inputs["input_ids"][0].cpu().tolist()
+                        token_strings = [
+                            self.tokenizer.decode([tid]) for tid in token_ids
+                        ]
+
+                        # Return full logits as lists (for Frechet mean computation)
+                        logits_list = probs.cpu().float().tolist()
+
+                        results.append({
+                            "tokens": token_ids,
+                            "logits": logits_list,
+                            "token_strings": token_strings,
+                        })
+
+                    except Exception as e:
+                        print(f"Error processing text: {e}")
+                        results.append({
+                            "tokens": [],
+                            "logits": [],
+                            "token_strings": [],
+                            "error": str(e),
+                        })
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Batch harvest failed: {e}",
+                "elapsed_seconds": time.time() - start_time,
+            }
+
+        elapsed = time.time() - start_time
+        print(f"Batch harvest complete: {len(results)} texts in {elapsed:.1f}s")
+
+        return {
+            "success": True,
+            "vocab_size": self.vocab_size,
+            "results": results,
+            "elapsed_seconds": elapsed,
+            "n_texts": len(results),
+        }
+
+    def _harvest_legacy(
+        self,
+        prompts: list[str],
+        data: dict[str, Any],
+        start_time: float,
+    ) -> dict[str, Any]:
+        """Legacy harvest: top-k tokens across prompts."""
+        import time
+
+        import torch
+
         target_tokens = data.get("target_tokens", 2000)
         batch_size = data.get("batch_size", 32)
 
-        if not prompts:
-            return {
-                "success": False,
-                "error": "No prompts provided",
-            }
-
         print(
-            f"🎯 Harvest request: {len(prompts)} prompts, "
+            f"Legacy harvest: {len(prompts)} prompts, "
             f"target={target_tokens}, batch_size={batch_size}"
         )
 
-        # Collect vocabulary tokens and their logits
         vocab_tokens = []
         vocab_logits = []
-        seen_tokens = set()
+        seen_tokens: set[int] = set()
 
-        with torch.no_grad():
-            for prompt in prompts:
-                # Tokenize prompt
-                inputs = self.tokenizer(
-                    prompt,
-                    return_tensors="pt",
-                    padding=True,
-                    truncation=True,
-                    max_length=512,
-                ).to(self.model.device)
+        try:
+            with torch.no_grad():
+                for prompt in prompts:
+                    inputs = self.tokenizer(
+                        prompt,
+                        return_tensors="pt",
+                        padding=True,
+                        truncation=True,
+                        max_length=512,
+                    ).to(self.model.device)
 
-                # Run inference
-                outputs = self.model(**inputs, output_hidden_states=False)
-                logits = outputs.logits[0, -1, :]  # Last token logits
+                    outputs = self.model(**inputs, output_hidden_states=False)
+                    logits = outputs.logits[0, -1, :]  # Last token logits
 
-                # Get top-k tokens by probability
-                top_k = min(target_tokens, logits.shape[0])
-                top_logits, top_indices = torch.topk(logits, k=top_k)
+                    top_k = min(target_tokens, logits.shape[0])
+                    top_logits, top_indices = torch.topk(logits, k=top_k)
 
-                # Collect unique tokens
-                for idx, logit_value in zip(
-                    top_indices.cpu().tolist(),
-                    top_logits.cpu().tolist(),
-                ):
-                    if idx not in seen_tokens:
-                        token_str = self.tokenizer.decode([idx])
-                        vocab_tokens.append(token_str)
-                        vocab_logits.append(logit_value)
-                        seen_tokens.add(idx)
+                    for idx, logit_value in zip(
+                        top_indices.cpu().tolist(),
+                        top_logits.cpu().tolist(),
+                    ):
+                        if idx not in seen_tokens:
+                            token_str = self.tokenizer.decode([idx])
+                            vocab_tokens.append(token_str)
+                            vocab_logits.append(logit_value)
+                            seen_tokens.add(idx)
+
+                        if len(vocab_tokens) >= target_tokens:
+                            break
 
                     if len(vocab_tokens) >= target_tokens:
                         break
 
-                if len(vocab_tokens) >= target_tokens:
-                    break
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Legacy harvest failed: {e}",
+                "elapsed_seconds": time.time() - start_time,
+            }
 
         elapsed = time.time() - start_time
-        print(
-            f"✅ Harvest complete: {len(vocab_tokens)} tokens in {elapsed:.1f}s"
-        )
+        print(f"Legacy harvest complete: {len(vocab_tokens)} tokens in {elapsed:.1f}s")
 
         return {
             "success": True,
@@ -206,6 +307,15 @@ class CoordizerHarvester:
             "tokens": vocab_tokens,
             "logits": vocab_logits,
             "elapsed_seconds": elapsed,
+        }
+
+    @modal.fastapi_endpoint(method="GET")
+    def health(self) -> dict[str, Any]:
+        """Health check endpoint."""
+        return {
+            "status": "ok",
+            "model_id": "meta-llama/Llama-3.2-3B",
+            "vocab_size": getattr(self, "vocab_size", 0),
         }
 
 

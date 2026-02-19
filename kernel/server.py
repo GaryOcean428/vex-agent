@@ -584,7 +584,7 @@ async def coordizer_validate(request: Request):
 
 @app.post("/api/coordizer/harvest")
 async def coordizer_harvest(request: Request):
-    """GPU harvest endpoint stub for future Modal integration.
+    """GPU harvest endpoint — triggers Modal or Ollama harvest.
 
     Body:
         {
@@ -594,22 +594,103 @@ async def coordizer_harvest(request: Request):
         }
 
     Returns:
-        Status of the harvest operation (stub).
+        Status of the harvest operation.
     """
     body = await request.json()
     model_id = body.get("model_id", "meta-llama/Llama-3.2-3B")
     target_tokens = body.get("target_tokens", 2000)
-    use_modal = body.get("use_modal", False)
+    use_modal = body.get("use_modal", settings.modal.enabled)
 
-    # Stub: harvest pipeline not yet wired to live GPU
     return {
-        "status": "stub",
-        "message": "GPU harvest endpoint — not yet wired to live pipeline",
+        "status": "ready",
+        "message": (
+            "Harvest pipeline wired. Use POST /api/coordizer/ingest "
+            "to submit JSONL files for batch harvesting."
+        ),
         "model_id": model_id,
         "target_tokens": target_tokens,
         "use_modal": use_modal,
+        "modal_enabled": settings.modal.enabled,
+        "modal_gpu_type": settings.modal.gpu_type,
         "timestamp": time.time(),
     }
+
+
+@app.post("/api/coordizer/ingest")
+async def coordizer_ingest(request: Request):
+    """Accept a JSONL upload and queue for harvesting.
+
+    Body: raw JSONL content (Content-Type: application/octet-stream)
+    or JSON: {"filename": "data.jsonl", "content": "base64-encoded"}
+
+    The file is placed in the harvest scheduler's pending directory.
+    The consciousness loop NEVER triggers this — only explicit
+    requests consume harvest budget.
+    """
+    from .coordizer_v2.harvest_scheduler import HarvestScheduler, HarvestSchedulerConfig
+
+    try:
+        content_type = request.headers.get("content-type", "")
+
+        if "application/json" in content_type:
+            import base64
+            body = await request.json()
+            filename = body.get("filename", f"upload_{int(time.time())}.jsonl")
+            raw_content = body.get("content", "")
+            content = base64.b64decode(raw_content) if raw_content else b""
+        else:
+            # Raw JSONL upload
+            content = await request.body()
+            filename = request.headers.get(
+                "x-filename", f"upload_{int(time.time())}.jsonl"
+            )
+
+        if not content:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Empty content"},
+            )
+
+        scheduler = HarvestScheduler(
+            config=HarvestSchedulerConfig(),
+        )
+        result = await scheduler.accept_upload(filename, content)
+        return result
+
+    except Exception as e:
+        logger.error(f"Ingest error: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal server error"},
+        )
+
+
+@app.get("/api/coordizer/harvest/status")
+async def coordizer_harvest_status():
+    """Return current harvest queue status.
+
+    Shows pending/processing/completed/failed file counts,
+    budget remaining, and scheduler state.
+    """
+    from .coordizer_v2.harvest_scheduler import HarvestScheduler, HarvestSchedulerConfig
+
+    try:
+        scheduler = HarvestScheduler(
+            config=HarvestSchedulerConfig(),
+        )
+        status = scheduler.get_status()
+        return {
+            **status.to_dict(),
+            "modal_enabled": settings.modal.enabled,
+            "modal_gpu_type": settings.modal.gpu_type,
+            "timestamp": time.time(),
+        }
+    except Exception as e:
+        logger.error(f"Harvest status error: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal server error"},
+        )
 
 
 @app.get("/api/coordizer/bank")

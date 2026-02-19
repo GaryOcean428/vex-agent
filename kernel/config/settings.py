@@ -82,6 +82,7 @@ class ModalConfig:
     harvest_url: str = os.environ.get("MODAL_HARVEST_URL", "")
     token_id: str = os.environ.get("MODAL_TOKEN_ID", "")
     token_secret: str = os.environ.get("MODAL_TOKEN_SECRET", "")
+    gpu_type: str = os.environ.get("MODAL_GPU_TYPE", "A10G")
 
 
 @dataclass(frozen=True)
