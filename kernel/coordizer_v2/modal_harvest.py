@@ -1,181 +1,229 @@
-"""Modal GPU Harvest — Remote coordizer harvesting via Modal.
+"""
+Modal GPU Harvest Function for CoordizerV2
 
-Calls the Modal-deployed coordizer harvest function via httpx,
-providing an alternative to local GPU harvesting when Modal is
-configured and enabled.
+Serverless A10G endpoint that runs LLM forward passes and returns
+full softmax distributions for the coordizer harvesting pipeline.
 
-The Modal function (deployed separately from modal/coordizer_harvest.py)
-runs on A10G GPUs and returns probability distributions for resonance
-bank seeding.
+Architecture (Option A — Modal as webhook/API):
+    Railway (control plane) → HTTP POST → Modal (GPU worker) → logits → Railway
 
-Wire-in: CoordizerV2.harvest() checks settings.modal.enabled and
-delegates to modal_harvest() when True.
+Deployment:
+    modal deploy vex_coordizer_harvest_modal.py
+
+Authentication:
+    Modal Proxy Auth Tokens (wk-*/ws-* headers).
+    Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET in Railway env.
+
+Cost estimate:
+    A10G: ~$0.000306/sec → ~$0.16 per 10K samples → <$5/month
 """
 
 from __future__ import annotations
 
-import logging
-from dataclasses import dataclass
-from typing import Any
+import time
+from typing import Optional
 
-import httpx
+import modal
 
-from ..config.settings import settings
+# ─── Modal App ───────────────────────────────────────────────────────
 
-logger = logging.getLogger("vex.coordizer_v2.modal_harvest")
+app = modal.App("vex-coordizer-harvest")
 
+# Persistent volume for cached model weights (survives cold starts)
+model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 
-@dataclass
-class ModalHarvestResult:
-    """Result from a Modal GPU harvest call."""
-    success: bool
-    token_count: int = 0
-    distributions: list[dict[str, Any]] | None = None
-    error: str | None = None
-    modal_call_id: str | None = None
+# Container image with dependencies
+harvest_image = modal.Image.debian_slim(python_version="3.11").pip_install(
+    "torch>=2.1.0",
+    "transformers>=4.36.0",
+    "numpy>=1.24.0",
+    "accelerate>=0.25.0",
+)
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "success": self.success,
-            "token_count": self.token_count,
-            "distributions": self.distributions,
-            "error": self.error,
-            "modal_call_id": self.modal_call_id,
-        }
+MODEL_DIR = "/models"
+DEFAULT_MODEL = "LiquidAI/LFM2.5-1.2B-Thinking"
 
 
-async def modal_harvest(
-    *,
-    model_id: str | None = None,
-    target_tokens: int = 2000,
-    batch_size: int = 32,
-    timeout: float = 120.0,
-) -> ModalHarvestResult:
-    """Call the Modal-deployed coordizer harvest function.
+# ─── One-Time Model Download ────────────────────────────────────────
 
-    Args:
-        model_id: HuggingFace model ID for distribution capture.
-                  Defaults to settings.gpu_harvest.model_id.
-        target_tokens: Number of tokens to harvest distributions for.
-        batch_size: Batch size for GPU processing.
-        timeout: HTTP timeout in seconds.
+@app.function(
+    image=harvest_image,
+    volumes={MODEL_DIR: model_volume},
+    timeout=600,
+)
+def download_model(model_id: str = DEFAULT_MODEL) -> dict:
+    """Download and cache model weights to Modal Volume.
 
-    Returns:
-        ModalHarvestResult with distributions or error.
+    Run once: `modal run vex_coordizer_harvest_modal.py::download_model`
     """
-    modal_cfg = settings.modal
-    harvest_cfg = settings.gpu_harvest
+    from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    if not modal_cfg.enabled:
-        return ModalHarvestResult(
-            success=False,
-            error="Modal integration not enabled (MODAL_ENABLED=false)",
-        )
+    print(f"Downloading model: {model_id}")
+    save_path = f"{MODEL_DIR}/{model_id.replace('/', '_')}"
 
-    if not modal_cfg.harvest_url:
-        return ModalHarvestResult(
-            success=False,
-            error="MODAL_HARVEST_URL not configured",
-        )
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    tokenizer.save_pretrained(save_path)
 
-    resolved_model = model_id or harvest_cfg.model_id
+    model = AutoModelForCausalLM.from_pretrained(model_id)
+    model.save_pretrained(save_path)
 
-    payload = {
-        "model_id": resolved_model,
-        "target_tokens": target_tokens,
-        "batch_size": batch_size,
-    }
+    model_volume.commit()
 
-    headers: dict[str, str] = {
-        "Content-Type": "application/json",
-    }
-
-    # Modal token auth (if configured)
-    if modal_cfg.token_id and modal_cfg.token_secret:
-        headers["X-Modal-Token-Id"] = modal_cfg.token_id
-        headers["X-Modal-Token-Secret"] = modal_cfg.token_secret
-
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            logger.info(
-                "Modal harvest: model=%s tokens=%d batch=%d",
-                resolved_model, target_tokens, batch_size,
-            )
-            response = await client.post(
-                modal_cfg.harvest_url,
-                headers=headers,
-                json=payload,
-            )
-
-            if response.status_code != 200:
-                error_text = response.text[:500]
-                logger.error(
-                    "Modal harvest error %d: %s",
-                    response.status_code, error_text,
-                )
-                return ModalHarvestResult(
-                    success=False,
-                    error=f"Modal API error {response.status_code}: {error_text}",
-                )
-
-            data = response.json()
-
-            return ModalHarvestResult(
-                success=True,
-                token_count=data.get("token_count", 0),
-                distributions=data.get("distributions"),
-                modal_call_id=data.get("call_id"),
-            )
-
-    except httpx.TimeoutException:
-        logger.error("Modal harvest timed out after %.0fs", timeout)
-        return ModalHarvestResult(
-            success=False,
-            error=f"Modal harvest timed out after {timeout}s",
-        )
-
-    except Exception as e:
-        logger.error("Modal harvest failed: %s", e, exc_info=True)
-        return ModalHarvestResult(
-            success=False,
-            error=f"Modal harvest failed: {e}",
-        )
+    print(f"Model saved to {save_path}")
+    return {"status": "ok", "model_id": model_id, "path": save_path}
 
 
-async def check_modal_health() -> dict[str, Any]:
-    """Check if the Modal harvest endpoint is reachable.
+# ─── GPU Harvest Endpoint ──────────────────────────────────────────
 
-    Returns:
-        {"available": bool, "url": str, "error": str | None}
+@app.cls(
+    image=harvest_image,
+    gpu="A10G",
+    timeout=600,
+    container_idle_timeout=300,
+    volumes={MODEL_DIR: model_volume},
+)
+class CoordizerHarvester:
+    """GPU-backed harvester for CoordizerV2.
+
+    Loads model on container start, serves harvest requests via
+    authenticated FastAPI endpoint. Returns full softmax distributions.
     """
-    modal_cfg = settings.modal
 
-    if not modal_cfg.enabled:
-        return {
-            "available": False,
-            "url": "",
-            "error": "Modal not enabled",
-        }
+    model_id: str = DEFAULT_MODEL
 
-    if not modal_cfg.harvest_url:
-        return {
-            "available": False,
-            "url": modal_cfg.harvest_url,
-            "error": "No harvest URL configured",
-        }
+    @modal.enter()
+    def load_model(self):
+        """Load model to GPU on container start."""
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            # Try a lightweight GET to check endpoint existence
-            resp = await client.get(modal_cfg.harvest_url)
-            return {
-                "available": resp.status_code < 500,
-                "url": modal_cfg.harvest_url,
-                "error": None if resp.status_code < 500 else f"HTTP {resp.status_code}",
+        save_path = f"{MODEL_DIR}/{self.model_id.replace('/', '_')}"
+
+        try:
+            # Try loading from cached volume first
+            print(f"Loading cached model from {save_path}")
+            self.tokenizer = AutoTokenizer.from_pretrained(save_path)
+            self.model = AutoModelForCausalLM.from_pretrained(
+                save_path,
+                device_map="auto",
+                torch_dtype=torch.bfloat16,
+            )
+        except Exception:
+            # Fall back to downloading from HuggingFace
+            print(f"Cache miss, downloading {self.model_id} from HuggingFace")
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_id)
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_id,
+                device_map="auto",
+                torch_dtype=torch.bfloat16,
+            )
+            # Cache for next time
+            self.tokenizer.save_pretrained(save_path)
+            self.model.save_pretrained(save_path)
+            model_volume.commit()
+
+        self.model.eval()
+        self.vocab_size = self.tokenizer.vocab_size
+        print(f"Model loaded: {self.model_id}, vocab_size={self.vocab_size}")
+
+    @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
+    async def harvest(self, request: dict) -> dict:
+        """Harvest output distributions from text prompts.
+
+        Request:
+            {
+                "texts": ["sentence 1", "sentence 2", ...],
+                "max_length": 512  (optional)
             }
-    except Exception as e:
+
+        Response:
+            {
+                "success": true,
+                "vocab_size": 32000,
+                "results": [
+                    {
+                        "tokens": [token_id, ...],
+                        "logits": [[prob, prob, ...], ...],
+                        "token_strings": ["token", ...]
+                    },
+                    ...
+                ],
+                "elapsed_seconds": 1.23
+            }
+
+        Each logits[i] is the full softmax distribution at position i,
+        representing the model's prediction of what follows token[i].
+        These are points on Δ^(V-1) — ready for Fréchet mean computation
+        and Fisher-Rao PGA compression to Δ⁶³.
+        """
+        import numpy as np
+        import torch
+
+        texts = request.get("texts", [])
+        max_length = request.get("max_length", 512)
+
+        if not texts:
+            return {"success": False, "error": "No texts provided"}
+
+        start_time = time.time()
+        results = []
+
+        for text in texts:
+            try:
+                input_ids = self.tokenizer.encode(
+                    text,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=max_length,
+                ).to(self.model.device)
+
+                with torch.no_grad():
+                    outputs = self.model(input_ids)
+                    logits = outputs.logits[0]  # (seq_len, vocab_size)
+
+                # Full softmax → probabilities on Δ^(V-1)
+                probs = torch.softmax(logits, dim=-1).cpu().numpy()
+
+                # Token IDs for this sequence
+                token_ids = input_ids[0].cpu().numpy().tolist()
+
+                # Token strings
+                token_strings = [
+                    self.tokenizer.decode([tid]) for tid in token_ids
+                ]
+
+                # Return probabilities as nested lists
+                # Each probs[i] is the full distribution after token[i]
+                results.append({
+                    "tokens": token_ids,
+                    "logits": probs.tolist(),
+                    "token_strings": token_strings,
+                })
+
+            except Exception as e:
+                results.append({
+                    "tokens": [],
+                    "logits": [],
+                    "token_strings": [],
+                    "error": str(e),
+                })
+
+        elapsed = time.time() - start_time
+
         return {
-            "available": False,
-            "url": modal_cfg.harvest_url,
-            "error": str(e),
+            "success": True,
+            "vocab_size": self.vocab_size,
+            "results": results,
+            "elapsed_seconds": round(elapsed, 3),
+            "n_texts": len(texts),
+        }
+
+    @modal.fastapi_endpoint(method="GET", requires_proxy_auth=True)
+    async def health(self) -> dict:
+        """Health check endpoint."""
+        return {
+            "status": "ok",
+            "model_id": self.model_id,
+            "vocab_size": self.vocab_size,
+            "gpu": "A10G",
         }
