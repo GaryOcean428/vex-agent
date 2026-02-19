@@ -35,8 +35,8 @@ class CoordinatorPipeline:
 
     Example:
         >>> pipeline = CoordinatorPipeline()
-        >>> embedding = np.array([0.5, -0.3, 0.8])
-        >>> coords = pipeline.transform(embedding)
+        >>> input_vector = np.array([0.5, -0.3, 0.8])
+        >>> coords = pipeline.transform(input_vector)
         >>> stats = pipeline.get_stats()
         >>> print(stats.total_transforms)
         1
@@ -54,14 +54,14 @@ class CoordinatorPipeline:
 
     def transform(
         self,
-        embedding: np.ndarray,
+        input_vector: np.ndarray,
         method: TransformMethod | None = None,
         validate: bool = True,
     ) -> np.ndarray:
-        """Transform single embedding to coordinates.
+        """Transform single input vector to coordinates.
 
         Args:
-            embedding: Euclidean embedding
+            input_vector: Euclidean input vector
             method: Transformation method (uses config default if None)
             validate: Whether to validate output
 
@@ -79,7 +79,7 @@ class CoordinatorPipeline:
 
             # Transform
             coordinates = coordize(
-                embedding,
+                input_vector,
                 method=transform_method,
                 numerical_stability=self.config.numerical_stability,
                 epsilon=self.config.epsilon,
@@ -115,14 +115,14 @@ class CoordinatorPipeline:
 
     def transform_batch(
         self,
-        embeddings: np.ndarray,
+        input_vectors: np.ndarray,
         method: TransformMethod | None = None,
         validate: bool = True,
     ) -> list[np.ndarray]:
-        """Transform batch of embeddings to coordinates.
+        """Transform batch of input vectors to coordinates.
 
         Args:
-            embeddings: Batch of embeddings, shape (batch_size, dim)
+            input_vectors: Batch of input vectors, shape (batch_size, dim)
             method: Transformation method (uses config default if None)
             validate: Whether to validate outputs
 
@@ -132,28 +132,28 @@ class CoordinatorPipeline:
         Raises:
             ValueError: If any transformation fails
         """
-        if embeddings.ndim != 2:
+        if input_vectors.ndim != 2:
             raise ValueError(
-                f"embeddings must be 2D (batch_size, dim), "
-                f"got shape {embeddings.shape}"
+                f"input_vectors must be 2D (batch_size, dim), "
+                f"got shape {input_vectors.shape}"
             )
 
         # Process in batches if needed
         batch_size = self.config.batch_size
         results = []
 
-        for i in range(0, len(embeddings), batch_size):
-            batch = embeddings[i : i + batch_size]
+        for i in range(0, len(input_vectors), batch_size):
+            batch = input_vectors[i : i + batch_size]
 
-            for embedding in batch:
-                coords = self.transform(embedding, method, validate)
+            for input_vec in batch:
+                coords = self.transform(input_vec, method, validate)
                 results.append(coords)
 
         return results
 
     def create_transform_record(
         self,
-        embedding: np.ndarray,
+        input_vector: np.ndarray,
         coordinates: np.ndarray,
         method: TransformMethod | None = None,
         metadata: dict[str, Any] | None = None,
@@ -161,7 +161,7 @@ class CoordinatorPipeline:
         """Create a transformation record.
 
         Args:
-            embedding: Original embedding
+            input_vector: Original input vector
             coordinates: Transformed coordinates
             method: Method used (uses config default if None)
             metadata: Optional metadata
@@ -172,7 +172,7 @@ class CoordinatorPipeline:
         transform_method = method or self.config.method
 
         return CoordinateTransform(
-            embedding=embedding,
+            input_vector=input_vector,
             coordinates=coordinates,
             method=transform_method,
             timestamp=time.time(),

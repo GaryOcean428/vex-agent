@@ -1,6 +1,6 @@
 """Core coordinate transformation functions.
 
-Transform Euclidean embeddings to Fisher-Rao coordinates on the probability simplex.
+Transform Euclidean input vectors to Fisher-Rao coordinates on the probability simplex.
 Uses softmax normalization by default for numerical stability.
 """
 
@@ -19,20 +19,20 @@ from .validate import ensure_simplex
 
 
 def coordize(
-    embedding: np.ndarray,
+    input_vector: np.ndarray,
     method: _TransformMethod = _TransformMethod.SOFTMAX,
     numerical_stability: bool = True,
     epsilon: float = 1e-10,
 ) -> np.ndarray:
-    """Transform Euclidean embedding to Fisher-Rao coordinates.
+    """Transform Euclidean input vector to Fisher-Rao coordinates.
 
-    Uses exponential map to transform embedding to probability simplex:
+    Uses exponential map to transform input vector to probability simplex:
     - Applies softmax (exponential + normalization)
     - Ensures non-negativity and sum-to-one
     - Validates simplex properties
 
     Args:
-        embedding: Euclidean vector (any dimensionality)
+        input_vector: Euclidean vector (any dimensionality)
         method: Transformation method (SOFTMAX, SIMPLEX_PROJECTION, EXPONENTIAL_MAP)
         numerical_stability: Use log-sum-exp trick for numerical stability
         epsilon: Small value added for stability (default 1e-10)
@@ -44,29 +44,29 @@ def coordize(
         - Same shape as input
 
     Raises:
-        ValueError: If embedding is invalid or transformation fails
+        ValueError: If input_vector is invalid or transformation fails
 
     Example:
-        >>> embedding = np.array([0.5, -0.3, 0.8, -0.1])
-        >>> coords = coordize(embedding)
+        >>> input_vector = np.array([0.5, -0.3, 0.8, -0.1])
+        >>> coords = coordize(input_vector)
         >>> print(coords.sum())  # Should be 1.0
         1.0
         >>> print(np.all(coords >= 0))  # All non-negative
         True
     """
-    if not isinstance(embedding, np.ndarray):
-        raise TypeError(f"embedding must be np.ndarray, got {type(embedding)}")
+    if not isinstance(input_vector, np.ndarray):
+        raise TypeError(f"input_vector must be np.ndarray, got {type(input_vector)}")
 
-    if embedding.size == 0:
-        raise ValueError("embedding must not be empty")
+    if input_vector.size == 0:
+        raise ValueError("input_vector must not be empty")
 
     # Apply transformation based on method
     if method == _TransformMethod.SOFTMAX:
-        coords = _softmax_transform(embedding, numerical_stability, epsilon)
+        coords = _softmax_transform(input_vector, numerical_stability, epsilon)
     elif method == _TransformMethod.SIMPLEX_PROJECTION:
-        coords = _simplex_projection(embedding, epsilon)
+        coords = _simplex_projection(input_vector, epsilon)
     elif method == _TransformMethod.EXPONENTIAL_MAP:
-        coords = _exponential_map(embedding, epsilon)
+        coords = _exponential_map(input_vector, epsilon)
     else:
         raise ValueError(f"Unknown transformation method: {method}")
 
@@ -77,52 +77,52 @@ def coordize(
 
 
 def coordize_batch(
-    embeddings: np.ndarray,
+    input_vectors: np.ndarray,
     method: _TransformMethod = _TransformMethod.SOFTMAX,
     numerical_stability: bool = True,
     epsilon: float = 1e-10,
 ) -> list[np.ndarray]:
-    """Transform batch of embeddings to coordinates.
+    """Transform batch of input vectors to coordinates.
 
     Args:
-        embeddings: Array of embeddings, shape (batch_size, embedding_dim)
+        input_vectors: Array of input vectors, shape (batch_size, vector_dim)
         method: Transformation method
         numerical_stability: Use log-sum-exp trick
         epsilon: Numerical stability constant
 
     Returns:
-        List of coordinate arrays, one per embedding
+        List of coordinate arrays, one per input vector
 
     Raises:
-        ValueError: If embeddings shape invalid or transformation fails
+        ValueError: If input_vectors shape invalid or transformation fails
 
     Example:
-        >>> embeddings = np.array([
+        >>> input_vectors = np.array([
         ...     [0.5, -0.3, 0.8],
         ...     [-0.2, 0.4, 0.1],
         ... ])
-        >>> coords_list = coordize_batch(embeddings)
+        >>> coords_list = coordize_batch(input_vectors)
         >>> len(coords_list)
         2
     """
-    if not isinstance(embeddings, np.ndarray):
-        raise TypeError(f"embeddings must be np.ndarray, got {type(embeddings)}")
+    if not isinstance(input_vectors, np.ndarray):
+        raise TypeError(f"input_vectors must be np.ndarray, got {type(input_vectors)}")
 
-    if embeddings.ndim != 2:
+    if input_vectors.ndim != 2:
         raise ValueError(
-            f"embeddings must be 2D (batch_size, dim), got shape {embeddings.shape}"
+            f"input_vectors must be 2D (batch_size, dim), got shape {input_vectors.shape}"
         )
 
     results = []
-    for embedding in embeddings:
-        coords = coordize(embedding, method, numerical_stability, epsilon)
+    for input_vec in input_vectors:
+        coords = coordize(input_vec, method, numerical_stability, epsilon)
         results.append(coords)
 
     return results
 
 
 def _softmax_transform(
-    embedding: np.ndarray, numerical_stability: bool, epsilon: float
+    input_vector: np.ndarray, numerical_stability: bool, epsilon: float
 ) -> np.ndarray:
     """Apply softmax transformation.
 
@@ -130,7 +130,7 @@ def _softmax_transform(
     softmax(x) = exp(x - max(x)) / sum(exp(x - max(x)))
 
     Args:
-        embedding: Input Euclidean vector
+        input_vector: Input Euclidean vector
         numerical_stability: Whether to use log-sum-exp trick
         epsilon: Stability constant
 
@@ -140,18 +140,18 @@ def _softmax_transform(
     if numerical_stability:
         # Log-sum-exp trick for numerical stability
         # Subtract max to prevent overflow
-        x_shifted = embedding - np.max(embedding)
+        x_shifted = input_vector - np.max(input_vector)
         exp_x = np.exp(x_shifted)
         coords = exp_x / (np.sum(exp_x) + epsilon)
     else:
         # Standard softmax (can overflow for large values)
-        exp_x = np.exp(embedding)
+        exp_x = np.exp(input_vector)
         coords = exp_x / (np.sum(exp_x) + epsilon)
 
     return coords
 
 
-def _simplex_projection(embedding: np.ndarray, epsilon: float) -> np.ndarray:
+def _simplex_projection(input_vector: np.ndarray, epsilon: float) -> np.ndarray:
     """Project vector onto probability simplex.
 
     Uses Euclidean projection onto the simplex:
@@ -162,7 +162,7 @@ def _simplex_projection(embedding: np.ndarray, epsilon: float) -> np.ndarray:
     with Fisher-Rao operations.
 
     Args:
-        embedding: Input vector
+        input_vector: Input vector
         epsilon: Stability constant
 
     Returns:
@@ -173,7 +173,7 @@ def _simplex_projection(embedding: np.ndarray, epsilon: float) -> np.ndarray:
     # Wang & Carreira-Perpinán (2013), "Projection onto the probability simplex"
 
     # Shift to make all positive
-    shifted = embedding - np.min(embedding)
+    shifted = input_vector - np.min(input_vector)
 
     # Add small epsilon for stability
     shifted = shifted + epsilon
@@ -184,7 +184,7 @@ def _simplex_projection(embedding: np.ndarray, epsilon: float) -> np.ndarray:
     return coords
 
 
-def _exponential_map(embedding: np.ndarray, epsilon: float) -> np.ndarray:
+def _exponential_map(input_vector: np.ndarray, epsilon: float) -> np.ndarray:
     """Exponential map from tangent space to manifold.
 
     This is a simplified exponential map. For the full Fisher-Rao
@@ -194,7 +194,7 @@ def _exponential_map(embedding: np.ndarray, epsilon: float) -> np.ndarray:
     For now, we use softmax as an approximation.
 
     Args:
-        embedding: Tangent vector at base point
+        input_vector: Tangent vector at base point
         epsilon: Stability constant
 
     Returns:
@@ -202,11 +202,11 @@ def _exponential_map(embedding: np.ndarray, epsilon: float) -> np.ndarray:
     """
     # For now, use softmax as exponential map approximation
     # TODO: Implement full Fisher-Rao exponential map
-    return _softmax_transform(embedding, numerical_stability=True, epsilon=epsilon)
+    return _softmax_transform(input_vector, numerical_stability=True, epsilon=epsilon)
 
 
 def create_transform_record(
-    embedding: np.ndarray,
+    input_vector: np.ndarray,
     coordinates: np.ndarray,
     method: _TransformMethod,
     metadata: dict[str, any] | None = None,
@@ -214,7 +214,7 @@ def create_transform_record(
     """Create a transformation record.
 
     Args:
-        embedding: Original embedding
+        input_vector: Original input vector
         coordinates: Transformed coordinates
         method: Method used for transformation
         metadata: Optional metadata
@@ -225,7 +225,7 @@ def create_transform_record(
     from .types import CoordinateTransform
 
     return CoordinateTransform(
-        embedding=embedding,
+        input_vector=input_vector,
         coordinates=coordinates,
         method=method,
         timestamp=time.time(),

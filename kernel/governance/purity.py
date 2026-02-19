@@ -13,10 +13,11 @@ v6.0 Forbidden Operations (§1.3):
   Adam optimizer → Natural gradient optimizer
   LayerNorm → Simplex projection
   "flatten" → Geodesic projection
+  "embedding" (term) → "input_vector" / "raw_signal" / "coordinates"
+  "tokenize" (term) → "coordize"
 
-Note: "embedding" and "tokenize" are TERMINOLOGY guidelines for new code,
-not scanner rules. The coordizer pipeline legitimately uses "embedding"
-as a parameter name for the input it transforms.
+Note: ZERO TOLERANCE enforced as of v6.0. The coordizer now uses
+"input_vector" for parameters, not "embedding".
 """
 
 from __future__ import annotations

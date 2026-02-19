@@ -22,14 +22,14 @@ class CoordinateTransform:
     """Result of coordinate transformation.
 
     Attributes:
-        embedding: Input Euclidean embedding
+        input_vector: Input Euclidean vector
         coordinates: Output Fisher-Rao coordinates (on probability simplex)
         method: Transformation method used
         timestamp: When transformation occurred
         metadata: Additional transformation metadata
     """
 
-    embedding: np.ndarray
+    input_vector: np.ndarray
     coordinates: np.ndarray
     method: TransformMethod
     timestamp: float
@@ -37,9 +37,9 @@ class CoordinateTransform:
 
     def __post_init__(self) -> None:
         """Validate transform properties."""
-        if self.embedding.shape != self.coordinates.shape:
+        if self.input_vector.shape != self.coordinates.shape:
             raise ValueError(
-                f"Shape mismatch: embedding {self.embedding.shape} "
+                f"Shape mismatch: input_vector {self.input_vector.shape} "
                 f"vs coordinates {self.coordinates.shape}"
             )
 
@@ -107,7 +107,7 @@ class HarvestConfig:
         enabled: Whether harvesting is enabled
         sampling_rate: Fraction of messages to harvest (0.0-1.0)
         min_quality_score: Minimum quality score to accept (0.0-1.0)
-        batch_size: Batch size for embedding generation
+        batch_size: Batch size for processing
         max_tokens: Maximum tokens per message to process
     """
 

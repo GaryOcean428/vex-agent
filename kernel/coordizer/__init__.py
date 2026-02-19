@@ -1,11 +1,11 @@
 """Coordizer — Euclidean → Fisher-Rao coordinate transformation.
 
 The coordizer provides geometric purity enforcement at data ingestion points,
-transforming Euclidean embeddings to Fisher-Rao coordinates on the probability
+transforming Euclidean input vectors to Fisher-Rao coordinates on the probability
 simplex.
 
 Key Functions:
-    coordize: Transform embedding to Fisher-Rao coordinates
+    coordize: Transform input vector to Fisher-Rao coordinates
     validate_simplex: Validate simplex properties
     
 Key Classes:
@@ -15,11 +15,11 @@ Usage:
     >>> from kernel.coordizer import coordize
     >>> import numpy as np
     >>> 
-    >>> # Euclidean embedding from LLM
-    >>> embedding = np.array([0.5, -0.3, 0.8, -0.1])
+    >>> # Euclidean input vector from LLM
+    >>> input_vector = np.array([0.5, -0.3, 0.8, -0.1])
     >>> 
     >>> # Transform to Fisher-Rao coordinates
-    >>> coordinates = coordize(embedding)
+    >>> coordinates = coordize(input_vector)
     >>> 
     >>> # Verify simplex properties
     >>> assert np.all(coordinates >= 0), "Non-negative"
