@@ -78,7 +78,7 @@ async function main(): Promise<void> {
       res.json({
         status: 'degraded',
         service: 'vex-kernel',
-        version: '2.2.0',
+        version: '2.4.0',
         uptime: 0,
         cycle_count: 0,
         backend: 'unknown',

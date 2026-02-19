@@ -111,4 +111,4 @@ __all__ = [
     "validate_resonance_bank",
 ]
 
-__version__ = "2.0.0"
+__version__ = "2.4.0"
