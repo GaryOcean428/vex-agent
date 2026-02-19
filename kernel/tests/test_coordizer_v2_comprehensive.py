@@ -369,7 +369,7 @@ class TestResonanceBankBasics:
     def test_nearest_uses_fisher_rao(self, small_bank):
         """Nearest-neighbour search must use Fisher-Rao, not Euclidean."""
         query = to_simplex(np.random.randn(BASIN_DIM))
-        tid, d = small_bank.nearest(query)
+        tid, d = small_bank.nearest_token(query)
         # Verify the distance matches Fisher-Rao
         expected = fisher_rao_distance(query, small_bank.coordinates[tid])
         assert abs(d - expected) < 1e-6, f"Distance mismatch: {d} vs {expected}"
@@ -406,8 +406,11 @@ class TestCoordizerV2Integration:
         assert isinstance(result, CoordizationResult)
 
     def test_coordize_produces_coordinates(self, coordizer):
-        result = coordizer.coordize("test input text")
-        assert len(result.coord_ids) > 0
+        # Use a token string that exists in the bank ("tok_0" etc.)
+        result = coordizer.coordize("tok_0 tok_1 tok_2")
+        assert len(result.coord_ids) > 0, (
+            "coordize should find tokens when input matches bank strings"
+        )
 
     def test_vocab_size(self, coordizer):
         assert coordizer.vocab_size == 100

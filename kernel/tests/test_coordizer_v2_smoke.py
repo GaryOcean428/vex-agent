@@ -154,11 +154,14 @@ class TestCoordize:
         assert isinstance(result, CoordizationResult)
 
     def test_coordize_produces_ids(self, coordizer):
-        result = coordizer.coordize("quantum fisher information geometry")
-        assert len(result.coord_ids) > 0
+        # Use token strings that exist in the bank ("tok_0000" etc.)
+        result = coordizer.coordize("tok_0000 tok_0001 tok_0002")
+        assert len(result.coord_ids) > 0, (
+            "coordize should find tokens when input matches bank strings"
+        )
 
     def test_coordize_ids_in_bank(self, coordizer, bank):
-        result = coordizer.coordize("test input")
+        result = coordizer.coordize("tok_0010 tok_0020")
         for cid in result.coord_ids:
             assert cid in bank.coordinates, f"Coord ID {cid} not in bank"
 
@@ -226,14 +229,14 @@ class TestPersistence:
     def test_save_load_roundtrip(self, bank):
         with tempfile.TemporaryDirectory() as td:
             bank.save(td)
-            loaded = ResonanceBank.load(td)
+            loaded = ResonanceBank.from_file(td)
             assert len(loaded.coordinates) == len(bank.coordinates)
 
     def test_fisher_rao_preserved_after_load(self, bank):
         """Max Fisher-Rao distance between original and loaded basins must be < ε."""
         with tempfile.TemporaryDirectory() as td:
             bank.save(td)
-            loaded = ResonanceBank.load(td)
+            loaded = ResonanceBank.from_file(td)
 
             max_drift = 0.0
             for tid in bank.coordinates:
@@ -249,7 +252,7 @@ class TestPersistence:
     def test_tiers_preserved_after_load(self, bank):
         with tempfile.TemporaryDirectory() as td:
             bank.save(td)
-            loaded = ResonanceBank.load(td)
+            loaded = ResonanceBank.from_file(td)
             for tid in bank.tiers:
                 assert loaded.tiers[tid] == bank.tiers[tid], (
                     f"Tier mismatch for token {tid}"
