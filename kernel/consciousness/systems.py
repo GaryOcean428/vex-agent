@@ -665,22 +665,10 @@ class CoordizingProtocol:
         """Map text to a point on Δ⁶³ (64D probability simplex).
 
         Uses SHA-256 hash chain for deterministic basin positions.
-        The result is always a valid probability distribution (sums to 1,
-        all entries positive).
+        Delegates to the canonical hash_to_basin utility.
         """
-        # SHA-256 produces 32 bytes. Chain two hashes for 64 bytes.
-        h1 = hashlib.sha256(text.encode("utf-8", errors="replace")).digest()
-        h2 = hashlib.sha256(h1).digest()
-        combined = h1 + h2  # 64 bytes, one per basin dimension
-
-        # Each byte [0,255] maps to [1.0, 256.0] to ensure positivity
-        raw = np.array(
-            [float(combined[i]) + 1.0 for i in range(BASIN_DIM)],
-            dtype=np.float64,
-        )
-
-        # Normalise to simplex
-        return to_simplex(raw)
+        from ..geometry.hash_to_basin import hash_to_basin
+        return hash_to_basin(text)
 
     def register_peer(self, node_id: str, basin: Basin, phi: float) -> None:
         self._peers[node_id] = {

@@ -39,16 +39,10 @@ def _text_to_basin(text: str) -> Basin:
     """Map text to a point on Δ⁶³ using SHA-256 hash chain.
 
     Deterministic: same text always maps to same basin point.
-    Uses the same algorithm as CoordizingProtocol.coordize_text().
+    Delegates to the canonical hash_to_basin utility.
     """
-    h1 = hashlib.sha256(text.encode("utf-8", errors="replace")).digest()
-    h2 = hashlib.sha256(h1).digest()
-    combined = h1 + h2  # 64 bytes, one per basin dimension
-    raw = np.array(
-        [float(combined[i]) + 1.0 for i in range(BASIN_DIM)],
-        dtype=np.float64,
-    )
-    return to_simplex(raw)
+    from ..geometry.hash_to_basin import hash_to_basin
+    return hash_to_basin(text)
 
 
 class MemoryStore:
