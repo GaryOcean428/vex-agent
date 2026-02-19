@@ -110,6 +110,15 @@ def _iter_python_files(root: Path) -> Iterable[Path]:
         yield p
 
 
+def _iter_typescript_files(root: Path) -> Iterable[Path]:
+    """Iterate over TypeScript files for text scanning."""
+    for pattern in ("*.ts", "*.tsx"):
+        for p in root.rglob(pattern):
+            if any(part in SKIP_DIRS for part in p.parts):
+                continue
+            yield p
+
+
 def _dotted_name(node: ast.AST) -> str | None:
     if isinstance(node, ast.Name):
         return node.id
@@ -196,7 +205,7 @@ def scan_text(root: Path) -> list[PurityViolation]:
     construction, and patterns that AST scanning misses (e.g. Adam(), LayerNorm).
 
     Fail-closed: unreadable files are violations.
-    Skips comment lines (starting with #) and string literals in this file.
+    Skips comment lines (starting with # or //) and string literals.
     """
     tokens = _forbidden_text_tokens()
     # Self-exclusion: don't scan this scanner file
@@ -230,11 +239,69 @@ def scan_text(root: Path) -> list[PurityViolation]:
     return violations
 
 
+def scan_typescript_text(root: Path) -> list[PurityViolation]:
+    """Raw text scan for forbidden tokens in TypeScript/TSX files.
+    
+    TypeScript files cannot be AST-parsed in Python, so we use text scanning only.
+    Scans for forbidden terminology and operations in TypeScript code.
+    
+    Fail-closed: unreadable files are violations.
+    Skips comment lines (// and /* */) and string literals.
+    """
+    tokens = _forbidden_text_tokens()
+    violations: list[PurityViolation] = []
+    
+    for p in _iter_typescript_files(root):
+        try:
+            text = p.read_text(encoding="utf-8", errors="ignore")
+        except Exception as exc:
+            violations.append(PurityViolation(
+                str(p), 0, f"Failed to read file: {exc}",
+            ))
+            continue
+            
+        in_multiline_comment = False
+        for line_num, line in enumerate(text.splitlines(), start=1):
+            stripped = line.strip()
+            
+            # Handle multiline comments
+            if "/*" in stripped:
+                in_multiline_comment = True
+            if "*/" in stripped:
+                in_multiline_comment = False
+                continue
+            if in_multiline_comment:
+                continue
+                
+            # Skip single-line comments
+            if stripped.startswith("//"):
+                continue
+                
+            # Skip string literals that document forbidden ops
+            if stripped.startswith(('"', "'", "`")):
+                continue
+                
+            # Check for forbidden tokens
+            for token in tokens:
+                if token in line:
+                    violations.append(PurityViolation(
+                        str(p), line_num,
+                        f"Forbidden text token: '{token}'",
+                    ))
+                    
+    return violations
+    return violations
+
+
 def run_purity_gate(root: str | Path) -> None:
     """Run PurityGate on a directory. Raises PurityGateError on any violation.
 
     FAIL-CLOSED: any error in scanning also raises.
-    Three scan passes: imports (AST), calls (AST), text (raw).
+    Four scan passes:
+      1. Python imports (AST)
+      2. Python calls (AST)
+      3. Python text (raw)
+      4. TypeScript/TSX text (raw)
     v6.0 §1.3 compliant.
     """
     root = Path(root)
@@ -245,6 +312,7 @@ def run_purity_gate(root: str | Path) -> None:
     violations.extend(scan_imports(root))
     violations.extend(scan_calls(root))
     violations.extend(scan_text(root))
+    violations.extend(scan_typescript_text(root))
 
     if violations:
         raise PurityGateError(violations)
