@@ -223,7 +223,8 @@ class TestFisherRaoPurity:
         a = populated_bank.coordinates[tids[0]]
         b = populated_bank.coordinates[tids[1]]
 
-        # Cosine similarity
+        # QIG BOUNDARY: Euclidean ops used here INTENTIONALLY to prove they give
+        # wrong answers compared to Fisher-Rao. This is a negative test.
         cos_sim = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
         # Fisher-Rao distance
