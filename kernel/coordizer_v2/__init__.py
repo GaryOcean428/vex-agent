@@ -36,6 +36,7 @@ Architecture:
     resonance_bank.py   Standing-wave vocabulary with activation
     coordizer.py        Main CoordizerV2 class
     validate.py         κ, β, semantic, harmonic validation
+    modal_harvest.py    Modal GPU integration (Railway-side client)
 """
 
 from .coordizer import CoordizerV2
@@ -58,7 +59,13 @@ from .geometry import (
     softmax_to_simplex,
     to_simplex,
 )
-from .harvest import HarvestConfig, HarvestResult, Harvester, harvest_model
+from .harvest import (
+    HarvestConfig,
+    HarvestResult,
+    Harvester,
+    harvest_model,
+    harvest_model_auto,
+)
 from .resonance_bank import ResonanceBank
 from .types import (
     BasinCoordinate,
@@ -70,6 +77,9 @@ from .types import (
 )
 from .validate import validate_resonance_bank
 
+# modal_harvest is imported lazily (requires httpx + settings)
+# Use: from kernel.coordizer_v2.modal_harvest import modal_harvest
+
 __all__ = [
     # Main class
     "CoordizerV2",
@@ -80,6 +90,7 @@ __all__ = [
     "HarvestConfig",
     "HarvestResult",
     "harvest_model",
+    "harvest_model_auto",
     # Compression
     "compress",
     "CompressionResult",
@@ -111,4 +122,4 @@ __all__ = [
     "validate_resonance_bank",
 ]
 
-__version__ = "2.4.0"
+__version__ = "2.5.0"
