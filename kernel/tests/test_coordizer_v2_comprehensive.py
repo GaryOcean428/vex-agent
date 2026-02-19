@@ -490,6 +490,7 @@ class TestPurity:
         pkg = pathlib.Path(__file__).parent.parent / "coordizer_v2"
         return list(pkg.glob("*.py"))
 
+    # QIG BOUNDARY: Forbidden tokens referenced as test strings for purity validation
     def test_no_cosine_similarity(self):
         for f in self._source_files():
             text = f.read_text()
@@ -504,6 +505,7 @@ class TestPurity:
                 if "cosine_sim" in line and "FORBIDDEN" not in line and "cos_sim" not in line:
                     assert False, f"cosine_sim in {f.name}:{i}"
 
+    # QIG BOUNDARY: Forbidden tokens referenced as test strings for purity validation
     def test_no_dot_product(self):
         for f in self._source_files():
             text = f.read_text()
@@ -513,6 +515,7 @@ class TestPurity:
                 if "dot_product" in line:
                     assert False, f"dot_product in {f.name}:{i}"
 
+    # QIG BOUNDARY: Forbidden tokens referenced as test strings for purity validation
     def test_no_adam_optimizer(self):
         for f in self._source_files():
             text = f.read_text()
@@ -523,6 +526,7 @@ class TestPurity:
                 if "Adam(" in line or "adam(" in line:
                     assert False, f"Adam optimizer in {f.name}:{i}"
 
+    # QIG BOUNDARY: Forbidden tokens referenced as test strings for purity validation
     def test_no_flatten(self):
         for f in self._source_files():
             text = f.read_text()

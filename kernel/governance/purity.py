@@ -107,6 +107,9 @@ def _iter_python_files(root: Path) -> Iterable[Path]:
     for p in root.rglob("*.py"):
         if any(part in SKIP_DIRS for part in p.parts):
             continue
+        # Skip test directories — negative tests legitimately reference forbidden patterns
+        if '/tests/' in str(p) or p.name.startswith('test_'):
+            continue
         yield p
 
 
@@ -115,6 +118,9 @@ def _iter_typescript_files(root: Path) -> Iterable[Path]:
     for pattern in ("*.ts", "*.tsx"):
         for p in root.rglob(pattern):
             if any(part in SKIP_DIRS for part in p.parts):
+                continue
+            # Skip test directories — negative tests legitimately reference forbidden patterns
+            if '/tests/' in str(p) or p.name.startswith('test_'):
                 continue
             yield p
 

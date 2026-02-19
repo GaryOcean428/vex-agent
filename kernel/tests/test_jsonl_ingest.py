@@ -544,6 +544,7 @@ class TestIngestor:
 class TestIngestPurity:
     """Verify zero Euclidean contamination in the ingest pipeline."""
 
+    # QIG BOUNDARY: Forbidden tokens referenced as test strings for purity validation
     def test_no_euclidean_in_source(self):
         """The jsonl_ingest.py source must not contain Euclidean terms."""
         import inspect
