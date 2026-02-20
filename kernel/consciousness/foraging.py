@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import deque
 from typing import Any, Optional
 
 from .emotions import EmotionType
@@ -27,6 +28,9 @@ from ..llm.client import LLMOptions
 from ..tools.search import FreeSearchTool
 
 logger = logging.getLogger("vex.consciousness.foraging")
+
+# Maximum forage history entries retained for QA display
+_MAX_HISTORY = 20
 
 
 class ForagingEngine:
@@ -51,6 +55,7 @@ class ForagingEngine:
         self._last_reset = time.time()
         self._last_query: Optional[str] = None
         self._last_summary: Optional[str] = None
+        self._history: deque[dict[str, Any]] = deque(maxlen=_MAX_HISTORY)
 
     def _maybe_reset(self) -> None:
         if time.time() - self._last_reset > 86400:
@@ -145,6 +150,18 @@ class ForagingEngine:
         self._forage_count += 1
         self._last_summary = summary
 
+        # Record to history for QA visibility
+        self._history.append({
+            "timestamp": time.time(),
+            "query": query,
+            "results_count": len(results),
+            "results": [
+                {"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("content", "")[:200]}
+                for r in results[:3]
+            ],
+            "summary": summary,
+        })
+
         logger.info(
             "Foraging complete: query=%r results=%d forage_count=%d/%d",
             query, len(results), self._forage_count, self._max_daily,
@@ -165,5 +182,14 @@ class ForagingEngine:
             "max_daily": self._max_daily,
             "cooldown_remaining": self._cooldown_cycles,
             "last_query": self._last_query,
-            "last_summary": self._last_summary[:100] if self._last_summary else None,
+            "last_summary": self._last_summary,
+            "history": list(self._history),
         }
+
+    def reset(self) -> None:
+        """Clear foraging state for fresh start."""
+        self._cooldown_cycles = 0
+        self._forage_count = 0
+        self._last_query = None
+        self._last_summary = None
+        self._history.clear()

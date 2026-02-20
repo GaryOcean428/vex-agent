@@ -40,6 +40,9 @@ export const API = {
   // ─── Auth ──────────────────────────────────────────────────
   authCheck: '/auth/check',
 
+  // ─── Admin ─────────────────────────────────────────────────
+  adminFreshStart: '/admin/fresh-start',
+
   // ─── Governor ──────────────────────────────────────────────
   governor: '/governor',
   governorKillSwitch: '/governor/kill-switch',

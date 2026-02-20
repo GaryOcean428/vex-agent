@@ -85,8 +85,17 @@ export default function Graph() {
 
       const nodes = nodesRef.current;
 
+      // Resolve CSS custom properties for canvas
+      const cs = getComputedStyle(document.documentElement);
+      const cSurface3 = cs.getPropertyValue('--surface-3').trim();
+      const cTextDim = cs.getPropertyValue('--text-dim').trim();
+      const cAccent = cs.getPropertyValue('--accent').trim();
+      const cPhi = cs.getPropertyValue('--phi').trim();
+      const cKappa = cs.getPropertyValue('--kappa').trim();
+      const cText = cs.getPropertyValue('--text').trim();
+
       // Background
-      ctx.fillStyle = '#22222e';
+      ctx.fillStyle = cSurface3;
       ctx.fillRect(0, 0, rect.width, rect.height);
 
       // Draw edges (from genesis to each node)
@@ -118,7 +127,7 @@ export default function Graph() {
       // Draw nodes
       for (const node of nodes) {
         const isGenesis = node.kind === 'genesis';
-        const color = isGenesis ? '#6366f1' : node.kind === 'GOD' ? '#22d3ee' : '#f59e0b';
+        const color = isGenesis ? cAccent : node.kind === 'GOD' ? cPhi : cKappa;
 
         // Glow — save/restore to isolate shadow state
         ctx.save();
@@ -132,7 +141,7 @@ export default function Graph() {
         ctx.restore(); // Clears shadow state
 
         // Label (no shadow)
-        ctx.fillStyle = '#ededf0';
+        ctx.fillStyle = cText;
         ctx.font = `${isGenesis ? 'bold ' : ''}${isGenesis ? 10 : 9}px monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -140,7 +149,7 @@ export default function Graph() {
       }
 
       // Legend
-      ctx.fillStyle = '#70708a';
+      ctx.fillStyle = cTextDim;
       ctx.font = '10px monospace';
       ctx.textAlign = 'left';
       ctx.fillText(`Nodes: ${nodes.length}  |  Edges: ${Math.max(nodes.length - 1, 0)}`, 10, rect.height - 10);

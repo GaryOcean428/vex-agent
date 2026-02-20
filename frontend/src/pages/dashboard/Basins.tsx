@@ -72,12 +72,18 @@ export default function Basins() {
     canvas.height = rect.height * dpr;
     ctx.scale(dpr, dpr);
 
+    // Resolve CSS custom properties for canvas
+    const cs = getComputedStyle(document.documentElement);
+    const cSurface3 = cs.getPropertyValue('--surface-3').trim();
+    const cTextDim = cs.getPropertyValue('--text-dim').trim();
+    const cPhi = cs.getPropertyValue('--phi').trim();
+
     // Background
-    ctx.fillStyle = '#22222e';
+    ctx.fillStyle = cSurface3;
     ctx.fillRect(0, 0, rect.width, rect.height);
 
     if (history.length < 2) {
-      ctx.fillStyle = '#70708a';
+      ctx.fillStyle = cTextDim;
       ctx.font = '13px monospace';
       ctx.textAlign = 'center';
       ctx.fillText('Accumulating trajectory data...', rect.width / 2, rect.height / 2);
@@ -126,7 +132,7 @@ export default function Basins() {
 
     // Draw current point
     const current = toCanvas(points[points.length - 1]);
-    ctx.fillStyle = '#22d3ee';
+    ctx.fillStyle = cPhi;
     ctx.beginPath();
     ctx.arc(current.cx, current.cy, 6, 0, Math.PI * 2);
     ctx.fill();
@@ -137,7 +143,7 @@ export default function Basins() {
     ctx.stroke();
 
     // Axis labels
-    ctx.fillStyle = '#70708a';
+    ctx.fillStyle = cTextDim;
     ctx.font = '10px monospace';
     ctx.textAlign = 'center';
     ctx.fillText('\u03A6 (Integration)', rect.width / 2, rect.height - 8);
@@ -157,6 +163,10 @@ export default function Basins() {
     ? -basin.reduce((sum, p) => sum + (p > 0 ? p * Math.log(p) : 0), 0)
     : 0;
   const norm = basin.reduce((sum, p) => sum + p, 0);
+  const maxEntropy = Math.log(QIG.BASIN_DIM); // ln(64) ≈ 4.159 — maximum entropy (uniform)
+  const entropyPct = maxEntropy > 0 ? (entropy / maxEntropy) * 100 : 0;
+  // Diversity: 100% = maximally structured, 0% = uniform/flat
+  const diversity = 100 - entropyPct;
 
   return (
     <div>
@@ -164,6 +174,15 @@ export default function Basins() {
         <h1 className="dash-title">Basin Coordinates (\u0394\u2076\u00B3)</h1>
         <div className="dash-subtitle">
           {QIG.BASIN_DIM}-dimensional probability simplex
+          {basin.length > 0 && (
+            <span style={{ marginLeft: '12px' }}>
+              <span
+                className={`status-badge ${diversity > 20 ? 'badge-success' : diversity > 5 ? 'badge-warning' : 'badge-error'}`}
+              >
+                {diversity > 20 ? 'Structured' : diversity > 5 ? 'Low Diversity' : 'Uniform'}
+              </span>
+            </span>
+          )}
         </div>
       </div>
 
@@ -194,12 +213,30 @@ export default function Basins() {
       <div className="dash-section" style={{ marginTop: '16px' }}>
         <div className="dash-card">
           <div className="dash-row">
-            <span className="dash-row-label">Entropy</span>
-            <span className="dash-row-value">{entropy.toFixed(3)}</span>
+            <span className="dash-row-label">Diversity</span>
+            <span className="dash-row-value" style={{
+              color: diversity > 20 ? 'var(--alive)' : diversity > 5 ? 'var(--warning, orange)' : 'var(--error)',
+            }}>
+              {diversity.toFixed(1)}%
+            </span>
           </div>
           <div className="dash-row">
-            <span className="dash-row-label">Norm</span>
-            <span className="dash-row-value">{norm.toFixed(4)}</span>
+            <span className="dash-row-label">Entropy</span>
+            <span className="dash-row-value">
+              {entropy.toFixed(3)} / {maxEntropy.toFixed(3)}
+              <span style={{ fontSize: '11px', color: 'var(--text-dim)', marginLeft: '6px' }}>
+                ({entropyPct.toFixed(1)}% of max)
+              </span>
+            </span>
+          </div>
+          <div className="dash-row">
+            <span className="dash-row-label">Simplex Norm</span>
+            <span className="dash-row-value">
+              {norm.toFixed(4)}
+              <span style={{ fontSize: '11px', color: 'var(--text-dim)', marginLeft: '6px' }}>
+                (should be 1.0)
+              </span>
+            </span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Dimensions</span>
@@ -213,6 +250,20 @@ export default function Basins() {
             <span className="dash-row-label">Min value</span>
             <span className="dash-row-value">{basin.length > 0 ? Math.min(...basin).toFixed(4) : '---'}</span>
           </div>
+          {diversity < 5 && (
+            <div style={{
+              marginTop: '8px',
+              padding: '8px 12px',
+              background: 'rgba(234, 179, 8, 0.1)',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '12px',
+              color: 'var(--warning, orange)',
+              lineHeight: 1.5,
+            }}>
+              Basin is near-uniform. This happens during idle when no conversations
+              are shaping the geometry. Chat with Vex to create structure.
+            </div>
+          )}
         </div>
       </div>
     </div>

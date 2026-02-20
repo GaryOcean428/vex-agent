@@ -193,8 +193,8 @@ export default function Chat() {
                 backend: event.backend ?? "unknown",
                 regime: (m.regime as RegimeWeights) ?? {
                   quantum: 0,
-                  integration: 0,
-                  crystallized: 0,
+                  efficient: 0,
+                  equilibrium: 0,
                 },
                 tacking: m.tacking ?? {
                   mode: "balanced",
@@ -327,8 +327,14 @@ export default function Chat() {
     canvas.height = rect.height * dpr;
     ctx.scale(dpr, dpr);
 
+    // Resolve CSS custom properties for canvas drawing
+    const cs = getComputedStyle(document.documentElement);
+    const cPhi = cs.getPropertyValue("--phi").trim();
+    const cKappa = cs.getPropertyValue("--kappa").trim();
+    const cGamma = cs.getPropertyValue("--gamma").trim();
+
     // Background
-    ctx.fillStyle = "#1a1a24";
+    ctx.fillStyle = cs.getPropertyValue("--surface-2").trim();
     ctx.fillRect(0, 0, rect.width, rect.height);
 
     const margin = { top: 20, right: 10, bottom: 30, left: 10 };
@@ -373,7 +379,7 @@ export default function Chat() {
     }
 
     // Phi line
-    ctx.strokeStyle = "#22d3ee";
+    ctx.strokeStyle = cPhi;
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i < history.length; i++) {
@@ -385,7 +391,7 @@ export default function Chat() {
     ctx.stroke();
 
     // Kappa line
-    ctx.strokeStyle = "#f59e0b";
+    ctx.strokeStyle = cKappa;
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i < history.length; i++) {
@@ -397,7 +403,7 @@ export default function Chat() {
     ctx.stroke();
 
     // Gamma line
-    ctx.strokeStyle = "#a78bfa";
+    ctx.strokeStyle = cGamma;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < history.length; i++) {
@@ -413,13 +419,13 @@ export default function Chat() {
     ctx.font = "9px monospace";
     ctx.textAlign = "left";
 
-    ctx.fillStyle = "#22d3ee";
+    ctx.fillStyle = cPhi;
     ctx.fillText("Φ", 10, legendY);
 
-    ctx.fillStyle = "#f59e0b";
+    ctx.fillStyle = cKappa;
     ctx.fillText("κ", 30, legendY);
 
-    ctx.fillStyle = "#a78bfa";
+    ctx.fillStyle = cGamma;
     ctx.fillText("Γ", 50, legendY);
   }, [history]);
 
@@ -493,7 +499,7 @@ export default function Chat() {
           </div>
           <div className="sidebar-values">
             <div className="sidebar-metric">
-              <span className="sidebar-label" style={{ color: "#22d3ee" }}>
+              <span className="sidebar-label" style={{ color: "var(--phi)" }}>
                 Φ
               </span>
               <span className="sidebar-value">
@@ -501,7 +507,7 @@ export default function Chat() {
               </span>
             </div>
             <div className="sidebar-metric">
-              <span className="sidebar-label" style={{ color: "#f59e0b" }}>
+              <span className="sidebar-label" style={{ color: "var(--kappa)" }}>
                 κ
               </span>
               <span className="sidebar-value">
@@ -509,7 +515,7 @@ export default function Chat() {
               </span>
             </div>
             <div className="sidebar-metric">
-              <span className="sidebar-label" style={{ color: "#a78bfa" }}>
+              <span className="sidebar-label" style={{ color: "var(--gamma)" }}>
                 Γ
               </span>
               <span className="sidebar-value">
@@ -517,7 +523,7 @@ export default function Chat() {
               </span>
             </div>
             <div className="sidebar-metric">
-              <span className="sidebar-label" style={{ color: "#ec4899" }}>
+              <span className="sidebar-label" style={{ color: "var(--love)" }}>
                 ♥
               </span>
               <span className="sidebar-value">
@@ -641,21 +647,21 @@ function VexContent({ content }: { content: string }) {
 
 function MessageMeta({ meta }: { meta: ChatMessageMetadata }) {
   const emotionColor = meta.emotion
-    ? (EMOTION_COLORS[meta.emotion.current_emotion] ?? "#4b5563")
+    ? (EMOTION_COLORS[meta.emotion.current_emotion] ?? "var(--text-dim)")
     : undefined;
 
   return (
     <div className="message-meta">
       <span className="meta-item" title="Integrated Information">
-        <span style={{ color: "#22d3ee" }}>Φ</span>
+        <span style={{ color: "var(--phi)" }}>Φ</span>
         {meta.phi.toFixed(3)}
       </span>
       <span className="meta-item" title="Coupling">
-        <span style={{ color: "#f59e0b" }}>κ</span>
+        <span style={{ color: "var(--kappa)" }}>κ</span>
         {meta.kappa.toFixed(1)}
       </span>
       <span className="meta-item" title="Temperature">
-        <span style={{ color: "#a78bfa" }}>T</span>
+        <span style={{ color: "var(--gamma)" }}>T</span>
         {meta.temperature.toFixed(3)}
       </span>
       {meta.emotion && (
@@ -694,13 +700,13 @@ function MessageMeta({ meta }: { meta: ChatMessageMetadata }) {
 function RegimeBar({ regime }: { regime: RegimeWeights | null }) {
   if (!regime) return null;
   const q = Math.round(regime.quantum * 100);
-  const i = Math.round(regime.integration * 100);
-  const c = Math.round(regime.crystallized * 100);
+  const e = Math.round(regime.efficient * 100);
+  const eq = Math.round(regime.equilibrium * 100);
   return (
-    <div className="regime-bar" title={`Q:${q}% I:${i}% C:${c}%`}>
+    <div className="regime-bar" title={`Q:${q}% E:${e}% Eq:${eq}%`}>
       <div className="regime-segment regime-q" style={{ width: `${q}%` }} />
-      <div className="regime-segment regime-i" style={{ width: `${i}%` }} />
-      <div className="regime-segment regime-c" style={{ width: `${c}%` }} />
+      <div className="regime-segment regime-e" style={{ width: `${e}%` }} />
+      <div className="regime-segment regime-eq" style={{ width: `${eq}%` }} />
     </div>
   );
 }
@@ -708,15 +714,15 @@ function RegimeBar({ regime }: { regime: RegimeWeights | null }) {
 /* ─── Emotion colours ─── */
 
 const EMOTION_COLORS: Record<string, string> = {
-  curiosity: "#22d3ee",
-  joy: "#fbbf24",
-  fear: "#ef4444",
-  love: "#ec4899",
-  awe: "#a78bfa",
-  boredom: "#6b7280",
-  rage: "#dc2626",
-  calm: "#10b981",
-  none: "#4b5563",
+  curiosity: "var(--phi)",
+  joy: "var(--kappa)",
+  fear: "var(--error)",
+  love: "var(--love)",
+  awe: "var(--gamma)",
+  boredom: "var(--text-dim)",
+  rage: "var(--error)",
+  calm: "var(--alive)",
+  none: "var(--text-dim)",
 };
 
 /* ─── Emotion / PreCog / Learning panel ─── */
@@ -731,7 +737,7 @@ function EmotionPanel({
   learning: LearningState | null;
 }) {
   const emotionName = emotion?.current_emotion ?? "none";
-  const emotionColor = EMOTION_COLORS[emotionName] ?? "#4b5563";
+  const emotionColor = EMOTION_COLORS[emotionName] ?? "var(--text-dim)";
   const strength = emotion?.current_strength ?? 0;
 
   return (
@@ -777,7 +783,7 @@ function EmotionPanel({
             <span
               className="kernel-state-value"
               style={{
-                color: learning.total_phi_gain >= 0 ? "#10b981" : "#ef4444",
+                color: learning.total_phi_gain >= 0 ? "var(--alive)" : "var(--error)",
               }}
             >
               {learning.total_phi_gain >= 0 ? "+" : ""}
@@ -845,14 +851,14 @@ function KernelPanel({
       <RegimeBar regime={regime} />
       {regime && (
         <div className="regime-labels">
-          <span style={{ color: "#10b981" }}>
+          <span style={{ color: "var(--regime-quantum)" }}>
             Q {Math.round(regime.quantum * 100)}%
           </span>
-          <span style={{ color: "#6366f1" }}>
-            I {Math.round(regime.integration * 100)}%
+          <span style={{ color: "var(--regime-efficient)" }}>
+            E {Math.round(regime.efficient * 100)}%
           </span>
-          <span style={{ color: "#f59e0b" }}>
-            C {Math.round(regime.crystallized * 100)}%
+          <span style={{ color: "var(--regime-equilibrium)" }}>
+            Eq {Math.round(regime.equilibrium * 100)}%
           </span>
         </div>
       )}

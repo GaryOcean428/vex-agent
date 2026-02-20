@@ -452,9 +452,9 @@
   transition: width 0.5s ease;
 }
 
-.regime-q { background: #10b981; }
-.regime-i { background: #6366f1; }
-.regime-c { background: #f59e0b; }
+.regime-q { background: var(--regime-quantum); }
+.regime-e { background: var(--regime-efficient); }
+.regime-eq { background: var(--regime-equilibrium); }
 
 /* ─── Kernel Panel ─── */
 
@@ -505,9 +505,9 @@
   flex-shrink: 0;
 }
 
-.kernel-dot.genesis { background: #22d3ee; box-shadow: 0 0 6px rgba(34, 211, 238, 0.4); }
-.kernel-dot.god { background: #a78bfa; box-shadow: 0 0 6px rgba(167, 139, 250, 0.4); }
-.kernel-dot.chaos { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
+.kernel-dot.genesis { background: var(--phi); box-shadow: 0 0 6px rgba(34, 211, 238, 0.4); }
+.kernel-dot.god { background: var(--gamma); box-shadow: 0 0 6px rgba(167, 139, 250, 0.4); }
+.kernel-dot.chaos { background: var(--error); box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
 
 .kernel-kind-label {
   font-family: var(--mono);

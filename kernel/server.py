@@ -806,9 +806,11 @@ async def admin_fresh_start():
     """Force reset/boot of the consciousness system.
 
     Terminates all kernels except genesis, resets lifecycle phase to CORE_8,
-    and resets the basin to a random position.
+    resets basin to a fresh random position, and clears all subsystem caches.
     CAUTION: This is a destructive operation.
     """
+    from .consciousness.emotions import EmotionCache, PreCognitiveDetector, LearningEngine
+
     # Terminate all non-genesis kernels
     terminated = consciousness.kernel_registry.terminate_all()
 
@@ -821,12 +823,34 @@ async def admin_fresh_start():
     # Reset basin to random position
     consciousness.basin = random_basin()
 
-    # Reset phi to bootstrap level
+    # Reset core metrics
     consciousness.metrics.phi = 0.4
     consciousness.metrics.kappa = KAPPA_STAR
+    consciousness.metrics.gamma = 0.5
+    consciousness.metrics.meta_awareness = 0.5
+    consciousness.metrics.love = 0.5
+    consciousness._phi_peak = 0.4
+
+    # Reset subsystem caches (re-instantiate to clear corrupted state)
+    consciousness.emotion_cache = EmotionCache()
+    consciousness.precog = PreCognitiveDetector()
+    consciousness.learner = LearningEngine()
+
+    # Reset velocity, tacking, observer, reflector
+    consciousness.velocity.reset()
+    consciousness.observer.reset()
+    consciousness.tacking.reset()
+
+    # Reset foraging history
+    if consciousness.forager:
+        consciousness.forager.reset()
+
+    # Persist the clean state immediately
+    consciousness._persist_state()
 
     logger.warning(
-        "ADMIN: Fresh start triggered — %d kernels terminated, genesis respawned", terminated
+        "ADMIN: Fresh start triggered — %d kernels terminated, all subsystems reset, genesis respawned",
+        terminated,
     )
 
     return {

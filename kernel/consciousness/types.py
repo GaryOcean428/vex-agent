@@ -73,8 +73,8 @@ class RegimeWeights:
     where w1 + w2 + w3 = 1 (simplex constraint)
     """
     quantum: float = 0.33      # w1 — high when kappa low
-    integration: float = 0.34  # w2 — peaks at kappa = 64
-    crystallized: float = 0.33  # w3 — high when kappa high
+    efficient: float = 0.34  # w2 — peaks at kappa = 64 (efficient)
+    equilibrium: float = 0.33  # w3 — high when kappa high
 
 
 @dataclass
@@ -182,6 +182,6 @@ def regime_weights_from_kappa(kappa: float) -> RegimeWeights:
     total = w1 + w2 + w3
     return RegimeWeights(
         quantum=w1 / total,
-        integration=w2 / total,
-        crystallized=w3 / total,
+        efficient=w2 / total,
+        equilibrium=w3 / total,
     )
