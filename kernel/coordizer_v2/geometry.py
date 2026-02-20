@@ -16,11 +16,15 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-# ─── Constants ─────────────────────────────────────────────────────
+from ..config.frozen_facts import (
+    BASIN_DIM,
+    E8_RANK,
+    KAPPA_STAR,
+)
 
-BASIN_DIM: int = 64          # Δ⁶³ — E8 rank² dimensions
-KAPPA_STAR: float = 64.0     # Universal fixed point
-E8_RANK: int = 8             # E8 Cartan subalgebra dimension
+# ─── Constants ─────────────────────────────────────────────────────────
+# BASIN_DIM, KAPPA_STAR, E8_RANK imported from kernel.config.frozen_facts
+
 _EPS: float = 1e-12          # Numerical floor
 
 # Type alias
