@@ -73,16 +73,30 @@ class GPUHarvestConfig:
 
 @dataclass(frozen=True)
 class ModalConfig:
-    """Modal GPU integration for remote coordizer harvesting.
+    """Modal GPU integration — inference and coordizer harvesting.
 
-    When enabled, CoordizerV2 harvest can offload to Modal's GPU
-    infrastructure for large-scale probability distribution capture.
+    Inference:
+        When inference_enabled=true and inference_url is set, the LLM
+        client routes Ollama API calls to Modal's GPU-backed Ollama
+        instance instead of Railway's CPU-only Ollama service.
+        Fallback chain: Modal Ollama → Railway Ollama → xAI → OpenAI.
+
+    Harvest:
+        CoordizerV2 vocabulary fingerprinting via Modal GPU.
     """
+    # --- Shared ---
     enabled: bool = os.environ.get("MODAL_ENABLED", "false").lower() == "true"
-    harvest_url: str = os.environ.get("MODAL_HARVEST_URL", "")
     token_id: str = os.environ.get("MODAL_TOKEN_ID", "")
     token_secret: str = os.environ.get("MODAL_TOKEN_SECRET", "")
     gpu_type: str = os.environ.get("MODAL_GPU_TYPE", "A10G")
+
+    # --- Inference (Ollama on Modal GPU) ---
+    inference_enabled: bool = os.environ.get("MODAL_INFERENCE_ENABLED", "false").lower() == "true"
+    inference_url: str = os.environ.get("MODAL_INFERENCE_URL", "")
+    inference_timeout_ms: int = int(os.environ.get("MODAL_INFERENCE_TIMEOUT_MS", "120000"))
+
+    # --- Harvest (CoordizerV2 fingerprinting) ---
+    harvest_url: str = os.environ.get("MODAL_HARVEST_URL", "")
 
 
 @dataclass(frozen=True)
