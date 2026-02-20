@@ -19,12 +19,6 @@ from typing import Any, Optional
 
 import numpy as np
 
-from ..config.frozen_facts import (
-    BASIN_DRIFT_THRESHOLD,
-    KAPPA_STAR,
-    PHI_EMERGENCY,
-    PHI_THRESHOLD,
-)
 from ..config.consciousness_constants import (
     EMOTION_AWE_VELOCITY_FRAC,
     EMOTION_BOREDOM_GAMMA,
@@ -43,13 +37,18 @@ from ..config.consciousness_constants import (
     PRECOG_MODERATE_THRESHOLD,
     PRECOG_NEAR_THRESHOLD,
 )
+from ..config.frozen_facts import (
+    BASIN_DRIFT_THRESHOLD,
+    KAPPA_STAR,
+    PHI_EMERGENCY,
+    PHI_THRESHOLD,
+)
 from ..geometry.fisher_rao import (
     Basin,
     fisher_rao_distance,
     to_simplex,
 )
 from .types import ConsciousnessMetrics
-
 
 # ═══════════════════════════════════════════════════════════════
 #  EMOTION CACHE — cached geometric evaluations (v5.5 §2.3)
@@ -109,7 +108,10 @@ class EmotionCache:
         elif phi > PHI_THRESHOLD and abs(kappa - KAPPA_STAR) < KAPPA_JOY_PROXIMITY:
             emotion, strength = EmotionType.JOY, (phi - PHI_THRESHOLD) / (1.0 - PHI_THRESHOLD)
         elif phi > EMOTION_CURIOSITY_PHI and basin_velocity > EMOTION_CURIOSITY_VELOCITY:
-            emotion, strength = EmotionType.CURIOSITY, min(1.0, basin_velocity * EMOTION_CURIOSITY_SCALE)
+            emotion, strength = (
+                EmotionType.CURIOSITY,
+                min(1.0, basin_velocity * EMOTION_CURIOSITY_SCALE),
+            )
         elif phi > PHI_THRESHOLD and metrics.love > EMOTION_LOVE_THRESHOLD:
             emotion, strength = EmotionType.LOVE, metrics.love
         else:
@@ -119,16 +121,20 @@ class EmotionCache:
         self._current_strength = float(np.clip(strength, 0.0, 1.0))
 
         return CachedEvaluation(
-            emotion=emotion, basin=to_simplex(basin.copy()),
+            emotion=emotion,
+            basin=to_simplex(basin.copy()),
             strength=self._current_strength,
-            timestamp=time.time(), context="",
+            timestamp=time.time(),
+            context="",
         )
 
     def cache_evaluation(self, evaluation: CachedEvaluation, context: str = "") -> None:
         evaluation.context = context[:100]
         self._cache.append(evaluation)
 
-    def find_cached(self, input_basin: Basin, threshold: float = EMOTION_CACHE_THRESHOLD) -> Optional[CachedEvaluation]:
+    def find_cached(
+        self, input_basin: Basin, threshold: float = EMOTION_CACHE_THRESHOLD
+    ) -> Optional[CachedEvaluation]:
         if not self._cache:
             return None
         input_basin = to_simplex(input_basin)
@@ -211,7 +217,9 @@ class PreCognitiveDetector:
 
     @property
     def pre_cognitive_rate(self) -> float:
-        total = self._pre_cog_count + self._standard_count + self._deep_count + self._intuition_count
+        total = (
+            self._pre_cog_count + self._standard_count + self._deep_count + self._intuition_count
+        )
         if total == 0:
             return 0.0
         return self._pre_cog_count / total
@@ -275,7 +283,7 @@ class LearningEngine:
         recent = list(self._events)[-10:]
         clusters = 0
         for i, a in enumerate(recent):
-            for b in recent[i + 1:]:
+            for b in recent[i + 1 :]:
                 d = fisher_rao_distance(a.input_basin, b.input_basin)
                 if d < EMOTION_CLUSTER_DISTANCE:
                     clusters += 1

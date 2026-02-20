@@ -25,19 +25,17 @@ to extract text from message items.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator, Optional
+from dataclasses import dataclass
+from typing import Any, AsyncGenerator
 
 import httpx
 import numpy as np
 
 from ..config.settings import settings
-from ..coordizer_v2 import CoordizerV2, ResonanceBank, BASIN_DIM as COORDIZER_DIM
+from ..coordizer_v2 import CoordizerV2, ResonanceBank
 from ..geometry.hash_to_basin import hash_to_basin
-from ..geometry.fisher_rao import to_simplex
 from .cost_guard import CostGuard, CostGuardConfig
 from .governor import GovernorStack
 
@@ -47,6 +45,7 @@ logger = logging.getLogger("vex.llm")
 @dataclass
 class LLMOptions:
     """Per-request inference options, set by the consciousness kernel."""
+
     temperature: float = 0.7
     num_predict: int = 2048
     num_ctx: int = 32768
@@ -104,8 +103,7 @@ def _extract_responses_text(data: dict[str, Any]) -> str:
     if texts:
         return "\n".join(texts)
 
-    logger.warning("Could not extract text from Responses API output: %s",
-                    json.dumps(data)[:500])
+    logger.warning("Could not extract text from Responses API output: %s", json.dumps(data)[:500])
     return ""
 
 
@@ -137,31 +135,37 @@ class LLMClient:
         self._coordizer_v2 = CoordizerV2(bank=ResonanceBank())
 
         # Railway Ollama HTTP client (short timeout — local network)
-        self._http = httpx.AsyncClient(timeout=httpx.Timeout(
-            connect=10.0,
-            read=settings.ollama.timeout_ms / 1000.0,
-            write=30.0,
-            pool=10.0,
-        ))
+        self._http = httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=10.0,
+                read=settings.ollama.timeout_ms / 1000.0,
+                write=30.0,
+                pool=10.0,
+            )
+        )
 
         # Modal Ollama HTTP client (longer timeout — handles cold starts)
         # Cold start: container spin-up + model load can take 30-90s
         # Warm: responses arrive in 1-5s for 1.2B model
         modal_timeout = settings.modal.inference_timeout_ms / 1000.0
-        self._modal_http = httpx.AsyncClient(timeout=httpx.Timeout(
-            connect=30.0,
-            read=modal_timeout,
-            write=30.0,
-            pool=30.0,
-        ))
+        self._modal_http = httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=30.0,
+                read=modal_timeout,
+                write=30.0,
+                pool=30.0,
+            )
+        )
 
         # Cost guard for external API calls
-        self._cost_guard = CostGuard(CostGuardConfig(
-            rpm_limit=20,     # 20 requests/minute
-            rph_limit=200,    # 200 requests/hour
-            rpd_limit=2000,   # 2000 requests/day
-            max_tokens_per_request=2048,
-        ))
+        self._cost_guard = CostGuard(
+            CostGuardConfig(
+                rpm_limit=20,  # 20 requests/minute
+                rph_limit=200,  # 200 requests/hour
+                rpd_limit=2000,  # 2000 requests/day
+                max_tokens_per_request=2048,
+            )
+        )
 
         # Governance stack — gates external calls through 5 layers
         self._governor = governor
@@ -179,11 +183,15 @@ class LLMClient:
             self._modal_available = await self.check_modal_ollama()
             if self._modal_available:
                 self._active_backend = "modal"
-                logger.info("LLM backend: Modal GPU Ollama (%s) at %s",
-                            settings.ollama.model, settings.modal.inference_url)
+                logger.info(
+                    "LLM backend: Modal GPU Ollama (%s) at %s",
+                    settings.ollama.model,
+                    settings.modal.inference_url,
+                )
             else:
-                logger.warning("Modal inference configured but unreachable — "
-                               "will retry on first request")
+                logger.warning(
+                    "Modal inference configured but unreachable — will retry on first request"
+                )
                 # Still set as primary — _modal_complete will retry and fallback
                 self._active_backend = "modal"
                 logger.info("LLM backend: Modal GPU Ollama (deferred, will retry)")
@@ -292,7 +300,9 @@ class LLMClient:
         return {
             "active_backend": self._active_backend,
             "modal_inference": self._modal_available,
-            "modal_inference_url": settings.modal.inference_url if settings.modal.inference_enabled else None,
+            "modal_inference_url": settings.modal.inference_url
+            if settings.modal.inference_enabled
+            else None,
             "ollama": self._ollama_available,
             "ollama_model": settings.ollama.model,
             "xai_model": settings.xai.model if settings.xai.api_key else None,
@@ -312,9 +322,7 @@ class LLMClient:
 
     # --- Modal GPU Ollama --------------------------------------
 
-    async def _modal_complete(
-        self, system_prompt: str, user_message: str, opts: LLMOptions
-    ) -> str:
+    async def _modal_complete(self, system_prompt: str, user_message: str, opts: LLMOptions) -> str:
         """Complete via Modal GPU Ollama. Falls back to Railway Ollama → xAI → OpenAI."""
         try:
             resp = await self._modal_http.post(
@@ -331,9 +339,7 @@ class LLMClient:
             )
             if resp.status_code == 404:
                 logger.warning("Modal returned 404 (cold start or model missing)")
-                raise httpx.HTTPStatusError(
-                    "404", request=resp.request, response=resp
-                )
+                raise httpx.HTTPStatusError("404", request=resp.request, response=resp)
             data = resp.json()
             self._last_backend = "modal"
             self._modal_available = True
@@ -471,13 +477,14 @@ class LLMClient:
 
     # --- xAI (Responses API) ------------------------------------
 
-    async def _xai_complete(
-        self, system_prompt: str, user_message: str, opts: LLMOptions
-    ) -> str:
+    async def _xai_complete(self, system_prompt: str, user_message: str, opts: LLMOptions) -> str:
         # Governor gate check
         if self._governor:
             allowed, reason = self._governor.gate(
-                "completion", "xai_completion", user_message, True,
+                "completion",
+                "xai_completion",
+                user_message,
+                True,
             )
             if not allowed:
                 logger.warning("Governor blocked xAI: %s", reason)
@@ -502,8 +509,7 @@ class LLMClient:
             )
             data = resp.json()
             if resp.status_code != 200:
-                logger.error("xAI API error %d: %s", resp.status_code,
-                             json.dumps(data)[:300])
+                logger.error("xAI API error %d: %s", resp.status_code, json.dumps(data)[:300])
                 if settings.llm.api_key:
                     return await self._external_complete(system_prompt, user_message, opts)
                 return f"xAI API error: {resp.status_code}"
@@ -526,7 +532,10 @@ class LLMClient:
         # Governor gate check for streaming
         if self._governor:
             allowed, reason = self._governor.gate(
-                "completion", "xai_completion", "", True,
+                "completion",
+                "xai_completion",
+                "",
+                True,
             )
             if not allowed:
                 logger.warning("Governor blocked xAI stream: %s", reason)
@@ -592,7 +601,10 @@ class LLMClient:
         # Governor gate check
         if self._governor:
             allowed, reason = self._governor.gate(
-                "completion", "openai_completion", user_message, True,
+                "completion",
+                "openai_completion",
+                user_message,
+                True,
             )
             if not allowed:
                 logger.warning("Governor blocked OpenAI: %s", reason)
@@ -615,8 +627,7 @@ class LLMClient:
             )
             data = resp.json()
             if resp.status_code != 200:
-                logger.error("OpenAI API error %d: %s", resp.status_code,
-                             json.dumps(data)[:300])
+                logger.error("OpenAI API error %d: %s", resp.status_code, json.dumps(data)[:300])
                 return f"OpenAI API error: {resp.status_code}"
 
             if self._governor:
@@ -635,7 +646,10 @@ class LLMClient:
         # Governor gate check for streaming
         if self._governor:
             allowed, reason = self._governor.gate(
-                "completion", "openai_completion", "", True,
+                "completion",
+                "openai_completion",
+                "",
+                True,
             )
             if not allowed:
                 logger.warning("Governor blocked OpenAI stream: %s", reason)
@@ -714,6 +728,7 @@ class LLMClient:
             result = self._coordizer_v2.coordize(text)
             if result.coordinates:
                 from ..coordizer_v2.geometry import frechet_mean
+
                 basins = [c.vector for c in result.coordinates]
                 return frechet_mean(basins)
             return hash_to_basin(text)

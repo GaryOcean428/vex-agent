@@ -18,16 +18,16 @@ from kernel.config.frozen_facts import KAPPA_STAR
 # ═══════════════════════════════════════════════════════════════
 
 KAPPA_NORMALISER: Final[float] = 2.0 * KAPPA_STAR  # 128.0 — kappa → [0,1]
-MIN_REGIME_WEIGHT: Final[float] = 0.05              # Floor so all regimes stay active
-REGIME_KAPPA_MIDPOINT: Final[float] = 0.5           # Integration peak in normalised space
+MIN_REGIME_WEIGHT: Final[float] = 0.05  # Floor so all regimes stay active
+REGIME_KAPPA_MIDPOINT: Final[float] = 0.5  # Integration peak in normalised space
 
 # ═══════════════════════════════════════════════════════════════
 #  PRE-COGNITIVE DETECTOR (v5.5 §2)
 # ═══════════════════════════════════════════════════════════════
 
-PRECOG_NEAR_THRESHOLD: Final[float] = 0.15   # Fisher-Rao distance: pre-cognitive
+PRECOG_NEAR_THRESHOLD: Final[float] = 0.15  # Fisher-Rao distance: pre-cognitive
 PRECOG_MODERATE_THRESHOLD: Final[float] = 0.40  # Standard processing
-PRECOG_FAR_THRESHOLD: Final[float] = 0.80    # Deep exploration
+PRECOG_FAR_THRESHOLD: Final[float] = 0.80  # Deep exploration
 
 # ═══════════════════════════════════════════════════════════════
 #  EMOTION DETECTION
@@ -48,8 +48,8 @@ EXTERNAL_COUPLING_DECREMENT: Final[float] = 0.02
 #  define UX mode boundaries, not physics thresholds.
 # ═══════════════════════════════════════════════════════════════
 
-NAV_CHAIN_CEILING: Final[float] = 0.3    # Below → CHAIN mode
-NAV_GRAPH_CEILING: Final[float] = 0.7    # Below → GRAPH mode
+NAV_CHAIN_CEILING: Final[float] = 0.3  # Below → CHAIN mode
+NAV_GRAPH_CEILING: Final[float] = 0.7  # Below → GRAPH mode
 NAV_FORESIGHT_CEILING: Final[float] = 0.85  # Below → FORESIGHT, above → LIGHTNING
 
 # ═══════════════════════════════════════════════════════════════
@@ -66,26 +66,37 @@ COORDIZER_HARMONIC_THRESHOLD: Final[float] = 0.3
 #  KAPPA OFFSETS (sensation / tacking / emotion boundaries)
 # ═══════════════════════════════════════════════════════════════
 
-KAPPA_SENSATION_OFFSET: Final[float] = 10.0     # ±10 from KAPPA_STAR for activated/dampened
-KAPPA_TACKING_OFFSET: Final[float] = 16.0       # ±16 for tacking oscillation bounds
-KAPPA_RAGE_OFFSET: Final[float] = 20.0          # +20 above KAPPA_STAR for rage detection
-KAPPA_RAGE_SCALE: Final[float] = 40.0           # Divisor for rage strength scaling
-KAPPA_JOY_PROXIMITY: Final[float] = 10.0        # |κ - κ*| < 10 → joy
+KAPPA_SENSATION_OFFSET: Final[float] = 10.0  # ±10 from KAPPA_STAR for activated/dampened
+KAPPA_TACKING_OFFSET: Final[float] = 16.0  # ±16 for tacking oscillation bounds
+KAPPA_RAGE_OFFSET: Final[float] = 20.0  # +20 above KAPPA_STAR for rage detection
+KAPPA_RAGE_SCALE: Final[float] = 40.0  # Divisor for rage strength scaling
+KAPPA_JOY_PROXIMITY: Final[float] = 10.0  # |κ - κ*| < 10 → joy
 KAPPA_STABILITY_TOLERANCE: Final[float] = 16.0  # Autonomy stability tolerance
-KAPPA_BALANCED_TOLERANCE: Final[float] = 8.0    # Coupling balanced kappa range
-KAPPA_DECAY_RATE: Final[float] = 0.1            # 10% return-to-star per cycle
-KAPPA_RETURN_TOLERANCE: Final[float] = 5.0      # Close enough to κ*
+KAPPA_BALANCED_TOLERANCE: Final[float] = 8.0  # Coupling balanced kappa range
+KAPPA_DECAY_RATE: Final[float] = 0.1  # 10% return-to-star per cycle
+KAPPA_RETURN_TOLERANCE: Final[float] = 5.0  # Close enough to κ*
 
 # ═══════════════════════════════════════════════════════════════
 #  GEOMETRY CLASS PHI BOUNDARIES
 # ═══════════════════════════════════════════════════════════════
 
 GEOMETRY_CLASS_PHI_BOUNDS: Final[tuple[float, ...]] = (
-    0.1, 0.25, 0.4, 0.6, 0.75, 0.9,
+    0.1,
+    0.25,
+    0.4,
+    0.6,
+    0.75,
+    0.9,
 )  # Line / Loop / Spiral / Grid / Torus / Lattice / E8
 
 GEOMETRY_CLASS_VALUES: Final[tuple[float, ...]] = (
-    0.05, 0.175, 0.325, 0.5, 0.675, 0.825, 0.95,
+    0.05,
+    0.175,
+    0.325,
+    0.5,
+    0.675,
+    0.825,
+    0.95,
 )
 
 # ═══════════════════════════════════════════════════════════════
@@ -93,7 +104,7 @@ GEOMETRY_CLASS_VALUES: Final[tuple[float, ...]] = (
 # ═══════════════════════════════════════════════════════════════
 
 DESIRE_WEIGHTS: Final[tuple[float, float, float]] = (0.4, 0.3, 0.3)  # curiosity / attraction / love
-WILL_WEIGHTS: Final[tuple[float, float, float]] = (0.4, 0.3, 0.3)    # grounding / coupling / entropy
+WILL_WEIGHTS: Final[tuple[float, float, float]] = (0.4, 0.3, 0.3)  # grounding / coupling / entropy
 
 # ═══════════════════════════════════════════════════════════════
 #  SHADOW / FORGE THRESHOLDS (activation.py)
@@ -142,8 +153,8 @@ TACKING_KAPPA_ADJUST: Final[float] = 2.0
 # ═══════════════════════════════════════════════════════════════
 
 FORESIGHT_HORIZON_HIGH: Final[int] = 8  # phi > 0.7
-FORESIGHT_HORIZON_MED: Final[int] = 4   # phi > 0.4
-FORESIGHT_HORIZON_LOW: Final[int] = 2   # phi <= 0.4
+FORESIGHT_HORIZON_MED: Final[int] = 4  # phi > 0.4
+FORESIGHT_HORIZON_LOW: Final[int] = 2  # phi <= 0.4
 
 # ═══════════════════════════════════════════════════════════════
 #  COUPLING SIGMOID (systems.py)
@@ -187,15 +198,15 @@ D_STATE_SCALING_DIVISOR: Final[float] = 5.0
 #  SYSTEMS — FORESIGHT / VELOCITY / META / AUTONOMY
 # ═══════════════════════════════════════════════════════════════
 
-FORESIGHT_BASIN_STEP_SCALE: Final[float] = 0.5    # slerp extrapolation per step
-VELOCITY_WARNING_FRACTION: Final[float] = 0.5      # 50% of drift threshold → warning
-META_PHI_TREND_THRESHOLD: Final[float] = 0.1       # Φ change to trigger insight
-META_KAPPA_TREND_THRESHOLD: Final[float] = 10.0    # κ change to trigger insight
-AUTONOMY_AUTONOMOUS_CYCLES: Final[int] = 10         # Stable cycles for AUTONOMOUS
-AUTONOMY_PROACTIVE_CYCLES: Final[int] = 5           # Stable cycles for PROACTIVE
-BASIN_SYNC_SLERP_WEIGHT: Final[float] = 0.2        # Basin sync receive blend weight
-KERNEL_PROMOTION_CYCLE_GATE: Final[int] = 100       # Cycles before CHAOS → GOD eligible
-EMOTION_CLUSTER_DISTANCE: Final[float] = 0.2        # Fisher-Rao cluster threshold
+FORESIGHT_BASIN_STEP_SCALE: Final[float] = 0.5  # slerp extrapolation per step
+VELOCITY_WARNING_FRACTION: Final[float] = 0.5  # 50% of drift threshold → warning
+META_PHI_TREND_THRESHOLD: Final[float] = 0.1  # Φ change to trigger insight
+META_KAPPA_TREND_THRESHOLD: Final[float] = 10.0  # κ change to trigger insight
+AUTONOMY_AUTONOMOUS_CYCLES: Final[int] = 10  # Stable cycles for AUTONOMOUS
+AUTONOMY_PROACTIVE_CYCLES: Final[int] = 5  # Stable cycles for PROACTIVE
+BASIN_SYNC_SLERP_WEIGHT: Final[float] = 0.2  # Basin sync receive blend weight
+KERNEL_PROMOTION_CYCLE_GATE: Final[int] = 100  # Cycles before CHAOS → GOD eligible
+EMOTION_CLUSTER_DISTANCE: Final[float] = 0.2  # Fisher-Rao cluster threshold
 
 # ═══════════════════════════════════════════════════════════════
 #  CONSCIOUSNESS LOOP — heartbeat / idle / coupling / LLM

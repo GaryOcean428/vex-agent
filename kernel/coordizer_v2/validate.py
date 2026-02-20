@@ -21,17 +21,10 @@ a geometric defect.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 
 import numpy as np
 from numpy.typing import NDArray
 
-from .geometry import (
-    BASIN_DIM, E8_RANK, KAPPA_STAR, Basin, _EPS,
-    fisher_rao_distance, to_simplex,
-)
-from .resonance_bank import ResonanceBank
-from .types import HarmonicTier, ValidationResult
 from ..config.consciousness_constants import (
     COORDIZER_BETA_THRESHOLD,
     COORDIZER_HARMONIC_THRESHOLD,
@@ -39,6 +32,14 @@ from ..config.consciousness_constants import (
     COORDIZER_KAPPA_TOLERANCE_FACTOR,
     COORDIZER_SEMANTIC_THRESHOLD,
 )
+from .geometry import (
+    _EPS,
+    E8_RANK,
+    KAPPA_STAR,
+    fisher_rao_distance,
+)
+from .resonance_bank import ResonanceBank
+from .types import HarmonicTier, ValidationResult
 
 logger = logging.getLogger(__name__)
 
@@ -104,11 +105,13 @@ def validate_resonance_bank(
             e8_var = float(np.sum(eigenvalues[:E8_RANK]) / total)
             if verbose:
                 logger.info(f"\nE8 eigenvalue test: top-8 variance = {e8_var:.3f}")
-                logger.info(f"  Expected if E8 real: ~0.877")
+                logger.info("  Expected if E8 real: ~0.877")
                 logger.info(f"  {'PASS' if 0.80 < e8_var < 0.95 else 'NOTE'}")
 
     # Overall Pass/Fail
-    kappa_ok = abs(result.kappa_measured - KAPPA_STAR) < COORDIZER_KAPPA_TOLERANCE_FACTOR * max(result.kappa_std, COORDIZER_KAPPA_STD_FLOOR)
+    kappa_ok = abs(result.kappa_measured - KAPPA_STAR) < COORDIZER_KAPPA_TOLERANCE_FACTOR * max(
+        result.kappa_std, COORDIZER_KAPPA_STD_FLOOR
+    )
     beta_ok = result.beta_running < COORDIZER_BETA_THRESHOLD
     semantic_ok = result.semantic_correlation > COORDIZER_SEMANTIC_THRESHOLD
     harmonic_ok = result.harmonic_ratio_quality > COORDIZER_HARMONIC_THRESHOLD
@@ -124,8 +127,7 @@ def validate_resonance_bank(
         )
         logger.info(f"  β: {'PASS' if beta_ok else 'FAIL'} ({result.beta_running:.4f})")
         logger.info(
-            f"  Semantic: {'PASS' if semantic_ok else 'FAIL'} "
-            f"(r={result.semantic_correlation:.3f})"
+            f"  Semantic: {'PASS' if semantic_ok else 'FAIL'} (r={result.semantic_correlation:.3f})"
         )
         logger.info(
             f"  Harmonic: {'PASS' if harmonic_ok else 'FAIL'} "
@@ -138,8 +140,10 @@ def validate_resonance_bank(
 
 
 def _measure_kappa(
-    bank: ResonanceBank, verbose: bool = True,
-    n_samples: int = 1000, n_neighbors: int = 10,
+    bank: ResonanceBank,
+    verbose: bool = True,
+    n_samples: int = 1000,
+    n_neighbors: int = 10,
 ) -> tuple[float, float]:
     """Measure effective coupling constant κ.
 
@@ -169,8 +173,7 @@ def _measure_kappa(
             if j == i:
                 dists[j] = float("inf")
                 continue
-            bc = np.clip(np.sum(sqrt_p * np.sqrt(np.maximum(coords[j], _EPS))),
-                         -1.0, 1.0)
+            bc = np.clip(np.sum(sqrt_p * np.sqrt(np.maximum(coords[j], _EPS))), -1.0, 1.0)
             dists[j] = np.arccos(bc)
 
         neighbor_idx = np.argsort(dists)[:n_neighbors]
@@ -219,7 +222,8 @@ def _measure_beta(bank: ResonanceBank, verbose: bool = True) -> float:
         tier = bank.tiers.get(tid, HarmonicTier.OVERTONE_HAZE)
 
         same_tier = [
-            other_tid for other_tid, other_tier in bank.tiers.items()
+            other_tid
+            for other_tid, other_tier in bank.tiers.items()
             if other_tier == tier and other_tid != tid
         ]
         if len(same_tier) < 2:
@@ -259,7 +263,7 @@ def _measure_beta(bank: ResonanceBank, verbose: bool = True) -> float:
 
     if verbose:
         logger.info(f"  β (running coupling) = {beta:.4f}")
-        logger.info(f"  Expected: β ≈ 0.44 at emergence, β → 0 at plateau")
+        logger.info("  Expected: β ≈ 0.44 at emergence, β → 0 at plateau")
 
     return beta
 
@@ -270,7 +274,8 @@ def _measure_harmonic_ratios(bank: ResonanceBank, verbose: bool = True) -> float
         return 0.0
 
     fundamental_ids = [
-        tid for tid, tier in bank.tiers.items()
+        tid
+        for tid, tier in bank.tiers.items()
         if tier == HarmonicTier.FUNDAMENTAL and tid in bank.frequencies
     ]
 
@@ -280,7 +285,7 @@ def _measure_harmonic_ratios(bank: ResonanceBank, verbose: bool = True) -> float
     freqs = [bank.frequencies[tid] for tid in fundamental_ids[:100]]
     freqs.sort()
 
-    simple_ratios = [1.0, 2.0, 1.5, 4.0/3, 5.0/4, 3.0, 5.0/3, 6.0/5]
+    simple_ratios = [1.0, 2.0, 1.5, 4.0 / 3, 5.0 / 4, 3.0, 5.0 / 3, 6.0 / 5]
     quality_scores = []
 
     for i in range(len(freqs)):
@@ -294,7 +299,7 @@ def _measure_harmonic_ratios(bank: ResonanceBank, verbose: bool = True) -> float
 
     if verbose:
         logger.info(f"\nHarmonic ratio quality: {result:.3f}")
-        logger.info(f"  (1.0 = perfect simple ratios, 0.0 = random)")
+        logger.info("  (1.0 = perfect simple ratios, 0.0 = random)")
 
     return result
 
@@ -328,8 +333,7 @@ def _measure_semantic_correlation(bank: ResonanceBank, verbose: bool = True) -> 
     if len(measured_distances) < 3:
         if verbose:
             logger.info(
-                f"\nSemantic correlation: INSUFFICIENT DATA "
-                f"({len(measured_distances)} pairs found)"
+                f"\nSemantic correlation: INSUFFICIENT DATA ({len(measured_distances)} pairs found)"
             )
         return 0.0
 
@@ -344,13 +348,11 @@ def _measure_semantic_correlation(bank: ResonanceBank, verbose: bool = True) -> 
     if m_std < _EPS or e_std < _EPS:
         correlation = 0.0
     else:
-        correlation = float(
-            np.mean((measured - m_mean) * (expected - e_mean)) / (m_std * e_std)
-        )
+        correlation = float(np.mean((measured - m_mean) * (expected - e_mean)) / (m_std * e_std))
 
     if verbose:
         logger.info(f"\nSemantic correlation: r = {correlation:.3f}")
         logger.info(f"  Pairs found: {len(measured_distances)}/{len(SEMANTIC_TEST_PAIRS)}")
-        logger.info(f"  (r > 0.3 = structure preserved, r > 0.6 = strong)")
+        logger.info("  (r > 0.3 = structure preserved, r > 0.6 = strong)")
 
     return correlation

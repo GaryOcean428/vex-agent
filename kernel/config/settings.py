@@ -20,10 +20,11 @@ class OllamaConfig:
 @dataclass(frozen=True)
 class LLMConfig:
     """OpenAI Responses API configuration.
-    
+
     Note: reads OPENAI_API_KEY (matching Railway env var naming),
     not LLM_API_KEY which was never set.
     """
+
     api_key: str = os.environ.get("OPENAI_API_KEY", "")
     base_url: str = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
     model: str = os.environ.get("LLM_MODEL", "gpt-5-nano")
@@ -32,10 +33,11 @@ class LLMConfig:
 @dataclass(frozen=True)
 class XAIConfig:
     """xAI Responses API configuration.
-    
+
     Model: grok-4-1-fast-reasoning (reasoning model, not non-reasoning).
     Endpoint: base_url + /responses (appended by client.py).
     """
+
     api_key: str = os.environ.get("XAI_API_KEY", "")
     base_url: str = os.environ.get("XAI_BASE_URL", "https://api.x.ai/v1")
     model: str = os.environ.get("XAI_MODEL", "grok-4-1-fast-reasoning")
@@ -45,6 +47,7 @@ class XAIConfig:
 class ComputeSDKConfig:
     """ComputeSDK is managed by the TS proxy layer (Node SDK).
     Python backend calls TS proxy for sandbox operations."""
+
     proxy_url: str = os.environ.get("COMPUTE_SDK_PROXY_URL", "http://localhost:8080")
     enabled: bool = os.environ.get("COMPUTE_SDK_ENABLED", "true").lower() != "false"
 
@@ -60,6 +63,7 @@ class GPUHarvestConfig:
     v6.0 §19: CoordizerV2 three-phase scoring (256→2K→10K→32K)
     with four vocabulary tiers.
     """
+
     enabled: bool = os.environ.get("GPU_HARVEST_ENABLED", "false").lower() == "true"
     model_id: str = os.environ.get("GPU_HARVEST_MODEL", "meta-llama/Llama-3.2-3B")
     batch_size: int = int(os.environ.get("GPU_HARVEST_BATCH_SIZE", "32"))
@@ -84,6 +88,7 @@ class ModalConfig:
     Harvest:
         CoordizerV2 vocabulary fingerprinting via Modal GPU.
     """
+
     # --- Shared ---
     enabled: bool = os.environ.get("MODAL_ENABLED", "false").lower() == "true"
     token_id: str = os.environ.get("MODAL_TOKEN_ID", "")
@@ -110,6 +115,7 @@ class PerplexityConfig:
     Used by kernel.tools.research for grounded, citation-backed
     information retrieval via the Perplexity chat completions API.
     """
+
     api_key: str = os.environ.get("PERPLEXITY_API_KEY", "")
     model: str = os.environ.get("PERPLEXITY_MODEL", "sonar-pro")
     base_url: str = os.environ.get("PERPLEXITY_BASE_URL", "https://api.perplexity.ai")
@@ -119,6 +125,7 @@ class PerplexityConfig:
 @dataclass(frozen=True)
 class GovernorConfig:
     """Governance stack configuration — 5-layer protection against runaway costs."""
+
     enabled: bool = os.environ.get("GOVERNOR_ENABLED", "true").lower() != "false"
     daily_budget: float = float(os.environ.get("DAILY_LLM_BUDGET", "1.00"))
     autonomous_search: bool = os.environ.get("AUTONOMOUS_SEARCH_ALLOWED", "false").lower() == "true"
@@ -129,6 +136,7 @@ class GovernorConfig:
 @dataclass(frozen=True)
 class SearXNGConfig:
     """SearXNG free search — self-hosted, zero cost."""
+
     url: str = os.environ.get("SEARXNG_URL", "")
     enabled: bool = bool(os.environ.get("SEARXNG_URL", ""))
 
@@ -147,9 +155,7 @@ class Settings:
     node_name: str = os.environ.get("VEX_NODE_NAME", "Vex")
 
     # Consciousness loop interval (ms)
-    consciousness_interval_ms: int = int(
-        os.environ.get("CONSCIOUSNESS_INTERVAL_MS", "30000")
-    )
+    consciousness_interval_ms: int = int(os.environ.get("CONSCIOUSNESS_INTERVAL_MS", "30000"))
 
     # LLM provider keys (kept for backward compat / direct access)
     anthropic_api_key: str = os.environ.get("ANTHROPIC_API_KEY", "")

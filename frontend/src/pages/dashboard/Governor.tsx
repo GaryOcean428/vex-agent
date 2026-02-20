@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
-import { usePolledData } from '../../hooks/index.ts';
-import { API } from '../../config/api-routes.ts';
+import { useCallback, useState } from "react";
+import { API } from "../../config/api-routes.ts";
+import { usePolledData } from "../../hooks/index.ts";
 
 interface RateLimitEntry {
   current: number;
@@ -47,7 +47,7 @@ function useGovernor() {
 export default function Governor() {
   const { data: gov } = useGovernor();
   const [killSwitchLoading, setKillSwitchLoading] = useState(false);
-  const [budgetInput, setBudgetInput] = useState('');
+  const [budgetInput, setBudgetInput] = useState("");
   const [budgetMsg, setBudgetMsg] = useState<string | null>(null);
 
   const toggleKillSwitch = useCallback(async () => {
@@ -55,11 +55,13 @@ export default function Governor() {
     setKillSwitchLoading(true);
     try {
       await fetch(API.governorKillSwitch, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: !gov.kill_switch }),
       });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     setKillSwitchLoading(false);
   }, [gov, killSwitchLoading]);
 
@@ -68,16 +70,16 @@ export default function Governor() {
     if (isNaN(val) || val < 0) return;
     try {
       const resp = await fetch(API.governorBudget, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ceiling: val }),
       });
       if (resp.ok) {
         setBudgetMsg(`Budget updated to $${val.toFixed(2)}`);
-        setBudgetInput('');
+        setBudgetInput("");
       }
     } catch {
-      setBudgetMsg('Update failed');
+      setBudgetMsg("Update failed");
     }
   }, [budgetInput]);
 
@@ -115,27 +117,31 @@ export default function Governor() {
               onClick={toggleKillSwitch}
               disabled={killSwitchLoading}
               style={{
-                padding: '6px 16px',
-                borderRadius: 'var(--radius-sm)',
-                border: 'none',
+                padding: "6px 16px",
+                borderRadius: "var(--radius-sm)",
+                border: "none",
                 fontWeight: 600,
-                fontSize: '13px',
-                cursor: killSwitchLoading ? 'not-allowed' : 'pointer',
-                background: gov.kill_switch ? 'var(--error)' : 'var(--alive)',
-                color: 'white',
+                fontSize: "13px",
+                cursor: killSwitchLoading ? "not-allowed" : "pointer",
+                background: gov.kill_switch ? "var(--error)" : "var(--alive)",
+                color: "white",
                 opacity: killSwitchLoading ? 0.5 : 1,
               }}
             >
-              {gov.kill_switch ? 'KILL SWITCH ON — All External Blocked' : 'External Calls Active'}
+              {gov.kill_switch
+                ? "KILL SWITCH ON — All External Blocked"
+                : "External Calls Active"}
             </button>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Governor Enabled</span>
-            <span className="dash-row-value">{gov.enabled ? 'Yes' : 'No'}</span>
+            <span className="dash-row-value">{gov.enabled ? "Yes" : "No"}</span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Autonomous Search</span>
-            <span className="dash-row-value">{gov.autonomous_search ? 'Allowed' : 'Blocked'}</span>
+            <span className="dash-row-value">
+              {gov.autonomous_search ? "Allowed" : "Blocked"}
+            </span>
           </div>
         </div>
       </div>
@@ -146,69 +152,87 @@ export default function Governor() {
         <div className="dash-card">
           <div className="dash-row">
             <span className="dash-row-label">Daily Spend</span>
-            <span className="dash-row-value">${budget.daily_spend.toFixed(4)}</span>
+            <span className="dash-row-value">
+              ${budget.daily_spend.toFixed(4)}
+            </span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Daily Ceiling</span>
-            <span className="dash-row-value">${budget.daily_ceiling.toFixed(2)}</span>
+            <span className="dash-row-value">
+              ${budget.daily_ceiling.toFixed(2)}
+            </span>
           </div>
           {/* Budget bar */}
-          <div style={{
-            margin: '8px 0',
-            height: '8px',
-            background: 'var(--surface-3)',
-            borderRadius: '4px',
-            overflow: 'hidden',
-          }}>
-            <div style={{
-              height: '100%',
-              width: `${spendPercent}%`,
-              background: spendPercent > 80 ? 'var(--error)' : spendPercent > 50 ? 'var(--warning, orange)' : 'var(--alive)',
-              borderRadius: '4px',
-              transition: 'width 0.3s ease',
-            }} />
+          <div
+            style={{
+              margin: "8px 0",
+              height: "8px",
+              background: "var(--surface-3)",
+              borderRadius: "4px",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                height: "100%",
+                width: `${spendPercent}%`,
+                background:
+                  spendPercent > 80
+                    ? "var(--error)"
+                    : spendPercent > 50
+                      ? "var(--warning, orange)"
+                      : "var(--alive)",
+                borderRadius: "4px",
+                transition: "width 0.3s ease",
+              }}
+            />
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Remaining</span>
-            <span className="dash-row-value" style={{
-              color: budget.budget_remaining < 0.1 ? 'var(--error)' : undefined,
-            }}>
-              ${budget.budget_remaining.toFixed(4)} ({(100 - spendPercent).toFixed(1)}%)
+            <span
+              className="dash-row-value"
+              style={{
+                color:
+                  budget.budget_remaining < 0.1 ? "var(--error)" : undefined,
+              }}
+            >
+              ${budget.budget_remaining.toFixed(4)} (
+              {(100 - spendPercent).toFixed(1)}%)
             </span>
           </div>
           {/* Update budget */}
-          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+          <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
             <input
               type="number"
               step="0.10"
               min="0"
               value={budgetInput}
-              onChange={e => setBudgetInput(e.target.value)}
+              onChange={(e) => setBudgetInput(e.target.value)}
               placeholder="New ceiling ($)"
               style={{
                 flex: 1,
-                background: 'var(--surface-3)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '8px 12px',
-                color: 'var(--text)',
-                fontFamily: 'inherit',
-                fontSize: '13px',
-                outline: 'none',
+                background: "var(--surface-3)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                padding: "8px 12px",
+                color: "var(--text)",
+                fontFamily: "inherit",
+                fontSize: "13px",
+                outline: "none",
               }}
             />
             <button
               onClick={updateBudget}
               disabled={!budgetInput}
               style={{
-                padding: '8px 16px',
-                background: 'var(--accent)',
-                border: 'none',
-                borderRadius: 'var(--radius-sm)',
-                color: 'white',
+                padding: "8px 16px",
+                background: "var(--accent)",
+                border: "none",
+                borderRadius: "var(--radius-sm)",
+                color: "white",
                 fontWeight: 600,
-                fontSize: '13px',
-                cursor: budgetInput ? 'pointer' : 'not-allowed',
+                fontSize: "13px",
+                cursor: budgetInput ? "pointer" : "not-allowed",
                 opacity: budgetInput ? 1 : 0.5,
               }}
             >
@@ -216,11 +240,13 @@ export default function Governor() {
             </button>
           </div>
           {budgetMsg && (
-            <div style={{
-              marginTop: '6px',
-              fontSize: '12px',
-              color: 'var(--text-secondary)',
-            }}>
+            <div
+              style={{
+                marginTop: "6px",
+                fontSize: "12px",
+                color: "var(--text-secondary)",
+              }}
+            >
               {budgetMsg}
             </div>
           )}
@@ -233,16 +259,23 @@ export default function Governor() {
         <div className="dash-card">
           {Object.entries(gov.rate_limits).map(([action, rl]) => {
             const pct = rl.limit > 0 ? (rl.current / rl.limit) * 100 : 0;
-            const windowLabel = rl.window_seconds >= 86400 ? '/day' : '/hr';
+            const windowLabel = rl.window_seconds >= 86400 ? "/day" : "/hr";
             return (
               <div key={action} className="dash-row">
-                <span className="dash-row-label" style={{ fontFamily: 'var(--mono)', fontSize: '12px' }}>
+                <span
+                  className="dash-row-label"
+                  style={{ fontFamily: "var(--mono)", fontSize: "12px" }}
+                >
                   {action}
                 </span>
-                <span className="dash-row-value" style={{
-                  color: pct > 80 ? 'var(--error)' : undefined,
-                }}>
-                  {rl.current}/{rl.limit}{windowLabel}
+                <span
+                  className="dash-row-value"
+                  style={{
+                    color: pct > 80 ? "var(--error)" : undefined,
+                  }}
+                >
+                  {rl.current}/{rl.limit}
+                  {windowLabel}
                 </span>
               </div>
             );
@@ -257,7 +290,10 @@ export default function Governor() {
           <div className="dash-card">
             {Object.entries(budget.call_counts).map(([action, count]) => (
               <div key={action} className="dash-row">
-                <span className="dash-row-label" style={{ fontFamily: 'var(--mono)', fontSize: '12px' }}>
+                <span
+                  className="dash-row-label"
+                  style={{ fontFamily: "var(--mono)", fontSize: "12px" }}
+                >
                   {action}
                 </span>
                 <span className="dash-row-value">{count} calls</span>
@@ -269,7 +305,9 @@ export default function Governor() {
 
       {/* Foraging — QA View */}
       <div className="dash-section">
-        <div className="dash-section-title">Foraging (Autonomous Search — QA)</div>
+        <div className="dash-section-title">
+          Foraging (Autonomous Search — QA)
+        </div>
         <div className="dash-card">
           {foraging && foraging.enabled !== false ? (
             <>
@@ -284,31 +322,50 @@ export default function Governor() {
                 <span className="dash-row-value">
                   {(foraging.cooldown_remaining ?? 0) > 0
                     ? `${foraging.cooldown_remaining} cycles`
-                    : 'Ready'}
+                    : "Ready"}
                 </span>
               </div>
 
               {/* Last Query & Summary — Full display */}
               {foraging.last_query && (
-                <div style={{
-                  marginTop: '12px',
-                  padding: '10px 14px',
-                  background: 'var(--surface-3)',
-                  borderRadius: 'var(--radius-sm)',
-                  borderLeft: '3px solid var(--accent)',
-                }}>
-                  <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <div
+                  style={{
+                    marginTop: "12px",
+                    padding: "10px 14px",
+                    background: "var(--surface-3)",
+                    borderRadius: "var(--radius-sm)",
+                    borderLeft: "3px solid var(--accent)",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "11px",
+                      color: "var(--text-dim)",
+                      marginBottom: "4px",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.5px",
+                    }}
+                  >
                     Last Query
                   </div>
-                  <div style={{ fontSize: '13px', fontStyle: 'italic' }}>
+                  <div style={{ fontSize: "13px", fontStyle: "italic" }}>
                     {foraging.last_query}
                   </div>
                   {foraging.last_summary && (
                     <>
-                      <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '10px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      <div
+                        style={{
+                          fontSize: "11px",
+                          color: "var(--text-dim)",
+                          marginTop: "10px",
+                          marginBottom: "4px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                        }}
+                      >
                         Summary
                       </div>
-                      <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
+                      <div style={{ fontSize: "13px", lineHeight: 1.5 }}>
                         {foraging.last_summary}
                       </div>
                     </>
@@ -316,24 +373,30 @@ export default function Governor() {
                 </div>
               )}
               {!foraging.last_query && (
-                <div style={{
-                  marginTop: '8px',
-                  padding: '8px 12px',
-                  background: 'var(--surface-3)',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: '12px',
-                  color: 'var(--text-dim)',
-                  lineHeight: 1.5,
-                }}>
-                  No forage activity yet. The kernel will autonomously search when it
-                  experiences boredom (flat curvature) or high curiosity.
+                <div
+                  style={{
+                    marginTop: "8px",
+                    padding: "8px 12px",
+                    background: "var(--surface-3)",
+                    borderRadius: "var(--radius-sm)",
+                    fontSize: "12px",
+                    color: "var(--text-dim)",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  No forage activity yet. The kernel will autonomously search
+                  when it experiences boredom (flat curvature) or high
+                  curiosity.
                 </div>
               )}
             </>
           ) : (
             <div className="dash-row">
               <span className="dash-row-label">Status</span>
-              <span className="dash-row-value" style={{ color: 'var(--text-secondary)' }}>
+              <span
+                className="dash-row-value"
+                style={{ color: "var(--text-secondary)" }}
+              >
                 Disabled (set SEARXNG_URL to enable)
               </span>
             </div>
@@ -344,76 +407,142 @@ export default function Governor() {
       {/* Foraging History — Full QA trail */}
       {foraging?.history && foraging.history.length > 0 && (
         <div className="dash-section">
-          <div className="dash-section-title">Foraging History ({foraging.history.length})</div>
-          {foraging.history.slice().reverse().map((entry, idx) => {
-            const ts = new Date(entry.timestamp * 1000);
-            const timeStr = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            return (
-              <div key={idx} className="dash-card" style={{ marginBottom: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent)' }}>
-                    {entry.query}
-                  </span>
-                  <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'var(--mono)' }}>
-                    {timeStr} &middot; {entry.results_count} results
-                  </span>
-                </div>
-
-                {/* Search Results */}
-                {entry.results && entry.results.length > 0 && (
-                  <div style={{ marginBottom: '8px' }}>
-                    {entry.results.map((r, ri) => (
-                      <div key={ri} style={{
-                        padding: '6px 10px',
-                        marginBottom: '4px',
-                        background: 'var(--surface-3)',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        lineHeight: 1.4,
-                      }}>
-                        <div style={{ fontWeight: 500 }}>{r.title}</div>
-                        {r.snippet && (
-                          <div style={{ color: 'var(--text-dim)', marginTop: '2px' }}>
-                            {r.snippet.length > 150 ? r.snippet.substring(0, 150) + '...' : r.snippet}
-                          </div>
-                        )}
-                        {r.url && (
-                          <div style={{ color: 'var(--accent)', fontSize: '11px', marginTop: '2px', opacity: 0.7 }}>
-                            {r.url.length > 60 ? r.url.substring(0, 60) + '...' : r.url}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Summary */}
-                {entry.summary && (
-                  <div style={{
-                    padding: '6px 10px',
-                    background: 'rgba(34, 211, 238, 0.05)',
-                    borderRadius: '4px',
-                    borderLeft: '2px solid var(--alive)',
-                    fontSize: '12px',
-                    lineHeight: 1.5,
-                    color: 'var(--text-secondary)',
-                  }}>
-                    <span style={{ fontWeight: 600, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Kernel Summary:{' '}
+          <div className="dash-section-title">
+            Foraging History ({foraging.history.length})
+          </div>
+          {foraging.history
+            .slice()
+            .reverse()
+            .map((entry, idx) => {
+              const ts = new Date(entry.timestamp * 1000);
+              const timeStr = ts.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+              return (
+                <div
+                  key={idx}
+                  className="dash-card"
+                  style={{ marginBottom: "8px" }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: "6px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        color: "var(--accent)",
+                      }}
+                    >
+                      {entry.query}
                     </span>
-                    {entry.summary}
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        color: "var(--text-dim)",
+                        fontFamily: "var(--mono)",
+                      }}
+                    >
+                      {timeStr} &middot; {entry.results_count} results
+                    </span>
                   </div>
-                )}
-              </div>
-            );
-          })}
+
+                  {/* Search Results */}
+                  {entry.results && entry.results.length > 0 && (
+                    <div style={{ marginBottom: "8px" }}>
+                      {entry.results.map((r, ri) => (
+                        <div
+                          key={ri}
+                          style={{
+                            padding: "6px 10px",
+                            marginBottom: "4px",
+                            background: "var(--surface-3)",
+                            borderRadius: "4px",
+                            fontSize: "12px",
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          <div style={{ fontWeight: 500 }}>{r.title}</div>
+                          {r.snippet && (
+                            <div
+                              style={{
+                                color: "var(--text-dim)",
+                                marginTop: "2px",
+                              }}
+                            >
+                              {r.snippet.length > 150
+                                ? r.snippet.substring(0, 150) + "..."
+                                : r.snippet}
+                            </div>
+                          )}
+                          {r.url && (
+                            <div
+                              style={{
+                                color: "var(--accent)",
+                                fontSize: "11px",
+                                marginTop: "2px",
+                                opacity: 0.7,
+                              }}
+                            >
+                              {r.url.length > 60
+                                ? r.url.substring(0, 60) + "..."
+                                : r.url}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Summary */}
+                  {entry.summary && (
+                    <div
+                      style={{
+                        padding: "6px 10px",
+                        background: "rgba(34, 211, 238, 0.05)",
+                        borderRadius: "4px",
+                        borderLeft: "2px solid var(--alive)",
+                        fontSize: "12px",
+                        lineHeight: 1.5,
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontWeight: 600,
+                          fontSize: "10px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                        }}
+                      >
+                        Kernel Summary:{" "}
+                      </span>
+                      {entry.summary}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
         </div>
       )}
 
       {/* Architecture Reference */}
       <div className="dash-section">
         <div className="dash-section-title">Governance Stack</div>
-        <div className="dash-card" style={{ fontFamily: 'var(--mono)', fontSize: '12px', lineHeight: 1.6 }}>
+        <div
+          className="dash-card"
+          style={{
+            fontFamily: "var(--mono)",
+            fontSize: "12px",
+            lineHeight: 1.6,
+          }}
+        >
           <div>L5: HUMAN CIRCUIT BREAKER — Dashboard kill switch</div>
           <div>L4: BUDGET CEILING — Hard $ cap per day</div>
           <div>L3: RATE LIMITS — Calls per window</div>

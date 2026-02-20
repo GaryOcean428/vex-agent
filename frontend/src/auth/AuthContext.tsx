@@ -1,5 +1,12 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { API } from '../config/api-routes.ts';
+import {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useState,
+    type ReactNode,
+} from "react";
+import { API } from "../config/api-routes.ts";
 
 interface AuthState {
   authenticated: boolean;
@@ -32,7 +39,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  useEffect(() => { checkAuth(); }, [checkAuth]);
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
   return (
     <AuthContext.Provider value={{ authenticated, loading, checkAuth }}>
