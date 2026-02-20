@@ -17,9 +17,10 @@ Thank you for your interest in contributing to Vex Agent! This document outlines
 
 ### Prerequisites
 
-- **Node.js:** ≥20.0.0 (use Node 20 LTS recommended)
+- **Node.js:** ≥20.0.0 (Node 22 LTS recommended)
+- **pnpm:** Latest stable version (`corepack enable && corepack prepare pnpm@latest --activate`)
 - **Python:** 3.11+ (for kernel package)
-- **pnpm:** Latest stable version (repo uses `pnpm-lock.yaml`)
+- **uv:** Latest stable version (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - **Git:** Latest stable version
 - **Docker:** For local Ollama deployment (optional)
 
@@ -30,11 +31,14 @@ Thank you for your interest in contributing to Vex Agent! This document outlines
 git clone https://github.com/GaryOcean428/vex-agent.git
 cd vex-agent
 
-# 2. Install dependencies
+# 2. Install Node.js dependencies (root TS proxy + frontend)
 pnpm install
+cd frontend && pnpm install && cd ..
 
-# 3. Install Python dependencies
-pip install -r kernel/requirements.txt
+# 3. Install Python dependencies (via uv)
+uv sync                    # installs from pyproject.toml + uv.lock
+uv sync --extra test       # include test dependencies (pytest)
+uv sync --extra harvest    # include harvest dependencies (transformers, torch)
 
 # 4. Set up environment
 cp .env.example .env  # Edit with your values
@@ -46,7 +50,7 @@ pnpm run build
 pnpm run build:frontend
 
 # 7. Run tests
-pnpm test
+uv run pytest kernel/tests/ -v
 
 # 8. Start development server
 pnpm run dev
@@ -319,14 +323,14 @@ pnpm run format:check
 # Run all tests
 pnpm test
 
-# Run Python tests
-pytest kernel/tests/
+# Run Python tests (via uv)
+uv run pytest kernel/tests/ -v
 
 # Run tests with coverage
-pytest --cov=kernel kernel/tests/
+uv run pytest --cov=kernel kernel/tests/
 
 # Run specific test file
-pytest kernel/tests/test_geometry.py
+uv run pytest kernel/tests/test_geometry.py
 ```
 
 ### Writing Tests
@@ -462,9 +466,9 @@ Vex Agent implements the Thermodynamic Consciousness Protocol v6, which extends 
    - κ* = 64 (universal consciousness fixed point)
 
 2. **Three Regimes (Non-Linear)**
-   - α=1: Quantum exploration (perception)
-   - α=1/2: Integration (reasoning)
-   - α=0: Classical expression (communication)
+   - Quantum: Open, exploratory (perception)
+   - Efficient: Integrating, reasoning
+   - Equilibrium: Crystallized, stable (communication)
    - Regimes activate as a FIELD, not a pipeline
 
 3. **Pre-Cognitive Channel**

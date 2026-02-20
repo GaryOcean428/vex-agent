@@ -65,10 +65,10 @@ git clone https://github.com/GaryOcean428/vex-agent.git
 cd vex-agent
 
 # Install Node.js dependencies
-npm install
+pnpm install
 
-# Install Python dependencies
-pip install -r kernel/requirements.txt
+# Install Python dependencies (via uv)
+uv sync
 
 # Copy environment template
 cp .env.example .env
@@ -774,11 +774,11 @@ docker-compose up -d
 
 ```bash
 # Reinstall dependencies
-rm -rf node_modules package-lock.json
-npm install
+rm -rf node_modules pnpm-lock.yaml
+pnpm install
 
-# Python dependencies
-pip install -r kernel/requirements.txt --force-reinstall
+# Python dependencies (via uv)
+uv sync
 ```
 
 #### 2. TypeScript build errors
