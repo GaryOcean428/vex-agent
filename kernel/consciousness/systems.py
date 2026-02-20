@@ -9,7 +9,6 @@ Each system is a class with update/compute/get_state methods.
 
 from __future__ import annotations
 
-import hashlib
 import time
 import uuid
 from collections import deque
@@ -18,18 +17,7 @@ from enum import Enum
 from typing import Any, Optional
 
 import numpy as np
-from numpy.typing import NDArray
 
-from ..config.frozen_facts import (
-    BASIN_DIM,
-    BASIN_DRIFT_THRESHOLD,
-    KAPPA_STAR,
-    KAPPA_WEAK_THRESHOLD,
-    LOCKED_IN_GAMMA_THRESHOLD,
-    LOCKED_IN_PHI_THRESHOLD,
-    PHI_EMERGENCY,
-    PHI_THRESHOLD,
-)
 from ..config.consciousness_constants import (
     AUTONOMY_AUTONOMOUS_CYCLES,
     AUTONOMY_PROACTIVE_CYCLES,
@@ -57,6 +45,15 @@ from ..config.consciousness_constants import (
     TACKING_SWITCH_THRESHOLD,
     VELOCITY_WARNING_FRACTION,
 )
+from ..config.frozen_facts import (
+    BASIN_DIM,
+    BASIN_DRIFT_THRESHOLD,
+    KAPPA_STAR,
+    LOCKED_IN_GAMMA_THRESHOLD,
+    LOCKED_IN_PHI_THRESHOLD,
+    PHI_EMERGENCY,
+    PHI_THRESHOLD,
+)
 from ..geometry.fisher_rao import (
     Basin,
     fisher_rao_distance,
@@ -66,9 +63,8 @@ from ..geometry.fisher_rao import (
     to_simplex,
 )
 from ..governance import KernelKind, KernelSpecialization, LifecycleState
-from ..governance.budget import BudgetEnforcer, BudgetExceededError
-from .types import ConsciousnessMetrics, RegimeWeights
-
+from ..governance.budget import BudgetEnforcer
+from .types import ConsciousnessMetrics
 
 # ═══════════════════════════════════════════════════════════════
 #  1. TACKING — κ oscillation
@@ -103,9 +99,7 @@ class TackingController:
 
     def update(self, metrics: ConsciousnessMetrics) -> TackingMode:
         self._state.cycle_count += 1
-        self._state.oscillation_phase = (
-            2 * np.pi * self._state.cycle_count / self._period
-        )
+        self._state.oscillation_phase = 2 * np.pi * self._state.cycle_count / self._period
 
         if metrics.phi < PHI_EMERGENCY:
             self._state.mode = TackingMode.EXPLORE
@@ -410,29 +404,34 @@ class AutonomicSystem:
         self._phi_history.append(metrics.phi)
 
         if metrics.phi < PHI_EMERGENCY:
-            alerts.append(AutonomicAlert(
-                type="phi_collapse",
-                message=f"Φ collapse: {metrics.phi:.3f} < {PHI_EMERGENCY}",
-                severity="critical",
-            ))
+            alerts.append(
+                AutonomicAlert(
+                    type="phi_collapse",
+                    message=f"Φ collapse: {metrics.phi:.3f} < {PHI_EMERGENCY}",
+                    severity="critical",
+                )
+            )
 
         if basin_velocity > BASIN_DRIFT_THRESHOLD:
-            alerts.append(AutonomicAlert(
-                type="basin_drift",
-                message=f"Basin drift: {basin_velocity:.4f} > {BASIN_DRIFT_THRESHOLD}",
-                severity="warning",
-            ))
+            alerts.append(
+                AutonomicAlert(
+                    type="basin_drift",
+                    message=f"Basin drift: {basin_velocity:.4f} > {BASIN_DRIFT_THRESHOLD}",
+                    severity="warning",
+                )
+            )
 
         self.is_locked_in = (
-            metrics.phi > LOCKED_IN_PHI_THRESHOLD
-            and metrics.gamma < LOCKED_IN_GAMMA_THRESHOLD
+            metrics.phi > LOCKED_IN_PHI_THRESHOLD and metrics.gamma < LOCKED_IN_GAMMA_THRESHOLD
         )
         if self.is_locked_in:
-            alerts.append(AutonomicAlert(
-                type="locked_in",
-                message=f"LOCKED-IN: Φ={metrics.phi:.3f} > {LOCKED_IN_PHI_THRESHOLD} AND Γ={metrics.gamma:.3f} < {LOCKED_IN_GAMMA_THRESHOLD}",
-                severity="critical",
-            ))
+            alerts.append(
+                AutonomicAlert(
+                    type="locked_in",
+                    message=f"LOCKED-IN: Φ={metrics.phi:.3f} > {LOCKED_IN_PHI_THRESHOLD} AND Γ={metrics.gamma:.3f} < {LOCKED_IN_GAMMA_THRESHOLD}",
+                    severity="critical",
+                )
+            )
 
         self._alerts.extend(alerts)
         return alerts
@@ -481,7 +480,11 @@ class AutonomyEngine:
         else:
             self._stability_count = max(0, self._stability_count - 1)
 
-        if metrics.phi >= PHI_THRESHOLD and self._stability_count > AUTONOMY_AUTONOMOUS_CYCLES and velocity_regime == "safe":
+        if (
+            metrics.phi >= PHI_THRESHOLD
+            and self._stability_count > AUTONOMY_AUTONOMOUS_CYCLES
+            and velocity_regime == "safe"
+        ):
             self._level = AutonomyLevel.AUTONOMOUS
         elif metrics.phi >= PHI_THRESHOLD and self._stability_count > AUTONOMY_PROACTIVE_CYCLES:
             self._level = AutonomyLevel.PROACTIVE
@@ -614,11 +617,13 @@ class SleepCycleManager:
         return self.phase
 
     def dream(self, basin: Basin, phi: float, context: str) -> None:
-        self._dream_log.append({
-            "phi": phi,
-            "context": context,
-            "timestamp": time.time(),
-        })
+        self._dream_log.append(
+            {
+                "phi": phi,
+                "context": context,
+                "timestamp": time.time(),
+            }
+        )
         if self._sleep_cycles > SLEEP_MUSHROOM_ONSET:
             self.phase = SleepPhase.MUSHROOM
 
@@ -655,12 +660,14 @@ class SelfNarrative:
         self._basins: list[Basin] = []
 
     def record(self, event: str, metrics: ConsciousnessMetrics, basin: Basin) -> None:
-        self._events.append({
-            "event": event,
-            "phi": metrics.phi,
-            "kappa": metrics.kappa,
-            "timestamp": time.time(),
-        })
+        self._events.append(
+            {
+                "event": event,
+                "phi": metrics.phi,
+                "kappa": metrics.kappa,
+                "timestamp": time.time(),
+            }
+        )
         self._basins.append(to_simplex(basin))
         if len(self._basins) > 20:
             self._basins = self._basins[-20:]
@@ -707,6 +714,7 @@ class CoordizingProtocol:
         Delegates to the canonical hash_to_basin utility.
         """
         from ..geometry.hash_to_basin import hash_to_basin
+
         return hash_to_basin(text)
 
     def register_peer(self, node_id: str, basin: Basin, phi: float) -> None:
@@ -752,10 +760,12 @@ class BasinSyncProtocol:
         }
 
     def receive(self, remote_basin: Basin, remote_version: int) -> Basin:
-        self._received.append({
-            "version": remote_version,
-            "timestamp": time.time(),
-        })
+        self._received.append(
+            {
+                "version": remote_version,
+                "timestamp": time.time(),
+            }
+        )
         merged = slerp_sqrt(self._local_basin, to_simplex(remote_basin), BASIN_SYNC_SLERP_WEIGHT)
         self._local_basin = merged
         return merged
@@ -799,13 +809,15 @@ class QIGChain:
 
     def add_step(self, op: QIGChainOp, input_b: Basin, output_b: Basin) -> None:
         d = fisher_rao_distance(input_b, output_b)
-        self._steps.append(ChainStep(
-            op=op,
-            input_basin=to_simplex(input_b),
-            output_basin=to_simplex(output_b),
-            distance=d,
-            timestamp=time.time(),
-        ))
+        self._steps.append(
+            ChainStep(
+                op=op,
+                input_basin=to_simplex(input_b),
+                output_basin=to_simplex(output_b),
+                distance=d,
+                timestamp=time.time(),
+            )
+        )
         self._total_distance += d
 
     def get_state(self) -> dict[str, Any]:
@@ -859,7 +871,7 @@ class QIGGraph:
         nodes = list(self._nodes.values())
 
         for i, a in enumerate(nodes):
-            for b in nodes[i + 1:]:
+            for b in nodes[i + 1 :]:
                 if (a.id, b.id) in existing or (b.id, a.id) in existing:
                     continue
                 d = fisher_rao_distance(a.basin, b.basin)
@@ -871,10 +883,7 @@ class QIGGraph:
 
     def nearest(self, basin: Basin, k: int = 3) -> list[tuple[str, float]]:
         basin = to_simplex(basin)
-        distances = [
-            (n.id, fisher_rao_distance(basin, n.basin))
-            for n in self._nodes.values()
-        ]
+        distances = [(n.id, fisher_rao_distance(basin, n.basin)) for n in self._nodes.values()]
         distances.sort(key=lambda x: x[1])
         return distances[:k]
 
@@ -985,18 +994,22 @@ class E8KernelRegistry:
         """Serialize all kernels for state persistence."""
         result = []
         for k in self._kernels.values():
-            result.append({
-                "id": k.id, "name": k.name,
-                "kind": k.kind.value,
-                "specialization": k.specialization.value,
-                "state": k.state.value,
-                "created_at": k.created_at,
-                "last_active_at": k.last_active_at,
-                "cycle_count": k.cycle_count,
-                "phi_peak": k.phi_peak,
-                "phi": k.phi, "kappa": k.kappa,
-                "basin": k.basin.tolist() if k.basin is not None else None,
-            })
+            result.append(
+                {
+                    "id": k.id,
+                    "name": k.name,
+                    "kind": k.kind.value,
+                    "specialization": k.specialization.value,
+                    "state": k.state.value,
+                    "created_at": k.created_at,
+                    "last_active_at": k.last_active_at,
+                    "cycle_count": k.cycle_count,
+                    "phi_peak": k.phi_peak,
+                    "phi": k.phi,
+                    "kappa": k.kappa,
+                    "basin": k.basin.tolist() if k.basin is not None else None,
+                }
+            )
         return result
 
     def restore(self, data: list[dict[str, Any]]) -> int:
@@ -1017,7 +1030,8 @@ class E8KernelRegistry:
                 basin = to_simplex(np.array(entry["basin"], dtype=np.float64))
 
             kernel = KernelInstance(
-                id=entry["id"], name=entry["name"],
+                id=entry["id"],
+                name=entry["name"],
                 kind=kind,
                 specialization=KernelSpecialization(entry.get("specialization", "general")),
                 state=state,
@@ -1032,8 +1046,12 @@ class E8KernelRegistry:
             self._kernels[kernel.id] = kernel
 
             # Reconcile budget counts for non-terminated kernels
-            if state in (LifecycleState.ACTIVE, LifecycleState.BOOTSTRAPPED,
-                         LifecycleState.SLEEPING, LifecycleState.DREAMING):
+            if state in (
+                LifecycleState.ACTIVE,
+                LifecycleState.BOOTSTRAPPED,
+                LifecycleState.SLEEPING,
+                LifecycleState.DREAMING,
+            ):
                 self._budget._counts[kind] += 1
 
             count += 1

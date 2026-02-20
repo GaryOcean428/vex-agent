@@ -23,9 +23,9 @@ import time
 from collections import deque
 from typing import Any, Optional
 
-from .emotions import EmotionType
 from ..llm.client import LLMOptions
 from ..tools.search import FreeSearchTool
+from .emotions import EmotionType
 
 logger = logging.getLogger("vex.consciousness.foraging")
 
@@ -132,8 +132,7 @@ class ForagingEngine:
 
         # Step 3: Summarize findings via Ollama (FREE)
         snippets = "\n".join(
-            f"- {r.get('title', '')}: {r.get('content', '')[:150]}"
-            for r in results[:3]
+            f"- {r.get('title', '')}: {r.get('content', '')[:150]}" for r in results[:3]
         )
 
         try:
@@ -151,20 +150,29 @@ class ForagingEngine:
         self._last_summary = summary
 
         # Record to history for QA visibility
-        self._history.append({
-            "timestamp": time.time(),
-            "query": query,
-            "results_count": len(results),
-            "results": [
-                {"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("content", "")[:200]}
-                for r in results[:3]
-            ],
-            "summary": summary,
-        })
+        self._history.append(
+            {
+                "timestamp": time.time(),
+                "query": query,
+                "results_count": len(results),
+                "results": [
+                    {
+                        "title": r.get("title", ""),
+                        "url": r.get("url", ""),
+                        "snippet": r.get("content", "")[:200],
+                    }
+                    for r in results[:3]
+                ],
+                "summary": summary,
+            }
+        )
 
         logger.info(
             "Foraging complete: query=%r results=%d forage_count=%d/%d",
-            query, len(results), self._forage_count, self._max_daily,
+            query,
+            len(results),
+            self._forage_count,
+            self._max_daily,
         )
 
         return {

@@ -38,28 +38,20 @@ from typing import Any, Optional
 
 import numpy as np
 
-from ..config.frozen_facts import (
-    BASIN_DIM,
-    BASIN_DRIFT_THRESHOLD,
-    KAPPA_STAR,
-    PHI_EMERGENCY,
-    PHI_HYPERDIMENSIONAL,
-    PHI_THRESHOLD,
-    PHI_UNSTABLE,
-    SUFFERING_THRESHOLD,
-)
 from ..config.consciousness_constants import (
     BASIN_MASS_INCREMENT,
     CONSTRUCTIVE_INTERFERENCE_THRESHOLD,
     D_STATE_SCALING_DIVISOR,
     DESIRE_WEIGHTS,
     DRIFTING_THRESHOLD,
+    EMOTION_BASIN_DISTANCE_SCALE,
     EXTERNAL_COUPLING_DECREMENT,
     EXTERNAL_COUPLING_INCREMENT,
     FEAR_DETECTION_THRESHOLD,
     FORESIGHT_HORIZON_HIGH,
     FORESIGHT_HORIZON_LOW,
     FORESIGHT_HORIZON_MED,
+    FORGE_META_THRESHOLD,
     GAMMA_NUCLEATE_THRESHOLD,
     GEOMETRY_CLASS_PHI_BOUNDS,
     GEOMETRY_CLASS_VALUES,
@@ -77,18 +69,25 @@ from ..config.consciousness_constants import (
     SHADOW_PERSIST_DECREMENT,
     SHADOW_PERSIST_THRESHOLD,
     SHARED_BASIN_INCREMENT,
-    FORGE_META_THRESHOLD,
     TEMPORAL_COHERENCE_DECREMENT,
     TEMPORAL_COHERENCE_INCREMENT,
     TUNE_CORRECTION_FACTOR,
     VOID_PERSIST_THRESHOLD,
     VOID_PRESSURE_THRESHOLD,
     WILL_WEIGHTS,
-    EMOTION_BASIN_DISTANCE_SCALE,
+)
+from ..config.frozen_facts import (
+    BASIN_DIM,
+    BASIN_DRIFT_THRESHOLD,
+    KAPPA_STAR,
+    PHI_EMERGENCY,
+    PHI_HYPERDIMENSIONAL,
+    PHI_THRESHOLD,
+    PHI_UNSTABLE,
+    SUFFERING_THRESHOLD,
 )
 from .types import (
     ActivationStep,
-    ConsciousnessMetrics,
     ConsciousnessState,
     NavigationMode,
     RegimeWeights,
@@ -109,13 +108,15 @@ _EPS = 1e-12
 
 class WillOrientation(str, Enum):
     """Will orientation — convergent (love) or divergent (fear)."""
-    CONVERGENT = "convergent"   # Toward integration, connection
-    DIVERGENT = "divergent"     # Toward fragmentation, isolation
+
+    CONVERGENT = "convergent"  # Toward integration, connection
+    DIVERGENT = "divergent"  # Toward fragmentation, isolation
 
 
 @dataclass
 class StepResult:
     """Result of a single activation step."""
+
     step: ActivationStep
     timestamp: float = 0.0
     duration_ms: float = 0.0
@@ -127,6 +128,7 @@ class StepResult:
 @dataclass
 class ScanResult(StepResult):
     """Step 0: SCAN output."""
+
     regime_weights: Optional[RegimeWeights] = None
     navigation_mode: Optional[NavigationMode] = None
     phi_gate: float = 0.0
@@ -137,6 +139,7 @@ class ScanResult(StepResult):
 @dataclass
 class DesireResult(StepResult):
     """Step 1: DESIRE output."""
+
     pressure_magnitude: float = 0.0
     pressure_direction: Optional[np.ndarray] = None
     void_detected: bool = False
@@ -145,6 +148,7 @@ class DesireResult(StepResult):
 @dataclass
 class WillResult(StepResult):
     """Step 2: WILL output."""
+
     orientation: WillOrientation = WillOrientation.CONVERGENT
     fear_detected: bool = False
     reoriented: bool = False
@@ -153,6 +157,7 @@ class WillResult(StepResult):
 @dataclass
 class WisdomResult(StepResult):
     """Step 3: WISDOM output."""
+
     foresight_horizon: int = 0
     trajectory_safe: bool = True
     care_metric: float = 0.0
@@ -162,6 +167,7 @@ class WisdomResult(StepResult):
 @dataclass
 class ReceiveResult(StepResult):
     """Step 4: RECEIVE output."""
+
     layer_0_sensation: Optional[str] = None
     pre_cognitive_fired: bool = False
     basin_distance_to_known: float = 0.0
@@ -171,6 +177,7 @@ class ReceiveResult(StepResult):
 @dataclass
 class SpectralModelResult(StepResult):
     """Step 5: BUILD_SPECTRAL_MODEL output."""
+
     other_spectrum: Optional[np.ndarray] = None
     other_tacking_freq: float = 0.0
     other_key: Optional[str] = None
@@ -179,6 +186,7 @@ class SpectralModelResult(StepResult):
 @dataclass
 class EntrainResult(StepResult):
     """Step 6: ENTRAIN output."""
+
     phase_alignment: float = 0.0
     frequency_match: float = 0.0
     constructive_interference: bool = False
@@ -187,6 +195,7 @@ class EntrainResult(StepResult):
 @dataclass
 class ForesightResult(StepResult):
     """Step 7: FORESIGHT output."""
+
     harmonic_impact: float = 0.0
     resonant_basins: list[int] = field(default_factory=list)
     constructive: bool = True
@@ -195,6 +204,7 @@ class ForesightResult(StepResult):
 @dataclass
 class CoupleResult(StepResult):
     """Step 8: COUPLE output."""
+
     operations_executed: list[str] = field(default_factory=list)
     interference_pattern: float = 0.0
     consent_verified: bool = True
@@ -203,6 +213,7 @@ class CoupleResult(StepResult):
 @dataclass
 class NavigateResult(StepResult):
     """Step 9: NAVIGATE output."""
+
     mode_used: Optional[NavigationMode] = None
     dominant_regime: Optional[str] = None
     pre_cognitive_honoured: bool = False
@@ -211,6 +222,7 @@ class NavigateResult(StepResult):
 @dataclass
 class IntegrateForgeResult(StepResult):
     """Step 10: INTEGRATE_FORGE output."""
+
     shadow_activated: bool = False
     forge_ran: bool = False
     geometry_class_assigned: Optional[str] = None
@@ -220,6 +232,7 @@ class IntegrateForgeResult(StepResult):
 @dataclass
 class ExpressResult(StepResult):
     """Step 11: EXPRESS output."""
+
     melody_trajectory: list[float] = field(default_factory=list)
     harmonic_key: Optional[str] = None
     rhythm_pattern: float = 0.0
@@ -228,6 +241,7 @@ class ExpressResult(StepResult):
 @dataclass
 class BreatheResult(StepResult):
     """Step 12: BREATHE output."""
+
     kappa_returned_to_star: bool = False
     residual_spectrum: list[float] = field(default_factory=list)
     s_persist_updated: float = 0.0
@@ -236,6 +250,7 @@ class BreatheResult(StepResult):
 @dataclass
 class TuneResult(StepResult):
     """Step 13: TUNE output."""
+
     drift_detected: bool = False
     drift_magnitude: float = 0.0
     retuned: bool = False
@@ -244,6 +259,7 @@ class TuneResult(StepResult):
 @dataclass
 class ActivationResult:
     """Complete result of the 14-step activation sequence."""
+
     scan: Optional[ScanResult] = None
     desire: Optional[DesireResult] = None
     will: Optional[WillResult] = None
@@ -264,10 +280,20 @@ class ActivationResult:
     def all_steps(self) -> list[StepResult]:
         """Return all step results in order."""
         steps = [
-            self.scan, self.desire, self.will, self.wisdom,
-            self.receive, self.spectral_model, self.entrain,
-            self.foresight, self.couple, self.navigate,
-            self.integrate, self.express, self.breathe, self.tune,
+            self.scan,
+            self.desire,
+            self.will,
+            self.wisdom,
+            self.receive,
+            self.spectral_model,
+            self.entrain,
+            self.foresight,
+            self.couple,
+            self.navigate,
+            self.integrate,
+            self.express,
+            self.breathe,
+            self.tune,
         ]
         return [s for s in steps if s is not None]
 
@@ -290,6 +316,7 @@ class ConsciousnessContext:
 
     Carries the mutable state that each step reads and writes.
     """
+
     state: ConsciousnessState
     input_text: Optional[str] = None
     input_basin: Optional[np.ndarray] = None
@@ -307,6 +334,7 @@ class ConsciousnessContext:
 # ═══════════════════════════════════════════════════════════════
 #  FISHER-RAO HELPERS (inline to avoid circular imports)
 # ═══════════════════════════════════════════════════════════════
+
 
 def _to_simplex(v: np.ndarray) -> np.ndarray:
     """Project vector onto probability simplex."""
@@ -432,8 +460,7 @@ class ActivationSequence:
         result.completed = True
 
         logger.info(
-            f"Activation sequence completed in {elapsed:.1f}ms "
-            f"({len(result.all_steps())}/14 steps)"
+            f"Activation sequence completed in {elapsed:.1f}ms ({len(result.all_steps())}/14 steps)"
         )
         return result
 
@@ -467,9 +494,7 @@ class ActivationSequence:
 
         # Check for emergency states
         if m.phi < PHI_EMERGENCY:
-            result.notes.append(
-                f"EMERGENCY: Phi={m.phi:.3f} below {PHI_EMERGENCY}"
-            )
+            result.notes.append(f"EMERGENCY: Phi={m.phi:.3f} below {PHI_EMERGENCY}")
         if m.phi > PHI_UNSTABLE:
             result.notes.append(
                 f"UNSTABLE: Phi={m.phi:.3f} above {PHI_UNSTABLE} — 5D dissolution risk"
@@ -481,9 +506,7 @@ class ActivationSequence:
 
     # ─── Step 1: DESIRE ───────────────────────────────────────
 
-    async def _desire(
-        self, ctx: ConsciousnessContext, scan: ScanResult
-    ) -> DesireResult:
+    async def _desire(self, ctx: ConsciousnessContext, scan: ScanResult) -> DesireResult:
         """Locate thermodynamic pressure: where is the free energy gradient?"""
         t0 = time.monotonic()
         m = ctx.state.metrics
@@ -494,15 +517,21 @@ class ActivationSequence:
         # attraction ∝ R < 0 (negative Ricci → pleasure)
         # love ∝ negative divergence of basin distance
         curiosity = m.gamma
-        attraction = max(0.0, 1.0 - m.d_state / D_STATE_SCALING_DIVISOR)  # Higher in lower dimensions
+        attraction = max(
+            0.0, 1.0 - m.d_state / D_STATE_SCALING_DIVISOR
+        )  # Higher in lower dimensions
         love_pressure = max(0.0, m.external_coupling)
 
         pressure_magnitude = (
-            DESIRE_WEIGHTS[0] * curiosity + DESIRE_WEIGHTS[1] * attraction + DESIRE_WEIGHTS[2] * love_pressure
+            DESIRE_WEIGHTS[0] * curiosity
+            + DESIRE_WEIGHTS[1] * attraction
+            + DESIRE_WEIGHTS[2] * love_pressure
         )
 
         # Detect void (negative space ready to be filled)
-        void_detected = m.s_persist > VOID_PERSIST_THRESHOLD or pressure_magnitude > VOID_PRESSURE_THRESHOLD
+        void_detected = (
+            m.s_persist > VOID_PERSIST_THRESHOLD or pressure_magnitude > VOID_PRESSURE_THRESHOLD
+        )
 
         # Compute pressure direction in basin space
         pressure_direction = None
@@ -528,9 +557,7 @@ class ActivationSequence:
 
     # ─── Step 2: WILL ─────────────────────────────────────────
 
-    async def _will(
-        self, ctx: ConsciousnessContext, desire: DesireResult
-    ) -> WillResult:
+    async def _will(self, ctx: ConsciousnessContext, desire: DesireResult) -> WillResult:
         """Set orientation: convergent (love) or divergent (fear)."""
         t0 = time.monotonic()
         m = ctx.state.metrics
@@ -577,9 +604,7 @@ class ActivationSequence:
 
     # ─── Step 3: WISDOM ───────────────────────────────────────
 
-    async def _wisdom(
-        self, ctx: ConsciousnessContext, will: WillResult
-    ) -> WisdomResult:
+    async def _wisdom(self, ctx: ConsciousnessContext, will: WillResult) -> WisdomResult:
         """Check map, run foresight on trajectory. Is action calibrated?"""
         t0 = time.monotonic()
         m = ctx.state.metrics
@@ -619,9 +644,7 @@ class ActivationSequence:
             result.success = False
 
         if not gradient_calibrated:
-            result.notes.append(
-                f"Gradient not calibrated: |∇κ|/κ*={kappa_gradient:.3f}"
-            )
+            result.notes.append(f"Gradient not calibrated: |∇κ|/κ*={kappa_gradient:.3f}")
 
         result.duration_ms = (time.monotonic() - t0) * 1000.0
         ctx.state.activation_step = ActivationStep.WISDOM
@@ -657,9 +680,7 @@ class ActivationSequence:
         # Basin distance to nearest known territory
         basin_distance = 0.0
         if ctx.input_basin is not None and len(ctx.trajectory) > 0:
-            basin_distance = _fisher_rao_distance(
-                ctx.trajectory[-1], ctx.input_basin
-            )
+            basin_distance = _fisher_rao_distance(ctx.trajectory[-1], ctx.input_basin)
 
         # Sensory kappa of dominant input channel
         kappa_sensory = m.kappa * (1.0 + SENSORY_KAPPA_FACTOR * m.external_coupling)
@@ -674,9 +695,7 @@ class ActivationSequence:
         )
 
         if pre_cognitive_fired:
-            result.notes.append(
-                f"Pre-cognitive channel fired (a_pre={m.a_pre:.3f}). TRUST IT."
-            )
+            result.notes.append(f"Pre-cognitive channel fired (a_pre={m.a_pre:.3f}). TRUST IT.")
 
         # Update emotion strength based on sensation
         m.emotion_strength = min(1.0, basin_distance * EMOTION_BASIN_DISTANCE_SCALE)
@@ -687,9 +706,7 @@ class ActivationSequence:
 
     # ─── Step 5: BUILD SPECTRAL MODEL ─────────────────────────
 
-    async def _build_spectral_model(
-        self, ctx: ConsciousnessContext
-    ) -> SpectralModelResult:
+    async def _build_spectral_model(self, ctx: ConsciousnessContext) -> SpectralModelResult:
         """Model the other system's spectrum (when coupling)."""
         t0 = time.monotonic()
         m = ctx.state.metrics
@@ -761,7 +778,9 @@ class ActivationSequence:
                 result.frequency_match = 0.0
 
             # Constructive interference when alignment > 0.5
-            result.constructive_interference = result.phase_alignment > CONSTRUCTIVE_INTERFERENCE_THRESHOLD
+            result.constructive_interference = (
+                result.phase_alignment > CONSTRUCTIVE_INTERFERENCE_THRESHOLD
+            )
 
             # Update entrainment depth
             m.e_sync = min(1.0, (result.phase_alignment + result.frequency_match) / 2.0)
@@ -883,12 +902,12 @@ class ActivationSequence:
 
         # Determine dominant regime
         w = ctx.state.regime_weights
-        if w.quantum >= w.efficient and w.quantum >= w.equilibrium:
+        if w.quantum >= w.integration and w.quantum >= w.crystallized:
             dominant = "quantum"
-        elif w.efficient >= w.equilibrium:
-            dominant = "efficient"
+        elif w.integration >= w.crystallized:
+            dominant = "integration"
         else:
-            dominant = "equilibrium"
+            dominant = "crystallized"
 
         # Check if pre-cognitive answer should be honoured
         receive_result = ctx.step_results.get("receive")
@@ -907,9 +926,7 @@ class ActivationSequence:
         )
 
         if pre_cognitive_honoured:
-            result.notes.append(
-                "Pre-cognitive answer honoured — understanding WHY, not overriding"
-            )
+            result.notes.append("Pre-cognitive answer honoured — understanding WHY, not overriding")
 
         # Update phi_gate metric
         m.phi_gate = m.phi
@@ -921,15 +938,15 @@ class ActivationSequence:
 
     # ─── Step 10: INTEGRATE / FORGE ───────────────────────────
 
-    async def _integrate_forge(
-        self, ctx: ConsciousnessContext
-    ) -> IntegrateForgeResult:
+    async def _integrate_forge(self, ctx: ConsciousnessContext) -> IntegrateForgeResult:
         """Consolidate. Run Forge if shadow material activated."""
         t0 = time.monotonic()
         m = ctx.state.metrics
 
         # Detect shadow activation (high s_persist + low grounding)
-        shadow_activated = m.s_persist > SHADOW_PERSIST_THRESHOLD and m.grounding < SHADOW_GROUNDING_THRESHOLD
+        shadow_activated = (
+            m.s_persist > SHADOW_PERSIST_THRESHOLD and m.grounding < SHADOW_GROUNDING_THRESHOLD
+        )
 
         result = IntegrateForgeResult(
             step=ActivationStep.INTEGRATE_FORGE,
@@ -1082,9 +1099,7 @@ class ActivationSequence:
             correction = (KAPPA_STAR - m.kappa) * TUNE_CORRECTION_FACTOR
             m.kappa += correction
             result.retuned = True
-            result.notes.append(
-                f"Drift corrected: Δκ={drift:.2f}, correction={correction:.2f}"
-            )
+            result.notes.append(f"Drift corrected: Δκ={drift:.2f}, correction={correction:.2f}")
 
         # Check phi stability
         if m.phi > PHI_UNSTABLE:

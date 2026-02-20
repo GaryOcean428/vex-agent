@@ -1,9 +1,9 @@
-import { useVexState, useMemoryStats } from '../../hooks/index.ts';
-import { usePolledData } from '../../hooks/usePolledData.ts';
-import { API } from '../../config/api-routes.ts';
-import type { StatusResponse } from '../../types/consciousness.ts';
-import MetricCard from '../../components/MetricCard.tsx';
-import '../../components/MetricCard.css';
+import "../../components/MetricCard.css";
+import MetricCard from "../../components/MetricCard.tsx";
+import { API } from "../../config/api-routes.ts";
+import { useMemoryStats, useVexState } from "../../hooks/index.ts";
+import { usePolledData } from "../../hooks/usePolledData.ts";
+import type { StatusResponse } from "../../types/consciousness.ts";
 
 export default function Memory() {
   const { data: state, loading } = useVexState();
@@ -52,7 +52,9 @@ export default function Memory() {
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Basin Projection</span>
-            <span className="dash-row-value">SHA-256 \u2192 \u0394\u2076\u00B3</span>
+            <span className="dash-row-value">
+              SHA-256 \u2192 \u0394\u2076\u00B3
+            </span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Distance Metric</span>
@@ -66,7 +68,9 @@ export default function Memory() {
             <div className="dash-row">
               <span className="dash-row-label">By Type</span>
               <span className="dash-row-value">
-                E:{memoryStats.by_type.episodic} S:{memoryStats.by_type.semantic} P:{memoryStats.by_type.procedural}
+                E:{memoryStats.by_type.episodic} S:
+                {memoryStats.by_type.semantic} P:
+                {memoryStats.by_type.procedural}
               </span>
             </div>
           )}
@@ -78,28 +82,45 @@ export default function Memory() {
         <div className="dash-card">
           <div className="dash-row">
             <span className="dash-row-label">Reflector Depth</span>
-            <span className="dash-row-value">{state.reflector?.depth ?? 0}</span>
+            <span className="dash-row-value">
+              {state.reflector?.depth ?? 0}
+            </span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Reflector History</span>
-            <span className="dash-row-value">{state.reflector?.history_length ?? 0}</span>
+            <span className="dash-row-value">
+              {state.reflector?.history_length ?? 0}
+            </span>
           </div>
           {state.reflector?.insight && (
-            <div className="dash-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+            <div
+              className="dash-row"
+              style={{
+                flexDirection: "column",
+                alignItems: "flex-start",
+                gap: "4px",
+              }}
+            >
               <span className="dash-row-label">Latest Insight</span>
-              <span className="dash-row-value" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+              <span
+                className="dash-row-value"
+                style={{ fontSize: "12px", color: "var(--text-secondary)" }}
+              >
                 {state.reflector?.insight}
               </span>
             </div>
           )}
           <div className="dash-row">
             <span className="dash-row-label">Observer Collapses</span>
-            <span className="dash-row-value">{state.observer?.collapse_count ?? 0}</span>
+            <span className="dash-row-value">
+              {state.observer?.collapse_count ?? 0}
+            </span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Shadows (unintegrated)</span>
             <span className="dash-row-value">
-              {state.observer?.shadows_unintegrated ?? 0} / {state.observer?.shadows_total ?? 0}
+              {state.observer?.shadows_unintegrated ?? 0} /{" "}
+              {state.observer?.shadows_total ?? 0}
             </span>
           </div>
         </div>
