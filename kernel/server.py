@@ -568,12 +568,19 @@ async def coordizer_validate(request: Request):
     try:
         coordizer = consciousness._coordizer_v2
         result = coordizer.validate(verbose=False)
+        kappa_ok = abs(result.kappa_measured - 64.0) < 2 * max(result.kappa_std, 5.0)
+        beta_ok = result.beta_running < 0.5
+        semantic_ok = result.semantic_correlation > 0.2
+        harmonic_ok = result.harmonic_ratio_quality > 0.3
         return {
             "valid": result.passed,
             "checks": [
-                {"name": c.name, "passed": c.passed, "message": c.message}
-                for c in result.checks
+                {"name": "kappa", "passed": kappa_ok, "value": round(result.kappa_measured, 2)},
+                {"name": "beta", "passed": beta_ok, "value": round(result.beta_running, 4)},
+                {"name": "semantic", "passed": semantic_ok, "value": round(result.semantic_correlation, 3)},
+                {"name": "harmonic", "passed": harmonic_ok, "value": round(result.harmonic_ratio_quality, 3)},
             ],
+            "tier_distribution": result.tier_distribution,
             "summary": result.summary(),
             "timestamp": time.time(),
         }
