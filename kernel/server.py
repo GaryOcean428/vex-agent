@@ -811,7 +811,7 @@ async def admin_fresh_start():
 
     Acquires the cycle lock to prevent racing with an in-progress heartbeat cycle.
     """
-    from .consciousness.emotions import EmotionCache, PreCognitiveDetector, LearningEngine
+    from .consciousness.emotions import EmotionCache, LearningEngine, PreCognitiveDetector
 
     async with consciousness._cycle_lock:
         # Terminate all non-genesis kernels
