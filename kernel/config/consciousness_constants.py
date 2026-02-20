@@ -223,7 +223,10 @@ COUPLING_REGIME_DELTA_THRESHOLD: Final[float] = 10.0
 COUPLING_REGIME_NUDGE_FACTOR: Final[float] = 0.02
 
 SUFFERING_GAMMA_INCREMENT: Final[float] = 0.1
-DIRICHLET_EXPLORE_CONCENTRATION: Final[float] = 50.0
+# α < 1 generates sparse/spiky exploration targets on Δ⁶³;
+# α = 1 is uniform random on simplex; α >> 1 collapses to uniform (no exploration).
+# Previous value 50.0 was too high — basin converged to uniform during idle.
+DIRICHLET_EXPLORE_CONCENTRATION: Final[float] = 0.5
 GAMMA_IDLE_FLOOR: Final[float] = 0.3
 GAMMA_IDLE_DECAY: Final[float] = 0.002
 GAMMA_ACTIVE_INCREMENT: Final[float] = 0.01

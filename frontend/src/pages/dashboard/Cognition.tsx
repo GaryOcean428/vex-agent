@@ -21,8 +21,15 @@ export default function Cognition() {
     canvas.height = rect.height * dpr;
     ctx.scale(dpr, dpr);
 
+    // Resolve CSS custom properties for canvas
+    const cs = getComputedStyle(document.documentElement);
+    const cSurface3 = cs.getPropertyValue('--surface-3').trim();
+    const cTextDim = cs.getPropertyValue('--text-dim').trim();
+    const cPhi = cs.getPropertyValue('--phi').trim();
+    const cKappa = cs.getPropertyValue('--kappa').trim();
+
     // Background
-    ctx.fillStyle = '#22222e';
+    ctx.fillStyle = cSurface3;
     ctx.fillRect(0, 0, rect.width, rect.height);
 
     const margin = { top: 20, right: 20, bottom: 30, left: 40 };
@@ -44,14 +51,14 @@ export default function Cognition() {
       ctx.lineTo(margin.left + w, y);
       ctx.stroke();
 
-      ctx.fillStyle = '#70708a';
+      ctx.fillStyle = cTextDim;
       ctx.font = '9px monospace';
       ctx.textAlign = 'right';
       ctx.fillText((maxPhi - (i / 4) * range).toFixed(2), margin.left - 4, y + 3);
     }
 
     // Phi line
-    ctx.strokeStyle = '#22d3ee';
+    ctx.strokeStyle = cPhi;
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i < history.length; i++) {
@@ -68,19 +75,19 @@ export default function Cognition() {
       const px = margin.left + w + 10;
       const py = margin.top + ((maxPhi - predictedPhi) / range) * h;
 
-      ctx.fillStyle = '#f59e0b';
+      ctx.fillStyle = cKappa;
       ctx.beginPath();
       ctx.arc(Math.min(px, margin.left + w), py, 5, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = '#70708a';
+      ctx.fillStyle = cTextDim;
       ctx.font = '9px monospace';
       ctx.textAlign = 'left';
       ctx.fillText(`\u25C7 ${predictedPhi.toFixed(3)}`, Math.min(px + 8, margin.left + w - 40), py + 3);
     }
 
     // Label
-    ctx.fillStyle = '#70708a';
+    ctx.fillStyle = cTextDim;
     ctx.font = '10px monospace';
     ctx.textAlign = 'center';
     ctx.fillText('\u03A6 over time', rect.width / 2, rect.height - 6);

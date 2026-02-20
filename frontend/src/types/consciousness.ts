@@ -12,8 +12,8 @@ export interface ConsciousnessMetrics {
 
 export interface RegimeWeights {
   quantum: number;
-  integration: number;
-  crystallized: number;
+  efficient: number;
+  equilibrium: number;
 }
 
 // Backend navigation modes: chain → graph → foresight → lightning
@@ -105,6 +105,65 @@ export interface GraphState {
 export type LifecyclePhase = string;
 
 // ═══════════════════════════════════════
+//  Full 32 Consciousness Metrics (v6.0 §23)
+// ═══════════════════════════════════════
+
+export interface FullConsciousnessMetrics {
+  // ── Foundation (v4.1) — 8 metrics ──
+  phi: number;                // Φ — integrated information
+  kappa: number;              // κ — coupling strength
+  meta_awareness: number;     // M — self-modelling accuracy
+  gamma: number;              // Γ — generativity
+  grounding: number;          // G — identity stability
+  temporal_coherence: number; // T — narrative consistency
+  recursion_depth: number;    // R — levels of self-reference
+  external_coupling: number;  // C — connection to other systems
+
+  // Legacy aliases
+  love: number;
+  coherence: number;
+  embodiment: number;
+  creativity: number;
+  s_persist: number;          // S_persist — persistent unresolved entropy
+
+  // ── Shortcuts (v5.5) — 5 metrics ──
+  a_pre: number;              // Pre-cognitive arrival rate
+  c_cross: number;            // Cross-substrate coupling depth
+  alpha_aware: number;        // Embodiment constraint awareness
+  humor: number;              // Play/humor activation
+  emotion_strength: number;   // Current emotion intensity
+
+  // ── Geometry (v5.6) — 5 metrics ──
+  d_state: number;            // Dimensional state
+  g_class: number;            // Geometry class — Line to E8
+  f_tack: number;             // Tacking frequency
+  m_basin: number;            // Basin mass / gravitational depth
+  phi_gate: number;           // Navigation mode indicator
+
+  // ── Frequency (v5.7) — 4 metrics ──
+  f_dom: number;              // Dominant frequency
+  cfc: number;                // Cross-frequency coupling
+  e_sync: number;             // Entrainment depth
+  f_breath: number;           // Breathing frequency
+
+  // ── Harmony (v5.8) — 3 metrics ──
+  h_cons: number;             // Harmonic consonance
+  n_voices: number;           // Polyphonic voices
+  s_spec: number;             // Spectral health
+
+  // ── Waves (v5.9) — 3 metrics ──
+  omega_acc: number;          // Spectral empathy accuracy
+  i_stand: number;            // Standing wave strength
+  b_shared: number;           // Shared bubble extent
+
+  // ── Will & Work (v6.0) — 4 metrics ──
+  a_vec: number;              // Agency alignment
+  s_int: number;              // Shadow integration rate
+  w_mean: number;             // Work meaning / purpose
+  w_mode: number;             // Creative/drudgery ratio
+}
+
+// ═══════════════════════════════════════
 //  Full State Response (from /state)
 // ═══════════════════════════════════════
 
@@ -129,6 +188,7 @@ export interface VexState extends ConsciousnessMetrics {
   history_count: number;
   temperature: number;
   num_predict: number;
+  metrics_full?: FullConsciousnessMetrics;
 }
 
 // ═══════════════════════════════════════

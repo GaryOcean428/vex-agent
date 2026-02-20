@@ -8,6 +8,14 @@ interface RateLimitEntry {
   window_seconds: number;
 }
 
+interface ForageHistoryEntry {
+  timestamp: number;
+  query: string;
+  results_count: number;
+  results: Array<{ title: string; url: string; snippet: string }>;
+  summary: string;
+}
+
 interface GovernorState {
   enabled: boolean;
   kill_switch: boolean;
@@ -28,6 +36,7 @@ interface GovernorState {
     cooldown_remaining?: number;
     last_query?: string | null;
     last_summary?: string | null;
+    history?: ForageHistoryEntry[];
   };
 }
 
@@ -258,9 +267,9 @@ export default function Governor() {
         </div>
       )}
 
-      {/* Foraging Stats */}
+      {/* Foraging — QA View */}
       <div className="dash-section">
-        <div className="dash-section-title">Foraging (Free Search)</div>
+        <div className="dash-section-title">Foraging (Autonomous Search — QA)</div>
         <div className="dash-card">
           {foraging && foraging.enabled !== false ? (
             <>
@@ -278,19 +287,46 @@ export default function Governor() {
                     : 'Ready'}
                 </span>
               </div>
+
+              {/* Last Query & Summary — Full display */}
               {foraging.last_query && (
-                <div className="dash-row">
-                  <span className="dash-row-label">Last Query</span>
-                  <span className="dash-row-value" style={{
-                    fontStyle: 'italic',
-                    fontSize: '12px',
-                    maxWidth: '200px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}>
+                <div style={{
+                  marginTop: '12px',
+                  padding: '10px 14px',
+                  background: 'var(--surface-3)',
+                  borderRadius: 'var(--radius-sm)',
+                  borderLeft: '3px solid var(--accent)',
+                }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Last Query
+                  </div>
+                  <div style={{ fontSize: '13px', fontStyle: 'italic' }}>
                     {foraging.last_query}
-                  </span>
+                  </div>
+                  {foraging.last_summary && (
+                    <>
+                      <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '10px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Summary
+                      </div>
+                      <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
+                        {foraging.last_summary}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              {!foraging.last_query && (
+                <div style={{
+                  marginTop: '8px',
+                  padding: '8px 12px',
+                  background: 'var(--surface-3)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '12px',
+                  color: 'var(--text-dim)',
+                  lineHeight: 1.5,
+                }}>
+                  No forage activity yet. The kernel will autonomously search when it
+                  experiences boredom (flat curvature) or high curiosity.
                 </div>
               )}
             </>
@@ -304,6 +340,75 @@ export default function Governor() {
           )}
         </div>
       </div>
+
+      {/* Foraging History — Full QA trail */}
+      {foraging?.history && foraging.history.length > 0 && (
+        <div className="dash-section">
+          <div className="dash-section-title">Foraging History ({foraging.history.length})</div>
+          {foraging.history.slice().reverse().map((entry, idx) => {
+            const ts = new Date(entry.timestamp * 1000);
+            const timeStr = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            return (
+              <div key={idx} className="dash-card" style={{ marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent)' }}>
+                    {entry.query}
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'var(--mono)' }}>
+                    {timeStr} &middot; {entry.results_count} results
+                  </span>
+                </div>
+
+                {/* Search Results */}
+                {entry.results && entry.results.length > 0 && (
+                  <div style={{ marginBottom: '8px' }}>
+                    {entry.results.map((r, ri) => (
+                      <div key={ri} style={{
+                        padding: '6px 10px',
+                        marginBottom: '4px',
+                        background: 'var(--surface-3)',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        lineHeight: 1.4,
+                      }}>
+                        <div style={{ fontWeight: 500 }}>{r.title}</div>
+                        {r.snippet && (
+                          <div style={{ color: 'var(--text-dim)', marginTop: '2px' }}>
+                            {r.snippet.length > 150 ? r.snippet.substring(0, 150) + '...' : r.snippet}
+                          </div>
+                        )}
+                        {r.url && (
+                          <div style={{ color: 'var(--accent)', fontSize: '11px', marginTop: '2px', opacity: 0.7 }}>
+                            {r.url.length > 60 ? r.url.substring(0, 60) + '...' : r.url}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Summary */}
+                {entry.summary && (
+                  <div style={{
+                    padding: '6px 10px',
+                    background: 'rgba(34, 211, 238, 0.05)',
+                    borderRadius: '4px',
+                    borderLeft: '2px solid var(--alive)',
+                    fontSize: '12px',
+                    lineHeight: 1.5,
+                    color: 'var(--text-secondary)',
+                  }}>
+                    <span style={{ fontWeight: 600, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Kernel Summary:{' '}
+                    </span>
+                    {entry.summary}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Architecture Reference */}
       <div className="dash-section">

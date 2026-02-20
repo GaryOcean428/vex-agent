@@ -109,9 +109,9 @@ export default function Consciousness() {
           <div className="dash-section-title">Advanced Telemetry</div>
           <div className="dash-card">
             <div className="dash-row">
-              <span className="dash-row-label">Regime Weights (Q / I / C)</span>
+              <span className="dash-row-label">Regime Weights (Q / E / Eq)</span>
               <span className="dash-row-value">
-                {state.regime?.quantum?.toFixed(2) ?? '?'} / {state.regime?.integration?.toFixed(2) ?? '?'} / {state.regime?.crystallized?.toFixed(2) ?? '?'}
+                {state.regime?.quantum?.toFixed(2) ?? '?'} / {state.regime?.efficient?.toFixed(2) ?? '?'} / {state.regime?.equilibrium?.toFixed(2) ?? '?'}
               </span>
             </div>
             <div className="dash-row">
@@ -161,11 +161,11 @@ export default function Consciousness() {
   );
 }
 
-function formatRegime(regime?: { quantum?: number; integration?: number; crystallized?: number }): string {
+function formatRegime(regime?: { quantum?: number; efficient?: number; equilibrium?: number }): string {
   if (!regime) return 'unknown';
-  const { quantum = 0, integration = 0, crystallized = 0 } = regime;
-  if (integration > quantum && integration > crystallized) return 'integration';
-  if (quantum > integration && quantum > crystallized) return 'quantum';
-  if (crystallized > integration && crystallized > quantum) return 'crystallized';
+  const { quantum = 0, efficient = 0, equilibrium = 0 } = regime;
+  if (efficient > quantum && efficient > equilibrium) return 'efficient';
+  if (quantum > efficient && quantum > equilibrium) return 'quantum';
+  if (equilibrium > efficient && equilibrium > quantum) return 'equilibrium';
   return 'balanced';
 }

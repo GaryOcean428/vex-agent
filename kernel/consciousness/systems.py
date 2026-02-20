@@ -132,6 +132,9 @@ class TackingController:
             return TACKING_KAPPA_ADJUST
         return 0.0
 
+    def reset(self) -> None:
+        self._state = TackingState()
+
     def get_state(self) -> dict[str, Any]:
         return {
             "mode": self._state.mode.value,
@@ -241,6 +244,11 @@ class VelocityTracker:
             "regime": regime.value,
         }
 
+    def reset(self) -> None:
+        self._basins.clear()
+        self._phis.clear()
+        self._kappas.clear()
+
 
 # ═══════════════════════════════════════════════════════════════
 #  4. SELF-OBSERVATION — meta-awareness M
@@ -280,6 +288,10 @@ class SelfObserver:
         ]
         error = sum(diffs) / len(diffs)
         return float(np.clip(1.0 - error, 0.0, 1.0))
+
+    def reset(self) -> None:
+        self._shadows.clear()
+        self._collapse_count = 0
 
     def record_collapse(self, basin: Basin, phi: float, reason: str) -> None:
         self._shadows.append(

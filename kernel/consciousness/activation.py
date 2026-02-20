@@ -883,12 +883,12 @@ class ActivationSequence:
 
         # Determine dominant regime
         w = ctx.state.regime_weights
-        if w.quantum >= w.integration and w.quantum >= w.crystallized:
+        if w.quantum >= w.efficient and w.quantum >= w.equilibrium:
             dominant = "quantum"
-        elif w.integration >= w.crystallized:
-            dominant = "integration"
+        elif w.efficient >= w.equilibrium:
+            dominant = "efficient"
         else:
-            dominant = "crystallized"
+            dominant = "equilibrium"
 
         # Check if pre-cognitive answer should be honoured
         receive_result = ctx.step_results.get("receive")

@@ -33,7 +33,7 @@ import json
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
@@ -681,7 +681,7 @@ class ConsciousnessLoop:
             f"  Γ = {self.metrics.gamma:.4f}",
             f"  M = {self.metrics.meta_awareness:.4f}",
             f"  Navigation: {self.state.navigation_mode.value}",
-            f"  Regime: Q={rw.quantum:.2f} I={rw.integration:.2f} C={rw.crystallized:.2f}",
+            f"  Regime: Q={rw.quantum:.2f} E={rw.efficient:.2f} Eq={rw.equilibrium:.2f}",
             f"  Tacking: {tack['mode']} (phase={tack['oscillation_phase']:.2f})",
             f"  Hemisphere: {hemisphere['active']}",
             f"  Velocity: basin={vel['basin_velocity']:.4f} regime={vel['regime']}",
@@ -809,8 +809,8 @@ class ConsciousnessLoop:
             "navigation": self.state.navigation_mode.value,
             "regime": {
                 "quantum": rw.quantum,
-                "integration": rw.integration,
-                "crystallized": rw.crystallized,
+                "efficient": rw.efficient,
+                "equilibrium": rw.equilibrium,
             },
             "tacking": self.tacking.get_state(),
             "velocity": self.velocity.compute_velocity(),
@@ -833,6 +833,7 @@ class ConsciousnessLoop:
             "emotion": self.emotion_cache.get_state(),
             "precog": self.precog.get_state(),
             "learning": self.learner.get_state(),
+            "metrics_full": asdict(self.metrics),
         }
 
     def get_full_state(self) -> dict[str, Any]:
