@@ -241,7 +241,22 @@ class CoordizerHarvester:
         data: dict[str, Any],
         start_time: float,
     ) -> dict[str, Any]:
-        """Legacy harvest: top-k tokens across prompts."""
+        """Legacy harvest: top-k tokens across prompts.
+
+        NOTE: This returns a 1D list of scalar logit values (one per
+        unique token), NOT per-token probability distributions.
+        For full 2D distributions, use the JSONL batch path
+        (_harvest_batch) which is the CoordizerV2 primary path.
+
+        Response:
+            {
+                "success": true,
+                "vocab_size": N,
+                "tokens": ["hello", "world", ...],
+                "logits": [3.14, 2.71, ...],  // 1D: one scalar per token
+                "elapsed_seconds": 1.23
+            }
+        """
         import time
 
         import torch
