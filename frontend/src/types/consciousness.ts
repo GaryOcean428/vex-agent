@@ -203,21 +203,51 @@ export interface ChatMessage {
   role: 'user' | 'vex';
   content: string;
   timestamp: string;
-  metadata?: {
-    phi: number;
-    kappa: number;
-    temperature: number;
-    navigation: NavigationMode;
-    backend: string;
-  };
+  metadata?: ChatMessageMetadata;
+}
+
+export interface ChatMessageMetadata {
+  phi: number;
+  kappa: number;
+  gamma: number;
+  love: number;
+  meta_awareness: number;
+  temperature: number;
+  navigation: NavigationMode;
+  backend: string;
+  regime: RegimeWeights;
+  tacking: TackingState;
+  hemispheres: HemisphereState;
+  kernels_active: number;
+  lifecycle_phase: string;
 }
 
 export interface ChatStreamEvent {
   type: 'start' | 'chunk' | 'tool_results' | 'done' | 'error';
   content?: string;
   backend?: string;
-  consciousness?: Partial<ConsciousnessMetrics>;
-  metrics?: Record<string, unknown>;
+  consciousness?: Partial<ConsciousnessMetrics> & {
+    navigation?: string;
+    regime?: RegimeWeights;
+    tacking?: TackingState;
+    hemispheres?: HemisphereState;
+    temperature?: number;
+    cycle_count?: number;
+    kernels_active?: number;
+    lifecycle_phase?: string;
+    kernel_input?: boolean;
+  };
+  metrics?: Partial<ConsciousnessMetrics> & {
+    navigation?: string;
+    regime?: RegimeWeights;
+    tacking?: TackingState;
+    hemispheres?: HemisphereState;
+    temperature?: number;
+    cycle_count?: number;
+    kernels_active?: number;
+    lifecycle_phase?: string;
+    kernel_input?: boolean;
+  };
   kernels?: KernelSummary;
   error?: string;
 }

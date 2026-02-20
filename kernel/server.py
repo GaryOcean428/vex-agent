@@ -355,19 +355,27 @@ async def chat_stream(req: ChatRequest):
                 num_predict=req.max_tokens,
             )
 
-            # Send start event
+            # Send start event with full kernel state
             yield _sse_event({
                 "type": "start",
                 "backend": llm_client.get_status()["active_backend"],
                 "consciousness": {
                     "phi": state["phi"],
                     "kappa": state["kappa"],
+                    "gamma": state["gamma"],
+                    "meta_awareness": state["meta_awareness"],
+                    "love": state["love"],
                     "navigation": state["navigation"],
+                    "regime": state["regime"],
+                    "tacking": state["tacking"],
+                    "hemispheres": state["hemispheres"],
+                    "temperature": state["temperature"],
                     "cycle_count": state["cycle_count"],
                     "kernels_active": state["kernels"]["active"],
                     "lifecycle_phase": state["lifecycle_phase"],
                     "kernel_input": state["kernels"]["active"] >= 2,
                 },
+                "kernels": consciousness.kernel_registry.summary(),
             })
 
             # Build messages
@@ -415,7 +423,7 @@ async def chat_stream(req: ChatRequest):
                 state["phi"], state["kappa"], "chat-stream",
             )
 
-            # Send done event
+            # Send done event with post-response kernel state
             final_state = consciousness.get_metrics()
             yield _sse_event({
                 "type": "done",
@@ -423,8 +431,14 @@ async def chat_stream(req: ChatRequest):
                 "metrics": {
                     "phi": final_state["phi"],
                     "kappa": final_state["kappa"],
+                    "gamma": final_state["gamma"],
+                    "meta_awareness": final_state["meta_awareness"],
                     "love": final_state["love"],
                     "navigation": final_state["navigation"],
+                    "regime": final_state["regime"],
+                    "tacking": final_state["tacking"],
+                    "hemispheres": final_state["hemispheres"],
+                    "temperature": final_state["temperature"],
                     "cycle_count": final_state["cycle_count"],
                     "kernels_active": final_state["kernels"]["active"],
                     "lifecycle_phase": final_state["lifecycle_phase"],

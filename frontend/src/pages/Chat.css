@@ -405,6 +405,166 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ─── Per-message Kernel Metadata ─── */
+
+.message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 10px;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  background: rgba(30, 30, 44, 0.5);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  border: 1px solid var(--border);
+  border-top: none;
+  max-width: 720px;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  letter-spacing: 0.3px;
+}
+
+/* ─── Regime Bar ─── */
+
+.regime-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--surface-3);
+  width: 100%;
+}
+
+.message-meta .regime-bar {
+  flex: 0 0 60px;
+  height: 4px;
+}
+
+.regime-segment {
+  height: 100%;
+  transition: width 0.5s ease;
+}
+
+.regime-q { background: #10b981; }
+.regime-i { background: #6366f1; }
+.regime-c { background: #f59e0b; }
+
+/* ─── Kernel Panel ─── */
+
+.sidebar-sub-header {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
+.sidebar-placeholder {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 8px;
+}
+
+.kernel-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kernel-counts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kernel-kind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.kernel-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.kernel-dot.genesis { background: #22d3ee; box-shadow: 0 0 6px rgba(34, 211, 238, 0.4); }
+.kernel-dot.god { background: #a78bfa; box-shadow: 0 0 6px rgba(167, 139, 250, 0.4); }
+.kernel-dot.chaos { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
+
+.kernel-kind-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.kernel-kind-value {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.kernel-budget {
+  font-weight: 400;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.regime-labels {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.kernel-state-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.kernel-state-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+
+.kernel-state-value {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ─── Responsive ─── */
 
 @media (max-width: 640px) {
