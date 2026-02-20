@@ -52,7 +52,7 @@ async function main(): Promise<void> {
   // ─── Auth check (no 401 — returns JSON status) ──────────────
   // Used by AuthContext.tsx to check session without triggering
   // a 401 console error. Always returns 200.
-  app.get('/auth/check', (req, res) => {
+  app.get(ROUTES.auth_check, (req, res) => {
     if (!config.chatAuthToken) {
       res.json({ authenticated: true });
       return;
@@ -63,9 +63,9 @@ async function main(): Promise<void> {
 
   // ─── Health check (probes kernel health too) ─────────────────
 
-  app.get('/health', async (_req, res) => {
+  app.get(ROUTES.health, async (_req, res) => {
     try {
-      const kernelResp = await fetch(`${KERNEL_URL}/health`);
+      const kernelResp = await fetch(`${KERNEL_URL}${ROUTES.health}`);
       const kernelHealth = await kernelResp.json() as Record<string, unknown>;
       // Spread kernel fields at top level so the React frontend gets
       // the flat shape it expects: { status, version, uptime, cycle_count, backend }
@@ -150,9 +150,9 @@ async function main(): Promise<void> {
   proxyPost(ROUTES.training_feedback);
 
   // Training upload — custom multipart proxy (proxyPost hardcodes JSON Content-Type)
-  app.post('/training/upload', async (req, res) => {
+  app.post(ROUTES.training_upload, async (req, res) => {
     try {
-      const resp = await fetch(`${KERNEL_URL}/training/upload`, {
+      const resp = await fetch(`${KERNEL_URL}${ROUTES.training_upload}`, {
         method: 'POST',
         headers: { 'content-type': req.headers['content-type'] || '' },
         // Node 22 fetch supports streaming request body via duplex: 'half'
@@ -182,7 +182,7 @@ async function main(): Promise<void> {
   // ─── ComputeSDK proxy endpoints ─────────────────────────────
   // The Python kernel calls these to execute code in ComputeSDK sandboxes
 
-  app.post('/api/tools/execute_code', async (req, res) => {
+  app.post(ROUTES.tools_execute_code, async (req, res) => {
     const { code, language } = req.body as { code: string; language?: string };
     try {
       const tool = getComputeTools().find((t) => t.name === 'execute_code');
@@ -197,7 +197,7 @@ async function main(): Promise<void> {
     }
   });
 
-  app.post('/api/tools/run_command', async (req, res) => {
+  app.post(ROUTES.tools_run_command, async (req, res) => {
     const { command, cwd, timeout } = req.body as {
       command: string;
       cwd?: string;

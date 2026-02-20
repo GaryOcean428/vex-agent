@@ -1,12 +1,13 @@
 import { useVexState, useMemoryStats } from '../../hooks/index.ts';
 import { usePolledData } from '../../hooks/usePolledData.ts';
+import { API } from '../../config/api-routes.ts';
 import type { StatusResponse } from '../../types/consciousness.ts';
 import MetricCard from '../../components/MetricCard.tsx';
 import '../../components/MetricCard.css';
 
 export default function Memory() {
   const { data: state, loading } = useVexState();
-  const { data: status } = usePolledData<StatusResponse>('/status', 5000);
+  const { data: status } = usePolledData<StatusResponse>(API.status, 5000);
   const { data: memoryStats } = useMemoryStats();
 
   if (loading || !state) {

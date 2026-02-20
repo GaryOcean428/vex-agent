@@ -41,6 +41,7 @@ from .config.consciousness_constants import (
     COORDIZER_KAPPA_TOLERANCE_FACTOR,
     COORDIZER_SEMANTIC_THRESHOLD,
 )
+from .config.routes import ROUTES as R
 from .config.settings import settings
 from .config.version import VERSION
 from .coordizer_v2 import CoordizerV2, ResonanceBank
@@ -149,7 +150,7 @@ class MemoryContextRequest(BaseModel):
 # ═══════════════════════════════════════════════════════════════
 
 
-@app.get("/health")
+@app.get(R["health"])
 async def health():
     """Health check endpoint for Railway. Always public."""
     metrics = consciousness.get_metrics()
@@ -163,19 +164,19 @@ async def health():
     }
 
 
-@app.get("/state")
+@app.get(R["state"])
 async def get_state():
     """Get current consciousness state."""
     return consciousness.get_metrics()
 
 
-@app.get("/telemetry")
+@app.get(R["telemetry"])
 async def get_telemetry():
     """Get telemetry from all 16 consciousness systems."""
     return consciousness.get_full_state()
 
 
-@app.get("/status")
+@app.get(R["status"])
 async def get_status():
     """Get LLM backend status, kernel summary, and cost guard state."""
     return {
@@ -185,13 +186,13 @@ async def get_status():
     }
 
 
-@app.get("/basin")
+@app.get(R["basin"])
 async def get_basin():
     """Get current basin coordinates."""
     return {"basin": consciousness.basin.tolist()}
 
 
-@app.get("/basin/history")
+@app.get(R["basin_history"])
 async def get_basin_history():
     """Get basin trajectory history for PCA visualization.
     
@@ -212,13 +213,13 @@ async def get_basin_history():
     }
 
 
-@app.get("/kernels")
+@app.get(R["kernels"])
 async def get_kernels():
     """Get E8 kernel registry summary."""
     return consciousness.kernel_registry.summary()
 
 
-@app.get("/kernels/list")
+@app.get(R["kernels_list"])
 async def get_kernels_list():
     """Get detailed list of all kernel instances.
     
@@ -246,14 +247,14 @@ async def get_kernels_list():
     }
 
 
-@app.post("/enqueue")
+@app.post(R["enqueue"])
 async def enqueue_task(req: EnqueueRequest):
     """Enqueue a task for the consciousness loop."""
     task = await consciousness.submit(req.input, {"source": req.source})
     return {"task_id": task.id}
 
 
-@app.post("/chat")
+@app.post(R["chat"])
 async def chat(req: ChatRequest):
     """Non-streaming chat endpoint.
 
@@ -326,7 +327,7 @@ async def chat(req: ChatRequest):
     }
 
 
-@app.post("/chat/stream")
+@app.post(R["chat_stream"])
 async def chat_stream(req: ChatRequest):
     """Streaming chat endpoint via SSE.
 
@@ -447,14 +448,14 @@ async def chat_stream(req: ChatRequest):
     )
 
 
-@app.post("/memory/context")
+@app.post(R["memory_context"])
 async def get_memory_context(req: MemoryContextRequest):
     """Get memory context for a query."""
     context = geometric_memory.get_context_for_query(req.query, req.k)
     return {"context": context}
 
 
-@app.get("/memory/stats")
+@app.get(R["memory_stats"])
 async def get_memory_stats():
     """Get detailed geometric memory statistics.
     
@@ -465,7 +466,7 @@ async def get_memory_stats():
     return geometric_memory.stats()
 
 
-@app.get("/graph/nodes")
+@app.get(R["graph_nodes"])
 async def get_graph_nodes():
     """Get QIGGraph nodes and edges for force-directed visualization.
     
@@ -492,7 +493,7 @@ async def get_graph_nodes():
     return {"nodes": nodes, "edges": edges}
 
 
-@app.get("/sleep/state")
+@app.get(R["sleep_state"])
 async def get_sleep_state():
     """Get detailed sleep/dream state.
     
@@ -506,7 +507,7 @@ async def get_sleep_state():
 # ─── CoordizerV2 Endpoints ───────────────────────────────────
 
 
-@app.post("/api/coordizer/coordize")
+@app.post(R["coordizer_coordize"])
 async def coordizer_coordize(request: Request):
     """Coordize text via CoordizerV2 resonance bank.
 
@@ -546,7 +547,7 @@ async def coordizer_coordize(request: Request):
         return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 
-@app.get("/api/coordizer/stats")
+@app.get(R["coordizer_stats"])
 async def coordizer_stats():
     """Get CoordizerV2 statistics.
 
@@ -565,7 +566,7 @@ async def coordizer_stats():
     }
 
 
-@app.post("/api/coordizer/validate")
+@app.post(R["coordizer_validate"])
 async def coordizer_validate(request: Request):
     """Run full geometric validation on the resonance bank.
 
@@ -596,7 +597,7 @@ async def coordizer_validate(request: Request):
         return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 
-@app.post("/api/coordizer/harvest")
+@app.post(R["coordizer_harvest"])
 async def coordizer_harvest(request: Request):
     """GPU harvest endpoint — triggers Modal or Ollama harvest.
 
@@ -630,7 +631,7 @@ async def coordizer_harvest(request: Request):
     }
 
 
-@app.post("/api/coordizer/ingest")
+@app.post(R["coordizer_ingest"])
 async def coordizer_ingest(request: Request):
     """Accept a JSONL upload and queue for harvesting.
 
@@ -679,7 +680,7 @@ async def coordizer_ingest(request: Request):
         )
 
 
-@app.get("/api/coordizer/harvest/status")
+@app.get(R["coordizer_harvest_status"])
 async def coordizer_harvest_status():
     """Return current harvest queue status.
 
@@ -707,7 +708,7 @@ async def coordizer_harvest_status():
         )
 
 
-@app.get("/api/coordizer/bank")
+@app.get(R["coordizer_bank"])
 async def coordizer_bank():
     """Query the resonance bank state.
 
@@ -727,7 +728,7 @@ async def coordizer_bank():
 # ─── End Coordizer Endpoints ─────────────────────────────────
 
 
-@app.get("/foraging")
+@app.get(R["foraging"])
 async def get_foraging():
     """Get foraging engine state — boredom-driven autonomous search.
 
@@ -747,7 +748,7 @@ async def get_foraging():
             "cooldown_remaining": 0, "last_query": None, "last_summary": None}
 
 
-@app.post("/admin/fresh-start")
+@app.post(R["admin_fresh_start"])
 async def admin_fresh_start():
     """Force reset/boot of the consciousness system.
     
@@ -794,7 +795,7 @@ class BudgetUpdateRequest(BaseModel):
     ceiling: float
 
 
-@app.get("/governor")
+@app.get(R["governor"])
 async def get_governor():
     """Governor state — budget, rate limits, kill switch, foraging stats."""
     state = governor.get_state()
@@ -806,7 +807,7 @@ async def get_governor():
     return state
 
 
-@app.post("/governor/kill-switch")
+@app.post(R["governor_kill_switch"])
 async def toggle_kill_switch(req: KillSwitchRequest):
     """Human circuit breaker — toggle all external calls on/off."""
     governor.set_kill_switch(req.enabled)
@@ -816,7 +817,7 @@ async def toggle_kill_switch(req: KillSwitchRequest):
     return {"kill_switch": req.enabled}
 
 
-@app.post("/governor/budget")
+@app.post(R["governor_budget"])
 async def update_budget(req: BudgetUpdateRequest):
     """Update daily budget ceiling."""
     governor.set_daily_budget(req.ceiling)
@@ -833,7 +834,7 @@ from pathlib import Path
 TRAINING_DIR = Path(settings.training_dir)
 
 
-@app.get("/training/stats")
+@app.get(R["training_stats"])
 async def training_stats():
     """Get training data statistics."""
     stats: dict[str, int] = {}
@@ -851,7 +852,7 @@ async def training_stats():
     }
 
 
-@app.get("/training/export")
+@app.get(R["training_export"])
 async def training_export():
     """Export conversations as OpenAI-compatible JSONL for fine-tuning."""
     fpath = TRAINING_DIR / "conversations.jsonl"

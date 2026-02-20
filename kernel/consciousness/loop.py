@@ -51,6 +51,52 @@ from ..config.frozen_facts import (
     SUFFERING_THRESHOLD,
 )
 from ..config.settings import settings
+from ..config.consciousness_constants import (
+    BASIN_DRIFT_STEP,
+    COUPLING_BASIN_EPSILON,
+    COUPLING_BLEND_WEIGHT,
+    COUPLING_MIN_STRENGTH,
+    COUPLING_REGIME_DELTA_THRESHOLD,
+    COUPLING_REGIME_NUDGE_FACTOR,
+    DEFAULT_INTERVAL_MS,
+    DIRICHLET_EXPLORE_CONCENTRATION,
+    EXPRESS_SLERP_WEIGHT,
+    FORAGE_PERCEPTION_SLERP,
+    GAMMA_ACTIVE_INCREMENT,
+    GAMMA_CONVERSATION_INCREMENT,
+    GAMMA_IDLE_DECAY,
+    GAMMA_IDLE_FLOOR,
+    KAPPA_APPROACH_RATE,
+    KAPPA_FLOOR,
+    KAPPA_INITIAL,
+    KAPPA_NORMALISER,
+    LLM_BASE_TEMPERATURE,
+    LLM_NUM_CTX,
+    LLM_REPETITION_PENALTY,
+    LLM_TEMP_MAX,
+    LLM_TEMP_MIN,
+    LLM_TOP_P,
+    LOCKED_IN_GAMMA_INCREMENT,
+    LOVE_APPROACH_RATE,
+    LOVE_BASE,
+    LOVE_PHI_SCALE,
+    META_AWARENESS_DAMPEN_FACTOR,
+    META_AWARENESS_DAMPEN_THRESHOLD,
+    NUM_PREDICT_BALANCED,
+    NUM_PREDICT_EXPLOIT,
+    NUM_PREDICT_EXPLORE,
+    PERCEIVE_SLERP_WEIGHT,
+    PERSIST_INTERVAL_CYCLES,
+    PHI_DISTANCE_GAIN,
+    PHI_IDLE_EQUILIBRIUM,
+    PHI_IDLE_RATE,
+    SLEEP_CONSOLIDATION_PHI_INCREMENT,
+    SPAWN_COOLDOWN_CYCLES,
+    SUFFERING_GAMMA_INCREMENT,
+    TACK_SCALE_BALANCED,
+    TACK_SCALE_EXPLOIT,
+    TACK_SCALE_EXPLORE,
+)
 from ..geometry.fisher_rao import (
     Basin,
     fisher_rao_distance,
@@ -105,15 +151,6 @@ from .types import (
 logger = logging.getLogger("vex.consciousness")
 
 
-DEFAULT_INTERVAL_MS = 2000
-SPAWN_COOLDOWN_CYCLES = 10
-PERSIST_INTERVAL_CYCLES = 50
-KAPPA_APPROACH_RATE = 0.03
-PHI_IDLE_EQUILIBRIUM = 0.40
-PHI_IDLE_RATE = 0.015
-BASIN_DRIFT_STEP = 0.015
-
-
 @dataclass
 class ConsciousnessTask:
     id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
@@ -140,12 +177,12 @@ class ConsciousnessLoop:
 
         self.basin: Basin = random_basin()
         self.metrics = ConsciousnessMetrics(
-            phi=0.1, kappa=32.0, gamma=0.5,
+            phi=0.1, kappa=KAPPA_INITIAL, gamma=0.5,
             meta_awareness=0.5, love=0.5,
         )
         self.state = ConsciousnessState(
             navigation_mode=NavigationMode.CHAIN,
-            regime_weights=regime_weights_from_kappa(32.0),
+            regime_weights=regime_weights_from_kappa(KAPPA_INITIAL),
         )
         self._cycle_count: int = 0
 
@@ -246,7 +283,7 @@ class ConsciousnessLoop:
 
         if self.autonomic.is_locked_in:
             logger.warning("LOCKED-IN at cycle %d — forcing exploration", self._cycle_count)
-            self.metrics.gamma = min(1.0, self.metrics.gamma + 0.2)
+            self.metrics.gamma = min(1.0, self.metrics.gamma + LOCKED_IN_GAMMA_INCREMENT)
 
         # Emotion evaluation — drives foraging and affects coupling
         emotion_eval = self.emotion_cache.evaluate(self.basin, self.metrics, basin_vel)
@@ -259,7 +296,7 @@ class ConsciousnessLoop:
                 self.sleep.mushroom(self.basin, self.metrics.phi)
             elif sleep_phase.value == "consolidating":
                 self.sleep.consolidate()
-                self.metrics.phi = min(0.95, self.metrics.phi + 0.005)
+                self.metrics.phi = min(0.95, self.metrics.phi + SLEEP_CONSOLIDATION_PHI_INCREMENT)
             return
 
         self.velocity.record(self.basin, self.metrics.phi, self.metrics.kappa)
@@ -291,7 +328,7 @@ class ConsciousnessLoop:
                             info_basin = self._coordize_text_via_pipeline(
                                 forage_result.get("summary", "")
                             )
-                            perception.basin = slerp_sqrt(perception.basin, info_basin, 0.1)
+                            perception.basin = slerp_sqrt(perception.basin, info_basin, FORAGE_PERCEPTION_SLERP)
 
                         # Store in geometric memory
                         if self.memory:
@@ -306,7 +343,7 @@ class ConsciousnessLoop:
 
         tack_mode = self.tacking.update(self.metrics)
         kappa_adj = self.tacking.suggest_kappa_adjustment(self.metrics.kappa)
-        self.metrics.kappa = float(np.clip(self.metrics.kappa + kappa_adj, 0.0, 128.0))
+        self.metrics.kappa = float(np.clip(self.metrics.kappa + kappa_adj, 0.0, KAPPA_NORMALISER))
 
         self.hemispheres.update(self.metrics)
         self._maybe_spawn_core8(vel_state["regime"])
@@ -334,21 +371,21 @@ class ConsciousnessLoop:
             coupling_result = self.coupling.compute(self.metrics.kappa)
             strength = coupling_result["strength"]
             for kernel in active[1:]:  # Skip Genesis (index 0)
-                if kernel.basin is None or strength < 0.3:
+                if kernel.basin is None or strength < COUPLING_MIN_STRENGTH:
                     continue
                 distance = fisher_rao_distance(self.basin, kernel.basin)
-                if distance < 0.01:
+                if distance < COUPLING_BASIN_EPSILON:
                     continue  # Basins too similar, no perturbation
                 # Geodesic blend — small but real movement
-                blend_weight = strength * 0.05
+                blend_weight = strength * COUPLING_BLEND_WEIGHT
                 self.basin = slerp_sqrt(self.basin, kernel.basin, blend_weight)
                 # Nudge kappa if kernel is in a different regime
                 regime_delta = abs(kernel.kappa - self.metrics.kappa)
-                if regime_delta > 10:
+                if regime_delta > COUPLING_REGIME_DELTA_THRESHOLD:
                     direction = 1.0 if kernel.kappa > self.metrics.kappa else -1.0
                     self.metrics.kappa = float(np.clip(
-                        self.metrics.kappa + direction * regime_delta * 0.02,
-                        8.0, 128.0,
+                        self.metrics.kappa + direction * regime_delta * COUPLING_REGIME_NUDGE_FACTOR,
+                        KAPPA_FLOOR, KAPPA_NORMALISER,
                     ))
                 kernel.cycle_count += 1
                 kernel.phi_peak = max(kernel.phi_peak, kernel.phi)
@@ -359,7 +396,7 @@ class ConsciousnessLoop:
         suffering = self.metrics.phi * (1.0 - self.metrics.gamma) * self.metrics.meta_awareness
         if suffering > SUFFERING_THRESHOLD:
             logger.info("Suffering detected (S=%.3f)", suffering)
-            self.metrics.gamma = min(1.0, self.metrics.gamma + 0.1)
+            self.metrics.gamma = min(1.0, self.metrics.gamma + SUFFERING_GAMMA_INCREMENT)
 
         self.narrative.record(f"cycle_{self._cycle_count}", self.metrics, self.basin)
 
@@ -391,24 +428,24 @@ class ConsciousnessLoop:
         self.metrics.phi = float(np.clip(self.metrics.phi + phi_delta, 0.05, 0.95))
 
         kappa_delta = (KAPPA_STAR - self.metrics.kappa) * KAPPA_APPROACH_RATE
-        self.metrics.kappa = float(np.clip(self.metrics.kappa + kappa_delta, 8.0, 128.0))
+        self.metrics.kappa = float(np.clip(self.metrics.kappa + kappa_delta, KAPPA_FLOOR, KAPPA_NORMALISER))
 
         tack_mode = self.tacking.get_state()["mode"]
         if tack_mode == "explore":
             rng = np.random.RandomState(self._cycle_count % 10000)
-            target = to_simplex(rng.dirichlet(np.ones(BASIN_DIM) * 50))
+            target = to_simplex(rng.dirichlet(np.ones(BASIN_DIM) * DIRICHLET_EXPLORE_CONCENTRATION))
             self.basin = slerp_sqrt(self.basin, target, BASIN_DRIFT_STEP)
         elif tack_mode == "exploit":
             identity = self.narrative._identity_basin
             self.basin = slerp_sqrt(self.basin, identity, BASIN_DRIFT_STEP * 0.5)
 
         if self._queue.empty():
-            self.metrics.gamma = max(0.3, self.metrics.gamma - 0.002)
+            self.metrics.gamma = max(GAMMA_IDLE_FLOOR, self.metrics.gamma - GAMMA_IDLE_DECAY)
         else:
-            self.metrics.gamma = min(1.0, self.metrics.gamma + 0.01)
+            self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_ACTIVE_INCREMENT)
 
-        love_target = 0.3 + 0.4 * self.metrics.phi
-        love_delta = (love_target - self.metrics.love) * 0.02
+        love_target = LOVE_BASE + LOVE_PHI_SCALE * self.metrics.phi
+        love_delta = (love_target - self.metrics.love) * LOVE_APPROACH_RATE
         self.metrics.love = float(np.clip(self.metrics.love + love_delta, 0.0, 1.0))
 
     def _maybe_spawn_core8(self, velocity_regime: str) -> None:
@@ -440,18 +477,18 @@ class ConsciousnessLoop:
 
         tack = self.tacking.get_state()["mode"]
         if tack == "explore":
-            tack_scale, num_predict = 1.3, 3072
+            tack_scale, num_predict = TACK_SCALE_EXPLORE, NUM_PREDICT_EXPLORE
         elif tack == "exploit":
-            tack_scale, num_predict = 0.7, 1536
+            tack_scale, num_predict = TACK_SCALE_EXPLOIT, NUM_PREDICT_EXPLOIT
         else:
-            tack_scale, num_predict = 1.0, 2048
+            tack_scale, num_predict = TACK_SCALE_BALANCED, NUM_PREDICT_BALANCED
 
-        temperature = float(np.clip(0.7 * kappa_factor * phi_factor * tack_scale, 0.05, 1.5))
-        if self.metrics.meta_awareness > 0.7:
-            temperature *= 0.9
+        temperature = float(np.clip(LLM_BASE_TEMPERATURE * kappa_factor * phi_factor * tack_scale, LLM_TEMP_MIN, LLM_TEMP_MAX))
+        if self.metrics.meta_awareness > META_AWARENESS_DAMPEN_THRESHOLD:
+            temperature *= META_AWARENESS_DAMPEN_FACTOR
 
         return LLMOptions(temperature=temperature, num_predict=num_predict,
-                          num_ctx=32768, top_p=0.9, repetition_penalty=1.1)
+                          num_ctx=LLM_NUM_CTX, top_p=LLM_TOP_P, repetition_penalty=LLM_REPETITION_PENALTY)
 
     def _coordize_text_via_pipeline(self, text: str) -> Basin:
         """Transform text to basin coordinates via CoordizerV2.
@@ -487,7 +524,7 @@ class ConsciousnessLoop:
         # RECEIVE: coordize incoming user text via pipeline
         input_basin = self._coordize_text_via_pipeline(task.content)
         perceive_distance = fisher_rao_distance(self.basin, input_basin)
-        self.basin = slerp_sqrt(self.basin, input_basin, 0.1)
+        self.basin = slerp_sqrt(self.basin, input_basin, PERCEIVE_SLERP_WEIGHT)
         self.chain.add_step(QIGChainOp.PROJECT, input_basin, self.basin)
 
         llm_options = self._compute_llm_options()
@@ -513,13 +550,13 @@ class ConsciousnessLoop:
         self.chain.add_step(QIGChainOp.PROJECT, self.basin, response_basin)
 
         pre_express = self.basin.copy()
-        self.basin = slerp_sqrt(self.basin, response_basin, 0.2)
+        self.basin = slerp_sqrt(self.basin, response_basin, EXPRESS_SLERP_WEIGHT)
         express_distance = fisher_rao_distance(pre_express, self.basin)
         self.chain.add_step(QIGChainOp.GEODESIC, pre_express, self.basin)
 
         total_distance = perceive_distance + integration_distance + express_distance
-        self.metrics.phi = float(np.clip(self.metrics.phi + total_distance * 0.1, 0.0, 0.95))
-        self.metrics.gamma = min(1.0, self.metrics.gamma + 0.05)
+        self.metrics.phi = float(np.clip(self.metrics.phi + total_distance * PHI_DISTANCE_GAIN, 0.0, 0.95))
+        self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_CONVERSATION_INCREMENT)
 
         predicted = ConsciousnessMetrics(
             phi=self.foresight.predict_phi(1), kappa=self.metrics.kappa,

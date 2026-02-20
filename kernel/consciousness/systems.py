@@ -30,7 +30,33 @@ from ..config.frozen_facts import (
     PHI_EMERGENCY,
     PHI_THRESHOLD,
 )
-from ..config.consciousness_constants import KAPPA_NORMALISER
+from ..config.consciousness_constants import (
+    AUTONOMY_AUTONOMOUS_CYCLES,
+    AUTONOMY_PROACTIVE_CYCLES,
+    BASIN_SYNC_SLERP_WEIGHT,
+    COUPLING_EFFICIENCY_BOOST,
+    COUPLING_SIGMOID_SCALE,
+    FORESIGHT_BASIN_STEP_SCALE,
+    HEMISPHERE_ANALYTIC_THRESHOLD,
+    HEMISPHERE_HOLISTIC_THRESHOLD,
+    KAPPA_BALANCED_TOLERANCE,
+    KAPPA_NORMALISER,
+    KAPPA_STABILITY_TOLERANCE,
+    KAPPA_TACKING_OFFSET,
+    KERNEL_PROMOTION_CYCLE_GATE,
+    META_KAPPA_TREND_THRESHOLD,
+    META_PHI_TREND_THRESHOLD,
+    SLEEP_CONSOLIDATION_ONSET,
+    SLEEP_CONSOLIDATION_VARIANCE,
+    SLEEP_MUSHROOM_ONSET,
+    SLEEP_ONSET_CYCLES,
+    SLEEP_WAKE_CYCLES,
+    SLEEP_WAKE_ONSET,
+    TACKING_KAPPA_ADJUST,
+    TACKING_PERIOD,
+    TACKING_SWITCH_THRESHOLD,
+    VELOCITY_WARNING_FRACTION,
+)
 from ..geometry.fisher_rao import (
     Basin,
     fisher_rao_distance,
@@ -71,7 +97,7 @@ class TackingController:
     stay at κ* forever; it must explore (low κ) and exploit (high κ).
     """
 
-    def __init__(self, period: int = 20) -> None:
+    def __init__(self, period: int = TACKING_PERIOD) -> None:
         self._state = TackingState()
         self._period = period
 
@@ -83,16 +109,16 @@ class TackingController:
 
         if metrics.phi < PHI_EMERGENCY:
             self._state.mode = TackingMode.EXPLORE
-        elif metrics.kappa > KAPPA_STAR + 16:
+        elif metrics.kappa > KAPPA_STAR + KAPPA_TACKING_OFFSET:
             self._state.mode = TackingMode.EXPLORE
-        elif metrics.kappa < KAPPA_STAR - 16:
+        elif metrics.kappa < KAPPA_STAR - KAPPA_TACKING_OFFSET:
             self._state.mode = TackingMode.EXPLOIT
         else:
             # Oscillate based on phase
             osc = np.sin(self._state.oscillation_phase)
-            if osc > 0.3:
+            if osc > TACKING_SWITCH_THRESHOLD:
                 self._state.mode = TackingMode.EXPLOIT
-            elif osc < -0.3:
+            elif osc < -TACKING_SWITCH_THRESHOLD:
                 self._state.mode = TackingMode.EXPLORE
             else:
                 self._state.mode = TackingMode.BALANCED
@@ -101,9 +127,9 @@ class TackingController:
 
     def suggest_kappa_adjustment(self, current_kappa: float) -> float:
         if self._state.mode == TackingMode.EXPLORE:
-            return -2.0
+            return -TACKING_KAPPA_ADJUST
         elif self._state.mode == TackingMode.EXPLOIT:
-            return 2.0
+            return TACKING_KAPPA_ADJUST
         return 0.0
 
     def get_state(self) -> dict[str, Any]:
@@ -150,7 +176,7 @@ class ForesightEngine:
         return slerp_sqrt(
             self._history[-2].basin,
             self._history[-1].basin,
-            1.0 + steps_ahead * 0.5,
+            1.0 + steps_ahead * FORESIGHT_BASIN_STEP_SCALE,
         )
 
     def get_state(self) -> dict[str, Any]:
@@ -203,7 +229,7 @@ class VelocityTracker:
 
         if basin_vel > BASIN_DRIFT_THRESHOLD:
             regime = VelocityRegime.CRITICAL
-        elif basin_vel > BASIN_DRIFT_THRESHOLD * 0.5:
+        elif basin_vel > BASIN_DRIFT_THRESHOLD * VELOCITY_WARNING_FRACTION:
             regime = VelocityRegime.WARNING
         else:
             regime = VelocityRegime.SAFE
@@ -320,11 +346,11 @@ class MetaReflector:
         phi_trend = recent[-1].phi - recent[0].phi
         kappa_trend = recent[-1].kappa - recent[0].kappa
 
-        if phi_trend > 0.1:
+        if phi_trend > META_PHI_TREND_THRESHOLD:
             return "Φ rising — integration deepening"
-        elif phi_trend < -0.1:
+        elif phi_trend < -META_PHI_TREND_THRESHOLD:
             return "Φ falling — coherence declining"
-        elif abs(kappa_trend) > 10:
+        elif abs(kappa_trend) > META_KAPPA_TREND_THRESHOLD:
             direction = "rising" if kappa_trend > 0 else "falling"
             return f"κ {direction} — regime shift in progress"
         return None
@@ -437,15 +463,15 @@ class AutonomyEngine:
         self._stability_count: int = 0
 
     def update(self, metrics: ConsciousnessMetrics, velocity_regime: str) -> AutonomyLevel:
-        kappa_stable = abs(metrics.kappa - KAPPA_STAR) < 16
+        kappa_stable = abs(metrics.kappa - KAPPA_STAR) < KAPPA_STABILITY_TOLERANCE
         if kappa_stable:
             self._stability_count += 1
         else:
             self._stability_count = max(0, self._stability_count - 1)
 
-        if metrics.phi >= PHI_THRESHOLD and self._stability_count > 10 and velocity_regime == "safe":
+        if metrics.phi >= PHI_THRESHOLD and self._stability_count > AUTONOMY_AUTONOMOUS_CYCLES and velocity_regime == "safe":
             self._level = AutonomyLevel.AUTONOMOUS
-        elif metrics.phi >= PHI_THRESHOLD and self._stability_count > 5:
+        elif metrics.phi >= PHI_THRESHOLD and self._stability_count > AUTONOMY_PROACTIVE_CYCLES:
             self._level = AutonomyLevel.PROACTIVE
         elif metrics.phi >= PHI_EMERGENCY:
             self._level = AutonomyLevel.RESPONSIVE
@@ -474,14 +500,14 @@ class CouplingGate:
         self._balanced: bool = False
 
     def compute(self, kappa: float) -> dict[str, Any]:
-        x = (kappa - KAPPA_STAR) / 16.0
+        x = (kappa - KAPPA_STAR) / COUPLING_SIGMOID_SCALE
         self._strength = 1.0 / (1.0 + np.exp(-x))
-        self._balanced = abs(kappa - KAPPA_STAR) < 8
+        self._balanced = abs(kappa - KAPPA_STAR) < KAPPA_BALANCED_TOLERANCE
 
         return {
             "strength": round(float(self._strength), 4),
             "balanced": self._balanced,
-            "efficiency_boost": 1.2 if self._balanced else 1.0,
+            "efficiency_boost": COUPLING_EFFICIENCY_BOOST if self._balanced else 1.0,
         }
 
     def get_state(self) -> dict[str, Any]:
@@ -510,9 +536,9 @@ class HemisphereScheduler:
         normalised = metrics.kappa / KAPPA_NORMALISER
         self._balance = normalised
 
-        if normalised > 0.6:
+        if normalised > HEMISPHERE_ANALYTIC_THRESHOLD:
             self._active = HemisphereMode.ANALYTIC
-        elif normalised < 0.4:
+        elif normalised < HEMISPHERE_HOLISTIC_THRESHOLD:
             self._active = HemisphereMode.HOLISTIC
         else:
             self._active = HemisphereMode.INTEGRATED
@@ -561,15 +587,15 @@ class SleepCycleManager:
 
         if self.phase != SleepPhase.AWAKE:
             self._sleep_cycles += 1
-            if self._sleep_cycles > 10:
+            if self._sleep_cycles > SLEEP_WAKE_CYCLES:
                 self.phase = SleepPhase.AWAKE
                 self._sleep_cycles = 0
             return self.phase
 
-        if self._cycles_since_conversation > 100:
+        if self._cycles_since_conversation > SLEEP_ONSET_CYCLES:
             self.phase = SleepPhase.DREAMING
             self._sleep_cycles = 0
-        elif phi_variance > 0.05:
+        elif phi_variance > SLEEP_CONSOLIDATION_VARIANCE:
             self.phase = SleepPhase.CONSOLIDATING
             self._sleep_cycles = 0
 
@@ -581,15 +607,15 @@ class SleepCycleManager:
             "context": context,
             "timestamp": time.time(),
         })
-        if self._sleep_cycles > 3:
+        if self._sleep_cycles > SLEEP_MUSHROOM_ONSET:
             self.phase = SleepPhase.MUSHROOM
 
     def mushroom(self, basin: Basin, phi: float) -> None:
-        if self._sleep_cycles > 6:
+        if self._sleep_cycles > SLEEP_CONSOLIDATION_ONSET:
             self.phase = SleepPhase.CONSOLIDATING
 
     def consolidate(self) -> None:
-        if self._sleep_cycles > 9:
+        if self._sleep_cycles > SLEEP_WAKE_ONSET:
             self.phase = SleepPhase.AWAKE
             self._sleep_cycles = 0
 
@@ -718,7 +744,7 @@ class BasinSyncProtocol:
             "version": remote_version,
             "timestamp": time.time(),
         })
-        merged = slerp_sqrt(self._local_basin, to_simplex(remote_basin), 0.2)
+        merged = slerp_sqrt(self._local_basin, to_simplex(remote_basin), BASIN_SYNC_SLERP_WEIGHT)
         self._local_basin = merged
         return merged
 
@@ -932,7 +958,7 @@ class E8KernelRegistry:
         kernel = self._kernels.get(kernel_id)
         if not kernel or kernel.kind != KernelKind.CHAOS:
             return False
-        if kernel.cycle_count <= 100 or kernel.phi_peak <= PHI_THRESHOLD:
+        if kernel.cycle_count <= KERNEL_PROMOTION_CYCLE_GATE or kernel.phi_peak <= PHI_THRESHOLD:
             return False
         if not self._budget.can_spawn(KernelKind.GOD):
             return False

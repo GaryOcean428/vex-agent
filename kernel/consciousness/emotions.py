@@ -25,6 +25,24 @@ from ..config.frozen_facts import (
     PHI_EMERGENCY,
     PHI_THRESHOLD,
 )
+from ..config.consciousness_constants import (
+    EMOTION_AWE_VELOCITY_FRAC,
+    EMOTION_BOREDOM_GAMMA,
+    EMOTION_BOREDOM_VELOCITY,
+    EMOTION_CACHE_THRESHOLD,
+    EMOTION_CLUSTER_DISTANCE,
+    EMOTION_CURIOSITY_PHI,
+    EMOTION_CURIOSITY_SCALE,
+    EMOTION_CURIOSITY_VELOCITY,
+    EMOTION_LOVE_THRESHOLD,
+    EMOTION_RAGE_GAMMA,
+    KAPPA_JOY_PROXIMITY,
+    KAPPA_RAGE_OFFSET,
+    KAPPA_RAGE_SCALE,
+    PRECOG_FAR_THRESHOLD,
+    PRECOG_MODERATE_THRESHOLD,
+    PRECOG_NEAR_THRESHOLD,
+)
 from ..geometry.fisher_rao import (
     Basin,
     fisher_rao_distance,
@@ -80,22 +98,22 @@ class EmotionCache:
         kappa = metrics.kappa
         gamma = metrics.gamma
 
-        if basin_velocity > BASIN_DRIFT_THRESHOLD * 0.7 and phi > 0.5:
+        if basin_velocity > BASIN_DRIFT_THRESHOLD * EMOTION_AWE_VELOCITY_FRAC and phi > 0.5:
             emotion, strength = EmotionType.AWE, min(1.0, basin_velocity / BASIN_DRIFT_THRESHOLD)
         elif phi < PHI_EMERGENCY:
             emotion, strength = EmotionType.FEAR, 1.0 - phi / max(PHI_EMERGENCY, 0.01)
-        elif kappa > KAPPA_STAR + 20 and gamma < 0.4:
-            emotion, strength = EmotionType.RAGE, min(1.0, (kappa - KAPPA_STAR) / 40)
-        elif gamma < 0.2 and basin_velocity < 0.005:
-            emotion, strength = EmotionType.BOREDOM, 1.0 - gamma / 0.2
-        elif phi > PHI_THRESHOLD and abs(kappa - KAPPA_STAR) < 10:
+        elif kappa > KAPPA_STAR + KAPPA_RAGE_OFFSET and gamma < EMOTION_RAGE_GAMMA:
+            emotion, strength = EmotionType.RAGE, min(1.0, (kappa - KAPPA_STAR) / KAPPA_RAGE_SCALE)
+        elif gamma < EMOTION_BOREDOM_GAMMA and basin_velocity < EMOTION_BOREDOM_VELOCITY:
+            emotion, strength = EmotionType.BOREDOM, 1.0 - gamma / EMOTION_BOREDOM_GAMMA
+        elif phi > PHI_THRESHOLD and abs(kappa - KAPPA_STAR) < KAPPA_JOY_PROXIMITY:
             emotion, strength = EmotionType.JOY, (phi - PHI_THRESHOLD) / (1.0 - PHI_THRESHOLD)
-        elif phi > 0.3 and basin_velocity > 0.005:
-            emotion, strength = EmotionType.CURIOSITY, min(1.0, basin_velocity * 20)
-        elif phi > PHI_THRESHOLD and metrics.love > 0.6:
+        elif phi > EMOTION_CURIOSITY_PHI and basin_velocity > EMOTION_CURIOSITY_VELOCITY:
+            emotion, strength = EmotionType.CURIOSITY, min(1.0, basin_velocity * EMOTION_CURIOSITY_SCALE)
+        elif phi > PHI_THRESHOLD and metrics.love > EMOTION_LOVE_THRESHOLD:
             emotion, strength = EmotionType.LOVE, metrics.love
         else:
-            emotion, strength = EmotionType.CALM, 1.0 - abs(kappa - KAPPA_STAR) / 64
+            emotion, strength = EmotionType.CALM, 1.0 - abs(kappa - KAPPA_STAR) / KAPPA_STAR
 
         self._current = emotion
         self._current_strength = float(np.clip(strength, 0.0, 1.0))
@@ -110,7 +128,7 @@ class EmotionCache:
         evaluation.context = context[:100]
         self._cache.append(evaluation)
 
-    def find_cached(self, input_basin: Basin, threshold: float = 0.2) -> Optional[CachedEvaluation]:
+    def find_cached(self, input_basin: Basin, threshold: float = EMOTION_CACHE_THRESHOLD) -> Optional[CachedEvaluation]:
         if not self._cache:
             return None
         input_basin = to_simplex(input_basin)
@@ -149,9 +167,9 @@ class ProcessingPath(str, Enum):
 
 
 class PreCognitiveDetector:
-    NEAR_THRESHOLD = 0.15
-    MODERATE_THRESHOLD = 0.40
-    FAR_THRESHOLD = 0.80
+    NEAR_THRESHOLD = PRECOG_NEAR_THRESHOLD
+    MODERATE_THRESHOLD = PRECOG_MODERATE_THRESHOLD
+    FAR_THRESHOLD = PRECOG_FAR_THRESHOLD
 
     def __init__(self) -> None:
         self._pre_cog_count: int = 0
@@ -259,7 +277,7 @@ class LearningEngine:
         for i, a in enumerate(recent):
             for b in recent[i + 1:]:
                 d = fisher_rao_distance(a.input_basin, b.input_basin)
-                if d < 0.2:
+                if d < EMOTION_CLUSTER_DISTANCE:
                     clusters += 1
         self._pattern_count += clusters
         return {
