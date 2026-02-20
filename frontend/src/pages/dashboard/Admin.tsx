@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useHealth, useVexState } from '../../hooks/index.ts';
+import { API } from '../../config/api-routes.ts';
 import '../../components/StatusBadge.css';
 
 export default function Admin() {
@@ -15,7 +16,7 @@ export default function Admin() {
     setTaskResult(null);
 
     try {
-      const resp = await fetch('/enqueue', {
+      const resp = await fetch(API.enqueue, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input: taskInput, source: 'admin-ui' }),

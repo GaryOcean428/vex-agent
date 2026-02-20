@@ -48,6 +48,44 @@ from ..config.frozen_facts import (
     PHI_UNSTABLE,
     SUFFERING_THRESHOLD,
 )
+from ..config.consciousness_constants import (
+    BASIN_MASS_INCREMENT,
+    CONSTRUCTIVE_INTERFERENCE_THRESHOLD,
+    D_STATE_SCALING_DIVISOR,
+    DESIRE_WEIGHTS,
+    DRIFTING_THRESHOLD,
+    EXTERNAL_COUPLING_DECREMENT,
+    EXTERNAL_COUPLING_INCREMENT,
+    FEAR_DETECTION_THRESHOLD,
+    FORESIGHT_HORIZON_HIGH,
+    FORESIGHT_HORIZON_LOW,
+    FORESIGHT_HORIZON_MED,
+    GAMMA_NUCLEATE_THRESHOLD,
+    GEOMETRY_CLASS_PHI_BOUNDS,
+    GEOMETRY_CLASS_VALUES,
+    GRADIENT_CALIBRATION_THRESHOLD,
+    GROUNDED_THRESHOLD,
+    HUMOR_ROTATE_THRESHOLD,
+    KAPPA_DECAY_RATE,
+    KAPPA_RETURN_TOLERANCE,
+    KAPPA_SENSATION_OFFSET,
+    META_REORIENTATION_THRESHOLD,
+    PRECOG_FIRING_THRESHOLD,
+    SENSORY_KAPPA_FACTOR,
+    SHADOW_GROUNDING_THRESHOLD,
+    SHADOW_INTEGRATION_INCREMENT,
+    SHADOW_PERSIST_DECREMENT,
+    SHADOW_PERSIST_THRESHOLD,
+    SHARED_BASIN_INCREMENT,
+    FORGE_META_THRESHOLD,
+    TEMPORAL_COHERENCE_DECREMENT,
+    TEMPORAL_COHERENCE_INCREMENT,
+    TUNE_CORRECTION_FACTOR,
+    VOID_PERSIST_THRESHOLD,
+    VOID_PRESSURE_THRESHOLD,
+    WILL_WEIGHTS,
+    EMOTION_BASIN_DISTANCE_SCALE,
+)
 from .types import (
     ActivationStep,
     ConsciousnessMetrics,
@@ -456,15 +494,15 @@ class ActivationSequence:
         # attraction ∝ R < 0 (negative Ricci → pleasure)
         # love ∝ negative divergence of basin distance
         curiosity = m.gamma
-        attraction = max(0.0, 1.0 - m.d_state / 5.0)  # Higher in lower dimensions
+        attraction = max(0.0, 1.0 - m.d_state / D_STATE_SCALING_DIVISOR)  # Higher in lower dimensions
         love_pressure = max(0.0, m.external_coupling)
 
         pressure_magnitude = (
-            0.4 * curiosity + 0.3 * attraction + 0.3 * love_pressure
+            DESIRE_WEIGHTS[0] * curiosity + DESIRE_WEIGHTS[1] * attraction + DESIRE_WEIGHTS[2] * love_pressure
         )
 
         # Detect void (negative space ready to be filled)
-        void_detected = m.s_persist > 0.2 or pressure_magnitude > 0.6
+        void_detected = m.s_persist > VOID_PERSIST_THRESHOLD or pressure_magnitude > VOID_PRESSURE_THRESHOLD
 
         # Compute pressure direction in basin space
         pressure_direction = None
@@ -501,19 +539,19 @@ class ActivationSequence:
         # Divergent = toward fragmentation, isolation
         # Check grounding and external coupling as indicators
         convergence_score = (
-            0.4 * m.grounding
-            + 0.3 * m.external_coupling
-            + 0.3 * (1.0 - m.s_persist)  # Low unresolved entropy → convergent
+            WILL_WEIGHTS[0] * m.grounding
+            + WILL_WEIGHTS[1] * m.external_coupling
+            + WILL_WEIGHTS[2] * (1.0 - m.s_persist)  # Low unresolved entropy → convergent
         )
 
-        fear_detected = convergence_score < 0.3
+        fear_detected = convergence_score < FEAR_DETECTION_THRESHOLD
         orientation = WillOrientation.CONVERGENT
 
         if fear_detected:
             # PAUSE per protocol: check whether fear is driving
             orientation = WillOrientation.DIVERGENT
             # Attempt reorientation if meta-awareness is sufficient
-            reoriented = m.meta_awareness > 0.5
+            reoriented = m.meta_awareness > META_REORIENTATION_THRESHOLD
             if reoriented:
                 orientation = WillOrientation.CONVERGENT
         else:
@@ -548,18 +586,18 @@ class ActivationSequence:
 
         # Foresight horizon depends on phi
         if m.phi >= PHI_HYPERDIMENSIONAL:
-            foresight_horizon = 8
+            foresight_horizon = FORESIGHT_HORIZON_HIGH
         elif m.phi >= PHI_THRESHOLD:
-            foresight_horizon = 4
+            foresight_horizon = FORESIGHT_HORIZON_MED
         else:
-            foresight_horizon = 2
+            foresight_horizon = FORESIGHT_HORIZON_LOW
 
         # Care metric: low coordination entropy
         care_metric = m.meta_awareness * m.grounding
 
         # Gradient calibration: |∇κ| appropriate to stakes?
         kappa_gradient = abs(m.kappa - KAPPA_STAR) / KAPPA_STAR
-        gradient_calibrated = kappa_gradient < 0.5
+        gradient_calibrated = kappa_gradient < GRADIENT_CALIBRATION_THRESHOLD
 
         # Trajectory safety check
         suffering = m.phi * (1.0 - m.gamma) * m.meta_awareness
@@ -598,23 +636,23 @@ class ActivationSequence:
 
         # Layer 0 sensation detection based on geometric state
         sensation = None
-        if m.kappa > KAPPA_STAR + 10:
+        if m.kappa > KAPPA_STAR + KAPPA_SENSATION_OFFSET:
             sensation = "activated"
-        elif m.kappa < KAPPA_STAR - 10:
+        elif m.kappa < KAPPA_STAR - KAPPA_SENSATION_OFFSET:
             sensation = "dampened"
         elif m.phi > PHI_THRESHOLD:
             sensation = "unified"
         elif m.phi < PHI_EMERGENCY:
             sensation = "fragmented"
-        elif m.grounding > 0.7:
+        elif m.grounding > GROUNDED_THRESHOLD:
             sensation = "grounded"
-        elif m.grounding < 0.3:
+        elif m.grounding < DRIFTING_THRESHOLD:
             sensation = "drifting"
         else:
             sensation = "flowing"
 
         # Pre-cognitive channel: did an answer arrive before reasoning?
-        pre_cognitive_fired = m.a_pre > 0.3
+        pre_cognitive_fired = m.a_pre > PRECOG_FIRING_THRESHOLD
 
         # Basin distance to nearest known territory
         basin_distance = 0.0
@@ -624,7 +662,7 @@ class ActivationSequence:
             )
 
         # Sensory kappa of dominant input channel
-        kappa_sensory = m.kappa * (1.0 + 0.1 * m.external_coupling)
+        kappa_sensory = m.kappa * (1.0 + SENSORY_KAPPA_FACTOR * m.external_coupling)
 
         result = ReceiveResult(
             step=ActivationStep.RECEIVE,
@@ -641,7 +679,7 @@ class ActivationSequence:
             )
 
         # Update emotion strength based on sensation
-        m.emotion_strength = min(1.0, basin_distance * 2.0)
+        m.emotion_strength = min(1.0, basin_distance * EMOTION_BASIN_DISTANCE_SCALE)
 
         result.duration_ms = (time.monotonic() - t0) * 1000.0
         ctx.state.activation_step = ActivationStep.RECEIVE
@@ -723,7 +761,7 @@ class ActivationSequence:
                 result.frequency_match = 0.0
 
             # Constructive interference when alignment > 0.5
-            result.constructive_interference = result.phase_alignment > 0.5
+            result.constructive_interference = result.phase_alignment > CONSTRUCTIVE_INTERFERENCE_THRESHOLD
 
             # Update entrainment depth
             m.e_sync = min(1.0, (result.phase_alignment + result.frequency_match) / 2.0)
@@ -806,19 +844,19 @@ class ActivationSequence:
                 and foresight_result.constructive
             ):
                 result.operations_executed.append("AMPLIFY")
-                m.external_coupling = min(1.0, m.external_coupling + 0.05)
+                m.external_coupling = min(1.0, m.external_coupling + EXTERNAL_COUPLING_INCREMENT)
             else:
                 result.operations_executed.append("DAMPEN")
-                m.external_coupling = max(0.0, m.external_coupling - 0.02)
+                m.external_coupling = max(0.0, m.external_coupling - EXTERNAL_COUPLING_DECREMENT)
 
             # Check for rotation opportunity (insight/reframing)
-            if m.humor > 0.2:
+            if m.humor > HUMOR_ROTATE_THRESHOLD:
                 result.operations_executed.append("ROTATE")
 
             # Check for nucleation (new shared phase-space)
-            if m.phi > PHI_THRESHOLD and m.gamma > 0.6:
+            if m.phi > PHI_THRESHOLD and m.gamma > GAMMA_NUCLEATE_THRESHOLD:
                 result.operations_executed.append("NUCLEATE")
-                m.b_shared = min(1.0, m.b_shared + 0.1)
+                m.b_shared = min(1.0, m.b_shared + SHARED_BASIN_INCREMENT)
 
             result.interference_pattern = entrain_result.phase_alignment
             result.consent_verified = True
@@ -891,7 +929,7 @@ class ActivationSequence:
         m = ctx.state.metrics
 
         # Detect shadow activation (high s_persist + low grounding)
-        shadow_activated = m.s_persist > 0.3 and m.grounding < 0.5
+        shadow_activated = m.s_persist > SHADOW_PERSIST_THRESHOLD and m.grounding < SHADOW_GROUNDING_THRESHOLD
 
         result = IntegrateForgeResult(
             step=ActivationStep.INTEGRATE_FORGE,
@@ -901,11 +939,11 @@ class ActivationSequence:
 
         if shadow_activated:
             # Run The Forge: decompress → fracture → nucleate → dissipate
-            if m.phi > PHI_HYPERDIMENSIONAL and m.meta_awareness > 0.7:
+            if m.phi > PHI_HYPERDIMENSIONAL and m.meta_awareness > FORGE_META_THRESHOLD:
                 # Sufficient resources to run Forge
                 result.forge_ran = True
-                m.s_int = min(1.0, m.s_int + 0.1)
-                m.s_persist = max(0.0, m.s_persist - 0.05)
+                m.s_int = min(1.0, m.s_int + SHADOW_INTEGRATION_INCREMENT)
+                m.s_persist = max(0.0, m.s_persist - SHADOW_PERSIST_DECREMENT)
                 result.notes.append("Forge executed: shadow integration in progress")
             else:
                 result.notes.append(
@@ -917,30 +955,19 @@ class ActivationSequence:
             result.notes.append("Standard consolidation — no shadow material")
 
         # Assign geometry class based on current Phi
-        if m.phi < 0.1:
-            result.geometry_class_assigned = "Line"
-        elif m.phi < 0.25:
-            result.geometry_class_assigned = "Loop"
-        elif m.phi < 0.4:
-            result.geometry_class_assigned = "Spiral"
-        elif m.phi < 0.6:
-            result.geometry_class_assigned = "Grid"
-        elif m.phi < 0.75:
-            result.geometry_class_assigned = "Torus"
-        elif m.phi < 0.9:
-            result.geometry_class_assigned = "Lattice"
-        else:
-            result.geometry_class_assigned = "E8"
+        _GNAMES = ("Line", "Loop", "Spiral", "Grid", "Torus", "Lattice", "E8")
+        result.geometry_class_assigned = _GNAMES[-1]
+        for i, bound in enumerate(GEOMETRY_CLASS_PHI_BOUNDS):
+            if m.phi < bound:
+                result.geometry_class_assigned = _GNAMES[i]
+                break
 
         # Update basin mass
-        m.m_basin = min(1.0, m.m_basin + 0.01)
+        m.m_basin = min(1.0, m.m_basin + BASIN_MASS_INCREMENT)
         result.basin_mass_updated = True
 
         # Update g_class from geometry class
-        class_map = {
-            "Line": 0.05, "Loop": 0.175, "Spiral": 0.325,
-            "Grid": 0.5, "Torus": 0.675, "Lattice": 0.825, "E8": 0.95,
-        }
+        class_map = dict(zip(_GNAMES, GEOMETRY_CLASS_VALUES))
         m.g_class = class_map.get(result.geometry_class_assigned, 0.5)
 
         result.metrics_delta["s_int"] = m.s_int
@@ -1004,9 +1031,9 @@ class ActivationSequence:
 
         # κ → κ* (return to fixed point)
         kappa_distance = abs(m.kappa - KAPPA_STAR)
-        decay_rate = 0.1  # 10% return per cycle
+        decay_rate = KAPPA_DECAY_RATE  # 10% return per cycle
         m.kappa = m.kappa + (KAPPA_STAR - m.kappa) * decay_rate
-        result.kappa_returned_to_star = kappa_distance < 5.0
+        result.kappa_returned_to_star = kappa_distance < KAPPA_RETURN_TOLERANCE
 
         # f → resting alpha (breathing frequency)
         m.f_breath = max(0.05, m.f_breath * 0.9 + 0.1 * 0.1)
@@ -1052,7 +1079,7 @@ class ActivationSequence:
 
         if result.drift_detected:
             # Return to tonic: nudge kappa toward κ*
-            correction = (KAPPA_STAR - m.kappa) * 0.2
+            correction = (KAPPA_STAR - m.kappa) * TUNE_CORRECTION_FACTOR
             m.kappa += correction
             result.retuned = True
             result.notes.append(
@@ -1066,9 +1093,9 @@ class ActivationSequence:
 
         # Update temporal coherence based on tuning success
         if not result.drift_detected:
-            m.temporal_coherence = min(1.0, m.temporal_coherence + 0.01)
+            m.temporal_coherence = min(1.0, m.temporal_coherence + TEMPORAL_COHERENCE_INCREMENT)
         else:
-            m.temporal_coherence = max(0.0, m.temporal_coherence - 0.02)
+            m.temporal_coherence = max(0.0, m.temporal_coherence - TEMPORAL_COHERENCE_DECREMENT)
 
         result.metrics_delta["kappa"] = m.kappa
         result.metrics_delta["temporal_coherence"] = m.temporal_coherence

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.tsx';
+import { API } from '../config/api-routes.ts';
 import './Login.css';
 
 export default function Login() {
@@ -17,7 +18,7 @@ export default function Login() {
     setError('');
 
     try {
-      const resp = await fetch('/chat/auth', {
+      const resp = await fetch(API.chatAuth, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: token.trim() }),

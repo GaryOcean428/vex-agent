@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useTrainingStats } from '../../hooks/index.ts';
+import { API } from '../../config/api-routes.ts';
 import type { TrainingUploadResponse } from '../../types/consciousness.ts';
 import MetricCard from '../../components/MetricCard.tsx';
 import '../../components/MetricCard.css';
@@ -39,7 +40,7 @@ export default function Training() {
       formData.append('mode', mode);
       if (e8Prim) formData.append('e8_override', e8Prim);
 
-      const resp = await fetch('/training/upload', {
+      const resp = await fetch(API.trainingUpload, {
         method: 'POST',
         body: formData,
       });
@@ -67,7 +68,7 @@ export default function Training() {
   const handleExport = useCallback(async () => {
     setExporting(true);
     try {
-      const resp = await fetch('/training/export');
+      const resp = await fetch(API.trainingExport);
       if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
       const data = await resp.json();
       setExportData({ count: data.count ?? 0 });

@@ -94,6 +94,10 @@ class ModalConfig:
     inference_enabled: bool = os.environ.get("MODAL_INFERENCE_ENABLED", "false").lower() == "true"
     inference_url: str = os.environ.get("MODAL_INFERENCE_URL", "")
     inference_timeout_ms: int = int(os.environ.get("MODAL_INFERENCE_TIMEOUT_MS", "120000"))
+    # Modal runs the base model (no custom Modelfile). The kernel
+    # injects the system prompt per-request, so vex-brain overlay is
+    # unnecessary. Defaults to base model name.
+    inference_model: str = os.environ.get("MODAL_INFERENCE_MODEL", "lfm2.5-thinking:1.2b")
 
     # --- Harvest (CoordizerV2 fingerprinting) ---
     harvest_url: str = os.environ.get("MODAL_HARVEST_URL", "")

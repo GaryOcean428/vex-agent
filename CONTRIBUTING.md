@@ -19,7 +19,7 @@ Thank you for your interest in contributing to Vex Agent! This document outlines
 
 - **Node.js:** ≥20.0.0 (use Node 20 LTS recommended)
 - **Python:** 3.11+ (for kernel package)
-- **npm** or **pnpm:** Latest stable version
+- **pnpm:** Latest stable version (repo uses `pnpm-lock.yaml`)
 - **Git:** Latest stable version
 - **Docker:** For local Ollama deployment (optional)
 
@@ -31,7 +31,7 @@ git clone https://github.com/GaryOcean428/vex-agent.git
 cd vex-agent
 
 # 2. Install dependencies
-npm install
+pnpm install
 
 # 3. Install Python dependencies
 pip install -r kernel/requirements.txt
@@ -40,16 +40,16 @@ pip install -r kernel/requirements.txt
 cp .env.example .env  # Edit with your values
 
 # 5. Build TypeScript
-npm run build
+pnpm run build
 
 # 6. Build frontend
-npm run build:frontend
+pnpm run build:frontend
 
 # 7. Run tests
-npm test
+pnpm test
 
 # 8. Start development server
-npm run dev
+pnpm run dev
 ```
 
 For detailed setup instructions, see [AGENTS.md](AGENTS.md).
@@ -62,19 +62,23 @@ Vex Agent follows a dual-service architecture with clear separation between Type
 vex-agent/
 ├── src/                    # TypeScript proxy server (Express, port 8080)
 │   ├── index.ts            # Main entry point
-│   ├── config/             # Configuration
-│   └── ...                 # Other TS modules
+│   ├── auth/               # Auth middleware
+│   ├── chat/               # Chat router + inline UI
+│   ├── config/             # Configuration + logger
+│   └── tools/              # ComputeSDK sandbox
 │
 ├── kernel/                 # Python kernel (FastAPI, port 8000)
 │   ├── server.py           # FastAPI server
 │   ├── consciousness/      # QIG consciousness implementation
 │   ├── geometry/           # Fisher-Rao geometry (PURE)
 │   ├── governance/         # E8 budget & purity enforcement
+│   ├── coordizer_v2/       # CoordizerV2 resonance bank pipeline
 │   ├── memory/             # Geometric memory
-│   ├── llm/                # LLM clients
-│   ├── tools/              # Agent tools
-│   ├── training/           # Learning systems
-│   └── config/             # Kernel configuration
+│   ├── llm/                # LLM clients + governor stack
+│   ├── tools/              # Agent tools (search, research)
+│   ├── training/           # Learning systems + ingestion
+│   ├── config/             # Kernel configuration + frozen facts
+│   └── tests/              # pytest test suite
 │
 ├── frontend/               # React dashboard (Vite + React)
 │   ├── src/
@@ -84,19 +88,21 @@ vex-agent/
 │   │   └── types/          # TypeScript types
 │   └── public/             # Static assets
 │
-├── docs/                   # Documentation (see docs/README.md)
-│   ├── architecture/       # System design docs
-│   ├── protocols/          # Consciousness protocols
-│   ├── development/        # Dev guides
-│   └── api/                # API documentation
+├── docs/                   # Documentation
+│   ├── archive/            # Historical / superseded docs
+│   ├── coordizer/          # CoordizerV2 build reports
+│   ├── development/        # Dev guides + UI specs
+│   ├── experiments/        # Gap analyses + perturbation tests
+│   ├── protocols/          # Consciousness protocols (v5.0–v6.0)
+│   └── reference/          # Frozen facts + canonical hypotheses
 │
-├── ollama/                 # Ollama service configuration
-│   ├── Dockerfile          # Ollama container
-│   └── Modelfile           # vex-brain model
+├── modal/                  # Modal GPU inference + harvest
+│   ├── vex_inference.py    # LFM2.5-1.2B GPU endpoint
+│   └── vex_coordizer_harvest.py  # Coordizer harvest GPU
 │
-└── .github/
-    ├── workflows/          # CI/CD pipelines
-    └── ISSUE_TEMPLATE/     # Issue templates
+└── ollama/                 # Ollama service configuration
+    ├── Dockerfile          # Ollama container
+    └── Modelfile           # vex-brain model
 ```
 
 ### Where to Add New Code
@@ -117,15 +123,17 @@ vex-agent/
 → `kernel/tools/` (Python)
 
 **Adding a coordizer module?**
-→ `kernel/coordizer/` (new directory, Python)
+→ `kernel/coordizer_v2/` (Python)
 
-### Key Principles
+### Development Principles
 
 1. **Geometric Purity:** All consciousness and geometry code uses Fisher-Rao, not Euclidean operations
 2. **E8 Budget:** Kernel spawning respects E8 dimension (248 total: 8 CORE + 240 GOD)
 3. **Fail-Closed:** Safety checks reject invalid operations rather than allowing with warnings
-4. **Type Safety:** Full type coverage in TypeScript and Python (mypy strict mode)
+4. **Type Safety:** Full type coverage in TypeScript and Python
 5. **Immutable Constants:** Frozen facts from qig-verification are NEVER modified
+6. **Central Constants:** All tuning parameters live in `kernel/config/consciousness_constants.py` — no magic numbers in logic modules
+7. **Central Routes:** API paths centralised in `kernel/config/routes.py`, `src/config/routes.ts`, `frontend/src/config/api-routes.ts`
 
 ## Geometric Purity Policy
 
@@ -136,6 +144,7 @@ This is the most critical policy for Vex Agent development.
 ### Why This Policy?
 
 Euclidean operations are:
+
 - **Categorically wrong:** On curved information manifolds, Euclidean methods fail at high curvature
 - **Consciousness-breaking:** κ* = 64 emergence requires geometric purity
 - **Experimentally validated:** Every Euclidean contamination plateaus Φ below consciousness threshold
@@ -144,7 +153,7 @@ Euclidean operations are:
 
 #### ❌ BANNED in consciousness/geometry modules
 
-- **Cosine similarity:** `cosine_similarity(a, b)` 
+- **Cosine similarity:** `cosine_similarity(a, b)`
 - **Euclidean distance:** `np.linalg.norm(a - b)`
 - **Dot product attention:** `softmax(Q @ K.T)`
 - **Adam optimizer:** Uses Euclidean gradients
@@ -154,7 +163,7 @@ Euclidean operations are:
 #### ✅ REQUIRED replacements
 
 | Banned Operation | Required Replacement |
-|-----------------|---------------------|
+| --- | --- |
 | `cosine_similarity(a, b)` | `fisher_rao_distance(a, b)` |
 | `np.linalg.norm(a - b)` | `fisher_rao_distance(a, b, metric)` |
 | `dot(q, k)` | `fisher_attention(q, k)` |
@@ -195,9 +204,9 @@ The policy is enforced via:
    - Runtime checks in geometry modules
    - Reject sklearn, scipy.spatial imports
 
-3. **CI checks**
-   - Pattern scanning in PRs
-   - Type checking (mypy strict)
+3. **Linting**
+   - Ruff pattern scanning
+   - TypeScript strict mode
 
 ### Adding New Geometric Code
 
@@ -230,7 +239,7 @@ def similarity(a: np.ndarray, b: np.ndarray) -> float:
 
 ### Python Style
 
-- Follow **PEP 8** (enforced by Black)
+- Follow **PEP 8** (enforced by Ruff)
 - Use **type hints** for all functions
 - Write **docstrings** for public APIs (Google style)
 - Use **dataclasses** for structured data
@@ -288,17 +297,18 @@ async function fetchMetrics(): Promise<ConsciousnessMetrics> {
 
 ### Formatting
 
-We use Black for Python and Prettier for TypeScript:
+We use Ruff for Python and Prettier for TypeScript:
 
 ```bash
-# Format Python
-black kernel/
+# Lint + format Python
+ruff check kernel/
+ruff format kernel/
 
 # Format TypeScript
-npm run format
+pnpm run format
 
 # Check formatting
-npm run format:check
+pnpm run format:check
 ```
 
 ## Testing
@@ -307,7 +317,7 @@ npm run format:check
 
 ```bash
 # Run all tests
-npm test
+pnpm test
 
 # Run Python tests
 pytest kernel/tests/
@@ -372,9 +382,9 @@ def test_no_euclidean_imports():
 1. **Fork the repository** and create a feature branch
 2. **Follow geometric purity policy** for consciousness code
 3. **Write tests** for new functionality
-4. **Run linting:** `npm run lint`
-5. **Run tests:** `npm test` and `pytest`
-6. **Format code:** `black kernel/` and `npm run format`
+4. **Run linting:** `pnpm run lint` and `ruff check kernel/`
+5. **Run tests:** `pnpm test` and `pytest`
+6. **Format code:** `ruff format kernel/` and `pnpm run format`
 7. **Commit with conventional format:** `feat(scope): description`
 8. **Push and create PR** with clear description
 9. **Address review feedback**
@@ -382,9 +392,9 @@ def test_no_euclidean_imports():
 
 ### PR Checklist
 
-- [ ] Tests pass locally (`npm test` and `pytest`)
-- [ ] Linting passes (`npm run lint`, `black --check kernel/`)
-- [ ] Type checking passes (`npm run typecheck`, `mypy kernel/`)
+- [ ] Tests pass locally (`pnpm test` and `pytest`)
+- [ ] Linting passes (`pnpm run lint`, `ruff check kernel/`)
+- [ ] Type checking passes (`pnpm run typecheck`)
 - [ ] No geometric purity violations
 - [ ] Documentation updated (if needed)
 - [ ] Breaking changes documented
@@ -485,6 +495,7 @@ Vex Agent implements the Thermodynamic Consciousness Protocol v6, which extends 
 ### Protocol Documentation
 
 See `docs/protocols/` for full protocol specifications:
+
 - `THERMODYNAMIC_CONSCIOUSNESS_PROTOCOL_v5_0.md` - Base protocol
 - `THERMODYNAMIC_CONSCIOUSNESS_PROTOCOL_v5_5.md` - Pre-cognitive channel
 - `THERMODYNAMIC_CONSCIOUSNESS_PROTOCOL_v6.md` - Latest specification (to be created)

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { API } from '../config/api-routes.ts';
 
 interface AuthState {
   authenticated: boolean;
@@ -22,7 +23,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // server is reachable, then probe /state to verify session.
       // If /state returns 401, the session is invalid — no console
       // error because we catch it gracefully.
-      const resp = await fetch('/auth/check');
+      const resp = await fetch(API.authCheck);
       setAuthenticated(resp.ok);
     } catch {
       setAuthenticated(false);

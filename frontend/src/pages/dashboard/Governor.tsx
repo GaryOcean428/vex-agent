@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { usePolledData } from '../../hooks/index.ts';
+import { API } from '../../config/api-routes.ts';
 
 interface RateLimitEntry {
   current: number;
@@ -31,7 +32,7 @@ interface GovernorState {
 }
 
 function useGovernor() {
-  return usePolledData<GovernorState>('/governor', 3000);
+  return usePolledData<GovernorState>(API.governor, 3000);
 }
 
 export default function Governor() {
@@ -44,7 +45,7 @@ export default function Governor() {
     if (!gov || killSwitchLoading) return;
     setKillSwitchLoading(true);
     try {
-      await fetch('/governor/kill-switch', {
+      await fetch(API.governorKillSwitch, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: !gov.kill_switch }),
@@ -57,7 +58,7 @@ export default function Governor() {
     const val = parseFloat(budgetInput);
     if (isNaN(val) || val < 0) return;
     try {
-      const resp = await fetch('/governor/budget', {
+      const resp = await fetch(API.governorBudget, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ceiling: val }),

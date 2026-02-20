@@ -320,7 +320,7 @@ class LLMClient:
             resp = await self._modal_http.post(
                 f"{settings.modal.inference_url}/api/chat",
                 json={
-                    "model": settings.ollama.model,
+                    "model": settings.modal.inference_model,
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_message},
@@ -329,6 +329,11 @@ class LLMClient:
                     "options": opts.to_ollama_options(),
                 },
             )
+            if resp.status_code == 404:
+                logger.warning("Modal returned 404 (cold start or model missing)")
+                raise httpx.HTTPStatusError(
+                    "404", request=resp.request, response=resp
+                )
             data = resp.json()
             self._last_backend = "modal"
             self._modal_available = True
@@ -362,7 +367,7 @@ class LLMClient:
                 "POST",
                 f"{settings.modal.inference_url}/api/chat",
                 json={
-                    "model": settings.ollama.model,
+                    "model": settings.modal.inference_model,
                     "messages": messages,
                     "stream": True,
                     "options": opts.to_ollama_options(),

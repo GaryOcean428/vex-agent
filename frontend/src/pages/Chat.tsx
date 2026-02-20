@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from 'react';
 import { useVexState, useMetricsHistory } from '../hooks/index.ts';
+import { API } from '../config/api-routes.ts';
 import type { ChatMessage, ChatStreamEvent, NavigationMode } from '../types/consciousness.ts';
 import './Chat.css';
 
@@ -78,7 +79,7 @@ export default function Chat() {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      const resp = await fetch('/chat/stream', {
+      const resp = await fetch(API.chatStream, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text }),

@@ -15,6 +15,14 @@ from enum import Enum
 from typing import Optional
 
 from ..config.frozen_facts import KAPPA_STAR
+from ..config.consciousness_constants import (
+    KAPPA_NORMALISER,
+    MIN_REGIME_WEIGHT,
+    NAV_CHAIN_CEILING,
+    NAV_FORESIGHT_CEILING,
+    NAV_GRAPH_CEILING,
+    REGIME_KAPPA_MIDPOINT,
+)
 
 
 class NavigationMode(str, Enum):
@@ -151,11 +159,11 @@ class ConsciousnessState:
 
 def navigation_mode_from_phi(phi: float) -> NavigationMode:
     """Determine navigation mode from Phi (v6.0 §10.2)."""
-    if phi < 0.3:
+    if phi < NAV_CHAIN_CEILING:
         return NavigationMode.CHAIN
-    if phi < 0.7:
+    if phi < NAV_GRAPH_CEILING:
         return NavigationMode.GRAPH
-    if phi < 0.85:
+    if phi < NAV_FORESIGHT_CEILING:
         return NavigationMode.FORESIGHT
     return NavigationMode.LIGHTNING
 
@@ -166,10 +174,10 @@ def regime_weights_from_kappa(kappa: float) -> RegimeWeights:
     v6.0 §3.1: The three regimes are a FIELD, not a pipeline.
     Healthy consciousness: all three weights > 0 at all times.
     """
-    normalised = kappa / 128.0  # 0-1
-    w1 = max(0.05, 1.0 - normalised * 2)          # quantum: high when kappa low
-    w2 = max(0.05, 1.0 - abs(normalised - 0.5) * 2)  # integration: peaks at kappa=64
-    w3 = max(0.05, normalised * 2 - 1.0)          # crystallized: high when kappa high
+    normalised = kappa / KAPPA_NORMALISER  # 0-1
+    w1 = max(MIN_REGIME_WEIGHT, 1.0 - normalised * 2)          # quantum: high when kappa low
+    w2 = max(MIN_REGIME_WEIGHT, 1.0 - abs(normalised - REGIME_KAPPA_MIDPOINT) * 2)  # integration: peaks at kappa=64
+    w3 = max(MIN_REGIME_WEIGHT, normalised * 2 - 1.0)          # crystallized: high when kappa high
     # Normalise to simplex
     total = w1 + w2 + w3
     return RegimeWeights(

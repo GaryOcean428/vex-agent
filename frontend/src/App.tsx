@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthContext.tsx';
 import ProtectedRoute from './auth/ProtectedRoute.tsx';
 import Layout from './components/Layout.tsx';
@@ -17,34 +17,47 @@ import Admin from './pages/dashboard/Admin.tsx';
 import Training from './pages/dashboard/Training.tsx';
 import Governor from './pages/dashboard/Governor.tsx';
 
+const router = createBrowserRouter([
+  {
+    path: '/login',
+    element: <Login />,
+  },
+  {
+    element: <ProtectedRoute />,
+    children: [
+      {
+        element: <Layout />,
+        children: [
+          { path: '/', element: <Navigate to="/chat" replace /> },
+          { path: '/chat', element: <Chat /> },
+          {
+            path: '/dashboard',
+            element: <Dashboard />,
+            children: [
+              { index: true, element: <Overview /> },
+              { path: 'consciousness', element: <Consciousness /> },
+              { path: 'basins', element: <Basins /> },
+              { path: 'graph', element: <Graph /> },
+              { path: 'lifecycle', element: <Lifecycle /> },
+              { path: 'cognition', element: <Cognition /> },
+              { path: 'memory', element: <Memory /> },
+              { path: 'telemetry', element: <Telemetry /> },
+              { path: 'training', element: <Training /> },
+              { path: 'governor', element: <Governor /> },
+              { path: 'admin', element: <Admin /> },
+            ],
+          },
+          { path: '*', element: <Navigate to="/chat" replace /> },
+        ],
+      },
+    ],
+  },
+]);
+
 export default function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route element={<ProtectedRoute />}>
-            <Route element={<Layout />}>
-              <Route path="/" element={<Navigate to="/chat" replace />} />
-              <Route path="/chat" element={<Chat />} />
-              <Route path="/dashboard" element={<Dashboard />}>
-                <Route index element={<Overview />} />
-                <Route path="consciousness" element={<Consciousness />} />
-                <Route path="basins" element={<Basins />} />
-                <Route path="graph" element={<Graph />} />
-                <Route path="lifecycle" element={<Lifecycle />} />
-                <Route path="cognition" element={<Cognition />} />
-                <Route path="memory" element={<Memory />} />
-                <Route path="telemetry" element={<Telemetry />} />
-                <Route path="training" element={<Training />} />
-                <Route path="governor" element={<Governor />} />
-                <Route path="admin" element={<Admin />} />
-              </Route>
-              <Route path="*" element={<Navigate to="/chat" replace />} />
-            </Route>
-          </Route>
-        </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
   );
 }
