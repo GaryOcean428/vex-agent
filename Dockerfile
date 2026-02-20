@@ -53,7 +53,8 @@ WORKDIR /app
 
 # ── Python kernel dependencies (uv) ──────────────────────────────
 COPY pyproject.toml uv.lock ./
-RUN pip install uv && uv pip install --system --no-cache .
+COPY kernel/ ./kernel/
+RUN pip install --no-cache-dir uv==0.9.26 && uv pip install --system --no-cache .
 
 # ── Node.js production dependencies ───────────────────────────
 COPY package.json pnpm-lock.yaml* ./
@@ -64,9 +65,6 @@ COPY --from=ts-builder /app/dist ./dist
 
 # ── Copy built React frontend ───────────────────────────────────
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
-
-# ── Copy Python kernel ────────────────────────────────────────
-COPY kernel/ ./kernel/
 
 # ── Copy Ollama Modelfile ──────────────────────────────────────
 COPY ollama/ ./ollama/
