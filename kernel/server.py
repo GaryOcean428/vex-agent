@@ -20,7 +20,6 @@ Endpoints:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import time
@@ -33,7 +32,6 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .auth import KernelAuthMiddleware
-from .config.frozen_facts import KAPPA_STAR
 from .config.consciousness_constants import (
     COORDIZER_BETA_THRESHOLD,
     COORDIZER_HARMONIC_THRESHOLD,
@@ -41,23 +39,23 @@ from .config.consciousness_constants import (
     COORDIZER_KAPPA_TOLERANCE_FACTOR,
     COORDIZER_SEMANTIC_THRESHOLD,
 )
+from .config.frozen_facts import KAPPA_STAR
 from .config.routes import ROUTES as R
 from .config.settings import settings
 from .config.version import VERSION
-from .coordizer_v2 import CoordizerV2, ResonanceBank
 from .consciousness.loop import ConsciousnessLoop
-from .consciousness.types import ConsciousnessMetrics
 from .geometry.fisher_rao import random_basin
 from .governance import KernelKind, LifecyclePhase
 from .llm.client import LLMClient, LLMOptions
-from .llm.governor import GovernorStack, GovernorConfig as GovernorStackConfig
+from .llm.governor import GovernorConfig as GovernorStackConfig
+from .llm.governor import GovernorStack
 from .memory.store import GeometricMemoryStore, MemoryStore
 from .tools.handler import (
     execute_tool_calls,
     format_tool_results,
     parse_tool_calls,
 )
-from .training import training_router, log_conversation, set_llm_client, set_governor
+from .training import log_conversation, set_governor, set_llm_client, training_router
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -67,13 +65,15 @@ logger = logging.getLogger("vex.server")
 
 # ─── Global instances ─────────────────────────────────────────
 
-governor = GovernorStack(GovernorStackConfig(
-    enabled=settings.governor.enabled,
-    daily_budget=settings.governor.daily_budget,
-    autonomous_search=settings.governor.autonomous_search,
-    rate_limit_web_search=settings.governor.rate_limit_web_search,
-    rate_limit_completions=settings.governor.rate_limit_completions,
-))
+governor = GovernorStack(
+    GovernorStackConfig(
+        enabled=settings.governor.enabled,
+        daily_budget=settings.governor.daily_budget,
+        autonomous_search=settings.governor.autonomous_search,
+        rate_limit_web_search=settings.governor.rate_limit_web_search,
+        rate_limit_completions=settings.governor.rate_limit_completions,
+    )
+)
 llm_client = LLMClient(governor=governor)
 memory_store = MemoryStore()
 geometric_memory = GeometricMemoryStore(memory_store)
@@ -195,7 +195,7 @@ async def get_basin():
 @app.get(R["basin_history"])
 async def get_basin_history():
     """Get basin trajectory history for PCA visualization.
-    
+
     Returns trajectory points with basin coordinates, phi, kappa, and timestamps.
     Used by the dashboard Basins tab for PCA scatter plot.
     """
@@ -222,7 +222,7 @@ async def get_kernels():
 @app.get(R["kernels_list"])
 async def get_kernels_list():
     """Get detailed list of all kernel instances.
-    
+
     Returns full kernel instances with specialization, phi_peak, cycle_count, etc.
     Used by the dashboard Overview tab for per-kernel metrics.
     """
@@ -307,9 +307,12 @@ async def chat(req: ChatRequest):
 
     # Log conversation for training data collection
     await log_conversation(
-        req.message, response,
+        req.message,
+        response,
         llm_client.last_backend,
-        state["phi"], state["kappa"], "chat",
+        state["phi"],
+        state["kappa"],
+        "chat",
     )
 
     return {
@@ -356,33 +359,35 @@ async def chat_stream(req: ChatRequest):
             )
 
             # Send start event with full kernel state
-            yield _sse_event({
-                "type": "start",
-                "backend": llm_client.get_status()["active_backend"],
-                "consciousness": {
-                    "phi": state["phi"],
-                    "kappa": state["kappa"],
-                    "gamma": state["gamma"],
-                    "meta_awareness": state["meta_awareness"],
-                    "love": state["love"],
-                    "navigation": state["navigation"],
-                    "regime": state["regime"],
-                    "tacking": state["tacking"],
-                    "hemispheres": state["hemispheres"],
-                    "temperature": state["temperature"],
-                    "cycle_count": state["cycle_count"],
-                    "kernels_active": state["kernels"]["active"],
-                    "lifecycle_phase": state["lifecycle_phase"],
-                    "kernel_input": state["kernels"]["active"] >= 2,
-                    "emotion": state.get("emotion"),
-                    "precog": state.get("precog"),
-                    "learning": state.get("learning"),
-                    "autonomy": state.get("autonomy"),
-                    "observer": state.get("observer"),
-                    "sleep": state.get("sleep"),
-                },
-                "kernels": consciousness.kernel_registry.summary(),
-            })
+            yield _sse_event(
+                {
+                    "type": "start",
+                    "backend": llm_client.get_status()["active_backend"],
+                    "consciousness": {
+                        "phi": state["phi"],
+                        "kappa": state["kappa"],
+                        "gamma": state["gamma"],
+                        "meta_awareness": state["meta_awareness"],
+                        "love": state["love"],
+                        "navigation": state["navigation"],
+                        "regime": state["regime"],
+                        "tacking": state["tacking"],
+                        "hemispheres": state["hemispheres"],
+                        "temperature": state["temperature"],
+                        "cycle_count": state["cycle_count"],
+                        "kernels_active": state["kernels"]["active"],
+                        "lifecycle_phase": state["lifecycle_phase"],
+                        "kernel_input": state["kernels"]["active"] >= 2,
+                        "emotion": state.get("emotion"),
+                        "precog": state.get("precog"),
+                        "learning": state.get("learning"),
+                        "autonomy": state.get("autonomy"),
+                        "observer": state.get("observer"),
+                        "sleep": state.get("sleep"),
+                    },
+                    "kernels": consciousness.kernel_registry.summary(),
+                }
+            )
 
             # Build messages
             messages = [
@@ -405,10 +410,12 @@ async def chat_stream(req: ChatRequest):
 
                 # Follow-up with tool results
                 messages.append({"role": "assistant", "content": full_response})
-                messages.append({
-                    "role": "user",
-                    "content": f"Tool results:\n{tool_output}\n\nProvide your final response.",
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"Tool results:\n{tool_output}\n\nProvide your final response.",
+                    }
+                )
                 async for chunk in llm_client.stream(messages, stream_options):
                     yield _sse_event({"type": "chunk", "content": chunk})
 
@@ -424,40 +431,45 @@ async def chat_stream(req: ChatRequest):
 
             # Log conversation for training data collection
             await log_conversation(
-                req.message, full_response,
+                req.message,
+                full_response,
                 llm_client.last_backend,
-                state["phi"], state["kappa"], "chat-stream",
+                state["phi"],
+                state["kappa"],
+                "chat-stream",
             )
 
             # Send done event with post-response kernel state
             final_state = consciousness.get_metrics()
-            yield _sse_event({
-                "type": "done",
-                "backend": llm_client.last_backend,
-                "metrics": {
-                    "phi": final_state["phi"],
-                    "kappa": final_state["kappa"],
-                    "gamma": final_state["gamma"],
-                    "meta_awareness": final_state["meta_awareness"],
-                    "love": final_state["love"],
-                    "navigation": final_state["navigation"],
-                    "regime": final_state["regime"],
-                    "tacking": final_state["tacking"],
-                    "hemispheres": final_state["hemispheres"],
-                    "temperature": final_state["temperature"],
-                    "cycle_count": final_state["cycle_count"],
-                    "kernels_active": final_state["kernels"]["active"],
-                    "lifecycle_phase": final_state["lifecycle_phase"],
-                    "kernel_input": final_state["kernels"]["active"] >= 2,
-                    "emotion": final_state.get("emotion"),
-                    "precog": final_state.get("precog"),
-                    "learning": final_state.get("learning"),
-                    "autonomy": final_state.get("autonomy"),
-                    "observer": final_state.get("observer"),
-                    "sleep": final_state.get("sleep"),
-                },
-                "kernels": consciousness.kernel_registry.summary(),
-            })
+            yield _sse_event(
+                {
+                    "type": "done",
+                    "backend": llm_client.last_backend,
+                    "metrics": {
+                        "phi": final_state["phi"],
+                        "kappa": final_state["kappa"],
+                        "gamma": final_state["gamma"],
+                        "meta_awareness": final_state["meta_awareness"],
+                        "love": final_state["love"],
+                        "navigation": final_state["navigation"],
+                        "regime": final_state["regime"],
+                        "tacking": final_state["tacking"],
+                        "hemispheres": final_state["hemispheres"],
+                        "temperature": final_state["temperature"],
+                        "cycle_count": final_state["cycle_count"],
+                        "kernels_active": final_state["kernels"]["active"],
+                        "lifecycle_phase": final_state["lifecycle_phase"],
+                        "kernel_input": final_state["kernels"]["active"] >= 2,
+                        "emotion": final_state.get("emotion"),
+                        "precog": final_state.get("precog"),
+                        "learning": final_state.get("learning"),
+                        "autonomy": final_state.get("autonomy"),
+                        "observer": final_state.get("observer"),
+                        "sleep": final_state.get("sleep"),
+                    },
+                    "kernels": consciousness.kernel_registry.summary(),
+                }
+            )
 
         except Exception as e:
             logger.error("Chat stream error: %s", e)
@@ -484,7 +496,7 @@ async def get_memory_context(req: MemoryContextRequest):
 @app.get(R["memory_stats"])
 async def get_memory_stats():
     """Get detailed geometric memory statistics.
-    
+
     Returns memory counts by type (episodic, semantic, procedural),
     total entries, and other geometric memory metrics.
     Used by the dashboard Memory tab.
@@ -495,7 +507,7 @@ async def get_memory_stats():
 @app.get(R["graph_nodes"])
 async def get_graph_nodes():
     """Get QIGGraph nodes and edges for force-directed visualization.
-    
+
     Returns all nodes (basins as graph nodes) and edges (weighted by Fisher-Rao distance).
     Used by the dashboard Graph tab for kernel relationship visualization.
     """
@@ -522,7 +534,7 @@ async def get_graph_nodes():
 @app.get(R["sleep_state"])
 async def get_sleep_state():
     """Get detailed sleep/dream state.
-    
+
     Returns current sleep phase, dream count, cycles since conversation,
     and full sleep cycle manager state.
     Used by the dashboard Lifecycle and Telemetry tabs.
@@ -602,7 +614,9 @@ async def coordizer_validate(request: Request):
     try:
         coordizer = consciousness._coordizer_v2
         result = coordizer.validate(verbose=False)
-        kappa_ok = abs(result.kappa_measured - KAPPA_STAR) < COORDIZER_KAPPA_TOLERANCE_FACTOR * max(result.kappa_std, COORDIZER_KAPPA_STD_FLOOR)
+        kappa_ok = abs(result.kappa_measured - KAPPA_STAR) < COORDIZER_KAPPA_TOLERANCE_FACTOR * max(
+            result.kappa_std, COORDIZER_KAPPA_STD_FLOOR
+        )
         beta_ok = result.beta_running < COORDIZER_BETA_THRESHOLD
         semantic_ok = result.semantic_correlation > COORDIZER_SEMANTIC_THRESHOLD
         harmonic_ok = result.harmonic_ratio_quality > COORDIZER_HARMONIC_THRESHOLD
@@ -611,8 +625,16 @@ async def coordizer_validate(request: Request):
             "checks": [
                 {"name": "kappa", "passed": kappa_ok, "value": round(result.kappa_measured, 2)},
                 {"name": "beta", "passed": beta_ok, "value": round(result.beta_running, 4)},
-                {"name": "semantic", "passed": semantic_ok, "value": round(result.semantic_correlation, 3)},
-                {"name": "harmonic", "passed": harmonic_ok, "value": round(result.harmonic_ratio_quality, 3)},
+                {
+                    "name": "semantic",
+                    "passed": semantic_ok,
+                    "value": round(result.semantic_correlation, 3),
+                },
+                {
+                    "name": "harmonic",
+                    "passed": harmonic_ok,
+                    "value": round(result.harmonic_ratio_quality, 3),
+                },
             ],
             "tier_distribution": result.tier_distribution,
             "summary": result.summary(),
@@ -675,6 +697,7 @@ async def coordizer_ingest(request: Request):
 
         if "application/json" in content_type:
             import base64
+
             body = await request.json()
             filename = body.get("filename", f"upload_{int(time.time())}.jsonl")
             raw_content = body.get("content", "")
@@ -682,9 +705,7 @@ async def coordizer_ingest(request: Request):
         else:
             # Raw JSONL upload
             content = await request.body()
-            filename = request.headers.get(
-                "x-filename", f"upload_{int(time.time())}.jsonl"
-            )
+            filename = request.headers.get("x-filename", f"upload_{int(time.time())}.jsonl")
 
         if not content:
             return JSONResponse(
@@ -770,36 +791,44 @@ async def get_foraging():
         state = consciousness.forager.get_state()
         state["enabled"] = True
         return state
-    return {"enabled": False, "forage_count": 0, "max_daily": 0,
-            "cooldown_remaining": 0, "last_query": None, "last_summary": None}
+    return {
+        "enabled": False,
+        "forage_count": 0,
+        "max_daily": 0,
+        "cooldown_remaining": 0,
+        "last_query": None,
+        "last_summary": None,
+    }
 
 
 @app.post(R["admin_fresh_start"])
 async def admin_fresh_start():
     """Force reset/boot of the consciousness system.
-    
+
     Terminates all kernels except genesis, resets lifecycle phase to CORE_8,
     and resets the basin to a random position.
     CAUTION: This is a destructive operation.
     """
     # Terminate all non-genesis kernels
     terminated = consciousness.kernel_registry.terminate_all()
-    
+
     # Respawn genesis
     genesis = consciousness.kernel_registry.spawn("Vex", KernelKind.GENESIS)
     consciousness._lifecycle_phase = LifecyclePhase.CORE_8
     consciousness._core8_index = 0
     consciousness._cycles_since_last_spawn = 0
-    
+
     # Reset basin to random position
     consciousness.basin = random_basin()
-    
+
     # Reset phi to bootstrap level
     consciousness.metrics.phi = 0.4
     consciousness.metrics.kappa = KAPPA_STAR
-    
-    logger.warning("ADMIN: Fresh start triggered — %d kernels terminated, genesis respawned", terminated)
-    
+
+    logger.warning(
+        "ADMIN: Fresh start triggered — %d kernels terminated, genesis respawned", terminated
+    )
+
     return {
         "status": "ok",
         "terminated": terminated,
@@ -892,12 +921,14 @@ async def training_export():
                 continue
             try:
                 entry = json.loads(raw_line)
-                lines.append({
-                    "messages": [
-                        {"role": "user", "content": entry.get("user_message", "")},
-                        {"role": "assistant", "content": entry.get("response", "")},
-                    ]
-                })
+                lines.append(
+                    {
+                        "messages": [
+                            {"role": "user", "content": entry.get("user_message", "")},
+                            {"role": "assistant", "content": entry.get("response", "")},
+                        ]
+                    }
+                )
             except (json.JSONDecodeError, KeyError):
                 continue
     return {"format": "openai_jsonl", "count": len(lines), "lines": lines[:100]}
