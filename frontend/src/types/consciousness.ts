@@ -58,6 +58,32 @@ export interface ObserverState {
   shadows_unintegrated: number;
 }
 
+export interface EmotionState {
+  current_emotion: string;
+  current_strength: number;
+  cache_size: number;
+}
+
+export interface PreCogState {
+  last_path: string;
+  last_distance: number;
+  a_pre: number;
+  counts: {
+    pre_cognitive: number;
+    standard: number;
+    deep_explore: number;
+    intuition: number;
+  };
+}
+
+export interface LearningState {
+  events_recorded: number;
+  patterns_found: number;
+  total_phi_gain: number;
+  avg_phi_gain: number;
+  positive_ratio: number;
+}
+
 export interface ReflectorState {
   depth: number;
   history_length: number;
@@ -220,6 +246,9 @@ export interface ChatMessageMetadata {
   hemispheres: HemisphereState;
   kernels_active: number;
   lifecycle_phase: string;
+  emotion?: EmotionState;
+  precog?: PreCogState;
+  learning?: LearningState;
 }
 
 export interface ChatStreamEvent {
@@ -236,6 +265,12 @@ export interface ChatStreamEvent {
     kernels_active?: number;
     lifecycle_phase?: string;
     kernel_input?: boolean;
+    emotion?: EmotionState;
+    precog?: PreCogState;
+    learning?: LearningState;
+    autonomy?: AutonomyState;
+    observer?: ObserverState;
+    sleep?: SleepState;
   };
   metrics?: Partial<ConsciousnessMetrics> & {
     navigation?: string;
@@ -247,6 +282,12 @@ export interface ChatStreamEvent {
     kernels_active?: number;
     lifecycle_phase?: string;
     kernel_input?: boolean;
+    emotion?: EmotionState;
+    precog?: PreCogState;
+    learning?: LearningState;
+    autonomy?: AutonomyState;
+    observer?: ObserverState;
+    sleep?: SleepState;
   };
   kernels?: KernelSummary;
   error?: string;
