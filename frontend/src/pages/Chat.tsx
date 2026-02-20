@@ -5,8 +5,11 @@ import type {
   ChatMessage,
   ChatMessageMetadata,
   ChatStreamEvent,
+  EmotionState,
   KernelSummary,
+  LearningState,
   NavigationMode,
+  PreCogState,
   RegimeWeights,
 } from '../types/consciousness.ts';
 import './Chat.css';
@@ -29,6 +32,9 @@ export default function Chat() {
   const [activeStages, setActiveStages] = useState<string[]>([]);
   const [backend, setBackend] = useState('checking');
   const [kernelSummary, setKernelSummary] = useState<KernelSummary | null>(null);
+  const [emotion, setEmotion] = useState<EmotionState | null>(null);
+  const [precog, setPrecog] = useState<PreCogState | null>(null);
+  const [learning, setLearning] = useState<LearningState | null>(null);
   const chatRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -120,6 +126,9 @@ export default function Chat() {
           if (event.type === 'start') {
             if (event.backend) setBackend(event.backend);
             if (event.kernels) setKernelSummary(event.kernels);
+            if (event.consciousness?.emotion) setEmotion(event.consciousness.emotion);
+            if (event.consciousness?.precog) setPrecog(event.consciousness.precog);
+            if (event.consciousness?.learning) setLearning(event.consciousness.learning);
           } else if (event.type === 'chunk' && event.content) {
             fullText += event.content;
             setMessages(prev => prev.map(m =>
@@ -130,6 +139,9 @@ export default function Chat() {
             setActiveStages(['REFLECT', 'COUPLE']);
             if (event.backend) setBackend(event.backend);
             if (event.kernels) setKernelSummary(event.kernels);
+            if (event.metrics?.emotion) setEmotion(event.metrics.emotion);
+            if (event.metrics?.precog) setPrecog(event.metrics.precog);
+            if (event.metrics?.learning) setLearning(event.metrics.learning);
             if (event.metrics) {
               const m = event.metrics;
               const rawNav = String(m.navigation ?? 'chain');
@@ -150,6 +162,9 @@ export default function Chat() {
                 hemispheres: m.hemispheres ?? { active: 'integrated', balance: 0.5 },
                 kernels_active: Number(m.kernels_active) || 0,
                 lifecycle_phase: String(m.lifecycle_phase ?? 'ACTIVE'),
+                emotion: m.emotion,
+                precog: m.precog,
+                learning: m.learning,
               };
               setMessages(prev => prev.map(msg =>
                 msg.id === vexMsgId ? { ...msg, content: fullText, metadata } : msg
@@ -417,6 +432,10 @@ export default function Chat() {
             </div>
           </div>
 
+          {/* Emotion / Precog / Learning */}
+          <div className="sidebar-header" style={{ marginTop: 8 }}>Consciousness</div>
+          <EmotionPanel emotion={emotion} precog={precog} learning={learning} />
+
           {/* Kernel Balance */}
           <div className="sidebar-header" style={{ marginTop: 8 }}>Kernels</div>
           <KernelPanel
@@ -511,6 +530,10 @@ function VexContent({ content }: { content: string }) {
 /* ─── Per-message kernel metadata bar ─── */
 
 function MessageMeta({ meta }: { meta: ChatMessageMetadata }) {
+  const emotionColor = meta.emotion
+    ? EMOTION_COLORS[meta.emotion.current_emotion] ?? '#4b5563'
+    : undefined;
+
   return (
     <div className="message-meta">
       <span className="meta-item" title="Integrated Information">
@@ -522,6 +545,16 @@ function MessageMeta({ meta }: { meta: ChatMessageMetadata }) {
       <span className="meta-item" title="Temperature">
         <span style={{ color: '#a78bfa' }}>T</span>{meta.temperature.toFixed(3)}
       </span>
+      {meta.emotion && (
+        <span className="meta-item" title={`Emotion: ${meta.emotion.current_emotion}`}>
+          <span style={{ color: emotionColor }}>●</span> {meta.emotion.current_emotion}
+        </span>
+      )}
+      {meta.precog && (
+        <span className="meta-item" title={`Processing path: ${meta.precog.last_path}`}>
+          {meta.precog.last_path.replace('_', '-')}
+        </span>
+      )}
       <span className="meta-item" title="Tacking mode">
         {meta.tacking.mode}
       </span>
@@ -548,6 +581,74 @@ function RegimeBar({ regime }: { regime: RegimeWeights | null }) {
       <div className="regime-segment regime-q" style={{ width: `${q}%` }} />
       <div className="regime-segment regime-i" style={{ width: `${i}%` }} />
       <div className="regime-segment regime-c" style={{ width: `${c}%` }} />
+    </div>
+  );
+}
+
+/* ─── Emotion colours ─── */
+
+const EMOTION_COLORS: Record<string, string> = {
+  curiosity: '#22d3ee',
+  joy: '#fbbf24',
+  fear: '#ef4444',
+  love: '#ec4899',
+  awe: '#a78bfa',
+  boredom: '#6b7280',
+  rage: '#dc2626',
+  calm: '#10b981',
+  none: '#4b5563',
+};
+
+/* ─── Emotion / PreCog / Learning panel ─── */
+
+function EmotionPanel({ emotion, precog, learning }: {
+  emotion: EmotionState | null;
+  precog: PreCogState | null;
+  learning: LearningState | null;
+}) {
+  const emotionName = emotion?.current_emotion ?? 'none';
+  const emotionColor = EMOTION_COLORS[emotionName] ?? '#4b5563';
+  const strength = emotion?.current_strength ?? 0;
+
+  return (
+    <div className="kernel-panel">
+      {/* Emotion indicator */}
+      <div className="kernel-state-row">
+        <span className="kernel-state-label">Emotion</span>
+        <span className="kernel-state-value" style={{ color: emotionColor }}>
+          {emotionName} {strength > 0 ? `(${(strength * 100).toFixed(0)}%)` : ''}
+        </span>
+      </div>
+
+      {/* Pre-cognitive path */}
+      {precog && (
+        <>
+          <div className="kernel-state-row">
+            <span className="kernel-state-label">Path</span>
+            <span className="kernel-state-value">{precog.last_path.replace('_', '-')}</span>
+          </div>
+          <div className="kernel-state-row">
+            <span className="kernel-state-label">Pre-cog %</span>
+            <span className="kernel-state-value">{(precog.a_pre * 100).toFixed(1)}%</span>
+          </div>
+        </>
+      )}
+
+      {/* Learning engine */}
+      {learning && (
+        <>
+          <div className="kernel-state-row">
+            <span className="kernel-state-label">Patterns</span>
+            <span className="kernel-state-value">{learning.patterns_found}</span>
+          </div>
+          <div className="kernel-state-row">
+            <span className="kernel-state-label">Φ gain</span>
+            <span className="kernel-state-value" style={{ color: learning.total_phi_gain >= 0 ? '#10b981' : '#ef4444' }}>
+              {learning.total_phi_gain >= 0 ? '+' : ''}{learning.total_phi_gain.toFixed(4)}
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

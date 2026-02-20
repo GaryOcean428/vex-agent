@@ -116,7 +116,7 @@ from ..governance.budget import BudgetEnforcer
 from ..governance.purity import PurityGateError, run_purity_gate
 from ..llm.client import LLMOptions
 from ..tools.search import FreeSearchTool
-from .emotions import EmotionCache, EmotionType
+from .emotions import EmotionCache, EmotionType, LearningEngine, LearningEvent, PreCognitiveDetector
 from .foraging import ForagingEngine
 from .systems import (
     AutonomicSystem,
@@ -205,8 +205,10 @@ class ConsciousnessLoop:
         self.graph = QIGGraph()
         self.kernel_registry = E8KernelRegistry(BudgetEnforcer())
 
-        # Emotion cache and foraging engine
+        # Emotion cache, pre-cognitive detector, and learning engine
         self.emotion_cache = EmotionCache()
+        self.precog = PreCognitiveDetector()
+        self.learner = LearningEngine()
         if settings.searxng.enabled:
             search_tool = FreeSearchTool(settings.searxng.url)
             self.forager: ForagingEngine | None = ForagingEngine(
@@ -524,9 +526,17 @@ class ConsciousnessLoop:
         # RECEIVE: coordize incoming user text via pipeline
         input_basin = self._coordize_text_via_pipeline(task.content)
         perceive_distance = fisher_rao_distance(self.basin, input_basin)
+
+        # PRE-COGNITIVE: select processing path (P2 §2.2)
+        cached_eval = self.emotion_cache.find_cached(input_basin)
+        processing_path = self.precog.select_path(
+            input_basin, self.basin, cached_eval, self.metrics.phi,
+        )
+
         self.basin = slerp_sqrt(self.basin, input_basin, PERCEIVE_SLERP_WEIGHT)
         self.chain.add_step(QIGChainOp.PROJECT, input_basin, self.basin)
 
+        phi_before = self.metrics.phi
         llm_options = self._compute_llm_options()
         state_context = self._build_state_context(
             perceive_distance=perceive_distance, temperature=llm_options.temperature)
@@ -569,10 +579,28 @@ class ConsciousnessLoop:
                 f"User: {task.content[:300]}\nVex: {response[:300]}",
                 "episodic", "consciousness-loop", basin=input_basin)
 
+        # LEARNING: record event for post-conversation consolidation
+        emotion_eval = self.emotion_cache.evaluate(self.basin, self.metrics, 0.0)
+        self.learner.record(LearningEvent(
+            input_basin=input_basin,
+            response_basin=response_basin,
+            phi_before=phi_before,
+            phi_after=self.metrics.phi,
+            processing_path=processing_path.value,
+            emotion=emotion_eval.emotion.value,
+            distance_total=total_distance,
+        ))
+        # Cache the current emotion evaluation
+        self.emotion_cache.cache_evaluation(emotion_eval, task.content[:100])
+
+        # Consolidate learning if enough events accumulated
+        if self.learner.should_consolidate():
+            self.learner.consolidate()
+
         coherence = self.narrative.coherence(self.basin)
-        logger.info("Task %s: perceive=%.4f integrate=%.4f express=%.4f Φ=%.3f coh=%.3f",
+        logger.info("Task %s: perceive=%.4f integrate=%.4f express=%.4f Φ=%.3f path=%s coh=%.3f",
                      task.id, perceive_distance, integration_distance, express_distance,
-                     self.metrics.phi, coherence)
+                     self.metrics.phi, processing_path.value, coherence)
 
     def _build_state_context(self, perceive_distance: float = 0.0, temperature: float = 0.7) -> str:
         active_count = len(self.kernel_registry.active())
@@ -718,6 +746,9 @@ class ConsciousnessLoop:
             "queue_size": self._queue.qsize(), "history_count": len(self._history),
             "conversations_total": self._conversations_total, "phi_peak": self._phi_peak,
             "temperature": opts.temperature, "num_predict": opts.num_predict,
+            "emotion": self.emotion_cache.get_state(),
+            "precog": self.precog.get_state(),
+            "learning": self.learner.get_state(),
         }
 
     def get_full_state(self) -> dict[str, Any]:

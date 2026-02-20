@@ -149,18 +149,25 @@ async function main(): Promise<void> {
   proxyGet(ROUTES.training_export);
   proxyPost(ROUTES.training_feedback);
 
-  // Training upload — custom multipart proxy (proxyPost hardcodes JSON Content-Type)
+  // Training upload — buffer multipart body then forward to kernel
   app.post(ROUTES.training_upload, async (req, res) => {
     try {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(chunk);
+      }
+      const body = Buffer.concat(chunks);
+
       const resp = await fetch(`${KERNEL_URL}${ROUTES.training_upload}`, {
         method: 'POST',
-        headers: { 'content-type': req.headers['content-type'] || '' },
-        // Node 22 fetch supports streaming request body via duplex: 'half'
-        body: req as never,
-        duplex: 'half',
-      } as RequestInit);
+        headers: {
+          'content-type': req.headers['content-type'] || '',
+          'content-length': String(body.length),
+        },
+        body,
+      });
       const data = await resp.json();
-      res.json(data);
+      res.status(resp.status).json(data);
     } catch (err) {
       res.status(502).json({ error: `Kernel unreachable: ${(err as Error).message}` });
     }
