@@ -106,7 +106,7 @@ def validate_resonance_bank(
     semantic_ok = result.semantic_correlation > 0.2
     harmonic_ok = result.harmonic_ratio_quality > 0.3
 
-    result.passed = kappa_ok and beta_ok and semantic_ok
+    result.passed = kappa_ok and beta_ok and semantic_ok and harmonic_ok
 
     if verbose:
         logger.info("\n" + "=" * 60)
@@ -121,7 +121,7 @@ def validate_resonance_bank(
             f"(r={result.semantic_correlation:.3f})"
         )
         logger.info(
-            f"  Harmonic: {'PASS' if harmonic_ok else 'NOTE'} "
+            f"  Harmonic: {'PASS' if harmonic_ok else 'FAIL'} "
             f"(q={result.harmonic_ratio_quality:.3f})"
         )
         logger.info(f"  Tiers: {result.tier_distribution}")
@@ -178,20 +178,17 @@ def _measure_kappa(
         return (0.0, 0.0)
 
     kappas_arr = np.array(kappas)
-    median_raw = np.median(kappas_arr)
-    if median_raw > _EPS:
-        scale = KAPPA_STAR / median_raw
-        kappas_scaled = kappas_arr * scale
-    else:
-        kappas_scaled = kappas_arr
-
-    kappa_mean = float(np.mean(kappas_scaled))
-    kappa_std = float(np.std(kappas_scaled))
+    # NOTE: No artificial scaling. κ convergence to κ* ≈ 64 is an
+    # emergent property of the geometric structure, not something
+    # we force by rescaling. If κ doesn't converge, that's a real
+    # signal that the harvest/compression pipeline has a defect.
+    kappa_mean = float(np.mean(kappas_arr))
+    kappa_std = float(np.std(kappas_arr))
+    kappa_median = float(np.median(kappas_arr))
 
     if verbose:
         logger.info(f"\nκ measurement ({n_samples} samples, {n_neighbors} neighbors):")
-        logger.info(f"  Raw median: {median_raw:.4f}")
-        logger.info(f"  Scale factor: {scale:.4f}" if median_raw > _EPS else "  Scale: N/A")
+        logger.info(f"  Median: {kappa_median:.4f}")
         logger.info(f"  κ = {kappa_mean:.2f} ± {kappa_std:.2f} (target: {KAPPA_STAR})")
 
     return (kappa_mean, kappa_std)
