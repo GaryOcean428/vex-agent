@@ -44,10 +44,13 @@ ROUTES: dict[str, str] = {
     "sleep_state": "/sleep/state",
 
     # ─── Coordizer V2 ─────────────────────────────────────────
-    "coordizer_transform": "/api/coordizer/coordize",
+    "coordizer_coordize": "/api/coordizer/coordize",
     "coordizer_stats": "/api/coordizer/stats",
-    "coordizer_history": "/api/coordizer/history",
     "coordizer_validate": "/api/coordizer/validate",
+    "coordizer_harvest": "/api/coordizer/harvest",
+    "coordizer_ingest": "/api/coordizer/ingest",
+    "coordizer_harvest_status": "/api/coordizer/harvest/status",
+    "coordizer_bank": "/api/coordizer/bank",
 
     # ─── Foraging ──────────────────────────────────────────────
     "foraging": "/foraging",
@@ -89,10 +92,13 @@ ROUTE_GROUPS: dict[str, list[str]] = {
         "memory_stats",
         "graph_nodes",
         "sleep_state",
-        "coordizer_transform",
+        "coordizer_coordize",
         "coordizer_stats",
-        "coordizer_history",
         "coordizer_validate",
+        "coordizer_harvest",
+        "coordizer_ingest",
+        "coordizer_harvest_status",
+        "coordizer_bank",
         "foraging",
         "training_stats",
         "training_export",
@@ -104,10 +110,13 @@ ROUTE_GROUPS: dict[str, list[str]] = {
         "governor_budget",
     ],
     "coordizer": [
-        "coordizer_transform",
+        "coordizer_coordize",
         "coordizer_stats",
-        "coordizer_history",
         "coordizer_validate",
+        "coordizer_harvest",
+        "coordizer_ingest",
+        "coordizer_harvest_status",
+        "coordizer_bank",
     ],
 }
 
