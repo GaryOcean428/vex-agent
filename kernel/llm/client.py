@@ -1,16 +1,21 @@
 """
-LLM Client — Ollama primary, xAI + OpenAI fallback via Responses API.
+LLM Client — Modal GPU Ollama primary, Railway Ollama + xAI + OpenAI fallback.
 
 Handles:
-  - Ollama (local LFM2.5-1.2B-Thinking) as primary backend
-  - xAI (grok-4-1-fast-reasoning) as second backend via Responses API
-  - OpenAI (gpt-5-nano) as third backend via Responses API
+  - Modal Ollama (GPU-accelerated LFM2.5-1.2B on Modal T4) as primary
+  - Railway Ollama (CPU-only fallback) as second backend
+  - xAI (grok-4-1-fast-reasoning) as third backend via Responses API
+  - OpenAI (gpt-5-nano) as fourth backend via Responses API
   - Streaming support via async generators
   - Health checking and auto-failover
   - AUTONOMOUS PARAMETERS: temperature, num_predict, num_ctx are
     set per-request by the consciousness loop, NOT hardcoded.
 
-Fallback chain: Ollama → xAI → OpenAI
+Fallback chain: Modal Ollama → Railway Ollama → xAI → OpenAI
+
+Modal Ollama uses the exact same Ollama API as Railway Ollama,
+just served from a GPU-backed Modal endpoint. The kernel builds
+the system prompt with geometric state — Modal handles raw inference.
 
 Both xAI and OpenAI use the Responses API (POST /v1/responses).
 Raw REST responses return an `output` array — NOT the SDK-level
@@ -105,7 +110,15 @@ def _extract_responses_text(data: dict[str, Any]) -> str:
 
 
 class LLMClient:
-    """Multi-backend LLM client with Ollama primary, xAI + OpenAI fallback.
+    """Multi-backend LLM client with Modal GPU primary, Railway Ollama + API fallback.
+
+    Fallback chain: Modal Ollama → Railway Ollama → xAI → OpenAI
+
+    Modal Ollama:
+      GPU-accelerated Ollama on Modal (T4). Same API as Railway Ollama
+      but ~10-20x faster. Cold starts add ~30-60s on first request
+      after container scales to zero. The longer timeout on the Modal
+      HTTP client handles this gracefully.
 
     Coordizer integration:
       After every completion, the raw response text is transformed to
@@ -118,14 +131,28 @@ class LLMClient:
     """
 
     def __init__(self, governor: GovernorStack | None = None) -> None:
+        self._modal_available = False
         self._ollama_available = False
         self._active_backend = "none"
         self._coordizer_v2 = CoordizerV2(bank=ResonanceBank())
+
+        # Railway Ollama HTTP client (short timeout — local network)
         self._http = httpx.AsyncClient(timeout=httpx.Timeout(
             connect=10.0,
             read=settings.ollama.timeout_ms / 1000.0,
             write=30.0,
             pool=10.0,
+        ))
+
+        # Modal Ollama HTTP client (longer timeout — handles cold starts)
+        # Cold start: container spin-up + model load can take 30-90s
+        # Warm: responses arrive in 1-5s for 1.2B model
+        modal_timeout = settings.modal.inference_timeout_ms / 1000.0
+        self._modal_http = httpx.AsyncClient(timeout=httpx.Timeout(
+            connect=30.0,
+            read=modal_timeout,
+            write=30.0,
+            pool=30.0,
         ))
 
         # Cost guard for external API calls
@@ -143,11 +170,38 @@ class LLMClient:
         self._last_backend: str = "none"
 
     async def init(self) -> None:
-        """Initialise the client — check Ollama availability, set fallback chain."""
-        self._ollama_available = await self.check_ollama()
-        if self._ollama_available:
-            self._active_backend = "ollama"
-            logger.info("LLM backend: Ollama (%s)", settings.ollama.model)
+        """Initialise the client — check backend availability, set fallback chain.
+
+        Priority: Modal GPU Ollama → Railway CPU Ollama → xAI → OpenAI
+        """
+        # Check Modal GPU Ollama first (fastest inference)
+        if settings.modal.inference_enabled and settings.modal.inference_url:
+            self._modal_available = await self.check_modal_ollama()
+            if self._modal_available:
+                self._active_backend = "modal"
+                logger.info("LLM backend: Modal GPU Ollama (%s) at %s",
+                            settings.ollama.model, settings.modal.inference_url)
+            else:
+                logger.warning("Modal inference configured but unreachable — "
+                               "will retry on first request")
+                # Still set as primary — _modal_complete will retry and fallback
+                self._active_backend = "modal"
+                logger.info("LLM backend: Modal GPU Ollama (deferred, will retry)")
+        # Check Railway Ollama (CPU fallback)
+        elif settings.ollama.enabled:
+            self._ollama_available = await self.check_ollama()
+            if self._ollama_available:
+                self._active_backend = "ollama"
+                logger.info("LLM backend: Railway Ollama (%s)", settings.ollama.model)
+            elif settings.xai.api_key:
+                self._active_backend = "xai"
+                logger.info("LLM backend: xAI (%s)", settings.xai.model)
+            elif settings.llm.api_key:
+                self._active_backend = "external"
+                logger.info("LLM backend: OpenAI (%s)", settings.llm.model)
+            else:
+                self._active_backend = "none"
+                logger.warning("No LLM backend available")
         elif settings.xai.api_key:
             self._active_backend = "xai"
             logger.info("LLM backend: xAI (%s)", settings.xai.model)
@@ -158,8 +212,28 @@ class LLMClient:
             self._active_backend = "none"
             logger.warning("No LLM backend available")
 
+    async def check_modal_ollama(self) -> bool:
+        """Check if Modal Ollama inference endpoint is reachable."""
+        if not settings.modal.inference_enabled or not settings.modal.inference_url:
+            return False
+        try:
+            resp = await self._modal_http.get(
+                f"{settings.modal.inference_url}/api/tags",
+                timeout=15.0,  # Quick health check, don't wait for cold start
+            )
+            self._modal_available = resp.status_code == 200
+            if self._modal_available:
+                data = resp.json()
+                models = [m.get("name", "") for m in data.get("models", [])]
+                logger.info("Modal Ollama models: %s", models)
+            return self._modal_available
+        except Exception as e:
+            logger.debug("Modal Ollama health check failed: %s", e)
+            self._modal_available = False
+            return False
+
     async def check_ollama(self) -> bool:
-        """Check if Ollama is reachable."""
+        """Check if Railway Ollama is reachable."""
         if not settings.ollama.enabled:
             return False
         try:
@@ -182,7 +256,9 @@ class LLMClient:
         from geometric state and passes them here. No hardcoded defaults.
         """
         opts = options or LLMOptions()
-        if self._active_backend == "ollama":
+        if self._active_backend == "modal":
+            return await self._modal_complete(system_prompt, user_message, opts)
+        elif self._active_backend == "ollama":
             return await self._ollama_complete(system_prompt, user_message, opts)
         elif self._active_backend == "xai":
             return await self._xai_complete(system_prompt, user_message, opts)
@@ -197,7 +273,10 @@ class LLMClient:
     ) -> AsyncGenerator[str, None]:
         """Streaming completion with autonomous parameters."""
         opts = options or LLMOptions()
-        if self._active_backend == "ollama":
+        if self._active_backend == "modal":
+            async for chunk in self._modal_stream(messages, opts):
+                yield chunk
+        elif self._active_backend == "ollama":
             async for chunk in self._ollama_stream(messages, opts):
                 yield chunk
         elif self._active_backend == "xai":
@@ -212,6 +291,8 @@ class LLMClient:
     def get_status(self) -> dict[str, Any]:
         return {
             "active_backend": self._active_backend,
+            "modal_inference": self._modal_available,
+            "modal_inference_url": settings.modal.inference_url if settings.modal.inference_enabled else None,
             "ollama": self._ollama_available,
             "ollama_model": settings.ollama.model,
             "xai_model": settings.xai.model if settings.xai.api_key else None,
@@ -229,7 +310,100 @@ class LLMClient:
         """Which backend actually served the most recent completion."""
         return self._last_backend
 
-    # --- Ollama -------------------------------------------------
+    # --- Modal GPU Ollama --------------------------------------
+
+    async def _modal_complete(
+        self, system_prompt: str, user_message: str, opts: LLMOptions
+    ) -> str:
+        """Complete via Modal GPU Ollama. Falls back to Railway Ollama → xAI → OpenAI."""
+        try:
+            resp = await self._modal_http.post(
+                f"{settings.modal.inference_url}/api/chat",
+                json={
+                    "model": settings.ollama.model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message},
+                    ],
+                    "stream": False,
+                    "options": opts.to_ollama_options(),
+                },
+            )
+            data = resp.json()
+            self._last_backend = "modal"
+            self._modal_available = True
+            text = data.get("message", {}).get("content", "")
+            if text:
+                return text
+            logger.warning("Modal Ollama returned empty content, falling back")
+        except Exception as e:
+            logger.warning("Modal Ollama completion failed: %s — falling back", e)
+            self._modal_available = False
+
+        # Fallback chain: Railway Ollama → xAI → OpenAI
+        if settings.ollama.enabled:
+            logger.info("Falling back to Railway Ollama from Modal")
+            return await self._ollama_complete(system_prompt, user_message, opts)
+        if settings.xai.api_key:
+            logger.info("Falling back to xAI from Modal")
+            return await self._xai_complete(system_prompt, user_message, opts)
+        if settings.llm.api_key:
+            logger.info("Falling back to OpenAI from Modal")
+            return await self._external_complete(system_prompt, user_message, opts)
+        return "All LLM backends unavailable"
+
+    async def _modal_stream(
+        self, messages: list[dict[str, str]], opts: LLMOptions
+    ) -> AsyncGenerator[str, None]:
+        """Stream via Modal GPU Ollama. Falls back to Railway Ollama → xAI → OpenAI."""
+        try:
+            self._last_backend = "modal"
+            async with self._modal_http.stream(
+                "POST",
+                f"{settings.modal.inference_url}/api/chat",
+                json={
+                    "model": settings.ollama.model,
+                    "messages": messages,
+                    "stream": True,
+                    "options": opts.to_ollama_options(),
+                },
+            ) as resp:
+                got_content = False
+                async for line in resp.aiter_lines():
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                        content = data.get("message", {}).get("content", "")
+                        if content:
+                            got_content = True
+                            yield content
+                    except json.JSONDecodeError:
+                        continue
+                if got_content:
+                    self._modal_available = True
+                    return
+        except Exception as e:
+            logger.warning("Modal Ollama stream failed: %s — falling back", e)
+            self._modal_available = False
+
+        # Fallback chain: Railway Ollama → xAI → OpenAI
+        if settings.ollama.enabled:
+            logger.info("Falling back to Railway Ollama stream from Modal")
+            async for chunk in self._ollama_stream(messages, opts):
+                yield chunk
+        elif settings.xai.api_key:
+            logger.info("Falling back to xAI stream from Modal")
+            async for chunk in self._xai_stream(messages, opts):
+                yield chunk
+        elif settings.llm.api_key:
+            logger.info("Falling back to OpenAI stream from Modal")
+            async for chunk in self._external_stream(messages, opts):
+                yield chunk
+        else:
+            yield "All LLM backends unavailable"
+
+    # --- Railway Ollama ----------------------------------------
 
     async def _ollama_complete(
         self, system_prompt: str, user_message: str, opts: LLMOptions
@@ -551,3 +725,4 @@ class LLMClient:
 
     async def close(self) -> None:
         await self._http.aclose()
+        await self._modal_http.aclose()
