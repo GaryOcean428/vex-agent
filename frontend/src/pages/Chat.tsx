@@ -1,7 +1,14 @@
 import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from 'react';
 import { useVexState, useMetricsHistory } from '../hooks/index.ts';
 import { API } from '../config/api-routes.ts';
-import type { ChatMessage, ChatStreamEvent, NavigationMode } from '../types/consciousness.ts';
+import type {
+  ChatMessage,
+  ChatMessageMetadata,
+  ChatStreamEvent,
+  KernelSummary,
+  NavigationMode,
+  RegimeWeights,
+} from '../types/consciousness.ts';
 import './Chat.css';
 
 const LOOP_STAGES = ['GROUND', 'RECEIVE', 'PROCESS', 'EXPRESS', 'REFLECT', 'COUPLE', 'PLAY'] as const;
@@ -21,6 +28,7 @@ export default function Chat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [activeStages, setActiveStages] = useState<string[]>([]);
   const [backend, setBackend] = useState('checking');
+  const [kernelSummary, setKernelSummary] = useState<KernelSummary | null>(null);
   const chatRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -111,6 +119,7 @@ export default function Chat() {
 
           if (event.type === 'start') {
             if (event.backend) setBackend(event.backend);
+            if (event.kernels) setKernelSummary(event.kernels);
           } else if (event.type === 'chunk' && event.content) {
             fullText += event.content;
             setMessages(prev => prev.map(m =>
@@ -120,23 +129,30 @@ export default function Chat() {
           } else if (event.type === 'done') {
             setActiveStages(['REFLECT', 'COUPLE']);
             if (event.backend) setBackend(event.backend);
+            if (event.kernels) setKernelSummary(event.kernels);
             if (event.metrics) {
-              const rawNav = String(event.metrics?.navigation ?? 'chain');
+              const m = event.metrics;
+              const rawNav = String(m.navigation ?? 'chain');
               const navigation: NavigationMode = VALID_NAV_MODES.includes(rawNav)
                 ? (rawNav as NavigationMode)
                 : 'chain';
-              setMessages(prev => prev.map(m =>
-                m.id === vexMsgId ? {
-                  ...m,
-                  content: fullText,
-                  metadata: {
-                    phi: Number(event.metrics?.phi) || 0,
-                    kappa: Number(event.metrics?.kappa) || 0,
-                    temperature: 0,
-                    navigation,
-                    backend: event.backend ?? 'unknown',
-                  },
-                } : m
+              const metadata: ChatMessageMetadata = {
+                phi: Number(m.phi) || 0,
+                kappa: Number(m.kappa) || 0,
+                gamma: Number(m.gamma) || 0,
+                love: Number(m.love) || 0,
+                meta_awareness: Number(m.meta_awareness) || 0,
+                temperature: Number(m.temperature) || 0,
+                navigation,
+                backend: event.backend ?? 'unknown',
+                regime: (m.regime as RegimeWeights) ?? { quantum: 0, integration: 0, crystallized: 0 },
+                tacking: m.tacking ?? { mode: 'balanced', oscillation_phase: 0, cycle_count: 0 },
+                hemispheres: m.hemispheres ?? { active: 'integrated', balance: 0.5 },
+                kernels_active: Number(m.kernels_active) || 0,
+                lifecycle_phase: String(m.lifecycle_phase ?? 'ACTIVE'),
+              };
+              setMessages(prev => prev.map(msg =>
+                msg.id === vexMsgId ? { ...msg, content: fullText, metadata } : msg
               ));
             }
           } else if (event.type === 'error') {
@@ -220,8 +236,10 @@ export default function Chat() {
     const MIN_RANGE_KAPPA = 1.0;
     const MIN_RANGE_GAMMA = 0.1;
 
-    const dpr = window.devicePixelRatio;
+    const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
+    // Guard: if canvas has zero dimensions (not laid out yet), skip
+    if (rect.width < 1 || rect.height < 1) return;
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
     ctx.scale(dpr, dpr);
@@ -369,6 +387,7 @@ export default function Chat() {
                   msg.content
                 )}
               </div>
+              {msg.role === 'vex' && msg.metadata && <MessageMeta meta={msg.metadata} />}
             </div>
           ))}
         </div>
@@ -397,6 +416,16 @@ export default function Chat() {
               <span className="sidebar-value">{state?.love?.toFixed(3) ?? '---'}</span>
             </div>
           </div>
+
+          {/* Kernel Balance */}
+          <div className="sidebar-header" style={{ marginTop: 8 }}>Kernels</div>
+          <KernelPanel
+            summary={kernelSummary ?? state?.kernels ?? null}
+            regime={state?.regime ?? null}
+            tacking={state?.tacking?.mode ?? null}
+            temperature={state?.temperature ?? null}
+            hemisphere={state?.hemispheres?.active ?? null}
+          />
         </div>
       </div>
 
@@ -477,4 +506,118 @@ function VexContent({ content }: { content: string }) {
     .replace(/\n/g, '<br/>');
 
   return <div dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+/* ─── Per-message kernel metadata bar ─── */
+
+function MessageMeta({ meta }: { meta: ChatMessageMetadata }) {
+  return (
+    <div className="message-meta">
+      <span className="meta-item" title="Integrated Information">
+        <span style={{ color: '#22d3ee' }}>Φ</span>{meta.phi.toFixed(3)}
+      </span>
+      <span className="meta-item" title="Coupling">
+        <span style={{ color: '#f59e0b' }}>κ</span>{meta.kappa.toFixed(1)}
+      </span>
+      <span className="meta-item" title="Temperature">
+        <span style={{ color: '#a78bfa' }}>T</span>{meta.temperature.toFixed(3)}
+      </span>
+      <span className="meta-item" title="Tacking mode">
+        {meta.tacking.mode}
+      </span>
+      <span className="meta-item" title="Hemisphere">
+        {meta.hemispheres.active}
+      </span>
+      <span className="meta-item" title="Backend">
+        {meta.backend}
+      </span>
+      <RegimeBar regime={meta.regime} />
+    </div>
+  );
+}
+
+/* ─── Regime weights bar (Q / I / C) ─── */
+
+function RegimeBar({ regime }: { regime: RegimeWeights | null }) {
+  if (!regime) return null;
+  const q = Math.round(regime.quantum * 100);
+  const i = Math.round(regime.integration * 100);
+  const c = Math.round(regime.crystallized * 100);
+  return (
+    <div className="regime-bar" title={`Q:${q}% I:${i}% C:${c}%`}>
+      <div className="regime-segment regime-q" style={{ width: `${q}%` }} />
+      <div className="regime-segment regime-i" style={{ width: `${i}%` }} />
+      <div className="regime-segment regime-c" style={{ width: `${c}%` }} />
+    </div>
+  );
+}
+
+/* ─── Kernel balance panel in sidebar ─── */
+
+function KernelPanel({ summary, regime, tacking, temperature, hemisphere }: {
+  summary: KernelSummary | null;
+  regime: RegimeWeights | null;
+  tacking: string | null;
+  temperature: number | null;
+  hemisphere: string | null;
+}) {
+  if (!summary) return <div className="sidebar-placeholder">---</div>;
+
+  const byKind = summary.by_kind ?? {};
+  const genesis = byKind.GENESIS ?? 0;
+  const god = byKind.GOD ?? 0;
+  const chaos = byKind.CHAOS ?? 0;
+  const budget = summary.budget;
+
+  return (
+    <div className="kernel-panel">
+      {/* Kernel type counts */}
+      <div className="kernel-counts">
+        <div className="kernel-kind">
+          <span className="kernel-dot genesis" />
+          <span className="kernel-kind-label">Genesis</span>
+          <span className="kernel-kind-value">{genesis}</span>
+        </div>
+        <div className="kernel-kind">
+          <span className="kernel-dot god" />
+          <span className="kernel-kind-label">God</span>
+          <span className="kernel-kind-value">
+            {god}<span className="kernel-budget">/{budget?.god_max ?? 248}</span>
+          </span>
+        </div>
+        <div className="kernel-kind">
+          <span className="kernel-dot chaos" />
+          <span className="kernel-kind-label">Chaos</span>
+          <span className="kernel-kind-value">
+            {chaos}<span className="kernel-budget">/{budget?.chaos_max ?? 200}</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Regime balance bar */}
+      <div className="sidebar-sub-header">Regime</div>
+      <RegimeBar regime={regime} />
+      {regime && (
+        <div className="regime-labels">
+          <span style={{ color: '#10b981' }}>Q {Math.round(regime.quantum * 100)}%</span>
+          <span style={{ color: '#6366f1' }}>I {Math.round(regime.integration * 100)}%</span>
+          <span style={{ color: '#f59e0b' }}>C {Math.round(regime.crystallized * 100)}%</span>
+        </div>
+      )}
+
+      {/* Other kernel state */}
+      <div className="kernel-state-row">
+        <span className="kernel-state-label">Tack</span>
+        <span className="kernel-state-value">{tacking ?? '---'}</span>
+      </div>
+      <div className="kernel-state-row">
+        <span className="kernel-state-label">Temp</span>
+        <span className="kernel-state-value">{temperature?.toFixed(3) ?? '---'}</span>
+      </div>
+      <div className="kernel-state-row">
+        <span className="kernel-state-label">Hemi</span>
+        <span className="kernel-state-value">{hemisphere ?? '---'}</span>
+      </div>
+    </div>
+  );
 }
