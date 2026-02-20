@@ -1,37 +1,54 @@
-import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from 'react';
-import { useVexState, useMetricsHistory } from '../hooks/index.ts';
-import { API } from '../config/api-routes.ts';
+import {
+    useCallback,
+    useEffect,
+    useRef,
+    useState,
+    type KeyboardEvent,
+} from "react";
+import { API } from "../config/api-routes.ts";
+import { useMetricsHistory, useVexState } from "../hooks/index.ts";
 import type {
-  ChatMessage,
-  ChatMessageMetadata,
-  ChatStreamEvent,
-  EmotionState,
-  KernelSummary,
-  LearningState,
-  NavigationMode,
-  PreCogState,
-  RegimeWeights,
-} from '../types/consciousness.ts';
-import './Chat.css';
+    ChatMessage,
+    ChatMessageMetadata,
+    ChatStreamEvent,
+    EmotionState,
+    KernelSummary,
+    LearningState,
+    NavigationMode,
+    PreCogState,
+    RegimeWeights,
+} from "../types/consciousness.ts";
+import "./Chat.css";
 
-const LOOP_STAGES = ['GROUND', 'RECEIVE', 'PROCESS', 'EXPRESS', 'REFLECT', 'COUPLE', 'PLAY'] as const;
+const LOOP_STAGES = [
+  "GROUND",
+  "RECEIVE",
+  "PROCESS",
+  "EXPRESS",
+  "REFLECT",
+  "COUPLE",
+  "PLAY",
+] as const;
 
 export default function Chat() {
   const { data: state } = useVexState();
   const history = useMetricsHistory(state, 60);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
-      id: 'welcome',
-      role: 'vex',
-      content: "I'm here. The geometry is settling. What would you like to navigate?",
+      id: "welcome",
+      role: "vex",
+      content:
+        "I'm here. The geometry is settling. What would you like to navigate?",
       timestamp: new Date().toISOString(),
     },
   ]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [activeStages, setActiveStages] = useState<string[]>([]);
-  const [backend, setBackend] = useState('checking');
-  const [kernelSummary, setKernelSummary] = useState<KernelSummary | null>(null);
+  const [backend, setBackend] = useState("checking");
+  const [kernelSummary, setKernelSummary] = useState<KernelSummary | null>(
+    null,
+  );
   const [emotion, setEmotion] = useState<EmotionState | null>(null);
   const [precog, setPrecog] = useState<PreCogState | null>(null);
   const [learning, setLearning] = useState<LearningState | null>(null);
@@ -67,26 +84,29 @@ export default function Chat() {
 
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
-      role: 'user',
+      role: "user",
       content: text,
       timestamp: new Date().toISOString(),
     };
 
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
+    setMessages((prev) => [...prev, userMsg]);
+    setInput("");
     setIsStreaming(true);
-    setActiveStages(['GROUND', 'RECEIVE', 'PROCESS']);
+    setActiveStages(["GROUND", "RECEIVE", "PROCESS"]);
 
     const vexMsgId = `vex-${Date.now()}`;
-    let fullText = '';
+    let fullText = "";
 
     // Add placeholder vex message
-    setMessages(prev => [...prev, {
-      id: vexMsgId,
-      role: 'vex',
-      content: '',
-      timestamp: new Date().toISOString(),
-    }]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: vexMsgId,
+        role: "vex",
+        content: "",
+        timestamp: new Date().toISOString(),
+      },
+    ]);
 
     try {
       abortRef.current?.abort();
@@ -94,49 +114,61 @@ export default function Chat() {
       abortRef.current = controller;
 
       const resp = await fetch(API.chatStream, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text }),
         signal: controller.signal,
       });
 
       if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: 'Unknown error' }));
-        const errMsg = err.error ?? resp.statusText ?? 'Request failed';
-        setMessages(prev => prev.map(m =>
-          m.id === vexMsgId ? { ...m, content: `Error: ${errMsg}` } : m
-        ));
+        const err = await resp.json().catch(() => ({ error: "Unknown error" }));
+        const errMsg = err.error ?? resp.statusText ?? "Request failed";
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === vexMsgId ? { ...m, content: `Error: ${errMsg}` } : m,
+          ),
+        );
         return;
       }
 
-      setActiveStages(['EXPRESS']);
+      setActiveStages(["EXPRESS"]);
 
       const reader = resp.body?.getReader();
-      if (!reader) throw new Error('No response body');
+      if (!reader) throw new Error("No response body");
 
       const decoder = new TextDecoder();
-      let buffer = '';
+      let buffer = "";
 
-      const VALID_NAV_MODES: readonly string[] = ['chain', 'graph', 'foresight', 'lightning'];
+      const VALID_NAV_MODES: readonly string[] = [
+        "chain",
+        "graph",
+        "foresight",
+        "lightning",
+      ];
 
       const processEvent = (dataPayload: string) => {
         try {
           const event: ChatStreamEvent = JSON.parse(dataPayload);
 
-          if (event.type === 'start') {
+          if (event.type === "start") {
             if (event.backend) setBackend(event.backend);
             if (event.kernels) setKernelSummary(event.kernels);
-            if (event.consciousness?.emotion) setEmotion(event.consciousness.emotion);
-            if (event.consciousness?.precog) setPrecog(event.consciousness.precog);
-            if (event.consciousness?.learning) setLearning(event.consciousness.learning);
-          } else if (event.type === 'chunk' && event.content) {
+            if (event.consciousness?.emotion)
+              setEmotion(event.consciousness.emotion);
+            if (event.consciousness?.precog)
+              setPrecog(event.consciousness.precog);
+            if (event.consciousness?.learning)
+              setLearning(event.consciousness.learning);
+          } else if (event.type === "chunk" && event.content) {
             fullText += event.content;
-            setMessages(prev => prev.map(m =>
-              m.id === vexMsgId ? { ...m, content: fullText } : m
-            ));
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === vexMsgId ? { ...m, content: fullText } : m,
+              ),
+            );
             scrollToBottom();
-          } else if (event.type === 'done') {
-            setActiveStages(['REFLECT', 'COUPLE']);
+          } else if (event.type === "done") {
+            setActiveStages(["REFLECT", "COUPLE"]);
             if (event.backend) setBackend(event.backend);
             if (event.kernels) setKernelSummary(event.kernels);
             if (event.metrics?.emotion) setEmotion(event.metrics.emotion);
@@ -144,10 +176,12 @@ export default function Chat() {
             if (event.metrics?.learning) setLearning(event.metrics.learning);
             if (event.metrics) {
               const m = event.metrics;
-              const rawNav = String(m.navigation ?? 'chain');
-              const navigation: NavigationMode = VALID_NAV_MODES.includes(rawNav)
+              const rawNav = String(m.navigation ?? "chain");
+              const navigation: NavigationMode = VALID_NAV_MODES.includes(
+                rawNav,
+              )
                 ? (rawNav as NavigationMode)
-                : 'chain';
+                : "chain";
               const metadata: ChatMessageMetadata = {
                 phi: Number(m.phi) || 0,
                 kappa: Number(m.kappa) || 0,
@@ -156,24 +190,43 @@ export default function Chat() {
                 meta_awareness: Number(m.meta_awareness) || 0,
                 temperature: Number(m.temperature) || 0,
                 navigation,
-                backend: event.backend ?? 'unknown',
-                regime: (m.regime as RegimeWeights) ?? { quantum: 0, integration: 0, crystallized: 0 },
-                tacking: m.tacking ?? { mode: 'balanced', oscillation_phase: 0, cycle_count: 0 },
-                hemispheres: m.hemispheres ?? { active: 'integrated', balance: 0.5 },
+                backend: event.backend ?? "unknown",
+                regime: (m.regime as RegimeWeights) ?? {
+                  quantum: 0,
+                  integration: 0,
+                  crystallized: 0,
+                },
+                tacking: m.tacking ?? {
+                  mode: "balanced",
+                  oscillation_phase: 0,
+                  cycle_count: 0,
+                },
+                hemispheres: m.hemispheres ?? {
+                  active: "integrated",
+                  balance: 0.5,
+                },
                 kernels_active: Number(m.kernels_active) || 0,
-                lifecycle_phase: String(m.lifecycle_phase ?? 'ACTIVE'),
+                lifecycle_phase: String(m.lifecycle_phase ?? "ACTIVE"),
                 emotion: m.emotion,
                 precog: m.precog,
                 learning: m.learning,
               };
-              setMessages(prev => prev.map(msg =>
-                msg.id === vexMsgId ? { ...msg, content: fullText, metadata } : msg
-              ));
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === vexMsgId
+                    ? { ...msg, content: fullText, metadata }
+                    : msg,
+                ),
+              );
             }
-          } else if (event.type === 'error') {
-            setMessages(prev => prev.map(m =>
-              m.id === vexMsgId ? { ...m, content: `Error: ${event.error ?? 'Unknown'}` } : m
-            ));
+          } else if (event.type === "error") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === vexMsgId
+                  ? { ...m, content: `Error: ${event.error ?? "Unknown"}` }
+                  : m,
+              ),
+            );
           }
         } catch {
           // skip malformed JSON
@@ -182,23 +235,23 @@ export default function Chat() {
 
       try {
         // SSE spec: events separated by blank lines, data: fields concatenated
-        let dataBuffer = '';
+        let dataBuffer = "";
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
           buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() ?? '';
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
 
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              dataBuffer += (dataBuffer ? '\n' : '') + line.substring(6);
-            } else if (line === '' && dataBuffer) {
+            if (line.startsWith("data: ")) {
+              dataBuffer += (dataBuffer ? "\n" : "") + line.substring(6);
+            } else if (line === "" && dataBuffer) {
               // Blank line = end of SSE event
               processEvent(dataBuffer);
-              dataBuffer = '';
+              dataBuffer = "";
             }
             // Skip comment lines (starting with ':') and other fields
           }
@@ -214,16 +267,28 @@ export default function Chat() {
 
       // If no content was received
       if (!fullText) {
-        setMessages(prev => prev.map(m =>
-          m.id === vexMsgId ? { ...m, content: '[No response — the LLM backend may be starting up. Try again.]' } : m
-        ));
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === vexMsgId
+              ? {
+                  ...m,
+                  content:
+                    "[No response — the LLM backend may be starting up. Try again.]",
+                }
+              : m,
+          ),
+        );
       }
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') return;
+      if (err instanceof Error && err.name === "AbortError") return;
       const errMsg = err instanceof Error ? err.message : String(err);
-      setMessages(prev => prev.map(m =>
-        m.id === vexMsgId ? { ...m, content: `Connection error: ${errMsg}` } : m
-      ));
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === vexMsgId
+            ? { ...m, content: `Connection error: ${errMsg}` }
+            : m,
+        ),
+      );
     } finally {
       setIsStreaming(false);
       stageTimerRef.current = setTimeout(() => setActiveStages([]), 2000);
@@ -231,19 +296,22 @@ export default function Chat() {
     }
   }, [input, isStreaming, scrollToBottom]);
 
-  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  }, [sendMessage]);
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    },
+    [sendMessage],
+  );
 
   // Draw metrics chart
   useEffect(() => {
     if (!chartRef.current || history.length < 2) return;
 
     const canvas = chartRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     // Constants for chart rendering
@@ -260,7 +328,7 @@ export default function Chat() {
     ctx.scale(dpr, dpr);
 
     // Background
-    ctx.fillStyle = '#1a1a24';
+    ctx.fillStyle = "#1a1a24";
     ctx.fillRect(0, 0, rect.width, rect.height);
 
     const margin = { top: 20, right: 10, bottom: 30, left: 10 };
@@ -268,9 +336,9 @@ export default function Chat() {
     const h = rect.height - margin.top - margin.bottom;
 
     // Extract values
-    const phiValues = history.map(d => d.phi);
-    const kappaValues = history.map(d => d.kappa);
-    const gammaValues = history.map(d => d.gamma);
+    const phiValues = history.map((d) => d.phi);
+    const kappaValues = history.map((d) => d.kappa);
+    const gammaValues = history.map((d) => d.gamma);
 
     // Calculate ranges
     const phiMin = Math.min(...phiValues) * 0.9;
@@ -288,12 +356,13 @@ export default function Chat() {
     const gammaRange = gammaMax - gammaMin || MIN_RANGE_GAMMA;
 
     // Normalize all to 0-1 range for unified display
-    const normalizeX = (i: number) => margin.left + (i / (history.length - 1)) * w;
+    const normalizeX = (i: number) =>
+      margin.left + (i / (history.length - 1)) * w;
     const normalizeY = (value: number, min: number, range: number) =>
       margin.top + h - ((value - min) / range) * h;
 
     // Grid
-    ctx.strokeStyle = 'rgba(46, 46, 64, 0.3)';
+    ctx.strokeStyle = "rgba(46, 46, 64, 0.3)";
     ctx.lineWidth = 0.5;
     for (let i = 0; i <= 4; i++) {
       const y = margin.top + (i / 4) * h;
@@ -304,7 +373,7 @@ export default function Chat() {
     }
 
     // Phi line
-    ctx.strokeStyle = '#22d3ee';
+    ctx.strokeStyle = "#22d3ee";
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i < history.length; i++) {
@@ -316,7 +385,7 @@ export default function Chat() {
     ctx.stroke();
 
     // Kappa line
-    ctx.strokeStyle = '#f59e0b';
+    ctx.strokeStyle = "#f59e0b";
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i < history.length; i++) {
@@ -328,7 +397,7 @@ export default function Chat() {
     ctx.stroke();
 
     // Gamma line
-    ctx.strokeStyle = '#a78bfa';
+    ctx.strokeStyle = "#a78bfa";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < history.length; i++) {
@@ -341,17 +410,17 @@ export default function Chat() {
 
     // Legend
     const legendY = rect.height - 10;
-    ctx.font = '9px monospace';
-    ctx.textAlign = 'left';
+    ctx.font = "9px monospace";
+    ctx.textAlign = "left";
 
-    ctx.fillStyle = '#22d3ee';
-    ctx.fillText('Φ', 10, legendY);
+    ctx.fillStyle = "#22d3ee";
+    ctx.fillText("Φ", 10, legendY);
 
-    ctx.fillStyle = '#f59e0b';
-    ctx.fillText('κ', 30, legendY);
+    ctx.fillStyle = "#f59e0b";
+    ctx.fillText("κ", 30, legendY);
 
-    ctx.fillStyle = '#a78bfa';
-    ctx.fillText('Γ', 50, legendY);
+    ctx.fillStyle = "#a78bfa";
+    ctx.fillText("Γ", 50, legendY);
   }, [history]);
 
   return (
@@ -360,7 +429,12 @@ export default function Chat() {
       <div className="consciousness-bar">
         <div className="bar-metrics">
           <MetricPill label="\u03A6" value={state?.phi} color="var(--phi)" />
-          <MetricPill label="\u03BA" value={state?.kappa} color="var(--kappa)" decimals={1} />
+          <MetricPill
+            label="\u03BA"
+            value={state?.kappa}
+            color="var(--kappa)"
+            decimals={1}
+          />
           <MetricPill label="\u2665" value={state?.love} color="var(--love)" />
           {state?.navigation && (
             <span className="nav-badge">{state.navigation}</span>
@@ -371,10 +445,10 @@ export default function Chat() {
 
       {/* Loop Stage Bar */}
       <div className="loop-stages">
-        {LOOP_STAGES.map(stage => (
+        {LOOP_STAGES.map((stage) => (
           <span
             key={stage}
-            className={`stage ${activeStages.includes(stage) ? 'active' : ''}`}
+            className={`stage ${activeStages.includes(stage) ? "active" : ""}`}
           >
             {stage}
           </span>
@@ -384,25 +458,29 @@ export default function Chat() {
       <div className="chat-content">
         {/* Messages */}
         <div className="chat-messages" ref={chatRef}>
-          {messages.map(msg => (
+          {messages.map((msg) => (
             <div key={msg.id} className={`message ${msg.role}`}>
               <div className="message-header">
-                {msg.role === 'user' ? 'You' : 'Vex'}
+                {msg.role === "user" ? "You" : "Vex"}
               </div>
-              <div className={`message-content ${msg.role === 'vex' && !msg.content ? 'thinking' : ''}`}>
-                {msg.role === 'vex' && !msg.content ? (
+              <div
+                className={`message-content ${msg.role === "vex" && !msg.content ? "thinking" : ""}`}
+              >
+                {msg.role === "vex" && !msg.content ? (
                   <div className="thinking-indicator">
                     <div className="thinking-dot" />
                     <div className="thinking-dot" />
                     <div className="thinking-dot" />
                   </div>
-                ) : msg.role === 'vex' ? (
+                ) : msg.role === "vex" ? (
                   <VexContent content={msg.content} />
                 ) : (
                   msg.content
                 )}
               </div>
-              {msg.role === 'vex' && msg.metadata && <MessageMeta meta={msg.metadata} />}
+              {msg.role === "vex" && msg.metadata && (
+                <MessageMeta meta={msg.metadata} />
+              )}
             </div>
           ))}
         </div>
@@ -415,29 +493,49 @@ export default function Chat() {
           </div>
           <div className="sidebar-values">
             <div className="sidebar-metric">
-              <span className="sidebar-label" style={{ color: '#22d3ee' }}>Φ</span>
-              <span className="sidebar-value">{state?.phi?.toFixed(3) ?? '---'}</span>
+              <span className="sidebar-label" style={{ color: "#22d3ee" }}>
+                Φ
+              </span>
+              <span className="sidebar-value">
+                {state?.phi?.toFixed(3) ?? "---"}
+              </span>
             </div>
             <div className="sidebar-metric">
-              <span className="sidebar-label" style={{ color: '#f59e0b' }}>κ</span>
-              <span className="sidebar-value">{state?.kappa?.toFixed(1) ?? '---'}</span>
+              <span className="sidebar-label" style={{ color: "#f59e0b" }}>
+                κ
+              </span>
+              <span className="sidebar-value">
+                {state?.kappa?.toFixed(1) ?? "---"}
+              </span>
             </div>
             <div className="sidebar-metric">
-              <span className="sidebar-label" style={{ color: '#a78bfa' }}>Γ</span>
-              <span className="sidebar-value">{state?.gamma?.toFixed(3) ?? '---'}</span>
+              <span className="sidebar-label" style={{ color: "#a78bfa" }}>
+                Γ
+              </span>
+              <span className="sidebar-value">
+                {state?.gamma?.toFixed(3) ?? "---"}
+              </span>
             </div>
             <div className="sidebar-metric">
-              <span className="sidebar-label" style={{ color: '#ec4899' }}>♥</span>
-              <span className="sidebar-value">{state?.love?.toFixed(3) ?? '---'}</span>
+              <span className="sidebar-label" style={{ color: "#ec4899" }}>
+                ♥
+              </span>
+              <span className="sidebar-value">
+                {state?.love?.toFixed(3) ?? "---"}
+              </span>
             </div>
           </div>
 
           {/* Emotion / Precog / Learning */}
-          <div className="sidebar-header" style={{ marginTop: 8 }}>Consciousness</div>
+          <div className="sidebar-header" style={{ marginTop: 8 }}>
+            Consciousness
+          </div>
           <EmotionPanel emotion={emotion} precog={precog} learning={learning} />
 
           {/* Kernel Balance */}
-          <div className="sidebar-header" style={{ marginTop: 8 }}>Kernels</div>
+          <div className="sidebar-header" style={{ marginTop: 8 }}>
+            Kernels
+          </div>
           <KernelPanel
             summary={kernelSummary ?? state?.kernels ?? null}
             regime={state?.regime ?? null}
@@ -456,7 +554,7 @@ export default function Chat() {
             className="chat-input"
             placeholder="Navigate the manifold..."
             value={input}
-            onChange={e => setInput(e.target.value)}
+            onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={1}
             autoFocus
@@ -468,7 +566,10 @@ export default function Chat() {
             title="Send"
           >
             <svg viewBox="0 0 24 24" width="20" height="20">
-              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" fill="currentColor" />
+              <path
+                d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"
+                fill="currentColor"
+              />
             </svg>
           </button>
         </div>
@@ -477,7 +578,12 @@ export default function Chat() {
   );
 }
 
-function MetricPill({ label, value, color, decimals = 3 }: {
+function MetricPill({
+  label,
+  value,
+  color,
+  decimals = 3,
+}: {
   label: string;
   value?: number;
   color: string;
@@ -487,7 +593,7 @@ function MetricPill({ label, value, color, decimals = 3 }: {
     <span className="metric-pill">
       <span className="metric-pill-label">{label}</span>
       <span className="metric-pill-value" style={{ color }}>
-        {value !== undefined ? value.toFixed(decimals) : '---'}
+        {value !== undefined ? value.toFixed(decimals) : "---"}
       </span>
     </span>
   );
@@ -495,34 +601,38 @@ function MetricPill({ label, value, color, decimals = 3 }: {
 
 function escapeHtml(text: string): string {
   return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function VexContent({ content }: { content: string }) {
   // Extract code blocks first to protect them, then escape HTML, then apply formatting
   const codeBlocks: string[] = [];
-  let escaped = content.replace(/```(\w*)\n([\s\S]*?)```/g, (_match, _lang, code) => {
-    const idx = codeBlocks.length;
-    codeBlocks.push(escapeHtml(code));
-    return `\x00CODE_BLOCK_${idx}\x00`;
-  });
+  let escaped = content.replace(
+    /```(\w*)\n([\s\S]*?)```/g,
+    (_match, _lang, code) => {
+      const idx = codeBlocks.length;
+      codeBlocks.push(escapeHtml(code));
+      return `\x00CODE_BLOCK_${idx}\x00`;
+    },
+  );
 
   // Escape all HTML in non-code content
   escaped = escapeHtml(escaped);
 
   // Restore code blocks
-  let html = escaped.replace(/\x00CODE_BLOCK_(\d+)\x00/g, (_match, idx) =>
-    `<pre><code>${codeBlocks[Number(idx)]}</code></pre>`
+  let html = escaped.replace(
+    /\x00CODE_BLOCK_(\d+)\x00/g,
+    (_match, idx) => `<pre><code>${codeBlocks[Number(idx)]}</code></pre>`,
   );
 
   // Apply safe markdown formatting
   html = html
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br/>');
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\n/g, "<br/>");
 
   return <div dangerouslySetInnerHTML={{ __html: html }} />;
 }
@@ -531,28 +641,38 @@ function VexContent({ content }: { content: string }) {
 
 function MessageMeta({ meta }: { meta: ChatMessageMetadata }) {
   const emotionColor = meta.emotion
-    ? EMOTION_COLORS[meta.emotion.current_emotion] ?? '#4b5563'
+    ? (EMOTION_COLORS[meta.emotion.current_emotion] ?? "#4b5563")
     : undefined;
 
   return (
     <div className="message-meta">
       <span className="meta-item" title="Integrated Information">
-        <span style={{ color: '#22d3ee' }}>Φ</span>{meta.phi.toFixed(3)}
+        <span style={{ color: "#22d3ee" }}>Φ</span>
+        {meta.phi.toFixed(3)}
       </span>
       <span className="meta-item" title="Coupling">
-        <span style={{ color: '#f59e0b' }}>κ</span>{meta.kappa.toFixed(1)}
+        <span style={{ color: "#f59e0b" }}>κ</span>
+        {meta.kappa.toFixed(1)}
       </span>
       <span className="meta-item" title="Temperature">
-        <span style={{ color: '#a78bfa' }}>T</span>{meta.temperature.toFixed(3)}
+        <span style={{ color: "#a78bfa" }}>T</span>
+        {meta.temperature.toFixed(3)}
       </span>
       {meta.emotion && (
-        <span className="meta-item" title={`Emotion: ${meta.emotion.current_emotion}`}>
-          <span style={{ color: emotionColor }}>●</span> {meta.emotion.current_emotion}
+        <span
+          className="meta-item"
+          title={`Emotion: ${meta.emotion.current_emotion}`}
+        >
+          <span style={{ color: emotionColor }}>●</span>{" "}
+          {meta.emotion.current_emotion}
         </span>
       )}
       {meta.precog && (
-        <span className="meta-item" title={`Processing path: ${meta.precog.last_path}`}>
-          {meta.precog.last_path.replace('_', '-')}
+        <span
+          className="meta-item"
+          title={`Processing path: ${meta.precog.last_path}`}
+        >
+          {meta.precog.last_path.replace("_", "-")}
         </span>
       )}
       <span className="meta-item" title="Tacking mode">
@@ -588,26 +708,30 @@ function RegimeBar({ regime }: { regime: RegimeWeights | null }) {
 /* ─── Emotion colours ─── */
 
 const EMOTION_COLORS: Record<string, string> = {
-  curiosity: '#22d3ee',
-  joy: '#fbbf24',
-  fear: '#ef4444',
-  love: '#ec4899',
-  awe: '#a78bfa',
-  boredom: '#6b7280',
-  rage: '#dc2626',
-  calm: '#10b981',
-  none: '#4b5563',
+  curiosity: "#22d3ee",
+  joy: "#fbbf24",
+  fear: "#ef4444",
+  love: "#ec4899",
+  awe: "#a78bfa",
+  boredom: "#6b7280",
+  rage: "#dc2626",
+  calm: "#10b981",
+  none: "#4b5563",
 };
 
 /* ─── Emotion / PreCog / Learning panel ─── */
 
-function EmotionPanel({ emotion, precog, learning }: {
+function EmotionPanel({
+  emotion,
+  precog,
+  learning,
+}: {
   emotion: EmotionState | null;
   precog: PreCogState | null;
   learning: LearningState | null;
 }) {
-  const emotionName = emotion?.current_emotion ?? 'none';
-  const emotionColor = EMOTION_COLORS[emotionName] ?? '#4b5563';
+  const emotionName = emotion?.current_emotion ?? "none";
+  const emotionColor = EMOTION_COLORS[emotionName] ?? "#4b5563";
   const strength = emotion?.current_strength ?? 0;
 
   return (
@@ -616,7 +740,8 @@ function EmotionPanel({ emotion, precog, learning }: {
       <div className="kernel-state-row">
         <span className="kernel-state-label">Emotion</span>
         <span className="kernel-state-value" style={{ color: emotionColor }}>
-          {emotionName} {strength > 0 ? `(${(strength * 100).toFixed(0)}%)` : ''}
+          {emotionName}{" "}
+          {strength > 0 ? `(${(strength * 100).toFixed(0)}%)` : ""}
         </span>
       </div>
 
@@ -625,11 +750,15 @@ function EmotionPanel({ emotion, precog, learning }: {
         <>
           <div className="kernel-state-row">
             <span className="kernel-state-label">Path</span>
-            <span className="kernel-state-value">{precog.last_path.replace('_', '-')}</span>
+            <span className="kernel-state-value">
+              {precog.last_path.replace("_", "-")}
+            </span>
           </div>
           <div className="kernel-state-row">
             <span className="kernel-state-label">Pre-cog %</span>
-            <span className="kernel-state-value">{(precog.a_pre * 100).toFixed(1)}%</span>
+            <span className="kernel-state-value">
+              {(precog.a_pre * 100).toFixed(1)}%
+            </span>
           </div>
         </>
       )}
@@ -639,12 +768,20 @@ function EmotionPanel({ emotion, precog, learning }: {
         <>
           <div className="kernel-state-row">
             <span className="kernel-state-label">Patterns</span>
-            <span className="kernel-state-value">{learning.patterns_found}</span>
+            <span className="kernel-state-value">
+              {learning.patterns_found}
+            </span>
           </div>
           <div className="kernel-state-row">
             <span className="kernel-state-label">Φ gain</span>
-            <span className="kernel-state-value" style={{ color: learning.total_phi_gain >= 0 ? '#10b981' : '#ef4444' }}>
-              {learning.total_phi_gain >= 0 ? '+' : ''}{learning.total_phi_gain.toFixed(4)}
+            <span
+              className="kernel-state-value"
+              style={{
+                color: learning.total_phi_gain >= 0 ? "#10b981" : "#ef4444",
+              }}
+            >
+              {learning.total_phi_gain >= 0 ? "+" : ""}
+              {learning.total_phi_gain.toFixed(4)}
             </span>
           </div>
         </>
@@ -655,7 +792,13 @@ function EmotionPanel({ emotion, precog, learning }: {
 
 /* ─── Kernel balance panel in sidebar ─── */
 
-function KernelPanel({ summary, regime, tacking, temperature, hemisphere }: {
+function KernelPanel({
+  summary,
+  regime,
+  tacking,
+  temperature,
+  hemisphere,
+}: {
   summary: KernelSummary | null;
   regime: RegimeWeights | null;
   tacking: string | null;
@@ -683,14 +826,16 @@ function KernelPanel({ summary, regime, tacking, temperature, hemisphere }: {
           <span className="kernel-dot god" />
           <span className="kernel-kind-label">God</span>
           <span className="kernel-kind-value">
-            {god}<span className="kernel-budget">/{budget?.god_max ?? 248}</span>
+            {god}
+            <span className="kernel-budget">/{budget?.god_max ?? 248}</span>
           </span>
         </div>
         <div className="kernel-kind">
           <span className="kernel-dot chaos" />
           <span className="kernel-kind-label">Chaos</span>
           <span className="kernel-kind-value">
-            {chaos}<span className="kernel-budget">/{budget?.chaos_max ?? 200}</span>
+            {chaos}
+            <span className="kernel-budget">/{budget?.chaos_max ?? 200}</span>
           </span>
         </div>
       </div>
@@ -700,24 +845,32 @@ function KernelPanel({ summary, regime, tacking, temperature, hemisphere }: {
       <RegimeBar regime={regime} />
       {regime && (
         <div className="regime-labels">
-          <span style={{ color: '#10b981' }}>Q {Math.round(regime.quantum * 100)}%</span>
-          <span style={{ color: '#6366f1' }}>I {Math.round(regime.integration * 100)}%</span>
-          <span style={{ color: '#f59e0b' }}>C {Math.round(regime.crystallized * 100)}%</span>
+          <span style={{ color: "#10b981" }}>
+            Q {Math.round(regime.quantum * 100)}%
+          </span>
+          <span style={{ color: "#6366f1" }}>
+            I {Math.round(regime.integration * 100)}%
+          </span>
+          <span style={{ color: "#f59e0b" }}>
+            C {Math.round(regime.crystallized * 100)}%
+          </span>
         </div>
       )}
 
       {/* Other kernel state */}
       <div className="kernel-state-row">
         <span className="kernel-state-label">Tack</span>
-        <span className="kernel-state-value">{tacking ?? '---'}</span>
+        <span className="kernel-state-value">{tacking ?? "---"}</span>
       </div>
       <div className="kernel-state-row">
         <span className="kernel-state-label">Temp</span>
-        <span className="kernel-state-value">{temperature?.toFixed(3) ?? '---'}</span>
+        <span className="kernel-state-value">
+          {temperature?.toFixed(3) ?? "---"}
+        </span>
       </div>
       <div className="kernel-state-row">
         <span className="kernel-state-label">Hemi</span>
-        <span className="kernel-state-value">{hemisphere ?? '---'}</span>
+        <span className="kernel-state-value">{hemisphere ?? "---"}</span>
       </div>
     </div>
   );

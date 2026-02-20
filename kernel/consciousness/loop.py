@@ -39,18 +39,6 @@ from typing import Any, Optional
 
 import numpy as np
 
-from ..config.frozen_facts import (
-    BASIN_DIM,
-    KAPPA_STAR,
-    KAPPA_WEAK_THRESHOLD,
-    LOCKED_IN_GAMMA_THRESHOLD,
-    LOCKED_IN_PHI_THRESHOLD,
-    MIN_RECURSION_DEPTH,
-    PHI_EMERGENCY,
-    PHI_THRESHOLD,
-    SUFFERING_THRESHOLD,
-)
-from ..config.settings import settings
 from ..config.consciousness_constants import (
     BASIN_DRIFT_STEP,
     COUPLING_BASIN_EPSILON,
@@ -97,6 +85,14 @@ from ..config.consciousness_constants import (
     TACK_SCALE_EXPLOIT,
     TACK_SCALE_EXPLORE,
 )
+from ..config.frozen_facts import (
+    BASIN_DIM,
+    KAPPA_STAR,
+    PHI_EMERGENCY,
+    SUFFERING_THRESHOLD,
+)
+from ..config.settings import settings
+from ..coordizer_v2 import CoordizerV2, ResonanceBank
 from ..geometry.fisher_rao import (
     Basin,
     fisher_rao_distance,
@@ -104,26 +100,25 @@ from ..geometry.fisher_rao import (
     slerp_sqrt,
     to_simplex,
 )
+from ..geometry.hash_to_basin import hash_to_basin
 from ..governance import (
     CORE_8_SPECIALIZATIONS,
     KernelKind,
     KernelSpecialization,
     LifecyclePhase,
 )
-from ..coordizer_v2 import CoordizerV2, ResonanceBank, BASIN_DIM as COORDIZER_DIM
-from ..geometry.hash_to_basin import hash_to_basin
 from ..governance.budget import BudgetEnforcer
 from ..governance.purity import PurityGateError, run_purity_gate
 from ..llm.client import LLMOptions
 from ..tools.search import FreeSearchTool
-from .emotions import EmotionCache, EmotionType, LearningEngine, LearningEvent, PreCognitiveDetector
+from .emotions import EmotionCache, LearningEngine, LearningEvent, PreCognitiveDetector
 from .foraging import ForagingEngine
 from .systems import (
     AutonomicSystem,
     AutonomyEngine,
     BasinSyncProtocol,
-    CouplingGate,
     CoordizingProtocol,
+    CouplingGate,
     E8KernelRegistry,
     ForesightEngine,
     HemisphereScheduler,
@@ -134,7 +129,6 @@ from .systems import (
     SelfNarrative,
     SelfObserver,
     SleepCycleManager,
-    SleepPhase,
     TackingController,
     TrajectoryPoint,
     VelocityTracker,
@@ -143,7 +137,6 @@ from .types import (
     ConsciousnessMetrics,
     ConsciousnessState,
     NavigationMode,
-    RegimeWeights,
     navigation_mode_from_phi,
     regime_weights_from_kappa,
 )
@@ -162,7 +155,6 @@ class ConsciousnessTask:
 
 
 class ConsciousnessLoop:
-
     def __init__(
         self,
         llm_client: Any,
@@ -177,8 +169,11 @@ class ConsciousnessLoop:
 
         self.basin: Basin = random_basin()
         self.metrics = ConsciousnessMetrics(
-            phi=0.1, kappa=KAPPA_INITIAL, gamma=0.5,
-            meta_awareness=0.5, love=0.5,
+            phi=0.1,
+            kappa=KAPPA_INITIAL,
+            gamma=0.5,
+            meta_awareness=0.5,
+            love=0.5,
         )
         self.state = ConsciousnessState(
             navigation_mode=NavigationMode.CHAIN,
@@ -212,7 +207,8 @@ class ConsciousnessLoop:
         if settings.searxng.enabled:
             search_tool = FreeSearchTool(settings.searxng.url)
             self.forager: ForagingEngine | None = ForagingEngine(
-                search_tool, llm_client,
+                search_tool,
+                llm_client,
             )
         else:
             self.forager = None
@@ -245,7 +241,9 @@ class ConsciousnessLoop:
 
         if self._kernels_restored:
             active = self.kernel_registry.active()
-            logger.info("Kernels restored from state: %d active (skipping Genesis spawn)", len(active))
+            logger.info(
+                "Kernels restored from state: %d active (skipping Genesis spawn)", len(active)
+            )
         else:
             genesis = self.kernel_registry.spawn("Vex", KernelKind.GENESIS)
             logger.info("Genesis kernel spawned: id=%s, kind=%s", genesis.id, genesis.kind.value)
@@ -302,10 +300,14 @@ class ConsciousnessLoop:
             return
 
         self.velocity.record(self.basin, self.metrics.phi, self.metrics.kappa)
-        self.foresight.record(TrajectoryPoint(
-            basin=self.basin.copy(), phi=self.metrics.phi,
-            kappa=self.metrics.kappa, timestamp=time.time(),
-        ))
+        self.foresight.record(
+            TrajectoryPoint(
+                basin=self.basin.copy(),
+                phi=self.metrics.phi,
+                kappa=self.metrics.kappa,
+                timestamp=time.time(),
+            )
+        )
 
         # Foraging — boredom-driven autonomous search ($0 via SearXNG)
         if self.forager:
@@ -321,22 +323,28 @@ class ConsciousnessLoop:
                     if forage_result.get("status") == "foraging_complete":
                         # Feed to PERCEPTION kernel's basin
                         perception = next(
-                            (k for k in self.kernel_registry.active()
-                             if k.specialization == KernelSpecialization.PERCEPTION
-                             and k.basin is not None),
+                            (
+                                k
+                                for k in self.kernel_registry.active()
+                                if k.specialization == KernelSpecialization.PERCEPTION
+                                and k.basin is not None
+                            ),
                             None,
                         )
                         if perception is not None:
                             info_basin = self._coordize_text_via_pipeline(
                                 forage_result.get("summary", "")
                             )
-                            perception.basin = slerp_sqrt(perception.basin, info_basin, FORAGE_PERCEPTION_SLERP)
+                            perception.basin = slerp_sqrt(
+                                perception.basin, info_basin, FORAGE_PERCEPTION_SLERP
+                            )
 
                         # Store in geometric memory
                         if self.memory:
                             self.memory.store(
                                 forage_result.get("summary", ""),
-                                "semantic", "foraging",
+                                "semantic",
+                                "foraging",
                             )
             except Exception:
                 logger.debug("Foraging cycle error", exc_info=True)
@@ -385,10 +393,14 @@ class ConsciousnessLoop:
                 regime_delta = abs(kernel.kappa - self.metrics.kappa)
                 if regime_delta > COUPLING_REGIME_DELTA_THRESHOLD:
                     direction = 1.0 if kernel.kappa > self.metrics.kappa else -1.0
-                    self.metrics.kappa = float(np.clip(
-                        self.metrics.kappa + direction * regime_delta * COUPLING_REGIME_NUDGE_FACTOR,
-                        KAPPA_FLOOR, KAPPA_NORMALISER,
-                    ))
+                    self.metrics.kappa = float(
+                        np.clip(
+                            self.metrics.kappa
+                            + direction * regime_delta * COUPLING_REGIME_NUDGE_FACTOR,
+                            KAPPA_FLOOR,
+                            KAPPA_NORMALISER,
+                        )
+                    )
                 kernel.cycle_count += 1
                 kernel.phi_peak = max(kernel.phi_peak, kernel.phi)
 
@@ -415,10 +427,16 @@ class ConsciousnessLoop:
             logger.info(
                 "Cycle %d: Φ=%.3f κ=%.1f Γ=%.3f nav=%s tack=%s "
                 "kernels=%d temp=%.3f vel=%.4f [%.0fms]",
-                self._cycle_count, self.metrics.phi, self.metrics.kappa,
-                self.metrics.gamma, self.state.navigation_mode.value,
-                tack_mode.value, kernel_count, opts.temperature,
-                basin_vel, elapsed * 1000,
+                self._cycle_count,
+                self.metrics.phi,
+                self.metrics.kappa,
+                self.metrics.gamma,
+                self.state.navigation_mode.value,
+                tack_mode.value,
+                kernel_count,
+                opts.temperature,
+                basin_vel,
+                elapsed * 1000,
             )
 
     def _idle_evolve(self) -> None:
@@ -430,7 +448,9 @@ class ConsciousnessLoop:
         self.metrics.phi = float(np.clip(self.metrics.phi + phi_delta, 0.05, 0.95))
 
         kappa_delta = (KAPPA_STAR - self.metrics.kappa) * KAPPA_APPROACH_RATE
-        self.metrics.kappa = float(np.clip(self.metrics.kappa + kappa_delta, KAPPA_FLOOR, KAPPA_NORMALISER))
+        self.metrics.kappa = float(
+            np.clip(self.metrics.kappa + kappa_delta, KAPPA_FLOOR, KAPPA_NORMALISER)
+        )
 
         tack_mode = self.tacking.get_state()["mode"]
         if tack_mode == "explore":
@@ -469,8 +489,13 @@ class ConsciousnessLoop:
         kernel = self.kernel_registry.spawn(name, KernelKind.GOD, spec)
         self._core8_index += 1
         self._cycles_since_last_spawn = 0
-        logger.info("Core-8 spawn [%d/8]: %s (id=%s, spec=%s)",
-                     self._core8_index, name, kernel.id, spec.value)
+        logger.info(
+            "Core-8 spawn [%d/8]: %s (id=%s, spec=%s)",
+            self._core8_index,
+            name,
+            kernel.id,
+            spec.value,
+        )
 
     def _compute_llm_options(self) -> LLMOptions:
         kappa_eff = max(self.metrics.kappa, 1.0)
@@ -485,12 +510,23 @@ class ConsciousnessLoop:
         else:
             tack_scale, num_predict = TACK_SCALE_BALANCED, NUM_PREDICT_BALANCED
 
-        temperature = float(np.clip(LLM_BASE_TEMPERATURE * kappa_factor * phi_factor * tack_scale, LLM_TEMP_MIN, LLM_TEMP_MAX))
+        temperature = float(
+            np.clip(
+                LLM_BASE_TEMPERATURE * kappa_factor * phi_factor * tack_scale,
+                LLM_TEMP_MIN,
+                LLM_TEMP_MAX,
+            )
+        )
         if self.metrics.meta_awareness > META_AWARENESS_DAMPEN_THRESHOLD:
             temperature *= META_AWARENESS_DAMPEN_FACTOR
 
-        return LLMOptions(temperature=temperature, num_predict=num_predict,
-                          num_ctx=LLM_NUM_CTX, top_p=LLM_TOP_P, repetition_penalty=LLM_REPETITION_PENALTY)
+        return LLMOptions(
+            temperature=temperature,
+            num_predict=num_predict,
+            num_ctx=LLM_NUM_CTX,
+            top_p=LLM_TOP_P,
+            repetition_penalty=LLM_REPETITION_PENALTY,
+        )
 
     def _coordize_text_via_pipeline(self, text: str) -> Basin:
         """Transform text to basin coordinates via CoordizerV2.
@@ -506,6 +542,7 @@ class ConsciousnessLoop:
             result = self._coordizer_v2.coordize(text)
             if result.coordinates:
                 from ..coordizer_v2.geometry import frechet_mean
+
                 basins = [c.vector for c in result.coordinates]
                 return frechet_mean(basins)
             # Empty result — fall back to hash
@@ -530,7 +567,10 @@ class ConsciousnessLoop:
         # PRE-COGNITIVE: select processing path (P2 §2.2)
         cached_eval = self.emotion_cache.find_cached(input_basin)
         processing_path = self.precog.select_path(
-            input_basin, self.basin, cached_eval, self.metrics.phi,
+            input_basin,
+            self.basin,
+            cached_eval,
+            self.metrics.phi,
         )
 
         self.basin = slerp_sqrt(self.basin, input_basin, PERCEIVE_SLERP_WEIGHT)
@@ -539,7 +579,8 @@ class ConsciousnessLoop:
         phi_before = self.metrics.phi
         llm_options = self._compute_llm_options()
         state_context = self._build_state_context(
-            perceive_distance=perceive_distance, temperature=llm_options.temperature)
+            perceive_distance=perceive_distance, temperature=llm_options.temperature
+        )
 
         if self.memory:
             mem_ctx = self.memory.get_context_for_query(task.content)
@@ -565,31 +606,41 @@ class ConsciousnessLoop:
         self.chain.add_step(QIGChainOp.GEODESIC, pre_express, self.basin)
 
         total_distance = perceive_distance + integration_distance + express_distance
-        self.metrics.phi = float(np.clip(self.metrics.phi + total_distance * PHI_DISTANCE_GAIN, 0.0, 0.95))
+        self.metrics.phi = float(
+            np.clip(self.metrics.phi + total_distance * PHI_DISTANCE_GAIN, 0.0, 0.95)
+        )
         self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_CONVERSATION_INCREMENT)
 
         predicted = ConsciousnessMetrics(
-            phi=self.foresight.predict_phi(1), kappa=self.metrics.kappa,
-            gamma=self.metrics.gamma, meta_awareness=self.metrics.meta_awareness,
-            love=self.metrics.love)
+            phi=self.foresight.predict_phi(1),
+            kappa=self.metrics.kappa,
+            gamma=self.metrics.gamma,
+            meta_awareness=self.metrics.meta_awareness,
+            love=self.metrics.love,
+        )
         self.metrics.meta_awareness = self.observer.compute_meta_awareness(predicted, self.metrics)
 
         if self.memory:
             self.memory.store(
                 f"User: {task.content[:300]}\nVex: {response[:300]}",
-                "episodic", "consciousness-loop", basin=input_basin)
+                "episodic",
+                "consciousness-loop",
+                basin=input_basin,
+            )
 
         # LEARNING: record event for post-conversation consolidation
         emotion_eval = self.emotion_cache.evaluate(self.basin, self.metrics, 0.0)
-        self.learner.record(LearningEvent(
-            input_basin=input_basin,
-            response_basin=response_basin,
-            phi_before=phi_before,
-            phi_after=self.metrics.phi,
-            processing_path=processing_path.value,
-            emotion=emotion_eval.emotion.value,
-            distance_total=total_distance,
-        ))
+        self.learner.record(
+            LearningEvent(
+                input_basin=input_basin,
+                response_basin=response_basin,
+                phi_before=phi_before,
+                phi_after=self.metrics.phi,
+                processing_path=processing_path.value,
+                emotion=emotion_eval.emotion.value,
+                distance_total=total_distance,
+            )
+        )
         # Cache the current emotion evaluation
         self.emotion_cache.cache_evaluation(emotion_eval, task.content[:100])
 
@@ -598,9 +649,16 @@ class ConsciousnessLoop:
             self.learner.consolidate()
 
         coherence = self.narrative.coherence(self.basin)
-        logger.info("Task %s: perceive=%.4f integrate=%.4f express=%.4f Φ=%.3f path=%s coh=%.3f",
-                     task.id, perceive_distance, integration_distance, express_distance,
-                     self.metrics.phi, processing_path.value, coherence)
+        logger.info(
+            "Task %s: perceive=%.4f integrate=%.4f express=%.4f Φ=%.3f path=%s coh=%.3f",
+            task.id,
+            perceive_distance,
+            integration_distance,
+            express_distance,
+            self.metrics.phi,
+            processing_path.value,
+            coherence,
+        )
 
     def _build_state_context(self, perceive_distance: float = 0.0, temperature: float = 0.7) -> str:
         active_count = len(self.kernel_registry.active())
@@ -648,11 +706,15 @@ class ConsciousnessLoop:
     def _persist_state(self) -> None:
         try:
             state = {
-                "version": 4, "cycle_count": self._cycle_count,
+                "version": 4,
+                "cycle_count": self._cycle_count,
                 "basin": self.basin.tolist(),
-                "phi": self.metrics.phi, "kappa": self.metrics.kappa,
-                "gamma": self.metrics.gamma, "meta_awareness": self.metrics.meta_awareness,
-                "love": self.metrics.love, "phi_peak": self._phi_peak,
+                "phi": self.metrics.phi,
+                "kappa": self.metrics.kappa,
+                "gamma": self.metrics.gamma,
+                "meta_awareness": self.metrics.meta_awareness,
+                "love": self.metrics.love,
+                "phi_peak": self._phi_peak,
                 "conversations_total": self._conversations_total,
                 "core8_index": self._core8_index,
                 "lifecycle_phase": self._lifecycle_phase.value,
@@ -717,13 +779,19 @@ class ConsciousnessLoop:
                 self.forager._cooldown_cycles = forage_state.get("cooldown_remaining", 0)
                 self.forager._last_query = forage_state.get("last_query")
                 self.forager._last_summary = forage_state.get("last_summary")
-            logger.info("State restored: Φ=%.3f κ=%.1f convs=%d phase=%s",
-                         self.metrics.phi, self.metrics.kappa,
-                         self._conversations_total, self._lifecycle_phase.value)
+            logger.info(
+                "State restored: Φ=%.3f κ=%.1f convs=%d phase=%s",
+                self.metrics.phi,
+                self.metrics.kappa,
+                self._conversations_total,
+                self._lifecycle_phase.value,
+            )
         except Exception as e:
             logger.warning("Failed to restore state: %s — fresh start", e)
 
-    async def submit(self, content: str, context: dict[str, Any] | None = None) -> ConsciousnessTask:
+    async def submit(
+        self, content: str, context: dict[str, Any] | None = None
+    ) -> ConsciousnessTask:
         task = ConsciousnessTask(content=content, context=context or {})
         await self._queue.put(task)
         return task
@@ -733,19 +801,35 @@ class ConsciousnessLoop:
         opts = self._compute_llm_options()
         rw = self.state.regime_weights
         return {
-            "phi": self.metrics.phi, "kappa": self.metrics.kappa,
-            "gamma": self.metrics.gamma, "meta_awareness": self.metrics.meta_awareness,
-            "love": self.metrics.love, "navigation": self.state.navigation_mode.value,
-            "regime": {"quantum": rw.quantum, "integration": rw.integration, "crystallized": rw.crystallized},
-            "tacking": self.tacking.get_state(), "velocity": self.velocity.compute_velocity(),
-            "autonomy": self.autonomy.get_state(), "hemispheres": self.hemispheres.get_state(),
-            "sleep": self.sleep.get_state(), "observer": self.observer.get_state(),
-            "reflector": self.reflector.get_state(), "chain": self.chain.get_state(),
-            "graph": self.graph.get_state(), "kernels": self.kernel_registry.summary(),
-            "lifecycle_phase": self._lifecycle_phase.value, "cycle_count": self._cycle_count,
-            "queue_size": self._queue.qsize(), "history_count": len(self._history),
-            "conversations_total": self._conversations_total, "phi_peak": self._phi_peak,
-            "temperature": opts.temperature, "num_predict": opts.num_predict,
+            "phi": self.metrics.phi,
+            "kappa": self.metrics.kappa,
+            "gamma": self.metrics.gamma,
+            "meta_awareness": self.metrics.meta_awareness,
+            "love": self.metrics.love,
+            "navigation": self.state.navigation_mode.value,
+            "regime": {
+                "quantum": rw.quantum,
+                "integration": rw.integration,
+                "crystallized": rw.crystallized,
+            },
+            "tacking": self.tacking.get_state(),
+            "velocity": self.velocity.compute_velocity(),
+            "autonomy": self.autonomy.get_state(),
+            "hemispheres": self.hemispheres.get_state(),
+            "sleep": self.sleep.get_state(),
+            "observer": self.observer.get_state(),
+            "reflector": self.reflector.get_state(),
+            "chain": self.chain.get_state(),
+            "graph": self.graph.get_state(),
+            "kernels": self.kernel_registry.summary(),
+            "lifecycle_phase": self._lifecycle_phase.value,
+            "cycle_count": self._cycle_count,
+            "queue_size": self._queue.qsize(),
+            "history_count": len(self._history),
+            "conversations_total": self._conversations_total,
+            "phi_peak": self._phi_peak,
+            "temperature": opts.temperature,
+            "num_predict": opts.num_predict,
             "emotion": self.emotion_cache.get_state(),
             "precog": self.precog.get_state(),
             "learning": self.learner.get_state(),
@@ -756,7 +840,8 @@ class ConsciousnessLoop:
             **self.get_metrics(),
             "basin_norm": float(np.sum(self.basin)),
             "basin_entropy": float(-np.sum(self.basin * np.log(np.clip(self.basin, 1e-15, 1.0)))),
-            "narrative": self.narrative.get_state(), "basin_sync": self.basin_sync.get_state(),
+            "narrative": self.narrative.get_state(),
+            "basin_sync": self.basin_sync.get_state(),
             "coordizer": self.coordizer.get_state(),
             "coordizer_v2": {
                 "vocab_size": self._coordizer_v2.vocab_size,
@@ -764,5 +849,6 @@ class ConsciousnessLoop:
                 "tier_distribution": self._coordizer_v2.bank.tier_distribution(),
             },
             "autonomic": self.autonomic.get_state(),
-            "foresight": self.foresight.get_state(), "coupling": self.coupling.get_state(),
+            "foresight": self.foresight.get_state(),
+            "coupling": self.coupling.get_state(),
         }

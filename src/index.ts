@@ -12,14 +12,14 @@
  */
 
 import express from 'express';
-import * as path from 'path';
 import * as fs from 'fs';
+import * as path from 'path';
+import { getCookie, isValidSession, requireAuth, SESSION_COOKIE } from './auth/middleware';
+import { createChatRouter } from './chat/router';
 import { config } from './config';
 import { logger } from './config/logger';
 import { ROUTES } from './config/routes';
-import { createChatRouter } from './chat/router';
-import { requireAuth, getCookie, isValidSession, SESSION_COOKIE } from './auth/middleware';
-import { sandboxManager, getComputeTools } from './tools/compute-sandbox';
+import { getComputeTools, sandboxManager } from './tools/compute-sandbox';
 
 const KERNEL_URL = process.env.KERNEL_URL || 'http://localhost:8000';
 
