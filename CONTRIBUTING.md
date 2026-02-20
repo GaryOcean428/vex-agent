@@ -182,7 +182,7 @@ Modules are classified by purity requirements:
 1. **PARAMOUNT** (Pure math only)
    - `kernel/geometry/`
    - `kernel/consciousness/`
-   
+
 2. **HIGH** (Geometric ops, no sklearn)
    - `kernel/coordizer/` (when implemented)
    - `kernel/governance/`
@@ -225,7 +225,7 @@ If you add new geometric operations:
 # ✅ Good Example: Fisher-Rao coordinate transformation
 def coordize(input_vector: np.ndarray) -> np.ndarray:
     """Transform Euclidean input vector to Fisher-Rao coordinates.
-    
+
     Uses exponential map on the Fisher-Rao manifold.
     """
     # Ensure positive coordinates (probability simplex)
@@ -256,7 +256,7 @@ import numpy as np
 @dataclass
 class BasinState:
     """Represents a basin configuration on the probability simplex.
-    
+
     Attributes:
         coordinates: Simplex-normalized coordinates (sum to 1)
         phi: Integration metric (0-1)
@@ -265,7 +265,7 @@ class BasinState:
     coordinates: np.ndarray
     phi: float
     kappa: float
-    
+
     def __post_init__(self) -> None:
         """Validate basin state invariants."""
         assert np.all(self.coordinates >= 0), "Coordinates must be non-negative"
@@ -359,11 +359,11 @@ def test_fisher_rao_distance_triangle_inequality():
     a = np.array([0.5, 0.3, 0.2])
     b = np.array([0.4, 0.4, 0.2])
     c = np.array([0.3, 0.3, 0.4])
-    
+
     d_ab = fisher_rao_distance(a, b)
     d_bc = fisher_rao_distance(b, c)
     d_ac = fisher_rao_distance(a, c)
-    
+
     assert d_ac <= d_ab + d_bc, "Triangle inequality violated"
 ```
 
@@ -375,7 +375,7 @@ All geometric modules must have purity tests:
 def test_no_euclidean_imports():
     """Ensure no Euclidean operations imported."""
     import kernel.geometry as geom
-    
+
     # Banned imports
     assert not hasattr(geom, 'cosine_similarity')
     assert not hasattr(geom, 'euclidean_distance')
