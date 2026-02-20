@@ -34,6 +34,13 @@ from pydantic import BaseModel
 
 from .auth import KernelAuthMiddleware
 from .config.frozen_facts import KAPPA_STAR
+from .config.consciousness_constants import (
+    COORDIZER_BETA_THRESHOLD,
+    COORDIZER_HARMONIC_THRESHOLD,
+    COORDIZER_KAPPA_STD_FLOOR,
+    COORDIZER_KAPPA_TOLERANCE_FACTOR,
+    COORDIZER_SEMANTIC_THRESHOLD,
+)
 from .config.settings import settings
 from .config.version import VERSION
 from .coordizer_v2 import CoordizerV2, ResonanceBank
@@ -568,10 +575,10 @@ async def coordizer_validate(request: Request):
     try:
         coordizer = consciousness._coordizer_v2
         result = coordizer.validate(verbose=False)
-        kappa_ok = abs(result.kappa_measured - 64.0) < 2 * max(result.kappa_std, 5.0)
-        beta_ok = result.beta_running < 0.5
-        semantic_ok = result.semantic_correlation > 0.2
-        harmonic_ok = result.harmonic_ratio_quality > 0.3
+        kappa_ok = abs(result.kappa_measured - KAPPA_STAR) < COORDIZER_KAPPA_TOLERANCE_FACTOR * max(result.kappa_std, COORDIZER_KAPPA_STD_FLOOR)
+        beta_ok = result.beta_running < COORDIZER_BETA_THRESHOLD
+        semantic_ok = result.semantic_correlation > COORDIZER_SEMANTIC_THRESHOLD
+        harmonic_ok = result.harmonic_ratio_quality > COORDIZER_HARMONIC_THRESHOLD
         return {
             "valid": result.passed,
             "checks": [

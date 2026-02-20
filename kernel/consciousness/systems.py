@@ -30,6 +30,7 @@ from ..config.frozen_facts import (
     PHI_EMERGENCY,
     PHI_THRESHOLD,
 )
+from ..config.consciousness_constants import KAPPA_NORMALISER
 from ..geometry.fisher_rao import (
     Basin,
     fisher_rao_distance,
@@ -248,7 +249,7 @@ class SelfObserver:
         """M = 1 - mean(|predicted - actual|) for key metrics."""
         diffs = [
             abs(predicted.phi - actual.phi),
-            abs(predicted.kappa - actual.kappa) / 128.0,
+            abs(predicted.kappa - actual.kappa) / KAPPA_NORMALISER,
             abs(predicted.gamma - actual.gamma),
         ]
         error = sum(diffs) / len(diffs)
@@ -506,7 +507,7 @@ class HemisphereScheduler:
         self._balance: float = 0.5
 
     def update(self, metrics: ConsciousnessMetrics) -> HemisphereMode:
-        normalised = metrics.kappa / 128.0
+        normalised = metrics.kappa / KAPPA_NORMALISER
         self._balance = normalised
 
         if normalised > 0.6:

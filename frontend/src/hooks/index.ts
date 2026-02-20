@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { usePolledData } from './usePolledData.ts';
+import { API } from '../config/api-routes.ts';
 import type {
   VexState,
   VexTelemetry,
@@ -16,19 +17,19 @@ import type {
 
 export { usePolledData } from './usePolledData.ts';
 
-export const useVexState = () => usePolledData<VexState>('/state', 2000);
-export const useTelemetry = () => usePolledData<VexTelemetry>('/telemetry', 3000);
-export const useHealth = () => usePolledData<HealthStatus>('/health', 5000);
-export const useKernels = () => usePolledData<KernelSummary>('/kernels', 2000);
-export const useBasin = () => usePolledData<BasinData>('/basin', 2000);
+export const useVexState = () => usePolledData<VexState>(API.state, 2000);
+export const useTelemetry = () => usePolledData<VexTelemetry>(API.telemetry, 3000);
+export const useHealth = () => usePolledData<HealthStatus>(API.health, 5000);
+export const useKernels = () => usePolledData<KernelSummary>(API.kernels, 2000);
+export const useBasin = () => usePolledData<BasinData>(API.basin, 2000);
 
 // New hooks for Phase 1 dashboard endpoints
-export const useKernelList = () => usePolledData<KernelListResponse>('/kernels/list', 2000);
-export const useBasinHistory = () => usePolledData<BasinHistoryResponse>('/basin/history', 5000);
-export const useGraphNodes = () => usePolledData<GraphNodesResponse>('/graph/nodes', 3000);
-export const useMemoryStats = () => usePolledData<MemoryStatsResponse>('/memory/stats', 5000);
-export const useSleepState = () => usePolledData<SleepStateResponse>('/sleep/state', 3000);
-export const useTrainingStats = () => usePolledData<TrainingStats>('/training/stats', 10000);
+export const useKernelList = () => usePolledData<KernelListResponse>(API.kernelList, 2000);
+export const useBasinHistory = () => usePolledData<BasinHistoryResponse>(API.basinHistory, 5000);
+export const useGraphNodes = () => usePolledData<GraphNodesResponse>(API.graphNodes, 3000);
+export const useMemoryStats = () => usePolledData<MemoryStatsResponse>(API.memoryStats, 5000);
+export const useSleepState = () => usePolledData<SleepStateResponse>(API.sleepState, 3000);
+export const useTrainingStats = () => usePolledData<TrainingStats>(API.trainingStats, 10000);
 
 /**
  * Accumulate polled VexState snapshots into a time-series array.

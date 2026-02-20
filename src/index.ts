@@ -16,6 +16,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { config } from './config';
 import { logger } from './config/logger';
+import { ROUTES } from './config/routes';
 import { createChatRouter } from './chat/router';
 import { requireAuth, getCookie, isValidSession, SESSION_COOKIE } from './auth/middleware';
 import { sandboxManager, getComputeTools } from './tools/compute-sandbox';
@@ -122,31 +123,31 @@ async function main(): Promise<void> {
   };
 
   // Proxy kernel endpoints — consciousness state
-  proxyGet('/state');
-  proxyGet('/telemetry');
-  proxyGet('/status');
-  proxyGet('/basin');
-  proxyGet('/kernels');
-  proxyPost('/enqueue');
-  proxyPost('/memory/context');
+  proxyGet(ROUTES.state);
+  proxyGet(ROUTES.telemetry);
+  proxyGet(ROUTES.status);
+  proxyGet(ROUTES.basin);
+  proxyGet(ROUTES.kernels);
+  proxyPost(ROUTES.enqueue);
+  proxyPost(ROUTES.memory_context);
 
   // Phase 1 dashboard endpoints
-  proxyGet('/kernels/list');
-  proxyGet('/basin/history');
-  proxyGet('/graph/nodes');
-  proxyGet('/memory/stats');
-  proxyGet('/sleep/state');
-  proxyPost('/admin/fresh-start');
+  proxyGet(ROUTES.kernels_list);
+  proxyGet(ROUTES.basin_history);
+  proxyGet(ROUTES.graph_nodes);
+  proxyGet(ROUTES.memory_stats);
+  proxyGet(ROUTES.sleep_state);
+  proxyPost(ROUTES.admin_fresh_start);
 
   // Governor endpoints (PR #13)
-  proxyGet('/governor');
-  proxyPost('/governor/kill-switch');
-  proxyPost('/governor/budget');
+  proxyGet(ROUTES.governor);
+  proxyPost(ROUTES.governor_kill_switch);
+  proxyPost(ROUTES.governor_budget);
 
   // Training endpoints
-  proxyGet('/training/stats');
-  proxyGet('/training/export');
-  proxyPost('/training/feedback');
+  proxyGet(ROUTES.training_stats);
+  proxyGet(ROUTES.training_export);
+  proxyPost(ROUTES.training_feedback);
 
   // Training upload — custom multipart proxy (proxyPost hardcodes JSON Content-Type)
   app.post('/training/upload', async (req, res) => {

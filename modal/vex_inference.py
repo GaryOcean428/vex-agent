@@ -32,7 +32,9 @@ GPU-accelerated token generation.
 from __future__ import annotations
 
 import asyncio
+import json
 import subprocess
+import urllib.request
 
 import modal
 
@@ -154,16 +156,41 @@ class VexOllamaServer:
 
         # Verify GPU offload is working
         print("Running GPU verification...")
-        verify = subprocess.run(
-            ["ollama", "run", MODEL_NAME, "ping"],
-            capture_output=True,
-            text=True,
-            timeout=60,
+
+        # Step 1: Confirm model is registered (instant, no VRAM load)
+        show_req = urllib.request.Request(
+            f"http://localhost:{OLLAMA_PORT}/api/show",
+            data=json.dumps({"name": MODEL_NAME}).encode(),
+            headers={"Content-Type": "application/json"},
         )
-        if verify.returncode == 0:
-            print(f"GPU inference verified. Response: {verify.stdout[:100]}")
-        else:
-            print(f"WARNING: Verification returned code {verify.returncode}")
+        show_resp = urllib.request.urlopen(show_req, timeout=10)
+        show_data = json.loads(show_resp.read())
+        details = show_data.get("details", {})
+        print(
+            f"Model registered: family={details.get('family')}, "
+            f"quant={details.get('quantization_level')}, "
+            f"params={details.get('parameter_size')}"
+        )
+
+        # Step 2: Warm model into VRAM with 1-token generate.
+        # Cold-loading 731MB Q4_K_M onto T4 takes ~60-90s — give it 120s,
+        # well within Modal's startup_timeout=180s.
+        gen_req = urllib.request.Request(
+            f"http://localhost:{OLLAMA_PORT}/api/generate",
+            data=json.dumps({
+                "model": MODEL_NAME,
+                "prompt": "ping",
+                "stream": False,
+                "options": {"num_predict": 1},
+            }).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        gen_resp = urllib.request.urlopen(gen_req, timeout=120)
+        gen_data = json.loads(gen_resp.read())
+        print(
+            f"GPU inference verified (1-token warm-up). "
+            f"eval_duration={gen_data.get('eval_duration', 'n/a')}ns"
+        )
 
         # List models
         final_list = subprocess.run(

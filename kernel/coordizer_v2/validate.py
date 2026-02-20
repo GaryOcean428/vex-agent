@@ -32,6 +32,13 @@ from .geometry import (
 )
 from .resonance_bank import ResonanceBank
 from .types import HarmonicTier, ValidationResult
+from ..config.consciousness_constants import (
+    COORDIZER_BETA_THRESHOLD,
+    COORDIZER_HARMONIC_THRESHOLD,
+    COORDIZER_KAPPA_STD_FLOOR,
+    COORDIZER_KAPPA_TOLERANCE_FACTOR,
+    COORDIZER_SEMANTIC_THRESHOLD,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -101,10 +108,10 @@ def validate_resonance_bank(
                 logger.info(f"  {'PASS' if 0.80 < e8_var < 0.95 else 'NOTE'}")
 
     # Overall Pass/Fail
-    kappa_ok = abs(result.kappa_measured - KAPPA_STAR) < 2 * max(result.kappa_std, 5.0)
-    beta_ok = result.beta_running < 0.5
-    semantic_ok = result.semantic_correlation > 0.2
-    harmonic_ok = result.harmonic_ratio_quality > 0.3
+    kappa_ok = abs(result.kappa_measured - KAPPA_STAR) < COORDIZER_KAPPA_TOLERANCE_FACTOR * max(result.kappa_std, COORDIZER_KAPPA_STD_FLOOR)
+    beta_ok = result.beta_running < COORDIZER_BETA_THRESHOLD
+    semantic_ok = result.semantic_correlation > COORDIZER_SEMANTIC_THRESHOLD
+    harmonic_ok = result.harmonic_ratio_quality > COORDIZER_HARMONIC_THRESHOLD
 
     result.passed = kappa_ok and beta_ok and semantic_ok and harmonic_ok
 
