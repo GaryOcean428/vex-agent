@@ -29,11 +29,12 @@ FROM node:22-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci 2>/dev/null || npm install
+COPY frontend/package.json frontend/pnpm-lock.yaml* ./
+RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 
 COPY frontend/ ./
-RUN npm run build \
+RUN pnpm run build \
     && test -f dist/index.html \
     || (echo "FATAL: Frontend build failed — dist/index.html missing" && ls -la dist/ 2>/dev/null && exit 1)
 
@@ -50,9 +51,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# ── Python kernel dependencies ─────────────────────────────────
-COPY kernel/requirements.txt ./kernel/requirements.txt
-RUN pip install --no-cache-dir -r kernel/requirements.txt
+# ── Python kernel dependencies (uv) ──────────────────────────────
+COPY pyproject.toml uv.lock ./
+RUN pip install uv && uv pip install --system --no-cache .
 
 # ── Node.js production dependencies ───────────────────────────
 COPY package.json pnpm-lock.yaml* ./
