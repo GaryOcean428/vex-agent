@@ -87,8 +87,8 @@ async def modal_harvest(
         "Content-Type": "application/json",
     }
     if settings.modal.token_id and settings.modal.token_secret:
-        headers["Modal-Key"] = settings.modal.token_id
-        headers["Modal-Secret"] = settings.modal.token_secret
+        headers["Modal-Token-Id"] = settings.modal.token_id
+        headers["Modal-Token-Secret"] = settings.modal.token_secret
 
     logger.info(
         f"Sending harvest request to Modal: {settings.modal.harvest_url} "

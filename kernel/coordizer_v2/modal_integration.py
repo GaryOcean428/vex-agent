@@ -7,23 +7,23 @@ to synthetic data, and transformation of raw logits to Δ⁶³ basin
 coordinates via CoordizerV2 compression.
 
 Configuration:
-    Set these environment variables in Railway:
-        MODAL_HARVEST_ENABLED=true
+    Uses kernel.config.settings.modal (unified env vars):
+        MODAL_ENABLED=true
         MODAL_HARVEST_URL=https://<your-modal-app>.modal.run/harvest
         MODAL_TOKEN_ID=wk-...
         MODAL_TOKEN_SECRET=ws-...
-        MODAL_HARVEST_TIMEOUT=120
 """
 
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
 from numpy.typing import NDArray
+
+from ..config.settings import settings as kernel_settings
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +31,12 @@ logger = logging.getLogger(__name__)
 # ─── Configuration ───────────────────────────────────────────────────
 
 @dataclass
-class ModalConfig:
-    """Configuration for Modal GPU harvesting."""
+class ModalIntegrationConfig:
+    """Runtime configuration for Modal GPU harvesting.
+
+    Derived from kernel.config.settings.ModalConfig to avoid
+    env-var duplication. All env vars are read once via settings.modal.
+    """
     enabled: bool = False
     harvest_url: str = ""
     health_url: str = ""
@@ -43,10 +47,10 @@ class ModalConfig:
     batch_size: int = 32
 
     @classmethod
-    def from_env(cls) -> ModalConfig:
-        """Load configuration from environment variables."""
-        enabled = os.getenv("MODAL_HARVEST_ENABLED", "false").lower() == "true"
-        harvest_url = os.getenv("MODAL_HARVEST_URL", "")
+    def from_settings(cls) -> ModalIntegrationConfig:
+        """Load configuration from kernel.config.settings.modal."""
+        modal = kernel_settings.modal
+        harvest_url = modal.harvest_url
 
         # Derive health URL from harvest URL
         health_url = ""
@@ -54,12 +58,11 @@ class ModalConfig:
             health_url = harvest_url.rsplit("/", 1)[0] + "/health"
 
         return cls(
-            enabled=enabled,
+            enabled=modal.enabled,
             harvest_url=harvest_url,
             health_url=health_url,
-            token_id=os.getenv("MODAL_TOKEN_ID", ""),
-            token_secret=os.getenv("MODAL_TOKEN_SECRET", ""),
-            timeout=int(os.getenv("MODAL_HARVEST_TIMEOUT", "120")),
+            token_id=modal.token_id,
+            token_secret=modal.token_secret,
         )
 
     def is_configured(self) -> bool:
@@ -85,8 +88,8 @@ class ModalHarvestClient:
         - Transformation of raw logits to HarvestResult format
     """
 
-    def __init__(self, config: Optional[ModalConfig] = None):
-        self.config = config or ModalConfig.from_env()
+    def __init__(self, config: Optional[ModalIntegrationConfig] = None):
+        self.config = config or ModalIntegrationConfig.from_settings()
         self._healthy: Optional[bool] = None
 
     async def check_health(self) -> bool:
