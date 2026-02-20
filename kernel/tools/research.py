@@ -70,7 +70,7 @@ async def deep_research(
         Dictionary with keys: query, answer, citations, model, usage,
         success, error.
     """
-    api_key = settings.perplexity_api_key
+    api_key = settings.perplexity.api_key
     if not api_key:
         logger.warning("PERPLEXITY_API_KEY not set — deep_research unavailable")
         return ResearchResult(

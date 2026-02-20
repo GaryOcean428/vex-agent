@@ -86,6 +86,19 @@ class ModalConfig:
 
 
 @dataclass(frozen=True)
+class PerplexityConfig:
+    """Perplexity sonar-pro deep research integration.
+
+    Used by kernel.tools.research for grounded, citation-backed
+    information retrieval via the Perplexity chat completions API.
+    """
+    api_key: str = os.environ.get("PERPLEXITY_API_KEY", "")
+    model: str = os.environ.get("PERPLEXITY_MODEL", "sonar-pro")
+    base_url: str = os.environ.get("PERPLEXITY_BASE_URL", "https://api.perplexity.ai")
+    timeout: int = int(os.environ.get("PERPLEXITY_TIMEOUT", "60"))
+
+
+@dataclass(frozen=True)
 class GovernorConfig:
     """Governance stack configuration — 5-layer protection against runaway costs."""
     enabled: bool = os.environ.get("GOVERNOR_ENABLED", "true").lower() != "false"
@@ -160,6 +173,7 @@ class Settings:
     governor: GovernorConfig = field(default_factory=GovernorConfig)
     searxng: SearXNGConfig = field(default_factory=SearXNGConfig)
     modal: ModalConfig = field(default_factory=ModalConfig)
+    perplexity: PerplexityConfig = field(default_factory=PerplexityConfig)
 
 
 settings = Settings()
