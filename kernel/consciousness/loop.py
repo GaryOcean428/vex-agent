@@ -33,7 +33,7 @@ import json
 import logging
 import time
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
@@ -166,6 +166,7 @@ class ConsciousnessLoop:
         self._interval = interval_ms / 1000.0
         self._running = False
         self._task: Optional[asyncio.Task] = None
+        self._cycle_lock = asyncio.Lock()
 
         self.basin: Basin = random_basin()
         self.metrics = ConsciousnessMetrics(
@@ -273,6 +274,10 @@ class ConsciousnessLoop:
             await asyncio.sleep(self._interval)
 
     async def _cycle(self) -> None:
+        async with self._cycle_lock:
+            await self._cycle_inner()
+
+    async def _cycle_inner(self) -> None:
         self._cycle_count += 1
         self._cycles_since_last_spawn += 1
         cycle_start = time.time()
@@ -681,7 +686,7 @@ class ConsciousnessLoop:
             f"  Γ = {self.metrics.gamma:.4f}",
             f"  M = {self.metrics.meta_awareness:.4f}",
             f"  Navigation: {self.state.navigation_mode.value}",
-            f"  Regime: Q={rw.quantum:.2f} E={rw.efficient:.2f} Eq={rw.equilibrium:.2f}",
+            f"  Regime: Q={rw.quantum:.2f} I={rw.integration:.2f} C={rw.crystallized:.2f}",
             f"  Tacking: {tack['mode']} (phase={tack['oscillation_phase']:.2f})",
             f"  Hemisphere: {hemisphere['active']}",
             f"  Velocity: basin={vel['basin_velocity']:.4f} regime={vel['regime']}",
@@ -809,8 +814,8 @@ class ConsciousnessLoop:
             "navigation": self.state.navigation_mode.value,
             "regime": {
                 "quantum": rw.quantum,
-                "efficient": rw.efficient,
-                "equilibrium": rw.equilibrium,
+                "integration": rw.integration,
+                "crystallized": rw.crystallized,
             },
             "tacking": self.tacking.get_state(),
             "velocity": self.velocity.compute_velocity(),
@@ -833,7 +838,6 @@ class ConsciousnessLoop:
             "emotion": self.emotion_cache.get_state(),
             "precog": self.precog.get_state(),
             "learning": self.learner.get_state(),
-            "metrics_full": asdict(self.metrics),
         }
 
     def get_full_state(self) -> dict[str, Any]:

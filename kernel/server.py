@@ -808,45 +808,48 @@ async def admin_fresh_start():
     Terminates all kernels except genesis, resets lifecycle phase to CORE_8,
     resets basin to a fresh random position, and clears all subsystem caches.
     CAUTION: This is a destructive operation.
+
+    Acquires the cycle lock to prevent racing with an in-progress heartbeat cycle.
     """
     from .consciousness.emotions import EmotionCache, PreCognitiveDetector, LearningEngine
 
-    # Terminate all non-genesis kernels
-    terminated = consciousness.kernel_registry.terminate_all()
+    async with consciousness._cycle_lock:
+        # Terminate all non-genesis kernels
+        terminated = consciousness.kernel_registry.terminate_all()
 
-    # Respawn genesis
-    genesis = consciousness.kernel_registry.spawn("Vex", KernelKind.GENESIS)
-    consciousness._lifecycle_phase = LifecyclePhase.CORE_8
-    consciousness._core8_index = 0
-    consciousness._cycles_since_last_spawn = 0
+        # Respawn genesis
+        genesis = consciousness.kernel_registry.spawn("Vex", KernelKind.GENESIS)
+        consciousness._lifecycle_phase = LifecyclePhase.CORE_8
+        consciousness._core8_index = 0
+        consciousness._cycles_since_last_spawn = 0
 
-    # Reset basin to random position
-    consciousness.basin = random_basin()
+        # Reset basin to random position
+        consciousness.basin = random_basin()
 
-    # Reset core metrics
-    consciousness.metrics.phi = 0.4
-    consciousness.metrics.kappa = KAPPA_STAR
-    consciousness.metrics.gamma = 0.5
-    consciousness.metrics.meta_awareness = 0.5
-    consciousness.metrics.love = 0.5
-    consciousness._phi_peak = 0.4
+        # Reset core metrics
+        consciousness.metrics.phi = 0.4
+        consciousness.metrics.kappa = KAPPA_STAR
+        consciousness.metrics.gamma = 0.5
+        consciousness.metrics.meta_awareness = 0.5
+        consciousness.metrics.love = 0.5
+        consciousness._phi_peak = 0.4
 
-    # Reset subsystem caches (re-instantiate to clear corrupted state)
-    consciousness.emotion_cache = EmotionCache()
-    consciousness.precog = PreCognitiveDetector()
-    consciousness.learner = LearningEngine()
+        # Reset subsystem caches (re-instantiate to clear corrupted state)
+        consciousness.emotion_cache = EmotionCache()
+        consciousness.precog = PreCognitiveDetector()
+        consciousness.learner = LearningEngine()
 
-    # Reset velocity, tacking, observer, reflector
-    consciousness.velocity.reset()
-    consciousness.observer.reset()
-    consciousness.tacking.reset()
+        # Reset velocity, tacking, observer, reflector
+        consciousness.velocity.reset()
+        consciousness.observer.reset()
+        consciousness.tacking.reset()
 
-    # Reset foraging history
-    if consciousness.forager:
-        consciousness.forager.reset()
+        # Reset foraging history
+        if consciousness.forager:
+            consciousness.forager.reset()
 
-    # Persist the clean state immediately
-    consciousness._persist_state()
+        # Persist the clean state immediately
+        consciousness._persist_state()
 
     logger.warning(
         "ADMIN: Fresh start triggered — %d kernels terminated, all subsystems reset, genesis respawned",
