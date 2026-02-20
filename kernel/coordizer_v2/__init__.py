@@ -1,16 +1,16 @@
 """
 CoordizerV2 — Resonance-Based Geometric Coordizer on Δ⁶³
 
-A complete replacement for BPE-style tokenization with a
+A complete replacement for BPE-style coordization with a
 resonance bank seeded from LLM output distribution harvesting.
 
 All operations live on the probability simplex using the
 Fisher-Rao metric. No Euclidean distances. No cosine similarity.
-No dot product attention. No Adam. No coordinate injection.
+No dot product attention. No Adam. No vector reps.
 
 Quick start:
 
-    from coordizer import CoordizerV2
+    from kernel.coordizer_v2 import CoordizerV2
 
     # Build from LLM harvest
     c = CoordizerV2.from_harvest(
@@ -122,4 +122,8 @@ __all__ = [
     "validate_resonance_bank",
 ]
 
-__version__ = "2.5.0"
+# Import canonical version — do not hardcode.
+try:
+    from kernel.config.version import VERSION as __version__
+except ImportError:
+    __version__ = "2.4.0"  # fallback for isolated imports
