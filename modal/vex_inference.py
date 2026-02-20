@@ -1,4 +1,4 @@
-""" 
+"""
 Modal GPU Inference — Vex Ollama Backend
 
 Runs Ollama with LFM2.5-1.2B-Thinking on a T4 GPU, exposing the
@@ -53,13 +53,11 @@ GPU_TYPE = "T4"
 
 app = modal.App("vex-inference")
 
-model_volume = modal.Volume.from_name(
-    "vex-inference-models", create_if_missing=True
-)
+model_volume = modal.Volume.from_name("vex-inference-models", create_if_missing=True)
 
 ollama_image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("curl", "ca-certificates")
+    .apt_install("curl", "ca-certificates", "zstd")
     .run_commands(
         f"OLLAMA_VERSION={OLLAMA_VERSION} curl -fsSL https://ollama.com/install.sh | sh",
         f"mkdir -p {MODEL_DIR}",
@@ -88,7 +86,7 @@ ollama_image = (
     # Container stays warm for 5 minutes after last request.
     # At T4 pricing this costs ~$0.05 per idle window.
     # Adjust up if you want faster cold starts at higher cost.
-    container_idle_timeout=300,
+    scaledown_window=300,
 )
 class VexOllamaServer:
     """GPU-backed Ollama server for Vex inference.
@@ -116,7 +114,9 @@ class VexOllamaServer:
             try:
                 result = subprocess.run(
                     ["ollama", "list"],
-                    capture_output=True, text=True, timeout=5,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 if result.returncode == 0:
                     print(f"Ollama ready after {attempt + 1} attempts")
@@ -129,13 +129,17 @@ class VexOllamaServer:
 
         # Pull model if not cached
         list_output = subprocess.run(
-            ["ollama", "list"], capture_output=True, text=True,
+            ["ollama", "list"],
+            capture_output=True,
+            text=True,
         ).stdout
 
         if "lfm2.5-thinking" not in list_output:
             print(f"Pulling {MODEL_NAME} (first boot, will cache on Volume)...")
             pull = await asyncio.create_subprocess_exec(
-                "ollama", "pull", MODEL_NAME,
+                "ollama",
+                "pull",
+                MODEL_NAME,
             )
             retcode = await pull.wait()
             if retcode != 0:
@@ -152,7 +156,9 @@ class VexOllamaServer:
         print("Running GPU verification...")
         verify = subprocess.run(
             ["ollama", "run", MODEL_NAME, "ping"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
         if verify.returncode == 0:
             print(f"GPU inference verified. Response: {verify.stdout[:100]}")
@@ -161,7 +167,9 @@ class VexOllamaServer:
 
         # List models
         final_list = subprocess.run(
-            ["ollama", "list"], capture_output=True, text=True,
+            ["ollama", "list"],
+            capture_output=True,
+            text=True,
         )
         print(f"Available models:\n{final_list.stdout}")
         print("Vex inference server ready.")
@@ -200,7 +208,9 @@ async def test():
     print("Testing Vex inference endpoint...")
     print("Deploy with: modal deploy modal/vex_inference.py")
     print("Then test with:")
-    print('  curl -X POST <URL>/api/chat \\')
+    print("  curl -X POST <URL>/api/chat \\")
     print('    -H "Content-Type: application/json" \\')
-    print(f'    -d \'{{"model": "{MODEL_NAME}", "messages": '
-          f'[{{"role": "user", "content": "Hello"}}], "stream": false}}\'')
+    print(
+        f'    -d \'{{"model": "{MODEL_NAME}", "messages": '
+        f'[{{"role": "user", "content": "Hello"}}], "stream": false}}\''
+    )
