@@ -1,5 +1,4 @@
-"""
-Tool Handler — Parse and execute tool calls from LLM output.
+"""Tool Handler — Parse and execute tool calls from LLM output.
 
 LFM2.5 tool call format (Pythonic):
     <|tool_call_start|>[func_name(arg="value")]<|tool_call_end|>
@@ -209,7 +208,7 @@ async def _execute_single(
         elif call.name == "web_fetch":
             return await _web_fetch(call.args)
         elif call.name == "web_search":
-            return await _xai_web_search(call.args, governor)
+            return await _web_search(call.args, governor)
         elif call.name == "x_search":
             return await _xai_x_search(call.args, governor)
         elif call.name == "deep_research":
@@ -289,15 +288,127 @@ async def _web_fetch(args: dict[str, Any]) -> ToolResult:
         return ToolResult(success=False, output="", error=f"Fetch failed: {e}")
 
 
-async def _xai_web_search(
+# ============================================================
+#  Web Search — Perplexity primary, xAI fallback
+# ============================================================
+
+
+async def _web_search(
     args: dict[str, Any],
     governor: GovernorStack | None = None,
 ) -> ToolResult:
-    """Search the web via xAI's built-in web_search tool (Responses API)."""
+    """Search the web. Tries Perplexity sonar first, falls back to xAI."""
     query = args.get("query", "")
     if not query:
         return ToolResult(success=False, output="", error="No query provided")
 
+    # Try Perplexity first (grounded search with citations)
+    if settings.perplexity.api_key:
+        result = await _perplexity_search(query, governor)
+        if result.success:
+            return result
+        logger.info("Perplexity search failed, falling back to xAI: %s", result.error)
+
+    # Fallback to xAI web_search
+    if settings.xai_api_key:
+        return await _xai_web_search(query, governor)
+
+    return ToolResult(success=False, output="", error="No search backend configured (need PERPLEXITY_API_KEY or XAI_API_KEY)")
+
+
+async def _perplexity_search(
+    query: str,
+    governor: GovernorStack | None = None,
+) -> ToolResult:
+    """Search via Perplexity sonar (fast, citation-backed web search).
+
+    Uses the sonar model for quick search queries. For deeper research,
+    the deep_research tool uses sonar-pro.
+
+    API: POST https://api.perplexity.ai/chat/completions
+    Docs: https://docs.perplexity.ai/docs/getting-started/overview
+    """
+    api_key = settings.perplexity.api_key
+    if not api_key:
+        return ToolResult(success=False, output="", error="PERPLEXITY_API_KEY not set")
+
+    # Governor gate
+    if governor:
+        allowed, reason = governor.gate("web_search", "perplexity_search", query, True)
+        if not allowed:
+            logger.warning("Governor blocked perplexity_search: %s", reason)
+            return ToolResult(success=False, output="", error=f"Governor blocked: {reason}")
+
+    try:
+        async with httpx.AsyncClient(timeout=float(settings.perplexity.timeout)) as client:
+            resp = await client.post(
+                f"{settings.perplexity.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "sonar",
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a concise search assistant. Provide factual, "
+                                "well-sourced answers. Keep responses under 500 words."
+                            ),
+                        },
+                        {"role": "user", "content": query},
+                    ],
+                    "temperature": 0.1,
+                    "max_tokens": 1024,
+                },
+            )
+
+            if resp.status_code != 200:
+                error_text = resp.text[:300]
+                logger.error("Perplexity search error %d: %s", resp.status_code, error_text)
+                return ToolResult(
+                    success=False, output="",
+                    error=f"Perplexity API error {resp.status_code}: {error_text}",
+                )
+
+            data = resp.json()
+
+            # Record with governor
+            if governor:
+                governor.record("perplexity_search")
+
+            # Extract answer
+            answer = ""
+            choices = data.get("choices", [])
+            if choices:
+                answer = choices[0].get("message", {}).get("content", "")
+
+            # Extract citations
+            citations: list[str] = []
+            for cite in data.get("citations", []):
+                if isinstance(cite, str):
+                    citations.append(cite)
+
+            full_output = answer
+            if citations:
+                full_output += "\n\nSources:\n" + "\n".join(
+                    f"  [{i+1}] {url}" for i, url in enumerate(citations)
+                )
+
+            return ToolResult(success=True, output=full_output)
+
+    except httpx.TimeoutException:
+        return ToolResult(success=False, output="", error="Perplexity search timed out")
+    except Exception as e:
+        return ToolResult(success=False, output="", error=f"Perplexity search failed: {e}")
+
+
+async def _xai_web_search(
+    query: str,
+    governor: GovernorStack | None = None,
+) -> ToolResult:
+    """Search the web via xAI's built-in web_search tool (Responses API)."""
     api_key = settings.xai_api_key
     if not api_key:
         return ToolResult(success=False, output="", error="XAI_API_KEY not set")
