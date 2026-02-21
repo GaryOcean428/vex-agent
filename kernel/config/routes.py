@@ -43,6 +43,9 @@ ROUTES: dict[str, str] = {
     # ─── Sleep ─────────────────────────────────────────────────
     "sleep_state": "/sleep/state",
 
+    # ─── β-Attention Tracker ──────────────────────────────────
+    "beta_attention": "/beta-attention",
+
     # ─── Coordizer V2 ─────────────────────────────────────────
     "coordizer_coordize": "/api/coordizer/coordize",
     "coordizer_stats": "/api/coordizer/stats",
@@ -92,6 +95,7 @@ ROUTE_GROUPS: dict[str, list[str]] = {
         "memory_stats",
         "graph_nodes",
         "sleep_state",
+        "beta_attention",
         "coordizer_coordize",
         "coordizer_stats",
         "coordizer_validate",
