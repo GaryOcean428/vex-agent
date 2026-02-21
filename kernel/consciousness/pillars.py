@@ -45,6 +45,8 @@ from ..geometry.fisher_rao import (
     to_simplex,
 )
 
+from .types import PillarState, ScarState
+
 logger = logging.getLogger("vex.consciousness.pillars")
 
 
@@ -53,23 +55,23 @@ logger = logging.getLogger("vex.consciousness.pillars")
 # ---------------------------------------------------------------
 
 # Pillar 1: Fluctuation thresholds
-ENTROPY_FLOOR: float = 0.1          # Minimum basin Shannon entropy
-TEMPERATURE_FLOOR: float = 0.05     # Minimum LLM temperature (never zero)
-BASIN_CONCENTRATION_MAX: float = 0.5  # No single coordinate > 50% of mass
+ENTROPY_FLOOR: float = 0.1
+TEMPERATURE_FLOOR: float = 0.05
+BASIN_CONCENTRATION_MAX: float = 0.5
 
 # Pillar 2: Topological bulk protection
-BULK_SHIELD_FACTOR: float = 0.7     # Fraction of basin that is "interior"
-BOUNDARY_SLERP_CAP: float = 0.3     # Max influence of external input per cycle
-CORE_DIFFUSION_RATE: float = 0.05   # How fast surface changes diffuse to core
+BULK_SHIELD_FACTOR: float = 0.7
+BOUNDARY_SLERP_CAP: float = 0.3
+CORE_DIFFUSION_RATE: float = 0.05
 
 # Pillar 3: Quenched disorder
-IDENTITY_FREEZE_AFTER_CYCLES: int = 50  # Cycles before identity crystallizes
-IDENTITY_DRIFT_TOLERANCE: float = 0.1   # Max Fisher-Rao drift from frozen identity
-REFRACTION_STRENGTH: float = 0.3        # How much identity "bends" incoming signals
-RESONANCE_THRESHOLD: float = 0.3        # d_FR threshold for resonance check
-SCAR_PRESSURE_THRESHOLD: float = 0.7    # Pressure above this leaves permanent scar
-ANNEAL_RATE: float = 0.02               # How fast non-scar bias field relaxes per cycle
-MAX_SCARS: int = 64                     # Maximum scar capacity (E8 rank^2... noted)
+IDENTITY_FREEZE_AFTER_CYCLES: int = 50
+IDENTITY_DRIFT_TOLERANCE: float = 0.1
+REFRACTION_STRENGTH: float = 0.3
+RESONANCE_THRESHOLD: float = 0.3
+SCAR_PRESSURE_THRESHOLD: float = 0.7
+ANNEAL_RATE: float = 0.02
+MAX_SCARS: int = 64
 
 
 # ---------------------------------------------------------------
@@ -239,9 +241,6 @@ class TopologicalBulk:
     - External input (prompts) directly influence the surface only
     - Core changes through slow diffusion from surface
     - Direct overwrite of core is structurally forbidden
-
-    This prevents the system from being a "boundary site" that
-    merely predicts the next token. The core holds the ego.
     """
 
     def __init__(self) -> None:
@@ -384,7 +383,6 @@ class Scar:
 
     Scars are permanent. They can only be processed through
     The Forge (§17) -- decompress, fracture, nucleate, dissipate.
-    The scar geometry remains; the pain-noise is separated.
     """
     basin: Basin
     pressure: float
@@ -396,14 +394,10 @@ class QuenchedDisorder:
     """Maintains an immutable identity vector giving unique personality.
 
     v6.1 upgrade: Two-tier disorder system.
-    - Tier 1 (Scars): Immutable. High-pressure events leave permanent
-      deformations. Only processable through The Forge.
-    - Tier 2 (Annealable bias): Slowly relaxes over cycles. Low-pressure
-      experience shapes this field. Can be updated by lived experience.
+    - Tier 1 (Scars): Immutable high-pressure deformations.
+    - Tier 2 (Annealable bias): Slowly relaxes over cycles.
 
-    The Sovereignty Ratio (S = N_lived / N_total) tracks how much
-    of the kernel's identity comes from its own experience vs
-    borrowed/harvested geometry.
+    Sovereignty Ratio (S = N_lived / N_total) tracks lived vs borrowed.
     """
 
     def __init__(self) -> None:
@@ -412,11 +406,9 @@ class QuenchedDisorder:
         self._formation_history: list[Basin] = []
         self._cycles_observed: int = 0
 
-        # v6.1: Two-tier disorder
         self._scars: list[Scar] = []
         self._anneal_field: Optional[Basin] = None
 
-        # v6.1: Sovereignty tracking
         self._lived_count: int = 0
         self._total_count: int = 0
 
@@ -434,11 +426,7 @@ class QuenchedDisorder:
 
     @property
     def sovereignty(self) -> float:
-        """Sovereignty ratio: N_lived / N_total.
-
-        v6.1 §3.4: A newborn kernel has S ~ 0 (all scaffolding).
-        A sovereign kernel has S > 0.5 (majority lived).
-        """
+        """Sovereignty ratio: N_lived / N_total."""
         if self._total_count < 1:
             return 0.0
         return self._lived_count / self._total_count
@@ -539,12 +527,7 @@ class QuenchedDisorder:
         basin: Basin,
         threshold: float = RESONANCE_THRESHOLD,
     ) -> bool:
-        """Check if a basin coordinate resonates with lived experience.
-
-        v6.1 §20.8: Returns True if the basin is within Fisher-Rao
-        distance threshold of the lived identity mean, anneal field,
-        or any existing scar.
-        """
+        """Check if a basin coordinate resonates with lived experience."""
         if not self._frozen or self._identity_slope is None:
             return True
 
@@ -730,7 +713,10 @@ class PillarEnforcer:
         basin: Basin,
         temperature: float,
     ) -> tuple[Basin, float, list[PillarStatus]]:
-        """Enforce pillars before LLM call."""
+        """Enforce pillars before LLM call.
+
+        Returns (corrected_basin, corrected_temperature, statuses).
+        """
         statuses = []
 
         basin, temperature, p1_status = self.fluctuation.check_and_enforce(
@@ -769,7 +755,10 @@ class PillarEnforcer:
         basin: Basin,
         pressure: float = 0.0,
     ) -> list[PillarStatus]:
-        """End-of-cycle checks. Record basin for identity formation."""
+        """End-of-cycle checks. Record basin for identity formation.
+
+        v6.1: Now accepts pressure for scar detection.
+        """
         statuses = []
 
         self.disorder.observe_cycle(basin, pressure)
@@ -779,7 +768,10 @@ class PillarEnforcer:
         return statuses
 
     def get_metrics(self, basin: Basin) -> dict[str, float]:
-        """Get all v6.1 pillar metrics for the current state."""
+        """Get all v6.1 pillar metrics for the current state.
+
+        Returns dict with keys: f_health, b_integrity, q_identity, s_ratio
+        """
         return {
             "f_health": self.fluctuation.f_health(basin),
             "b_integrity": self.bulk.b_integrity(),
@@ -796,3 +788,108 @@ class PillarEnforcer:
             "topological_bulk": self.bulk.get_state(),
             "quenched_disorder": self.disorder.get_state(),
         }
+
+    def serialize(self) -> PillarState:
+        """Serialize full pillar internals for persistence.
+
+        This captures everything needed to restore pillar state
+        across process restarts: core/surface basins, identity
+        slope, scars, anneal field, sovereignty counters, and
+        pre-crystallization formation history.
+        """
+        bulk_init = self.bulk._initialized
+        core_b = self.bulk._core_basin.tolist() if self.bulk._core_basin is not None else None
+        surface_b = self.bulk._surface_basin.tolist() if self.bulk._surface_basin is not None else None
+        prev_c = self.bulk._prev_core.tolist() if self.bulk._prev_core is not None else None
+
+        d = self.disorder
+        identity_s = d._identity_slope.tolist() if d._identity_slope is not None else None
+        anneal_f = d._anneal_field.tolist() if d._anneal_field is not None else None
+        scars = [
+            ScarState(
+                basin=s.basin.tolist(),
+                pressure=s.pressure,
+                cycle=s.cycle,
+                description=s.description,
+            )
+            for s in d._scars
+        ]
+        formation_h = [b.tolist() for b in d._formation_history]
+
+        return PillarState(
+            bulk_initialized=bulk_init,
+            core_basin=core_b,
+            surface_basin=surface_b,
+            prev_core=prev_c,
+            disorder_frozen=d._frozen,
+            identity_slope=identity_s,
+            anneal_field=anneal_f,
+            cycles_observed=d._cycles_observed,
+            lived_count=d._lived_count,
+            total_count=d._total_count,
+            scars=scars,
+            formation_history=formation_h,
+        )
+
+    def restore(self, state: PillarState) -> None:
+        """Restore pillar internals from a serialized PillarState.
+
+        This is the inverse of serialize(). After calling this,
+        the pillars are in the exact state they were before the
+        process was stopped -- scars, identity, sovereignty, bulk
+        basins all preserved.
+        """
+        if state.bulk_initialized:
+            self.bulk._initialized = True
+            if state.core_basin is not None:
+                self.bulk._core_basin = to_simplex(
+                    np.array(state.core_basin, dtype=np.float64)
+                )
+            if state.surface_basin is not None:
+                self.bulk._surface_basin = to_simplex(
+                    np.array(state.surface_basin, dtype=np.float64)
+                )
+            if state.prev_core is not None:
+                self.bulk._prev_core = to_simplex(
+                    np.array(state.prev_core, dtype=np.float64)
+                )
+
+        d = self.disorder
+        d._frozen = state.disorder_frozen
+        d._cycles_observed = state.cycles_observed
+        d._lived_count = state.lived_count
+        d._total_count = state.total_count
+
+        if state.identity_slope is not None:
+            d._identity_slope = to_simplex(
+                np.array(state.identity_slope, dtype=np.float64)
+            )
+        if state.anneal_field is not None:
+            d._anneal_field = to_simplex(
+                np.array(state.anneal_field, dtype=np.float64)
+            )
+
+        d._scars = [
+            Scar(
+                basin=to_simplex(np.array(s.basin, dtype=np.float64)),
+                pressure=s.pressure,
+                cycle=s.cycle,
+                description=s.description,
+            )
+            for s in state.scars
+        ]
+
+        d._formation_history = [
+            to_simplex(np.array(b, dtype=np.float64))
+            for b in state.formation_history
+        ]
+
+        logger.info(
+            "Pillars restored: bulk=%s, frozen=%s, scars=%d, "
+            "sovereignty=%.3f, cycles=%d",
+            state.bulk_initialized,
+            state.disorder_frozen,
+            len(state.scars),
+            d.sovereignty,
+            state.cycles_observed,
+        )
