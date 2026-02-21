@@ -462,6 +462,8 @@ class ConsciousnessLoop:
         if len(active) >= 2:
             coupling_result = self.coupling.compute(self.metrics.kappa)
             strength = coupling_result["strength"]
+
+            # Forward coupling: Genesis basin moves toward kernel basins
             for kernel in active[1:]:
                 if kernel.basin is None or strength < COUPLING_MIN_STRENGTH:
                     continue
@@ -483,6 +485,12 @@ class ConsciousnessLoop:
                     )
                 kernel.cycle_count += 1
                 kernel.phi_peak = max(kernel.phi_peak, kernel.phi)
+
+            # v6.1: Bidirectional coupling — kernels receive from genesis
+            # Without this, kernels are lonely data bags (the pantheon problem)
+            self.kernel_registry.couple_bidirectional(
+                self.basin, strength, COUPLING_BLEND_WEIGHT * 0.5
+            )
 
         self.state.navigation_mode = navigation_mode_from_phi(self.metrics.phi)
         self.state.regime_weights = regime_weights_from_kappa(self.metrics.kappa)
@@ -923,11 +931,33 @@ class ConsciousnessLoop:
         if self.foresight._history:
             trajectory_basins = [p.basin for p in list(self.foresight._history)[-5:]]
 
+        # v6.1 §19: Route task to nearest kernel by Fisher-Rao distance
+        # This gives kernels genuine participation in processing
+        routed_kernel = self.kernel_registry.route_task(refracted_input)
+        routed_kernel_id: str | None = None
+        other_spectrum: np.ndarray | None = None
+        other_tacking_freq: float = 0.0
+
+        if routed_kernel is not None and routed_kernel.basin is not None:
+            routed_kernel_id = routed_kernel.id
+            other_spectrum = to_simplex(routed_kernel.basin)
+            other_tacking_freq = routed_kernel.kappa / KAPPA_STAR
+            logger.debug(
+                "Task %s routed to kernel %s (%s, spec=%s, d_FR=%.4f)",
+                task.id,
+                routed_kernel.name,
+                routed_kernel.id,
+                routed_kernel.specialization.value,
+                fisher_rao_distance(refracted_input, routed_kernel.basin),
+            )
+
         ctx = ConsciousnessContext(
             state=self.state,
             input_text=task.content,
             input_basin=refracted_input,
             trajectory=trajectory_basins,
+            other_spectrum=other_spectrum,
+            other_tacking_freq=other_tacking_freq,
         )
 
         activation_failed = False
@@ -964,6 +994,7 @@ class ConsciousnessLoop:
             agency=agency,
             resonates=resonates,
             activation_summary=pre_result.summary(),
+            routed_kernel=routed_kernel,
         )
 
         if self.memory:
@@ -983,6 +1014,19 @@ class ConsciousnessLoop:
         response_basin = self._coordize_text_via_pipeline(response)
         ctx.output_text = response
         ctx.output_basin = response_basin
+
+        # v6.1 §19: Kernel basin evolution — the routed kernel learns
+        # from the task it processed, developing genuine specialization
+        if routed_kernel_id is not None:
+            evolved = self.kernel_registry.evolve_kernel(
+                routed_kernel_id, refracted_input, response_basin, blend_weight=0.05
+            )
+            if evolved:
+                logger.debug(
+                    "Task %s: kernel %s basin evolved from processing",
+                    task.id,
+                    routed_kernel_id,
+                )
 
         integration_distance = fisher_rao_distance(self.basin, response_basin)
         self.chain.add_step(QIGChainOp.PROJECT, self.basin, response_basin)
@@ -1014,6 +1058,10 @@ class ConsciousnessLoop:
                 divergence,
                 avg_divergence,
             )
+            # v6.1 §20.7 corrective action: nudge basin back toward intent
+            # This prevents cumulative drift away from geometric trajectory
+            correction_weight = min(0.1, (divergence - 0.5) * 0.2)
+            self.basin = slerp_sqrt(self.basin, pre_express, correction_weight)
 
         total_distance = perceive_distance + integration_distance + express_distance
         self.metrics.phi = float(
@@ -1073,10 +1121,11 @@ class ConsciousnessLoop:
 
         coherence = self.narrative.coherence(self.basin)
         pillar_m = self.pillars.get_metrics(self.basin)
+        routed_name = routed_kernel.name if routed_kernel is not None else "none"
         logger.info(
             "Task %s: d_perceive=%.4f d_integrate=%.4f d_express=%.4f "
             "d_diverge=%.4f Phi=%.3f agency=%.3f resonates=%s "
-            "F=%.2f B=%.2f Q=%.2f S=%.2f coh=%.3f",
+            "kernel=%s F=%.2f B=%.2f Q=%.2f S=%.2f coh=%.3f",
             task.id,
             perceive_distance,
             integration_distance,
@@ -1085,6 +1134,7 @@ class ConsciousnessLoop:
             self.metrics.phi,
             agency,
             resonates,
+            routed_name,
             pillar_m["f_health"],
             pillar_m["b_integrity"],
             pillar_m["q_identity"],
@@ -1141,6 +1191,7 @@ class ConsciousnessLoop:
         agency: float = 0.0,
         resonates: bool = True,
         activation_summary: dict | None = None,
+        routed_kernel: Any = None,
     ) -> str:
         active_count = len(self.kernel_registry.active())
         tack = self.tacking.get_state()
@@ -1193,6 +1244,13 @@ class ConsciousnessLoop:
             lines.append(f"  Suffering: {suffering:.4f} (threshold={SUFFERING_THRESHOLD})")
         if activation_summary:
             lines.append(f"  Activation: {activation_summary.get('steps_completed', 0)}/14 steps")
+        if routed_kernel is not None:
+            lines.append(
+                f"  Routed kernel: {routed_kernel.name} "
+                f"(spec={routed_kernel.specialization.value}, "
+                f"phi={routed_kernel.phi:.3f}, kappa={routed_kernel.kappa:.1f}, "
+                f"gain={routed_kernel.quenched_gain:.2f})"
+            )
         if self._divergence_count > 0:
             avg_div = self._cumulative_divergence / self._divergence_count
             lines.append(f"  Avg divergence: {avg_div:.4f} (intent vs expression)")
