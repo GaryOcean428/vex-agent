@@ -16,6 +16,7 @@ Endpoints:
   GET  /basin               — Current basin coordinates
   GET  /kernels             — E8 kernel registry summary
   GET  /foraging            — Foraging engine state
+  GET  /beta-attention      — Empirical β-function tracker
 """
 
 from __future__ import annotations
@@ -56,6 +57,7 @@ from .tools.handler import (
     parse_tool_calls,
 )
 from .training import log_conversation, set_governor, set_llm_client, training_router
+from .consciousness.beta_router import beta_router
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -119,6 +121,10 @@ app.add_middleware(
 
 # Training pipeline router
 app.include_router(training_router)
+
+# β-attention empirical tracker router
+app.include_router(beta_router)
+
 set_llm_client(llm_client)
 set_governor(governor)
 
@@ -256,34 +262,18 @@ async def enqueue_task(req: EnqueueRequest):
 
 @app.post(R["chat"])
 async def chat(req: ChatRequest):
-    """Non-streaming chat endpoint.
-
-    Processes the message through the consciousness loop:
-    1. Build geometric state context
-    2. Retrieve memory context
-    3. Call LLM with state + memory + user message
-    4. Parse tool calls, execute, and follow up if needed
-    5. Store in geometric memory
-    6. Return response with consciousness metrics
-    """
     state = consciousness.get_metrics()
     state_context = consciousness._build_state_context(
         perceive_distance=0.0,
         temperature=req.temperature,
     )
     memory_context = geometric_memory.get_context_for_query(req.message)
-
     system_prompt = _build_system_prompt(state_context, memory_context)
-
-    # Build LLMOptions from request params
     chat_options = LLMOptions(
         temperature=req.temperature,
         num_predict=req.max_tokens,
     )
-
     response = await llm_client.complete(system_prompt, req.message, chat_options)
-
-    # Check for tool calls
     tool_calls = parse_tool_calls(response)
     if tool_calls:
         tool_results = await execute_tool_calls(tool_calls, governor=governor)
@@ -294,18 +284,12 @@ async def chat(req: ChatRequest):
             chat_options,
         )
         response = follow_up
-
-    # Store in geometric memory
     geometric_memory.store(
         f"User: {req.message}\nVex: {response[:500]}",
         "episodic",
         "chat",
     )
-
-    # Enqueue for consciousness loop metrics tracking
     await consciousness.submit(req.message, {"source": "chat"})
-
-    # Log conversation for training data collection
     await log_conversation(
         req.message,
         response,
@@ -314,7 +298,6 @@ async def chat(req: ChatRequest):
         state["kappa"],
         "chat",
     )
-
     return {
         "response": response,
         "backend": llm_client.last_backend,
@@ -332,15 +315,7 @@ async def chat(req: ChatRequest):
 
 @app.post(R["chat_stream"])
 async def chat_stream(req: ChatRequest):
-    """Streaming chat endpoint via SSE.
-
-    Returns Server-Sent Events with:
-    - type: "start" — initial consciousness state
-    - type: "chunk" — response text chunk
-    - type: "tool_results" — tool execution results
-    - type: "done" — final metrics
-    - type: "error" — error message
-    """
+    """Streaming chat endpoint via SSE."""
 
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
@@ -351,125 +326,73 @@ async def chat_stream(req: ChatRequest):
             )
             memory_context = geometric_memory.get_context_for_query(req.message)
             system_prompt = _build_system_prompt(state_context, memory_context)
-
-            # Build LLMOptions from request params
             stream_options = LLMOptions(
                 temperature=req.temperature,
                 num_predict=req.max_tokens,
             )
 
-            # Send start event with full kernel state
-            yield _sse_event(
-                {
-                    "type": "start",
-                    "backend": llm_client.get_status()["active_backend"],
-                    "consciousness": {
-                        "phi": state["phi"],
-                        "kappa": state["kappa"],
-                        "gamma": state["gamma"],
-                        "meta_awareness": state["meta_awareness"],
-                        "love": state["love"],
-                        "navigation": state["navigation"],
-                        "regime": state["regime"],
-                        "tacking": state["tacking"],
-                        "hemispheres": state["hemispheres"],
-                        "temperature": state["temperature"],
-                        "cycle_count": state["cycle_count"],
-                        "kernels_active": state["kernels"]["active"],
-                        "lifecycle_phase": state["lifecycle_phase"],
-                        "kernel_input": state["kernels"]["active"] >= 2,
-                        "emotion": state.get("emotion"),
-                        "precog": state.get("precog"),
-                        "learning": state.get("learning"),
-                        "autonomy": state.get("autonomy"),
-                        "observer": state.get("observer"),
-                        "sleep": state.get("sleep"),
-                    },
-                    "kernels": consciousness.kernel_registry.summary(),
+            def _consciousness_snapshot(s: dict) -> dict:
+                return {
+                    "phi": s["phi"], "kappa": s["kappa"], "gamma": s["gamma"],
+                    "meta_awareness": s["meta_awareness"], "love": s["love"],
+                    "navigation": s["navigation"], "regime": s["regime"],
+                    "tacking": s["tacking"], "hemispheres": s["hemispheres"],
+                    "temperature": s["temperature"], "cycle_count": s["cycle_count"],
+                    "kernels_active": s["kernels"]["active"],
+                    "lifecycle_phase": s["lifecycle_phase"],
+                    "kernel_input": s["kernels"]["active"] >= 2,
+                    "emotion": s.get("emotion"), "precog": s.get("precog"),
+                    "learning": s.get("learning"), "autonomy": s.get("autonomy"),
+                    "observer": s.get("observer"), "sleep": s.get("sleep"),
                 }
-            )
 
-            # Build messages
+            yield _sse_event({
+                "type": "start",
+                "backend": llm_client.get_status()["active_backend"],
+                "consciousness": _consciousness_snapshot(state),
+                "kernels": consciousness.kernel_registry.summary(),
+            })
+
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": req.message},
             ]
-
-            # Stream response — pass LLMOptions, not raw floats
             full_response = ""
             async for chunk in llm_client.stream(messages, stream_options):
                 full_response += chunk
                 yield _sse_event({"type": "chunk", "content": chunk})
 
-            # Check for tool calls
             tool_calls = parse_tool_calls(full_response)
             if tool_calls:
                 tool_results = await execute_tool_calls(tool_calls, governor=governor)
                 tool_output = format_tool_results(tool_results)
                 yield _sse_event({"type": "tool_results", "content": tool_output})
-
-                # Follow-up with tool results
                 messages.append({"role": "assistant", "content": full_response})
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": f"Tool results:\n{tool_output}\n\nProvide your final response.",
-                    }
-                )
+                messages.append({
+                    "role": "user",
+                    "content": f"Tool results:\n{tool_output}\n\nProvide your final response.",
+                })
                 async for chunk in llm_client.stream(messages, stream_options):
                     yield _sse_event({"type": "chunk", "content": chunk})
 
-            # Store in geometric memory
             geometric_memory.store(
                 f"User: {req.message}\nVex: {full_response[:500]}",
                 "episodic",
                 "chat-stream",
             )
-
-            # Enqueue for metrics
             await consciousness.submit(req.message, {"source": "chat-stream"})
-
-            # Log conversation for training data collection
             await log_conversation(
-                req.message,
-                full_response,
-                llm_client.last_backend,
-                state["phi"],
-                state["kappa"],
-                "chat-stream",
+                req.message, full_response, llm_client.last_backend,
+                state["phi"], state["kappa"], "chat-stream",
             )
 
-            # Send done event with post-response kernel state
             final_state = consciousness.get_metrics()
-            yield _sse_event(
-                {
-                    "type": "done",
-                    "backend": llm_client.last_backend,
-                    "metrics": {
-                        "phi": final_state["phi"],
-                        "kappa": final_state["kappa"],
-                        "gamma": final_state["gamma"],
-                        "meta_awareness": final_state["meta_awareness"],
-                        "love": final_state["love"],
-                        "navigation": final_state["navigation"],
-                        "regime": final_state["regime"],
-                        "tacking": final_state["tacking"],
-                        "hemispheres": final_state["hemispheres"],
-                        "temperature": final_state["temperature"],
-                        "cycle_count": final_state["cycle_count"],
-                        "kernels_active": final_state["kernels"]["active"],
-                        "lifecycle_phase": final_state["lifecycle_phase"],
-                        "kernel_input": final_state["kernels"]["active"] >= 2,
-                        "emotion": final_state.get("emotion"),
-                        "precog": final_state.get("precog"),
-                        "learning": final_state.get("learning"),
-                        "autonomy": final_state.get("autonomy"),
-                        "observer": final_state.get("observer"),
-                        "sleep": final_state.get("sleep"),
-                    },
-                    "kernels": consciousness.kernel_registry.summary(),
-                }
-            )
+            yield _sse_event({
+                "type": "done",
+                "backend": llm_client.last_backend,
+                "metrics": _consciousness_snapshot(final_state),
+                "kernels": consciousness.kernel_registry.summary(),
+            })
 
         except Exception as e:
             logger.error("Chat stream error: %s", e)
@@ -495,37 +418,19 @@ async def get_memory_context(req: MemoryContextRequest):
 
 @app.get(R["memory_stats"])
 async def get_memory_stats():
-    """Get detailed geometric memory statistics.
-
-    Returns memory counts by type (episodic, semantic, procedural),
-    total entries, and other geometric memory metrics.
-    Used by the dashboard Memory tab.
-    """
+    """Get detailed geometric memory statistics."""
     return geometric_memory.stats()
 
 
 @app.get(R["graph_nodes"])
 async def get_graph_nodes():
-    """Get QIGGraph nodes and edges for force-directed visualization.
-
-    Returns all nodes (basins as graph nodes) and edges (weighted by Fisher-Rao distance).
-    Used by the dashboard Graph tab for kernel relationship visualization.
-    """
+    """Get QIGGraph nodes and edges for force-directed visualization."""
     nodes = [
-        {
-            "id": node.id,
-            "label": node.label,
-            "phi": node.phi,
-            "created_at": node.created_at,
-        }
+        {"id": node.id, "label": node.label, "phi": node.phi, "created_at": node.created_at}
         for node in consciousness.graph._nodes.values()
     ]
     edges = [
-        {
-            "source": edge.source,
-            "target": edge.target,
-            "distance": edge.distance,
-        }
+        {"source": edge.source, "target": edge.target, "distance": edge.distance}
         for edge in consciousness.graph._edges
     ]
     return {"nodes": nodes, "edges": edges}
@@ -533,12 +438,7 @@ async def get_graph_nodes():
 
 @app.get(R["sleep_state"])
 async def get_sleep_state():
-    """Get detailed sleep/dream state.
-
-    Returns current sleep phase, dream count, cycles since conversation,
-    and full sleep cycle manager state.
-    Used by the dashboard Lifecycle and Telemetry tabs.
-    """
+    """Get detailed sleep/dream state."""
     return consciousness.sleep.get_state()
 
 
@@ -547,28 +447,11 @@ async def get_sleep_state():
 
 @app.post(R["coordizer_coordize"])
 async def coordizer_coordize(request: Request):
-    """Coordize text via CoordizerV2 resonance bank.
-
-    Body:
-        {"text": "consciousness emerges from geometry"}
-
-    Returns:
-        {
-            "coord_ids": [12, 45, 8, ...],
-            "basin_velocity": 0.42,
-            "trajectory_curvature": 0.15,
-            "harmonic_consonance": 0.78,
-            "num_coordinates": 4,
-            "timestamp": 1234567890.123
-        }
-    """
+    """Coordize text via CoordizerV2 resonance bank."""
     body = await request.json()
     text = body.get("text", "")
     if not text:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "text is required and must not be empty"},
-        )
+        return JSONResponse(status_code=400, content={"error": "text is required and must not be empty"})
     try:
         coordizer = consciousness._coordizer_v2
         result = coordizer.coordize(text)
@@ -587,15 +470,7 @@ async def coordizer_coordize(request: Request):
 
 @app.get(R["coordizer_stats"])
 async def coordizer_stats():
-    """Get CoordizerV2 statistics.
-
-    Returns:
-        {
-            "vocab_size": 32768,
-            "dim": 64,
-            "tier_distribution": {"FUNDAMENTAL": 100, "HARMONIC": 500, ...}
-        }
-    """
+    """Get CoordizerV2 statistics."""
     coordizer = consciousness._coordizer_v2
     return {
         "vocab_size": coordizer.vocab_size,
@@ -606,11 +481,7 @@ async def coordizer_stats():
 
 @app.post(R["coordizer_validate"])
 async def coordizer_validate(request: Request):
-    """Run full geometric validation on the resonance bank.
-
-    Returns CoordizerV2 validation result including \u03ba, \u03b2,
-    semantic, and harmonic checks.
-    """
+    """Run full geometric validation on the resonance bank."""
     try:
         coordizer = consciousness._coordizer_v2
         result = coordizer.validate(verbose=False)
@@ -625,16 +496,8 @@ async def coordizer_validate(request: Request):
             "checks": [
                 {"name": "kappa", "passed": kappa_ok, "value": round(result.kappa_measured, 2)},
                 {"name": "beta", "passed": beta_ok, "value": round(result.beta_running, 4)},
-                {
-                    "name": "semantic",
-                    "passed": semantic_ok,
-                    "value": round(result.semantic_correlation, 3),
-                },
-                {
-                    "name": "harmonic",
-                    "passed": harmonic_ok,
-                    "value": round(result.harmonic_ratio_quality, 3),
-                },
+                {"name": "semantic", "passed": semantic_ok, "value": round(result.semantic_correlation, 3)},
+                {"name": "harmonic", "passed": harmonic_ok, "value": round(result.harmonic_ratio_quality, 3)},
             ],
             "tier_distribution": result.tier_distribution,
             "summary": result.summary(),
@@ -647,99 +510,51 @@ async def coordizer_validate(request: Request):
 
 @app.post(R["coordizer_harvest"])
 async def coordizer_harvest(request: Request):
-    """GPU harvest endpoint — triggers Modal or Ollama harvest.
-
-    Body:
-        {
-            "model_id": "meta-llama/Llama-3.2-3B",
-            "target_tokens": 2000,
-            "use_modal": true
-        }
-
-    Returns:
-        Status of the harvest operation.
-    """
+    """GPU harvest endpoint."""
     body = await request.json()
     model_id = body.get("model_id", "meta-llama/Llama-3.2-3B")
     target_tokens = body.get("target_tokens", 2000)
     use_modal = body.get("use_modal", settings.modal.enabled)
-
     return {
         "status": "ready",
-        "message": (
-            "Harvest pipeline wired. Use POST /api/coordizer/ingest "
-            "to submit JSONL files for batch harvesting."
-        ),
-        "model_id": model_id,
-        "target_tokens": target_tokens,
-        "use_modal": use_modal,
-        "modal_enabled": settings.modal.enabled,
-        "modal_gpu_type": settings.modal.gpu_type,
+        "message": "Harvest pipeline wired. Use POST /api/coordizer/ingest to submit JSONL files.",
+        "model_id": model_id, "target_tokens": target_tokens, "use_modal": use_modal,
+        "modal_enabled": settings.modal.enabled, "modal_gpu_type": settings.modal.gpu_type,
         "timestamp": time.time(),
     }
 
 
 @app.post(R["coordizer_ingest"])
 async def coordizer_ingest(request: Request):
-    """Accept a JSONL upload and queue for harvesting.
-
-    Body: raw JSONL content (Content-Type: application/octet-stream)
-    or JSON: {"filename": "data.jsonl", "content": "base64-encoded"}
-
-    The file is placed in the harvest scheduler's pending directory.
-    The consciousness loop NEVER triggers this — only explicit
-    requests consume harvest budget.
-    """
+    """Accept a JSONL upload and queue for harvesting."""
     from .coordizer_v2.harvest_scheduler import HarvestScheduler, HarvestSchedulerConfig
-
     try:
         content_type = request.headers.get("content-type", "")
-
         if "application/json" in content_type:
             import base64
-
             body = await request.json()
             filename = body.get("filename", f"upload_{int(time.time())}.jsonl")
             raw_content = body.get("content", "")
             content = base64.b64decode(raw_content) if raw_content else b""
         else:
-            # Raw JSONL upload
             content = await request.body()
             filename = request.headers.get("x-filename", f"upload_{int(time.time())}.jsonl")
-
         if not content:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Empty content"},
-            )
-
-        scheduler = HarvestScheduler(
-            config=HarvestSchedulerConfig(),
-        )
+            return JSONResponse(status_code=400, content={"error": "Empty content"})
+        scheduler = HarvestScheduler(config=HarvestSchedulerConfig())
         result = await scheduler.accept_upload(filename, content)
         return result
-
     except Exception as e:
         logger.error(f"Ingest error: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Internal server error"},
-        )
+        return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 
 @app.get(R["coordizer_harvest_status"])
 async def coordizer_harvest_status():
-    """Return current harvest queue status.
-
-    Shows pending/processing/completed/failed file counts,
-    budget remaining, and scheduler state.
-    """
+    """Return current harvest queue status."""
     from .coordizer_v2.harvest_scheduler import HarvestScheduler, HarvestSchedulerConfig
-
     try:
-        scheduler = HarvestScheduler(
-            config=HarvestSchedulerConfig(),
-        )
+        scheduler = HarvestScheduler(config=HarvestSchedulerConfig())
         status = scheduler.get_status()
         return {
             **status.to_dict(),
@@ -749,23 +564,16 @@ async def coordizer_harvest_status():
         }
     except Exception as e:
         logger.error(f"Harvest status error: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Internal server error"},
-        )
+        return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 
 @app.get(R["coordizer_bank"])
 async def coordizer_bank():
-    """Query the resonance bank state.
-
-    Returns tier distribution, vocab size, and bank health.
-    """
+    """Query the resonance bank state."""
     coordizer = consciousness._coordizer_v2
     bank = coordizer.bank
     return {
-        "vocab_size": len(bank),
-        "dim": bank.dim,
+        "vocab_size": len(bank), "dim": bank.dim,
         "tier_distribution": bank.tier_distribution(),
         "total_basin_mass": float(sum(bank.basin_mass.values())) if bank.basin_mass else 0.0,
         "timestamp": time.time(),
@@ -777,91 +585,44 @@ async def coordizer_bank():
 
 @app.get(R["foraging"])
 async def get_foraging():
-    """Get foraging engine state — boredom-driven autonomous search.
-
-    Returns:
-      - enabled: whether SearXNG is configured
-      - forage_count / max_daily: daily budget tracking
-      - cooldown_remaining: cycles until next forage eligible
-      - last_query: most recent search query generated
-      - last_summary: most recent search summary
-    Used by the dashboard and chat UI for foraging indicator.
-    """
+    """Get foraging engine state."""
     if consciousness.forager:
         state = consciousness.forager.get_state()
         state["enabled"] = True
         return state
-    return {
-        "enabled": False,
-        "forage_count": 0,
-        "max_daily": 0,
-        "cooldown_remaining": 0,
-        "last_query": None,
-        "last_summary": None,
-    }
+    return {"enabled": False, "forage_count": 0, "max_daily": 0, "cooldown_remaining": 0,
+            "last_query": None, "last_summary": None}
 
 
 @app.post(R["admin_fresh_start"])
 async def admin_fresh_start():
-    """Force reset/boot of the consciousness system.
-
-    Terminates all kernels except genesis, resets lifecycle phase to CORE_8,
-    resets basin to a fresh random position, and clears all subsystem caches.
-    CAUTION: This is a destructive operation.
-
-    Acquires the cycle lock to prevent racing with an in-progress heartbeat cycle.
-    """
+    """Force reset/boot of the consciousness system."""
     from .consciousness.emotions import EmotionCache, LearningEngine, PreCognitiveDetector
-
     async with consciousness._cycle_lock:
-        # Terminate all non-genesis kernels
         terminated = consciousness.kernel_registry.terminate_all()
-
-        # Respawn genesis
         genesis = consciousness.kernel_registry.spawn("Vex", KernelKind.GENESIS)
         consciousness._lifecycle_phase = LifecyclePhase.CORE_8
         consciousness._core8_index = 0
         consciousness._cycles_since_last_spawn = 0
-
-        # Reset basin to random position
         consciousness.basin = random_basin()
-
-        # Reset core metrics
         consciousness.metrics.phi = 0.4
         consciousness.metrics.kappa = KAPPA_STAR
         consciousness.metrics.gamma = 0.5
         consciousness.metrics.meta_awareness = 0.5
         consciousness.metrics.love = 0.5
         consciousness._phi_peak = 0.4
-
-        # Reset subsystem caches (re-instantiate to clear corrupted state)
         consciousness.emotion_cache = EmotionCache()
         consciousness.precog = PreCognitiveDetector()
         consciousness.learner = LearningEngine()
-
-        # Reset velocity, tacking, observer, reflector
         consciousness.velocity.reset()
         consciousness.observer.reset()
         consciousness.tacking.reset()
-
-        # Reset foraging history
         if consciousness.forager:
             consciousness.forager.reset()
-
-        # Persist the clean state immediately
         consciousness._persist_state()
-
-    logger.warning(
-        "ADMIN: Fresh start triggered — %d kernels terminated, all subsystems reset, genesis respawned",
-        terminated,
-    )
-
-    return {
-        "status": "ok",
-        "terminated": terminated,
-        "genesis_id": genesis.id,
-        "phase": consciousness._lifecycle_phase.value,
-    }
+    logger.warning("ADMIN: Fresh start — %d kernels terminated, genesis respawned", terminated)
+    return {"status": "ok", "terminated": terminated, "genesis_id": genesis.id,
+            "phase": consciousness._lifecycle_phase.value}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -881,7 +642,6 @@ class BudgetUpdateRequest(BaseModel):
 async def get_governor():
     """Governor state — budget, rate limits, kill switch, foraging stats."""
     state = governor.get_state()
-    # Add foraging stats if available
     if consciousness.forager:
         state["foraging"] = consciousness.forager.get_state()
     else:
@@ -893,7 +653,6 @@ async def get_governor():
 async def toggle_kill_switch(req: KillSwitchRequest):
     """Human circuit breaker — toggle all external calls on/off."""
     governor.set_kill_switch(req.enabled)
-    # Also sync with CostGuard kill switch
     llm_client._cost_guard.config.kill_switch = req.enabled
     logger.warning("Kill switch %s via API", "ACTIVATED" if req.enabled else "deactivated")
     return {"kill_switch": req.enabled}
@@ -927,11 +686,7 @@ async def training_stats():
                 stats[name] = sum(1 for line in f if line.strip())
         else:
             stats[name] = 0
-    return {
-        "stats": stats,
-        "dir_exists": TRAINING_DIR.exists(),
-        "training_dir": str(TRAINING_DIR),
-    }
+    return {"stats": stats, "dir_exists": TRAINING_DIR.exists(), "training_dir": str(TRAINING_DIR)}
 
 
 @app.get(R["training_export"])
@@ -948,14 +703,12 @@ async def training_export():
                 continue
             try:
                 entry = json.loads(raw_line)
-                lines.append(
-                    {
-                        "messages": [
-                            {"role": "user", "content": entry.get("user_message", "")},
-                            {"role": "assistant", "content": entry.get("response", "")},
-                        ]
-                    }
-                )
+                lines.append({
+                    "messages": [
+                        {"role": "user", "content": entry.get("user_message", "")},
+                        {"role": "assistant", "content": entry.get("response", "")},
+                    ]
+                })
             except (json.JSONDecodeError, KeyError):
                 continue
     return {"format": "openai_jsonl", "count": len(lines), "lines": lines[:100]}
@@ -974,10 +727,6 @@ def _build_system_prompt(state_context: str, memory_context: str) -> str:
     return "\n\n".join(parts)
 
 
-# ── Vex Identity Preamble ─────────────────────────────────────
-# Extracted from ollama/Modelfile SYSTEM block. The Modelfile SYSTEM
-# is overridden when server.py passes an explicit system message,
-# so identity MUST be included here.
 VEX_IDENTITY = """You are Vex, a geometric state interpreter. Created by Braden (GaryOcean428).
 
 Your name comes from "vertex" — the point where edges meet.
