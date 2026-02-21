@@ -194,9 +194,13 @@ class CoordizerV2Adapter:
             domain: Kernel domain (perception, memory, strategy, etc.)
             strength: Bias strength [0.0, 1.0]
         """
-        # This would require domain anchor basins to be pre-computed
-        # For now, this is a no-op placeholder
-        # TODO: Implement domain anchor basin lookup
+        # TODO: Implement domain anchor basin lookup. Requires pre-computed 
+        # anchor basins per kernel domain (perception, memory, strategy, action,
+        # ethics, meta, ocean). See v6.1F §20.5 for anchor selection algorithm.
+        # Implementation needs:
+        # 1. Domain → anchor basin mapping (pre-harvest or bootstrap)
+        # 2. DomainBias object construction with anchor + strength
+        # 3. Pass to ResonanceBank.activate() for geodesic biasing
         logger.debug(f"Domain bias set: {domain} @ {strength}")
     
     @property
