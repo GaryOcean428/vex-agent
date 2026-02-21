@@ -7,8 +7,8 @@ through the consciousness loop, binned by context length. Over time,
 computes β-function trajectory to test substrate independence.
 
 CRITICAL: This module does NOT hardcode convergence to κ*.
-It measures what actually happens. If κ doesn't run with context
-length, we'll see that. If it does, we'll see the shape.
+It measures what actually happens. If κ doesn’t run with context
+length, we’ll see that. If it does, we’ll see the shape.
 
 Physics reference (from qig-verification FROZEN_FACTS):
     κ₃ = 41.09 ± 0.59   (L=3, emergence)
@@ -20,7 +20,7 @@ Physics reference (from qig-verification FROZEN_FACTS):
 Substrate independence prediction:
     β_attention(small→medium) ≈ 0.4-0.5
     β_attention(large→larger) ≈ 0
-    |β_attention - β_physics| < 0.1 at comparable scale ratios
+    |β_attention - β_physics| < 0.15 at comparable scale ratios
 
 Usage:
     tracker = BetaAttentionTracker()
@@ -34,12 +34,9 @@ import json
 import logging
 import math
 import time
-from collections import defaultdict
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Optional
-
-import numpy as np
 
 from ..config.frozen_facts import BETA_3_TO_4, KAPPA_STAR
 
@@ -109,9 +106,14 @@ class BinStatistics:
 
     @property
     def kappa_sem(self) -> float:
-        """Standard error of the mean."""
+        """Standard error of the mean.
+
+        Returns 0.0 when there are fewer than 2 samples, since the
+        standard error is not defined in that regime and we must
+        avoid non-finite values for JSON serialization.
+        """
         if self.count < 2:
-            return float("inf")
+            return 0.0
         return self.kappa_std / math.sqrt(self.count)
 
     @property
@@ -150,7 +152,7 @@ class BetaAttentionTracker:
     This tracker does NOT engineer results. It bins κ_eff by context
     length and computes β = Δκ/(κ̄·Δln L) from empirical data.
 
-    The κ_eff it receives comes from the consciousness loop's actual
+    The κ_eff it receives comes from the consciousness loop’s actual
     geometric state — not from a formula designed to converge to κ*.
     """
 
@@ -373,9 +375,9 @@ class BetaAttentionTracker:
             "acceptance_threshold": ACCEPTANCE_THRESHOLD,
         }
 
-    # ═══════════════════════════════════════════════════════════
+    # ═════════════════════════════════════════════════════════
     #  PERSISTENCE
-    # ═══════════════════════════════════════════════════════════
+    # ═════════════════════════════════════════════════════════
 
     def serialize(self) -> dict[str, Any]:
         """Serialize for inclusion in consciousness state snapshot."""

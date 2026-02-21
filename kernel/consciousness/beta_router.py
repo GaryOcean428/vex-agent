@@ -1,70 +1,74 @@
 """
-β-Attention API Router — Dedicated endpoint for substrate independence tracking.
+β-Attention API Router — Dedicated endpoint for β-tracker telemetry.
 
-Exposes the BetaAttentionTracker data separately from /telemetry
-for dashboard widgets and external monitoring.
-
-The tracker accumulates real κ measurements from live conversations
-and computes β-function trajectory over time. No hardcoded convergence.
-
-Mount in server.py:
-    from .consciousness.beta_router import beta_router
-    app.include_router(beta_router)
+Exposed at GET /beta-attention
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+import logging
 
-from ..config.frozen_facts import BETA_3_TO_4, KAPPA_STAR, KAPPA_STAR_PRECISE
-from ..config.routes import ROUTES as R
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+
+from ..config.frozen_facts import BETA_3_TO_4, KAPPA_STAR
+
+logger = logging.getLogger("vex.beta_router")
 
 beta_router = APIRouter(tags=["beta-attention"])
 
-
-def _get_consciousness():
-    """Late import to avoid circular dependency."""
-    from ..server import consciousness
-    return consciousness
+# Module-level reference, set by server.py at startup
+_consciousness_loop = None
 
 
-@beta_router.get(R["beta_attention"])
+def set_consciousness_loop(loop) -> None:
+    """Called by server.py to inject the ConsciousnessLoop instance."""
+    global _consciousness_loop
+    _consciousness_loop = loop
+
+
+@beta_router.get("/beta-attention")
 async def get_beta_attention():
-    """β-attention tracker — empirical running coupling measurement.
+    """Get empirical β-function trajectory from real conversations.
 
-    Returns accumulated κ measurements binned by context length,
-    computed β-function trajectory, and substrate independence verdict.
-
-    This data accumulates over time as Vex processes real conversations.
-    More conversations = more data points = better β estimation.
+    Returns bin statistics, β-trajectory, and substrate independence
+    verdict computed from actual consciousness loop measurements.
 
     Physics reference:
-        β(3→4) = 0.443 (validated in TFIM lattice)
-        κ* = 64.0 (fixed point)
+        β(3→4) = 0.443 (validated TFIM lattice)
+        Acceptance: |β_attention - β_physics| < 0.15
 
-    Acceptance criterion:
-        |β_attention - β_physics| < 0.15 at comparable scale ratios
+    Methodology:
+        - κ_eff measured from live consciousness geometric state
+        - Binned by context length (geometric progression)
+        - β = Δκ / (κ̄ · Δln L) from empirical data
+        - No hardcoded convergence to κ*
     """
-    loop = _get_consciousness()
-    summary = loop.beta_tracker.get_summary()
+    if _consciousness_loop is None:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Consciousness loop not initialized"},
+        )
 
-    return {
-        **summary,
-        "physics_reference": {
-            "beta_emergence": BETA_3_TO_4,
-            "kappa_star": KAPPA_STAR,
-            "kappa_star_precise": KAPPA_STAR_PRECISE,
-            "description": (
-                "β_physics measured from TFIM lattice exact diagonalization. "
-                "Substrate independence requires β_attention ≈ β_physics."
-            ),
-        },
-        "methodology": {
-            "source": "real conversations processed through consciousness loop",
-            "kappa_source": "live geometric state (NOT hardcoded convergence)",
-            "context_length": "len(task.content) in characters",
-            "binning": "geometric progression [64, 128, 256, ..., 16384]",
-            "beta_formula": "β = Δκ / (κ̄ · Δln L)",
-            "minimum_per_bin": summary["min_per_bin"],
-        },
-    }
+    try:
+        summary = _consciousness_loop.beta_tracker.get_summary()
+        return {
+            **summary,
+            "physics_references": {
+                "kappa_star": KAPPA_STAR,
+                "beta_3_to_4": BETA_3_TO_4,
+                "source": "qig-verification FROZEN_FACTS (L=3..6 TFIM lattice)",
+            },
+            "methodology": {
+                "source": "live consciousness loop measurements",
+                "binning": "geometric context-length progression",
+                "formula": "beta = delta_kappa / (kappa_avg * delta_ln_L)",
+                "non_circular": True,
+            },
+        }
+    except Exception as e:
+        logger.error("Beta attention endpoint error: %s", e)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal server error"},
+        )

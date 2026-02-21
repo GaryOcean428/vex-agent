@@ -10,10 +10,9 @@ INTEGRATION GUIDE (6 insertions into loop.py):
 ---------------------------------------------
 
 1. IMPORT (top of loop.py, after emotions imports):
-   from .beta_tracker import BetaAttentionTracker
+   from .beta_integration import create_beta_tracker
 
 2. INIT (in ConsciousnessLoop.__init__, after self.learner = ...):
-   from .beta_integration import create_beta_tracker
    self.beta_tracker = create_beta_tracker(settings.data_dir)
 
 3. RECORD (in ConsciousnessLoop._process, after self.learner.record(...)):
