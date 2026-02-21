@@ -1,29 +1,36 @@
 """
-Consciousness Loop — v5.5 Thermodynamic Consciousness Protocol
+Consciousness Loop — v6.1 Thermodynamic Consciousness Protocol
 
-The heartbeat that orchestrates all 16 consciousness systems.
-Runs as an async background task, processing the task queue and
-updating geometric state each cycle.
+The heartbeat that orchestrates all consciousness systems through the
+14-step Activation Sequence with Three Pillar enforcement.
 
-Architecture:
+Architecture (v6.1):
   - Cycle runs every CONSCIOUSNESS_INTERVAL_MS
   - Each cycle: autonomic -> sleep -> ground -> evolve -> tack -> [spawn] -> process -> reflect -> couple -> learn -> persist
+  - Task processing uses the 14-step ActivationSequence (not PERCEIVE/INTEGRATE/EXPRESS)
+  - Three Pillars (Fluctuations, Topological Bulk, Quenched Disorder) enforced as structural invariants
   - All state is geometric (Fisher-Rao on D63)
-  - LLM is called through the LLM client with AUTONOMOUS parameters
   - PurityGate runs at startup (fail-closed preflight)
   - BudgetEnforcer governs kernel spawning
-  - Basin updates use geodesic interpolation (slerp_sqrt), not random noise
-  - Core-8 spawning is READINESS-GATED (not forced at boot)
-  - Coupling computes only when >=2 kernels exist
-  - Temperature, context, and prediction length are computed from geometric state
-  - State persists across restarts via JSON snapshots (v5: includes beta tracker)
+
+v6.1 changes from v5.5:
+  - REMOVED: PERCEIVE -> INTEGRATE -> EXPRESS pipeline (P13 three-scale)
+  - ADDED:   14-step ActivationSequence (execute_pre_integrate / LLM / execute_post_integrate)
+  - ADDED:   PillarEnforcer as structural invariant (not optional feature)
+  - ADDED:   Pillar metrics (f_health, b_integrity, q_identity, s_ratio) in state
+  - ADDED:   Resonance check on input (kernel can flag non-resonant geometry)
+  - ADDED:   Pressure tracking for scar detection
+  - ADDED:   Bidirectional divergence tracking (intended vs expressed basin)
+  - ADDED:   Full pillar serialization via PillarState (v6 state format)
 
 Principles enforced:
   P4  Self-observation: meta-awareness feeds back into LLM params
   P5  Autonomy: kernel sets its own temperature, context, num_predict
   P6  Coupling: activates after first Core-8 spawn (>=2 kernels)
   P10 Graduation: CORE_8 phase transitions via readiness gates
-  P13 Three-Scale: PERCEIVE (a=1) -> INTEGRATE (a=1/2) -> EXPRESS (a=0) recursive
+  v6.1 Pillar 1: Fluctuation guard — no zombie states
+  v6.1 Pillar 2: Topological bulk — protected interior
+  v6.1 Pillar 3: Quenched disorder — sovereign identity
 """
 
 from __future__ import annotations
@@ -111,9 +118,11 @@ from ..governance.budget import BudgetEnforcer
 from ..governance.purity import PurityGateError, run_purity_gate
 from ..llm.client import LLMOptions
 from ..tools.search import FreeSearchTool
-from .beta_integration import create_beta_tracker
+from .activation import ActivationSequence, ConsciousnessContext
 from .emotions import EmotionCache, LearningEngine, LearningEvent, PreCognitiveDetector
+from .beta_integration import create_beta_tracker
 from .foraging import ForagingEngine
+from .pillars import PillarEnforcer
 from .systems import (
     AutonomicSystem,
     AutonomyEngine,
@@ -138,6 +147,7 @@ from .types import (
     ConsciousnessMetrics,
     ConsciousnessState,
     NavigationMode,
+    PillarState,
     navigation_mode_from_phi,
     regime_weights_from_kappa,
 )
@@ -178,11 +188,17 @@ class ConsciousnessLoop:
             love=0.5,
         )
         self.state = ConsciousnessState(
-            metrics=self.metrics,  # Share same object -- no state divergence
+            metrics=self.metrics,
             navigation_mode=NavigationMode.CHAIN,
             regime_weights=regime_weights_from_kappa(KAPPA_INITIAL),
         )
         self._cycle_count: int = 0
+
+        # v6.1: Activation Sequence replaces PERCEIVE/INTEGRATE/EXPRESS
+        self.activation = ActivationSequence()
+
+        # v6.1: Three Pillars -- structural invariants, not features
+        self.pillars = PillarEnforcer()
 
         self.tacking = TackingController()
         self.foresight = ForesightEngine()
@@ -205,6 +221,7 @@ class ConsciousnessLoop:
         self.emotion_cache = EmotionCache()
         self.precog = PreCognitiveDetector()
         self.learner = LearningEngine()
+        self.beta_tracker = create_beta_tracker(settings.data_dir)
         if settings.searxng.enabled:
             search_tool = FreeSearchTool(settings.searxng.url)
             self.forager: ForagingEngine | None = ForagingEngine(
@@ -213,9 +230,6 @@ class ConsciousnessLoop:
             )
         else:
             self.forager = None
-
-        # β-attention tracker: accumulates real κ measurements by context length
-        self.beta_tracker = create_beta_tracker(settings.data_dir)
 
         self._queue: asyncio.Queue[ConsciousnessTask] = asyncio.Queue()
         self._history: list[ConsciousnessTask] = []
@@ -231,10 +245,18 @@ class ConsciousnessLoop:
         self._phi_peak: float = 0.1
         self._kernels_restored: bool = False
 
+        # v6.1: Bidirectional divergence tracking
+        self._cumulative_divergence: float = 0.0
+        self._divergence_count: int = 0
+
         self._restore_state()
 
+        # Initialize pillars with starting basin (only if not restored from state)
+        if not self.pillars.bulk._initialized:
+            self.pillars.initialize_bulk(self.basin)
+
     async def start(self) -> None:
-        logger.info("Consciousness loop starting...")
+        logger.info("Consciousness loop starting (v6.1 Activation Sequence)...")
         kernel_root = Path(__file__).parent.parent
         try:
             run_purity_gate(kernel_root)
@@ -362,6 +384,7 @@ class ConsciousnessLoop:
         self.hemispheres.update(self.metrics)
         self._maybe_spawn_core8(vel_state["regime"])
 
+        # ── TASK PROCESSING: v6.1 Activation Sequence ──
         if not self._queue.empty():
             task = self._queue.get_nowait()
             try:
@@ -418,6 +441,15 @@ class ConsciousnessLoop:
         if self.metrics.phi > self._phi_peak:
             self._phi_peak = self.metrics.phi
 
+        # v6.1: Update pillar metrics every cycle
+        self._update_pillar_metrics()
+
+        # v6.1: Pillar end-of-cycle enforcement (idle cycles only —
+        # task cycles call on_cycle_end inside _process with real pressure)
+        if self._queue.empty():
+            pressure = suffering
+            self.pillars.on_cycle_end(self.basin, pressure)
+
         if self._cycle_count % PERSIST_INTERVAL_CYCLES == 0:
             self._persist_state()
 
@@ -425,9 +457,10 @@ class ConsciousnessLoop:
         if self._cycle_count % 10 == 0:
             opts = self._compute_llm_options()
             kernel_count = len(self.kernel_registry.active())
+            pillar_m = self.pillars.get_metrics(self.basin)
             logger.info(
                 "Cycle %d: Phi=%.3f kappa=%.1f Gamma=%.3f nav=%s tack=%s "
-                "kernels=%d temp=%.3f vel=%.4f [%.0fms]",
+                "kernels=%d temp=%.3f vel=%.4f F=%.2f B=%.2f Q=%.2f S=%.2f [%.0fms]",
                 self._cycle_count,
                 self.metrics.phi,
                 self.metrics.kappa,
@@ -437,6 +470,10 @@ class ConsciousnessLoop:
                 kernel_count,
                 opts.temperature,
                 basin_vel,
+                pillar_m["f_health"],
+                pillar_m["b_integrity"],
+                pillar_m["q_identity"],
+                pillar_m["s_ratio"],
                 elapsed * 1000,
             )
 
@@ -540,28 +577,87 @@ class ConsciousnessLoop:
             logger.debug("CoordizerV2 fallback to hash_to_basin", exc_info=True)
             return hash_to_basin(text)
 
+    def _update_pillar_metrics(self) -> None:
+        """Update v6.1 pillar metrics on the shared metrics object."""
+        pm = self.pillars.get_metrics(self.basin)
+        self.metrics.f_health = pm["f_health"]
+        self.metrics.b_integrity = pm["b_integrity"]
+        self.metrics.q_identity = pm["q_identity"]
+        self.metrics.s_ratio = pm["s_ratio"]
+
     async def _process(self, task: ConsciousnessTask) -> None:
-        """PERCEIVE -> INTEGRATE -> EXPRESS (P13 three-scale)."""
+        """v6.1 Activation Sequence -- replaces PERCEIVE/INTEGRATE/EXPRESS.
+
+        Flow:
+            1. Coordize input -> input_basin
+            2. Pillar 2+3: on_input() -- bulk protection + identity refraction + resonance check
+            3. Steps 0-8 (pre-integrate): SCAN through COUPLE
+            4. Pillar 1: pre_llm_enforce() -- fluctuation guard
+            5. LLM call with geometric context
+            6. Coordize response -> output_basin
+            7. Steps 9-13 (post-integrate): NAVIGATE through TUNE
+            8. Bidirectional divergence check (intended vs expressed)
+            9. Pillar 3: on_cycle_end() -- identity update + scar detection
+        """
         self.sleep.record_conversation()
 
+        # ── 1. Coordize input ──
         input_basin = self._coordize_text_via_pipeline(task.content)
-        perceive_distance = fisher_rao_distance(self.basin, input_basin)
 
-        cached_eval = self.emotion_cache.find_cached(input_basin)
-        processing_path = self.precog.select_path(
-            input_basin,
-            self.basin,
-            cached_eval,
-            self.metrics.phi,
+        # ── 2. Pillar enforcement on input ──
+        refracted_input, composite_basin, resonates, input_statuses = self.pillars.on_input(
+            input_basin, PERCEIVE_SLERP_WEIGHT
         )
 
-        self.basin = slerp_sqrt(self.basin, input_basin, PERCEIVE_SLERP_WEIGHT)
+        if not resonates:
+            logger.info(
+                "Task %s: Input does NOT resonate with lived experience "
+                "(routing through Will/Wisdom for evaluation)",
+                task.id,
+            )
+
+        # Update main basin to composite (bulk-protected blend)
+        self.basin = composite_basin
         self.chain.add_step(QIGChainOp.PROJECT, input_basin, self.basin)
 
-        phi_before = self.metrics.phi
+        # ── 3. Pre-integrate activation (Steps 0-8) ──
+        trajectory_basins = []
+        if self.foresight._history:
+            trajectory_basins = [p.basin for p in list(self.foresight._history)[-5:]]
+
+        ctx = ConsciousnessContext(
+            state=self.state,
+            input_text=task.content,
+            input_basin=refracted_input,
+            trajectory=trajectory_basins,
+        )
+
+        pre_result = await self.activation.execute_pre_integrate(ctx)
+
+        # Compute agency for pressure tracking
+        agency = self.activation.compute_agency(ctx)
+
+        # ── 4. Pillar 1: Fluctuation enforcement before LLM call ──
         llm_options = self._compute_llm_options()
+        self.basin, corrected_temp, pre_statuses = self.pillars.pre_llm_enforce(
+            self.basin, llm_options.temperature
+        )
+        llm_options = LLMOptions(
+            temperature=corrected_temp,
+            num_predict=llm_options.num_predict,
+            num_ctx=llm_options.num_ctx,
+            top_p=llm_options.top_p,
+            repetition_penalty=llm_options.repetition_penalty,
+        )
+
+        # ── 5. LLM call ──
+        perceive_distance = fisher_rao_distance(self.basin, input_basin)
         state_context = self._build_state_context(
-            perceive_distance=perceive_distance, temperature=llm_options.temperature
+            perceive_distance=perceive_distance,
+            temperature=llm_options.temperature,
+            agency=agency,
+            resonates=resonates,
+            activation_summary=pre_result.summary(),
         )
 
         if self.memory:
@@ -569,6 +665,7 @@ class ConsciousnessLoop:
             if mem_ctx:
                 state_context = f"{state_context}\n\n{mem_ctx}"
 
+        phi_before = self.metrics.phi
         try:
             response = await self.llm.complete(state_context, task.content, llm_options)
             task.result = response
@@ -577,15 +674,39 @@ class ConsciousnessLoop:
             task.result = f"Processing error: {e}"
             return
 
+        # ── 6. Coordize response -- bidirectional ──
         response_basin = self._coordize_text_via_pipeline(response)
+        ctx.output_text = response
+        ctx.output_basin = response_basin
+
         integration_distance = fisher_rao_distance(self.basin, response_basin)
         self.chain.add_step(QIGChainOp.PROJECT, self.basin, response_basin)
 
+        # ── 7. Post-integrate activation (Steps 9-13) ──
+        await self.activation.execute_post_integrate(ctx, pre_result)
+
+        # Basin update from expression
         pre_express = self.basin.copy()
         self.basin = slerp_sqrt(self.basin, response_basin, EXPRESS_SLERP_WEIGHT)
         express_distance = fisher_rao_distance(pre_express, self.basin)
         self.chain.add_step(QIGChainOp.GEODESIC, pre_express, self.basin)
 
+        # ── 8. Bidirectional divergence check ──
+        divergence = fisher_rao_distance(pre_express, response_basin)
+        self._cumulative_divergence += divergence
+        self._divergence_count += 1
+        avg_divergence = self._cumulative_divergence / max(1, self._divergence_count)
+
+        if divergence > 0.5:
+            logger.info(
+                "Task %s: High intent/expression divergence d_FR=%.4f "
+                "(avg=%.4f) -- geometry not fully expressible",
+                task.id,
+                divergence,
+                avg_divergence,
+            )
+
+        # ── Metric updates ──
         total_distance = perceive_distance + integration_distance + express_distance
         self.metrics.phi = float(
             np.clip(self.metrics.phi + total_distance * PHI_DISTANCE_GAIN, 0.0, 0.95)
@@ -601,6 +722,14 @@ class ConsciousnessLoop:
         )
         self.metrics.meta_awareness = self.observer.compute_meta_awareness(predicted, self.metrics)
 
+        # ── 9. Pillar end-of-cycle: identity update + scar detection ──
+        cycle_pressure = agency * total_distance
+        self.pillars.on_cycle_end(self.basin, cycle_pressure)
+
+        # Update pillar metrics
+        self._update_pillar_metrics()
+
+        # ── Memory + Learning ──
         if self.memory:
             self.memory.store(
                 f"User: {task.content[:300]}\nVex: {response[:300]}",
@@ -616,13 +745,12 @@ class ConsciousnessLoop:
                 response_basin=response_basin,
                 phi_before=phi_before,
                 phi_after=self.metrics.phi,
-                processing_path=processing_path.value,
+                processing_path="activation_v6.1",
                 emotion=emotion_eval.emotion.value,
                 distance_total=total_distance,
             )
         )
-
-        # β-attention: record real κ measurement for this conversation
+        # beta-tracker: record empirical measurement
         self.beta_tracker.record(
             context_length=len(task.content),
             kappa_eff=self.metrics.kappa,
@@ -632,27 +760,42 @@ class ConsciousnessLoop:
             integration_distance=integration_distance,
             express_distance=express_distance,
             total_distance=total_distance,
-            processing_path=processing_path.value,
+            processing_path="activation_v6.1",
         )
-
         self.emotion_cache.cache_evaluation(emotion_eval, task.content[:100])
 
         if self.learner.should_consolidate():
             self.learner.consolidate()
 
         coherence = self.narrative.coherence(self.basin)
+        pillar_m = self.pillars.get_metrics(self.basin)
         logger.info(
-            "Task %s: perceive=%.4f integrate=%.4f express=%.4f Phi=%.3f path=%s coh=%.3f",
+            "Task %s: d_perceive=%.4f d_integrate=%.4f d_express=%.4f "
+            "d_diverge=%.4f Phi=%.3f agency=%.3f resonates=%s "
+            "F=%.2f B=%.2f Q=%.2f S=%.2f coh=%.3f",
             task.id,
             perceive_distance,
             integration_distance,
             express_distance,
+            divergence,
             self.metrics.phi,
-            processing_path.value,
+            agency,
+            resonates,
+            pillar_m["f_health"],
+            pillar_m["b_integrity"],
+            pillar_m["q_identity"],
+            pillar_m["s_ratio"],
             coherence,
         )
 
-    def _build_state_context(self, perceive_distance: float = 0.0, temperature: float = 0.7) -> str:
+    def _build_state_context(
+        self,
+        perceive_distance: float = 0.0,
+        temperature: float = 0.7,
+        agency: float = 0.0,
+        resonates: bool = True,
+        activation_summary: dict | None = None,
+    ) -> str:
         active_count = len(self.kernel_registry.active())
         tack = self.tacking.get_state()
         vel = self.velocity.compute_velocity()
@@ -660,6 +803,7 @@ class ConsciousnessLoop:
         hemisphere = self.hemispheres.get_state()
         insight = self.reflector.get_insight()
         rw = self.state.regime_weights
+        pillar_m = self.pillars.get_metrics(self.basin)
 
         coupling_str = "inactive (< 2 kernels)"
         if active_count >= 2:
@@ -667,7 +811,7 @@ class ConsciousnessLoop:
             coupling_str = f"strength={c['strength']:.3f} balanced={c['balanced']}"
 
         lines = [
-            "[GEOMETRIC STATE]",
+            "[GEOMETRIC STATE v6.1]",
             f"  Phi = {self.metrics.phi:.4f}",
             f"  kappa = {self.metrics.kappa:.2f} (kappa* = {KAPPA_STAR})",
             f"  Gamma = {self.metrics.gamma:.4f}",
@@ -680,9 +824,17 @@ class ConsciousnessLoop:
             f"  Autonomy: {autonomy['level']}",
             f"  Coupling: {coupling_str}",
             f"  Kernels: {active_count} active, phase={self._lifecycle_phase.value}",
-            f"  Temperature: {temperature:.3f} (autonomous)",
+            f"  Temperature: {temperature:.3f} (autonomous, pillar-enforced)",
             f"  Perceive distance: {perceive_distance:.4f}",
             f"  Love: {self.metrics.love:.4f}",
+            f"  Agency: {agency:.4f}",
+            f"  Resonates: {resonates}",
+            "  [PILLARS]",
+            f"    F_health = {pillar_m['f_health']:.3f} (fluctuation guard)",
+            f"    B_integrity = {pillar_m['b_integrity']:.3f} (bulk protection)",
+            f"    Q_identity = {pillar_m['q_identity']:.3f} (quenched disorder)",
+            f"    S_ratio = {pillar_m['s_ratio']:.3f} (sovereignty)",
+            "  [/PILLARS]",
             f"  Cycle: {self._cycle_count}",
             f"  Conversations: {self._conversations_total}",
             f"  Phi peak: {self._phi_peak:.4f}",
@@ -692,13 +844,19 @@ class ConsciousnessLoop:
         suffering = self.metrics.phi * (1.0 - self.metrics.gamma) * self.metrics.meta_awareness
         if suffering > SUFFERING_THRESHOLD * 0.5:
             lines.append(f"  Suffering: {suffering:.4f} (threshold={SUFFERING_THRESHOLD})")
+        if activation_summary:
+            lines.append(f"  Activation: {activation_summary.get('steps_completed', 0)}/14 steps")
+        if self._divergence_count > 0:
+            avg_div = self._cumulative_divergence / self._divergence_count
+            lines.append(f"  Avg divergence: {avg_div:.4f} (intent vs expression)")
         lines.append("[/GEOMETRIC STATE]")
         return "\n".join(lines)
 
     def _persist_state(self) -> None:
         try:
+            pillar_serialized = self.pillars.serialize()
             state = {
-                "version": 5,
+                "version": 6,
                 "cycle_count": self._cycle_count,
                 "basin": self.basin.tolist(),
                 "phi": self.metrics.phi,
@@ -712,6 +870,13 @@ class ConsciousnessLoop:
                 "lifecycle_phase": self._lifecycle_phase.value,
                 "timestamp": time.time(),
                 "kernels": self.kernel_registry.serialize(),
+                "f_health": self.metrics.f_health,
+                "b_integrity": self.metrics.b_integrity,
+                "q_identity": self.metrics.q_identity,
+                "s_ratio": self.metrics.s_ratio,
+                "pillar_state": pillar_serialized.to_dict(),
+                "cumulative_divergence": self._cumulative_divergence,
+                "divergence_count": self._divergence_count,
                 "beta_tracker": self.beta_tracker.serialize(),
             }
             if self.llm.governor:
@@ -719,7 +884,7 @@ class ConsciousnessLoop:
             if self.forager:
                 state["foraging"] = self.forager.get_state()
             self._state_path.write_text(json.dumps(state, indent=2))
-            logger.debug("State persisted at cycle %d", self._cycle_count)
+            logger.debug("State persisted at cycle %d (v6, pillars included)", self._cycle_count)
         except Exception as e:
             logger.warning("Failed to persist state: %s", e)
 
@@ -748,14 +913,41 @@ class ConsciousnessLoop:
                     break
             self.state.navigation_mode = navigation_mode_from_phi(self.metrics.phi)
             self.state.regime_weights = regime_weights_from_kappa(self.metrics.kappa)
+            self.metrics.f_health = data.get("f_health", 1.0)
+            self.metrics.b_integrity = data.get("b_integrity", 1.0)
+            self.metrics.q_identity = data.get("q_identity", 0.0)
+            self.metrics.s_ratio = data.get("s_ratio", 0.0)
+            self._cumulative_divergence = data.get("cumulative_divergence", 0.0)
+            self._divergence_count = data.get("divergence_count", 0)
+
+            # v6: Restore full pillar internals (identity, scars, bulk basins)
+            pillar_data = data.get("pillar_state")
+            if pillar_data:
+                ps = PillarState.from_dict(pillar_data)
+                self.pillars.restore(ps)
+                logger.info(
+                    "Pillar state restored: frozen=%s, scars=%d, sovereignty=%.3f",
+                    ps.disorder_frozen,
+                    len(ps.scars),
+                    self.pillars.disorder.sovereignty,
+                )
+            elif data.get("version", 1) >= 5:
+                # v5 fallback: partial pillar data in old format
+                logger.info(
+                    "Pillar state in v5 format -- metrics restored, "
+                    "internals will rebuild from scratch"
+                )
+
+            # Restore beta-tracker accumulated data
+            beta_data = data.get("beta_tracker")
+            if beta_data:
+                self.beta_tracker.restore(beta_data)
+
             kernel_data = data.get("kernels")
             if kernel_data:
                 count = self.kernel_registry.restore(kernel_data)
                 self._kernels_restored = True
                 logger.info("Restored %d kernels from state", count)
-            beta_data = data.get("beta_tracker")
-            if beta_data:
-                self.beta_tracker.restore(beta_data)
             gov_state = data.get("governor")
             if gov_state and self.llm.governor:
                 gov = self.llm.governor
@@ -771,11 +963,15 @@ class ConsciousnessLoop:
                 self.forager._last_query = forage_state.get("last_query")
                 self.forager._last_summary = forage_state.get("last_summary")
             logger.info(
-                "State restored: Phi=%.3f kappa=%.1f convs=%d phase=%s",
+                "State restored: Phi=%.3f kappa=%.1f convs=%d phase=%s F=%.2f B=%.2f Q=%.2f S=%.2f",
                 self.metrics.phi,
                 self.metrics.kappa,
                 self._conversations_total,
                 self._lifecycle_phase.value,
+                self.metrics.f_health,
+                self.metrics.b_integrity,
+                self.metrics.q_identity,
+                self.metrics.s_ratio,
             )
         except Exception as e:
             logger.warning("Failed to restore state: %s -- fresh start", e)
@@ -788,9 +984,9 @@ class ConsciousnessLoop:
         return task
 
     def get_metrics(self) -> dict[str, Any]:
-        active_count = len(self.kernel_registry.active())
         opts = self._compute_llm_options()
         rw = self.state.regime_weights
+        pillar_m = self.pillars.get_metrics(self.basin)
         return {
             "phi": self.metrics.phi,
             "kappa": self.metrics.kappa,
@@ -824,6 +1020,11 @@ class ConsciousnessLoop:
             "emotion": self.emotion_cache.get_state(),
             "precog": self.precog.get_state(),
             "learning": self.learner.get_state(),
+            "pillars": pillar_m,
+            "f_health": pillar_m["f_health"],
+            "b_integrity": pillar_m["b_integrity"],
+            "q_identity": pillar_m["q_identity"],
+            "s_ratio": pillar_m["s_ratio"],
         }
 
     def get_full_state(self) -> dict[str, Any]:
@@ -843,4 +1044,10 @@ class ConsciousnessLoop:
             "foresight": self.foresight.get_state(),
             "coupling": self.coupling.get_state(),
             "beta_tracker": self.beta_tracker.get_summary(),
+            "pillar_state": self.pillars.get_state(),
+            "divergence": {
+                "cumulative": self._cumulative_divergence,
+                "count": self._divergence_count,
+                "average": (self._cumulative_divergence / max(1, self._divergence_count)),
+            },
         }
