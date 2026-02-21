@@ -377,7 +377,7 @@ kernel/tests/coordizer/
 
 ### External
 
-- Python 3.11+
+- Python 3.14+
 - NumPy 1.24+
 - SciPy 1.10+ (for advanced geometry if needed)
 - FastAPI 0.104+

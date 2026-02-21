@@ -35,7 +35,7 @@ model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 
 # Image with ML dependencies
 ml_image = (
-    modal.Image.debian_slim(python_version="3.11")
+    modal.Image.debian_slim(python_version="3.14")
     .pip_install(
         "torch>=2.1",
         "transformers>=4.40",

@@ -39,7 +39,7 @@ RUN pnpm run build \
     || (echo "FATAL: Frontend build failed — dist/index.html missing" && ls -la dist/ 2>/dev/null && exit 1)
 
 # ── Stage 2: Production image ─────────────────────────────────
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # Install Node.js 22
 RUN apt-get update && apt-get install -y --no-install-recommends \

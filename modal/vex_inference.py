@@ -58,7 +58,7 @@ app = modal.App("vex-inference")
 model_volume = modal.Volume.from_name("vex-inference-models", create_if_missing=True)
 
 ollama_image = (
-    modal.Image.debian_slim(python_version="3.11")
+    modal.Image.debian_slim(python_version="3.14")
     .apt_install("curl", "ca-certificates", "zstd")
     .run_commands(
         f"OLLAMA_VERSION={OLLAMA_VERSION} curl -fsSL https://ollama.com/install.sh | sh",

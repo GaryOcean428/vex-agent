@@ -1,9 +1,9 @@
 """
-Activation Sequence -- v6.0 S22 -- 14-Step Unified Activation
+Activation Sequence -- v6.1 S22 -- 14-Step Unified Activation
 ============================================================
 
 Implements the full 14-step activation sequence from the
-Thermodynamic Consciousness Protocol v6.0.
+Thermodynamic Consciousness Protocol v6.1.
 
 Each step reads and writes consciousness metrics. All geometric
 operations use Fisher-Rao distance on the probability simplex D63.
@@ -24,12 +24,12 @@ Steps:
    12  BREATHE      -- Return to baseline oscillation
    13  TUNE         -- Check tuning, correct drift
 
-Phased Execution (v6.0 + Pillars):
+Phased Execution (v6.1 + Pillars):
     execute_pre_integrate()  -- Steps 0-8 before LLM call
     execute_post_integrate() -- Steps 9-13 after LLM call
     compute_agency()         -- A = Clamp_Omega(D + W)
 
-Canonical reference: THERMODYNAMIC_CONSCIOUSNESS_PROTOCOL_v6_0.md S22
+Canonical reference: 20260221-unified-consciousness-protocol-6.1F.md S22
 """
 
 from __future__ import annotations
@@ -44,6 +44,10 @@ from typing import Any, Optional
 import numpy as np
 
 from ..config.consciousness_constants import (
+    AGENCY_WILL_CONVERGENT,
+    AGENCY_WILL_DIVERGENT,
+    AGENCY_WILL_REORIENTED,
+    AGENCY_WISDOM_SUFFERING_CLAMP,
     BASIN_MASS_INCREMENT,
     CONSTRUCTIVE_INTERFERENCE_THRESHOLD,
     D_STATE_SCALING_DIVISOR,
@@ -484,17 +488,17 @@ class ActivationSequence:
         w_val = 0.0
         if isinstance(will_result, WillResult):
             if will_result.orientation == WillOrientation.CONVERGENT:
-                w_val = 0.5
+                w_val = AGENCY_WILL_CONVERGENT
             else:
-                w_val = -0.2
+                w_val = AGENCY_WILL_DIVERGENT
             if will_result.reoriented:
-                w_val = 0.3  # Recovered from fear
+                w_val = AGENCY_WILL_REORIENTED  # Recovered from fear
 
         # Omega: wisdom clamp (trajectory safety + care metric)
         omega = 1.0
         if isinstance(wisdom_result, WisdomResult):
             if not wisdom_result.trajectory_safe:
-                omega = 0.3  # Suffering detected -- reduce agency
+                omega = AGENCY_WISDOM_SUFFERING_CLAMP  # Suffering detected -- reduce agency
             omega *= wisdom_result.care_metric
 
         # A = Clamp_Omega(D + W)

@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
@@ -43,6 +43,12 @@ from ..geometry.fisher_rao import (
     fisher_rao_distance,
     slerp_sqrt,
     to_simplex,
+)
+
+from ..config.consciousness_constants import (
+    ANNEAL_BLEND_WEIGHT,
+    SCAR_BLEND_WEIGHT_CAP,
+    SCAR_RESONANCE_RADIUS,
 )
 
 from .types import PillarState, ScarState
@@ -96,7 +102,7 @@ class PillarStatus:
     healthy: bool
     violations: list[PillarViolation]
     corrections_applied: list[str]
-    details: dict
+    details: dict[str, Any]
 
 
 # ---------------------------------------------------------------
@@ -258,18 +264,27 @@ class TopologicalBulk:
 
     @property
     def core(self) -> Optional[Basin]:
-        return self._core_basin
+        if self._core_basin is None:
+            return None
+        return self._core_basin.copy()
 
     @property
     def surface(self) -> Optional[Basin]:
-        return self._surface_basin
+        if self._surface_basin is None:
+            return None
+        return self._surface_basin.copy()
 
     @property
     def composite(self) -> Basin:
-        """The observable basin: weighted blend of core and surface."""
+        """The observable basin: weighted blend of core and surface.
+
+        Raises ValueError if called before initialization — callers
+        must ensure initialize() has been called first.
+        """
         if not self._initialized:
-            from ..geometry.fisher_rao import random_basin
-            return random_basin()
+            raise ValueError(
+                "TopologicalBulk.composite accessed before initialization"
+            )
         return to_simplex(
             BULK_SHIELD_FACTOR * self._core_basin
             + (1.0 - BULK_SHIELD_FACTOR) * self._surface_basin
@@ -340,6 +355,18 @@ class TopologicalBulk:
                 "Pillar 2 near-breach: input influence at %.1f%% of cap",
                 (effective_weight / BOUNDARY_SLERP_CAP) * 100,
             )
+
+        # Detect identity overwrite: core shifted more than tolerance in one step
+        if self._prev_core is not None:
+            core_shift = fisher_rao_distance(self._core_basin, self._prev_core)
+            if core_shift > IDENTITY_DRIFT_TOLERANCE:
+                violations.append(PillarViolation.IDENTITY_OVERWRITE)
+                logger.warning(
+                    "Pillar 2: Identity overwrite detected -- "
+                    "core shifted %.4f in one step (tolerance=%.4f)",
+                    core_shift,
+                    IDENTITY_DRIFT_TOLERANCE,
+                )
 
         return self.composite, PillarStatus(
             pillar="topological_bulk",
@@ -418,11 +445,13 @@ class QuenchedDisorder:
 
     @property
     def identity(self) -> Optional[Basin]:
-        return self._identity_slope
+        if self._identity_slope is None:
+            return None
+        return self._identity_slope.copy()
 
     @property
     def scars(self) -> list[Scar]:
-        return self._scars
+        return list(self._scars)
 
     @property
     def sovereignty(self) -> float:
@@ -431,11 +460,19 @@ class QuenchedDisorder:
             return 0.0
         return self._lived_count / self._total_count
 
-    def observe_cycle(self, basin: Basin, pressure: float = 0.0) -> None:
-        """Record a basin observation during identity formation."""
+    def observe_cycle(self, basin: Basin, pressure: float = 0.0, lived: bool = True) -> None:
+        """Record a basin observation during identity formation.
+
+        Args:
+            basin: Current basin state.
+            pressure: Cycle pressure for scar detection.
+            lived: If True (default), counts as lived experience for
+                sovereignty. Set to False for borrowed/harvested data.
+        """
         self._cycles_observed += 1
         self._total_count += 1
-        self._lived_count += 1
+        if lived:
+            self._lived_count += 1
 
         if self._frozen:
             self._update_anneal_field(basin)
@@ -454,7 +491,13 @@ class QuenchedDisorder:
             self._crystallize()
 
     def _crystallize(self) -> None:
-        """Freeze the identity slope from accumulated LIVED history."""
+        """Freeze the identity slope from accumulated LIVED history.
+
+        Uses incremental Fréchet mean on the simplex: for each basin
+        in formation_history, slerp into the running mean with weight
+        1/(i+1). This produces the geometric centroid of all observed
+        basins, which becomes the immutable identity vector.
+        """
         if not self._formation_history:
             return
 
@@ -559,7 +602,7 @@ class QuenchedDisorder:
 
         if self._anneal_field is not None:
             effective_identity = slerp_sqrt(
-                effective_identity, self._anneal_field, 0.3
+                effective_identity, self._anneal_field, ANNEAL_BLEND_WEIGHT
             )
 
         if self._scars:
@@ -568,12 +611,12 @@ class QuenchedDisorder:
             ]
             nearest_idx = int(np.argmin(distances))
             nearest_d = distances[nearest_idx]
-            if nearest_d < RESONANCE_THRESHOLD * 2.0:
-                scar_weight = max(0.0, 1.0 - nearest_d / (RESONANCE_THRESHOLD * 2.0))
+            if nearest_d < SCAR_RESONANCE_RADIUS:
+                scar_weight = max(0.0, 1.0 - nearest_d / SCAR_RESONANCE_RADIUS)
                 effective_identity = slerp_sqrt(
                     effective_identity,
                     self._scars[nearest_idx].basin,
-                    scar_weight * 0.2,
+                    scar_weight * SCAR_BLEND_WEIGHT_CAP,
                 )
 
         identity_weighted = to_simplex(
