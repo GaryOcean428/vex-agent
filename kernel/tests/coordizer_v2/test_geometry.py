@@ -14,24 +14,22 @@ import pytest
 
 from kernel.coordizer_v2.geometry import (
     BASIN_DIM,
-    KAPPA_STAR,
     E8_RANK,
-    _EPS,
-    to_simplex,
-    random_basin,
-    softmax_to_simplex,
+    KAPPA_STAR,
     bhattacharyya_coefficient,
-    fisher_rao_distance,
-    fisher_rao_distance_batch,
-    slerp,
-    geodesic_midpoint,
-    frechet_mean,
-    log_map,
     exp_map,
     fisher_information_diagonal,
+    fisher_rao_distance,
+    fisher_rao_distance_batch,
+    frechet_mean,
+    geodesic_midpoint,
+    log_map,
     natural_gradient,
+    random_basin,
+    slerp,
+    softmax_to_simplex,
+    to_simplex,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 #  FIXTURES

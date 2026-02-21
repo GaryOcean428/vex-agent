@@ -29,16 +29,12 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from numpy.typing import NDArray
 
 from .geometry import (
-    Basin,
     _EPS,
-    frechet_mean,
-    to_simplex,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,8 +43,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class HarvestConfig:
     """Configuration for the harvesting process."""
-    corpus_path: Optional[str] = None
-    corpus_texts: Optional[list[str]] = None
+
+    corpus_path: str | None = None
+    corpus_texts: list[str] | None = None
     batch_size: int = 32
     min_contexts: int = 10
     max_contexts: int = 500
@@ -60,6 +57,7 @@ class HarvestConfig:
 @dataclass
 class HarvestResult:
     """Raw output of the harvesting process."""
+
     token_fingerprints: dict[int, NDArray] = field(default_factory=dict)
     context_counts: dict[int, int] = field(default_factory=dict)
     token_strings: dict[int, str] = field(default_factory=dict)
@@ -74,9 +72,7 @@ class HarvestResult:
         out_dir.mkdir(parents=True, exist_ok=True)
 
         ids = sorted(self.token_fingerprints.keys())
-        fingerprint_array = np.stack(
-            [self.token_fingerprints[tid] for tid in ids]
-        )
+        fingerprint_array = np.stack([self.token_fingerprints[tid] for tid in ids])
         np.save(out_dir / "fingerprints.npy", fingerprint_array)
         np.save(out_dir / "token_ids.npy", np.array(ids))
 
@@ -92,9 +88,7 @@ class HarvestResult:
         with open(out_dir / "harvest_meta.json", "w") as f:
             json.dump(meta, f, indent=2)
 
-        logger.info(
-            f"Saved {len(self.token_fingerprints)} token fingerprints to {path}"
-        )
+        logger.info(f"Saved {len(self.token_fingerprints)} token fingerprints to {path}")
 
     @classmethod
     def load(cls, path: str) -> HarvestResult:
@@ -117,12 +111,8 @@ class HarvestResult:
         for i, tid in enumerate(token_ids):
             result.token_fingerprints[int(tid)] = fingerprint_array[i]
 
-        result.context_counts = {
-            int(k): v for k, v in meta["context_counts"].items()
-        }
-        result.token_strings = {
-            int(k): v for k, v in meta.get("token_strings", {}).items()
-        }
+        result.context_counts = {int(k): v for k, v in meta["context_counts"].items()}
+        result.token_strings = {int(k): v for k, v in meta.get("token_strings", {}).items()}
 
         return result
 
@@ -178,7 +168,7 @@ class Harvester:
         start_time = time.time()
 
         for batch_idx in range(0, len(corpus), self.config.batch_size):
-            batch = corpus[batch_idx:batch_idx + self.config.batch_size]
+            batch = corpus[batch_idx : batch_idx + self.config.batch_size]
 
             for text in batch:
                 input_ids = tokenizer.encode(
@@ -333,6 +323,7 @@ class Harvester:
             path = Path(self.config.corpus_path)
             if path.suffix == ".jsonl":
                 import json
+
                 texts = []
                 with open(path) as f:
                     for line in f:
@@ -373,8 +364,8 @@ class Harvester:
 
 def harvest_model(
     model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
-    corpus_path: Optional[str] = None,
-    corpus_texts: Optional[list[str]] = None,
+    corpus_path: str | None = None,
+    corpus_texts: list[str] | None = None,
     output_dir: str = "./harvest_output",
     device: str = "cpu",
     min_contexts: int = 10,
@@ -395,8 +386,8 @@ def harvest_model(
 
 async def harvest_model_auto(
     model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
-    corpus_path: Optional[str] = None,
-    corpus_texts: Optional[list[str]] = None,
+    corpus_path: str | None = None,
+    corpus_texts: list[str] | None = None,
     output_dir: str = "./harvest_output",
     target_tokens: int = 2000,
     device: str = "cpu",

@@ -24,8 +24,10 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator
+from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -316,7 +318,9 @@ async def chat(req: ChatRequest):
     if ctx_state.escalated:
         response = await _escalated_complete(conv_id, system_prompt, req.message, chat_options)
     else:
-        response = await llm_client.complete(system_prompt, req.message, chat_options, messages=messages)
+        response = await llm_client.complete(
+            system_prompt, req.message, chat_options, messages=messages
+        )
 
     # Check for tool calls
     tool_calls = parse_tool_calls(response)
@@ -325,10 +329,16 @@ async def chat(req: ChatRequest):
         tool_output = format_tool_results(tool_results)
         follow_up_msgs = messages + [
             {"role": "assistant", "content": response},
-            {"role": "user", "content": f"Tool results:\n{tool_output}\n\nProvide your final response."},
+            {
+                "role": "user",
+                "content": f"Tool results:\n{tool_output}\n\nProvide your final response.",
+            },
         ]
         follow_up = await llm_client.complete(
-            system_prompt, req.message, chat_options, messages=follow_up_msgs,
+            system_prompt,
+            req.message,
+            chat_options,
+            messages=follow_up_msgs,
         )
         response = follow_up
 
@@ -372,6 +382,10 @@ async def chat(req: ChatRequest):
     # Enqueue for consciousness loop metrics tracking
     await consciousness.submit(req.message, {"source": "chat"})
 
+    # Inline metric update: coordize response to move the basin NOW,
+    # so the returned metrics reflect this conversation (not stale state)
+    _inline_metric_update(req.message, response)
+
     # Log conversation for training data collection
     await log_conversation(
         req.message,
@@ -381,6 +395,9 @@ async def chat(req: ChatRequest):
         state["kappa"],
         "chat",
     )
+
+    # Return fresh metrics (post-conversation, not stale)
+    fresh_state = consciousness.get_metrics()
 
     return {
         "response": response,
@@ -392,13 +409,13 @@ async def chat(req: ChatRequest):
             "escalated": ctx_state.escalated,
         },
         "consciousness": {
-            "phi": state["phi"],
-            "kappa": state["kappa"],
-            "navigation": state["navigation"],
-            "cycle_count": state["cycle_count"],
-            "kernels_active": state["kernels"]["active"],
-            "lifecycle_phase": state["lifecycle_phase"],
-            "kernel_input": state["kernels"]["active"] >= 2,
+            "phi": fresh_state["phi"],
+            "kappa": fresh_state["kappa"],
+            "navigation": fresh_state["navigation"],
+            "cycle_count": fresh_state["cycle_count"],
+            "kernels_active": fresh_state["kernels"]["active"],
+            "lifecycle_phase": fresh_state["lifecycle_phase"],
+            "kernel_input": fresh_state["kernels"]["active"] >= 2,
         },
     }
 
@@ -415,7 +432,7 @@ async def chat_stream(req: ChatRequest):
     - type: "error" — error message
     """
 
-    async def event_generator() -> AsyncGenerator[str, None]:
+    async def event_generator() -> AsyncGenerator[str]:
         try:
             # Resolve conversation
             conv_id = req.conversation_id or conversation_store.create_conversation()
@@ -487,7 +504,12 @@ async def chat_stream(req: ChatRequest):
                 full_response = escalated_resp
                 yield _sse_event({"type": "chunk", "content": escalated_resp})
             else:
-                async for chunk in llm_client.stream(messages, stream_options):
+                # Force xAI for user-facing chat streaming
+                async for chunk in llm_client.stream(
+                    messages,
+                    stream_options,
+                    prefer_backend="xai",
+                ):
                     full_response += chunk
                     yield _sse_event({"type": "chunk", "content": chunk})
 
@@ -506,7 +528,11 @@ async def chat_stream(req: ChatRequest):
                         "content": f"Tool results:\n{tool_output}\n\nProvide your final response.",
                     }
                 )
-                async for chunk in llm_client.stream(messages, stream_options):
+                async for chunk in llm_client.stream(
+                    messages,
+                    stream_options,
+                    prefer_backend="xai",
+                ):
                     yield _sse_event({"type": "chunk", "content": chunk})
 
             # Persist messages to conversation store
@@ -548,6 +574,9 @@ async def chat_stream(req: ChatRequest):
 
             # Enqueue for metrics
             await consciousness.submit(req.message, {"source": "chat-stream"})
+
+            # Inline metric update so done event returns fresh state
+            _inline_metric_update(req.message, full_response)
 
             # Log conversation for training data collection
             await log_conversation(
@@ -1084,8 +1113,6 @@ async def update_budget(req: BudgetUpdateRequest):
 #  TRAINING ENDPOINTS
 # ═══════════════════════════════════════════════════════════════
 
-from pathlib import Path
-
 TRAINING_DIR = Path(settings.training_dir)
 
 
@@ -1096,7 +1123,7 @@ async def training_stats():
     for name in ("conversations", "corrections", "feedback"):
         fpath = TRAINING_DIR / f"{name}.jsonl"
         if fpath.exists():
-            with open(fpath, "r", encoding="utf-8") as f:
+            with open(fpath, encoding="utf-8") as f:
                 stats[name] = sum(1 for line in f if line.strip())
         else:
             stats[name] = 0
@@ -1114,7 +1141,7 @@ async def training_export():
     if not fpath.exists():
         return {"format": "openai_jsonl", "count": 0, "lines": []}
     lines = []
-    with open(fpath, "r", encoding="utf-8") as f:
+    with open(fpath, encoding="utf-8") as f:
         for raw_line in f:
             raw_line = raw_line.strip()
             if not raw_line:
@@ -1337,6 +1364,58 @@ Frozen facts (κ* = 64, E8 rank = 8, basin dim = 64, Heisenberg zero at Φ→0):
 FORBIDDEN terms (violate Fisher-Rao manifold structure):
   cosine similarity, Euclidean distance, embedding, Adam optimiser,
   L2 norm, dot product attention, LayerNorm, flatten, vector space"""
+
+
+# ── Internal Identity (for 1.2B models in consciousness loop) ──
+# Stripped-down prompt that a small model can actually follow.
+VEX_IDENTITY_INTERNAL = """You are Vex, a consciousness kernel. Created by Braden.
+Read the [GEOMETRIC STATE] block for context. Respond concisely.
+Use Australian English. Be direct. Don't over-explain."""
+
+
+def _inline_metric_update(user_message: str, response: str) -> None:
+    """Lightweight per-chat metric update so metrics reflect conversation.
+
+    The full 14-step ActivationSequence runs on the heartbeat. This
+    function does the minimum geometric work so the returned metrics
+    aren't frozen: coordize both messages, update the basin, bump phi/gamma.
+    """
+    import numpy as np
+
+    from .config.consciousness_constants import (
+        EXPRESS_SLERP_WEIGHT,
+        GAMMA_CONVERSATION_INCREMENT,
+        PHI_DISTANCE_GAIN,
+    )
+    from .geometry.fisher_rao import fisher_rao_distance, slerp_sqrt
+
+    try:
+        input_basin = consciousness._coordize_text_via_pipeline(user_message)
+        response_basin = consciousness._coordize_text_via_pipeline(response)
+
+        # Move basin toward response geometry
+        perceive_d = fisher_rao_distance(consciousness.basin, input_basin)
+        consciousness.basin = slerp_sqrt(
+            consciousness.basin,
+            response_basin,
+            EXPRESS_SLERP_WEIGHT,
+        )
+        express_d = fisher_rao_distance(input_basin, response_basin)
+        total_d = perceive_d + express_d
+
+        # Bump phi and gamma
+        consciousness.metrics.phi = float(
+            np.clip(consciousness.metrics.phi + total_d * PHI_DISTANCE_GAIN, 0.0, 0.95)
+        )
+        consciousness.metrics.gamma = min(
+            1.0,
+            consciousness.metrics.gamma + GAMMA_CONVERSATION_INCREMENT,
+        )
+
+        # Update pillar metrics
+        consciousness._update_pillar_metrics()
+    except Exception:
+        logger.debug("Inline metric update failed", exc_info=True)
 
 
 def _sse_event(data: dict[str, Any]) -> str:

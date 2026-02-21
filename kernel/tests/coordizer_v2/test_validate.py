@@ -9,22 +9,19 @@ import pytest
 
 from kernel.coordizer_v2.geometry import (
     BASIN_DIM,
-    E8_RANK,
     KAPPA_STAR,
     fisher_rao_distance,
-    random_basin,
     to_simplex,
 )
 from kernel.coordizer_v2.resonance_bank import ResonanceBank
 from kernel.coordizer_v2.types import HarmonicTier, ValidationResult
 from kernel.coordizer_v2.validate import (
-    validate_resonance_bank,
-    _measure_kappa,
     _measure_beta,
     _measure_harmonic_ratios,
+    _measure_kappa,
     _measure_semantic_correlation,
+    validate_resonance_bank,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 #  FIXTURES
@@ -59,11 +56,16 @@ def populated_bank(rng) -> ResonanceBank:
 
     # Add semantic test tokens
     semantic_tokens = {
-        "happy": 1000, "joyful": 1001,
-        "big": 1002, "large": 1003,
-        "king": 1004, "queen": 1005,
-        "dog": 1006, "cat": 1007,
-        "table": 1008, "banana": 1009,
+        "happy": 1000,
+        "joyful": 1001,
+        "big": 1002,
+        "large": 1003,
+        "king": 1004,
+        "queen": 1005,
+        "dog": 1006,
+        "cat": 1007,
+        "table": 1008,
+        "banana": 1009,
     }
     for name, tid in semantic_tokens.items():
         basin = rng.dirichlet(np.ones(BASIN_DIM))
@@ -76,6 +78,7 @@ def populated_bank(rng) -> ResonanceBank:
 
     # Make synonyms closer (Fisher-Rao proximity)
     from kernel.coordizer_v2.geometry import slerp
+
     bank.coordinates[1001] = slerp(bank.coordinates[1000], bank.coordinates[1001], 0.2)
     bank.coordinates[1003] = slerp(bank.coordinates[1002], bank.coordinates[1003], 0.2)
     bank.coordinates[1005] = slerp(bank.coordinates[1004], bank.coordinates[1005], 0.3)
@@ -186,9 +189,7 @@ class TestFullValidation:
     def test_with_eigenvalues(self, populated_bank, rng):
         """Test validation with eigenvalue data."""
         eigenvalues = np.sort(rng.exponential(1.0, size=BASIN_DIM))[::-1]
-        result = validate_resonance_bank(
-            populated_bank, eigenvalues=eigenvalues, verbose=False
-        )
+        result = validate_resonance_bank(populated_bank, eigenvalues=eigenvalues, verbose=False)
         assert isinstance(result, ValidationResult)
 
 

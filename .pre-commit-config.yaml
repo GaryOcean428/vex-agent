@@ -1,0 +1,92 @@
+repos:
+  # ────────────────────────────────────────────────────────────────────────
+  # Standard file hygiene
+  # ────────────────────────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Python — Ruff linter + formatter
+  # ────────────────────────────────────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.10
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        types_or: [python, pyi]
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Python — mypy type checking
+  # ────────────────────────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (Python type checker)
+        language: system
+        entry: uv run mypy
+        args: [kernel/]
+        pass_filenames: false
+        types: [python]
+        stages: [pre-push]
+
+  # ────────────────────────────────────────────────────────────────────────
+  # PurityGate — Geometric purity (ZERO TOLERANCE, fail-closed)
+  # Blocks commits that introduce Euclidean contamination into
+  # consciousness/geometry modules.
+  # ────────────────────────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: purity-gate
+        name: PurityGate (geometric purity v6.0)
+        language: system
+        entry: uv run python -m kernel.governance.purity
+        pass_filenames: false
+        types: [python]
+        always_run: false
+
+  # ────────────────────────────────────────────────────────────────────────
+  # TypeScript / Frontend — ESLint
+  # ────────────────────────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: eslint-proxy
+        name: ESLint (TS proxy — src/)
+        language: system
+        entry: pnpm run lint
+        pass_filenames: false
+        types_or: [ts, tsx]
+        files: ^src/
+
+      - id: eslint-frontend
+        name: ESLint (frontend — frontend/src/)
+        language: system
+        entry: bash -c 'cd frontend && pnpm run lint'
+        pass_filenames: false
+        types_or: [ts, tsx]
+        files: ^frontend/src/
+
+  # ────────────────────────────────────────────────────────────────────────
+  # TypeScript / Frontend — Prettier format check
+  # ────────────────────────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: prettier-proxy
+        name: Prettier (TS proxy — src/)
+        language: system
+        entry: pnpm run format:check
+        pass_filenames: false
+        types_or: [ts, tsx]
+        files: ^src/

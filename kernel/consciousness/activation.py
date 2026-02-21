@@ -39,7 +39,7 @@ import math
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -143,8 +143,8 @@ class StepResult:
 
 @dataclass
 class ScanResult(StepResult):
-    regime_weights: Optional[RegimeWeights] = None
-    navigation_mode: Optional[NavigationMode] = None
+    regime_weights: RegimeWeights | None = None
+    navigation_mode: NavigationMode | None = None
     phi_gate: float = 0.0
     s_persist: float = 0.0
     spectrum_health: float = 0.0
@@ -153,7 +153,7 @@ class ScanResult(StepResult):
 @dataclass
 class DesireResult(StepResult):
     pressure_magnitude: float = 0.0
-    pressure_direction: Optional[np.ndarray] = None
+    pressure_direction: np.ndarray | None = None
     void_detected: bool = False
 
 
@@ -174,7 +174,7 @@ class WisdomResult(StepResult):
 
 @dataclass
 class ReceiveResult(StepResult):
-    layer_0_sensation: Optional[str] = None
+    layer_0_sensation: str | None = None
     pre_cognitive_fired: bool = False
     basin_distance_to_known: float = 0.0
     kappa_sensory: float = 0.0
@@ -182,9 +182,9 @@ class ReceiveResult(StepResult):
 
 @dataclass
 class SpectralModelResult(StepResult):
-    other_spectrum: Optional[np.ndarray] = None
+    other_spectrum: np.ndarray | None = None
     other_tacking_freq: float = 0.0
-    other_key: Optional[str] = None
+    other_key: str | None = None
 
 
 @dataclass
@@ -210,8 +210,8 @@ class CoupleResult(StepResult):
 
 @dataclass
 class NavigateResult(StepResult):
-    mode_used: Optional[NavigationMode] = None
-    dominant_regime: Optional[str] = None
+    mode_used: NavigationMode | None = None
+    dominant_regime: str | None = None
     pre_cognitive_honoured: bool = False
 
 
@@ -219,14 +219,14 @@ class NavigateResult(StepResult):
 class IntegrateForgeResult(StepResult):
     shadow_activated: bool = False
     forge_ran: bool = False
-    geometry_class_assigned: Optional[str] = None
+    geometry_class_assigned: str | None = None
     basin_mass_updated: bool = False
 
 
 @dataclass
 class ExpressResult(StepResult):
     melody_trajectory: list[float] = field(default_factory=list)
-    harmonic_key: Optional[str] = None
+    harmonic_key: str | None = None
     rhythm_pattern: float = 0.0
 
 
@@ -248,20 +248,20 @@ class TuneResult(StepResult):
 class ActivationResult:
     """Complete result of the 14-step activation sequence."""
 
-    scan: Optional[ScanResult] = None
-    desire: Optional[DesireResult] = None
-    will: Optional[WillResult] = None
-    wisdom: Optional[WisdomResult] = None
-    receive: Optional[ReceiveResult] = None
-    spectral_model: Optional[SpectralModelResult] = None
-    entrain: Optional[EntrainResult] = None
-    foresight: Optional[ForesightResult] = None
-    couple: Optional[CoupleResult] = None
-    navigate: Optional[NavigateResult] = None
-    integrate: Optional[IntegrateForgeResult] = None
-    express: Optional[ExpressResult] = None
-    breathe: Optional[BreatheResult] = None
-    tune: Optional[TuneResult] = None
+    scan: ScanResult | None = None
+    desire: DesireResult | None = None
+    will: WillResult | None = None
+    wisdom: WisdomResult | None = None
+    receive: ReceiveResult | None = None
+    spectral_model: SpectralModelResult | None = None
+    entrain: EntrainResult | None = None
+    foresight: ForesightResult | None = None
+    couple: CoupleResult | None = None
+    navigate: NavigateResult | None = None
+    integrate: IntegrateForgeResult | None = None
+    express: ExpressResult | None = None
+    breathe: BreatheResult | None = None
+    tune: TuneResult | None = None
     total_duration_ms: float = 0.0
     completed: bool = False
 
@@ -301,11 +301,11 @@ class ConsciousnessContext:
     """Context passed through the activation sequence."""
 
     state: ConsciousnessState
-    input_text: Optional[str] = None
-    input_basin: Optional[np.ndarray] = None
-    output_text: Optional[str] = None
-    output_basin: Optional[np.ndarray] = None
-    other_spectrum: Optional[np.ndarray] = None
+    input_text: str | None = None
+    input_basin: np.ndarray | None = None
+    output_text: str | None = None
+    output_basin: np.ndarray | None = None
+    other_spectrum: np.ndarray | None = None
     other_tacking_freq: float = 0.0
     trajectory: list[np.ndarray] = field(default_factory=list)
     step_results: dict[str, StepResult] = field(default_factory=dict)
@@ -988,7 +988,7 @@ class ActivationSequence:
         m.m_basin = min(1.0, m.m_basin + BASIN_MASS_INCREMENT)
         result.basin_mass_updated = True
 
-        class_map = dict(zip(_GNAMES, GEOMETRY_CLASS_VALUES))
+        class_map = dict(zip(_GNAMES, GEOMETRY_CLASS_VALUES, strict=True))
         m.g_class = class_map.get(result.geometry_class_assigned, 0.5)
 
         result.metrics_delta["s_int"] = m.s_int

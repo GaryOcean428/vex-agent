@@ -40,6 +40,7 @@ class CostGuardConfig:
 @dataclass
 class CostGuardState:
     """Tracks request counts for rate limiting."""
+
     minute_requests: list[float] = field(default_factory=list)
     hour_requests: list[float] = field(default_factory=list)
     day_requests: list[float] = field(default_factory=list)
@@ -82,7 +83,8 @@ class CostGuard:
                 self._state.total_blocked += 1
                 logger.warning(
                     "CostGuard BLOCKED: RPM limit (%d/%d)",
-                    len(self._state.minute_requests), self.config.rpm_limit,
+                    len(self._state.minute_requests),
+                    self.config.rpm_limit,
                 )
                 return False
 
@@ -91,7 +93,8 @@ class CostGuard:
                 self._state.total_blocked += 1
                 logger.warning(
                     "CostGuard BLOCKED: RPH limit (%d/%d)",
-                    len(self._state.hour_requests), self.config.rph_limit,
+                    len(self._state.hour_requests),
+                    self.config.rph_limit,
                 )
                 return False
 
@@ -100,7 +103,8 @@ class CostGuard:
                 self._state.total_blocked += 1
                 logger.warning(
                     "CostGuard BLOCKED: RPD limit (%d/%d)",
-                    len(self._state.day_requests), self.config.rpd_limit,
+                    len(self._state.day_requests),
+                    self.config.rpd_limit,
                 )
                 return False
 
@@ -139,12 +143,6 @@ class CostGuard:
         hour_ago = now - 3600
         day_ago = now - 86400
 
-        self._state.minute_requests = [
-            t for t in self._state.minute_requests if t > minute_ago
-        ]
-        self._state.hour_requests = [
-            t for t in self._state.hour_requests if t > hour_ago
-        ]
-        self._state.day_requests = [
-            t for t in self._state.day_requests if t > day_ago
-        ]
+        self._state.minute_requests = [t for t in self._state.minute_requests if t > minute_ago]
+        self._state.hour_requests = [t for t in self._state.hour_requests if t > hour_ago]
+        self._state.day_requests = [t for t in self._state.day_requests if t > day_ago]

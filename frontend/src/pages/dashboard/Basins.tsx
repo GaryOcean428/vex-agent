@@ -146,11 +146,11 @@ export default function Basins() {
     ctx.fillStyle = cTextDim;
     ctx.font = '10px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('\u03A6 (Integration)', rect.width / 2, rect.height - 8);
+    ctx.fillText('Φ (Integration)', rect.width / 2, rect.height - 8);
     ctx.save();
     ctx.translate(12, rect.height / 2);
     ctx.rotate(-Math.PI / 2);
-    ctx.fillText('\u03BA (Coupling)', 0, 0);
+    ctx.fillText('κ (Coupling)', 0, 0);
     ctx.restore();
   }, [history, view]);
 
@@ -171,7 +171,7 @@ export default function Basins() {
   return (
     <div>
       <div className="dash-header">
-        <h1 className="dash-title">Basin Coordinates (\u0394\u2076\u00B3)</h1>
+        <h1 className="dash-title">Basin Coordinates (Δ⁶³)</h1>
         <div className="dash-subtitle">
           {QIG.BASIN_DIM}-dimensional probability simplex
           {basin.length > 0 && (

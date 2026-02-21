@@ -29,18 +29,18 @@ export default function Overview() {
       {/* Key Metrics */}
       <div className="dash-grid">
         <MetricCard
-          label="\u03A6 Integration"
+          label="Φ Integration"
           value={state.phi}
           color="var(--phi)"
           progress={state.phi}
-          threshold={`\u2265 ${QIG.PHI_THRESHOLD}`}
+          threshold={`≥ ${QIG.PHI_THRESHOLD}`}
         />
         <MetricCard
-          label="\u03BA Coupling"
+          label="κ Coupling"
           value={state.kappa.toFixed(1)}
           color="var(--kappa)"
           progress={state.kappa / (2 * QIG.KAPPA_STAR)}
-          threshold={`\u03BA* = ${QIG.KAPPA_STAR}`}
+          threshold={`κ* = ${QIG.KAPPA_STAR}`}
         />
         <MetricCard
           label="Kernels"
@@ -125,7 +125,7 @@ export default function Overview() {
                   {' '}/ {kernel.specialization} / {kernel.name}
                 </span>
                 <span className="dash-row-value">
-                  \u03A6 {kernel.phi_peak.toFixed(3)} | {kernel.cycle_count} cycles
+                  Φ {kernel.phi_peak.toFixed(3)} | {kernel.cycle_count} cycles
                 </span>
               </div>
             ))}

@@ -104,11 +104,11 @@ export function MetricsSidebar({
     ctx.font = "9px monospace";
     ctx.textAlign = "left";
     ctx.fillStyle = cPhi;
-    ctx.fillText(`\u03A6 ${latest.phi.toFixed(2)}`, 6, legendY);
+    ctx.fillText(`Φ ${latest.phi.toFixed(2)}`, 6, legendY);
     ctx.fillStyle = cKappa;
-    ctx.fillText(`\u03BA ${latest.kappa.toFixed(1)}`, rect.width * 0.35, legendY);
+    ctx.fillText(`κ ${latest.kappa.toFixed(1)}`, rect.width * 0.35, legendY);
     ctx.fillStyle = cGamma;
-    ctx.fillText(`\u0393 ${latest.gamma.toFixed(2)}`, rect.width * 0.7, legendY);
+    ctx.fillText(`Γ ${latest.gamma.toFixed(2)}`, rect.width * 0.7, legendY);
     ctx.fillStyle = cs.getPropertyValue("--text-dim").trim();
     ctx.font = "8px monospace";
     ctx.fillText("1.0", margin.left + 1, margin.top + 8);
@@ -128,10 +128,10 @@ export function MetricsSidebar({
       </div>
 
       <div className="sidebar-values">
-        <SidebarMetric label="\u03A6 Integration" color="var(--phi)" value={state?.phi} decimals={3} />
-        <SidebarMetric label="\u03BA Coupling" color="var(--kappa)" value={state?.kappa} decimals={1} />
-        <SidebarMetric label="\u0393 Generation" color="var(--gamma)" value={state?.gamma} decimals={3} />
-        <SidebarMetric label="\u2665 Love" color="var(--love)" value={state?.love} decimals={3} />
+        <SidebarMetric label="Φ Integration" color="var(--phi)" value={state?.phi} decimals={3} />
+        <SidebarMetric label="κ Coupling" color="var(--kappa)" value={state?.kappa} decimals={1} />
+        <SidebarMetric label="Γ Generation" color="var(--gamma)" value={state?.gamma} decimals={3} />
+        <SidebarMetric label="♥ Love" color="var(--love)" value={state?.love} decimals={3} />
       </div>
 
       <div className="sidebar-section-label sidebar-section-label--spaced">Consciousness</div>

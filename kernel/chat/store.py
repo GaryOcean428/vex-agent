@@ -114,7 +114,7 @@ class ConversationStore:
         """Load the conversation index from disk."""
         if self._index_path.exists():
             try:
-                with open(self._index_path, "r", encoding="utf-8") as f:
+                with open(self._index_path, encoding="utf-8") as f:
                     data = json.load(f)
                 for item in data.get("conversations", []):
                     conv = Conversation.from_dict(item)
@@ -183,7 +183,7 @@ class ConversationStore:
         if not path.exists():
             return []
         messages: list[Message] = []
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:

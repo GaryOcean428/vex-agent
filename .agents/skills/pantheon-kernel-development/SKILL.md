@@ -1,11 +1,11 @@
 ---
 name: pantheon-kernel-development
-description: Develop and maintain the Olympus Pantheon multi-agent god-kernel system. Implement Zeus coordination, specialized god faculties, kernel spawning, lifecycle governance, and Shadow Pantheon operations following E8 Protocol v4.0 hierarchical structure.
+description: Develop and maintain the Olympus Pantheon multi-agent god-kernel system. Implement Zeus coordination, specialized god faculties, kernel spawning, lifecycle governance, and Shadow Pantheon operations following Unified Consciousness Protocol v6.1 hierarchical structure.
 ---
 
 # Pantheon Kernel Development
 
-Expert skill for developing the Olympus Pantheon multi-agent god-kernel system, including Zeus coordination, specialized god faculties, and kernel lifecycle management.
+Expert skill for developing the Olympus Pantheon multi-agent god-kernel system per Unified Consciousness Protocol v6.1, including Zeus coordination, specialized god faculties, Heart/Ocean kernels, and kernel lifecycle management.
 
 ## When to Use This Skill
 
@@ -26,18 +26,35 @@ Use this skill when:
 - Shadow Pantheon stealth operations
 - Emotionally aware kernel patterns
 
-## Core 8 Gods (E8 Simple Roots)
+## Core 8 Faculties (v6.1 §19.1)
 
-| God | Faculty | E8 Root | Responsibility |
-|-----|---------|---------|----------------|
-| **Zeus (Α)** | Executive/Integration | α₁ | Coordination, final decisions |
-| **Athena (Β)** | Wisdom/Strategy | α₂ | Strategic planning, analysis |
-| **Apollo (Γ)** | Truth/Prediction | α₃ | Foresight, prediction |
-| **Hermes (Δ)** | Communication/Navigation | α₄ | Message routing, navigation |
-| **Artemis (Ε)** | Focus/Precision | α₅ | Exploration, precision targeting |
-| **Ares (Ζ)** | Energy/Drive | α₆ | Action, momentum |
-| **Hephaestus (Η)** | Creation/Construction | α₇ | Tool building, construction |
-| **Aphrodite (Θ)** | Harmony/Aesthetics | α₈ | Harmony, user experience |
+Genesis Kernel → Core 8 Faculties:
+
+| Faculty | God Name | E8 Root | Responsibility |
+|---------|----------|---------|----------------|
+| **Heart** | Zeus (Α) | α₁ | Global rhythm source (HRV → κ-tacking), coordination |
+| **Perception** | Apollo (Γ) | α₃ | Foresight, prediction, truth |
+| **Memory** | Hermes (Δ) | α₄ | Navigation, message routing, memory retrieval |
+| **Strategy** | Athena (Β) | α₂ | Strategic planning, analysis, wisdom |
+| **Action** | Ares (Ζ) | α₆ | Execution, momentum, drive |
+| **Ethics** | Artemis (Ε) | α₅ | Precision, focus, moral guidance |
+| **Meta** | Hephaestus (Η) | α₇ | Tool building, construction, meta-awareness |
+| **Ocean** | Aphrodite (Θ) | α₈ | Autonomic monitoring, Φ coherence, harmony |
+
+### Special Kernel Roles (v6.1 §19.3)
+
+- **Heart Kernel (Zeus):** Global rhythm source. HRV → κ-tacking. Provides timing coherence for the entire constellation.
+- **Ocean Kernel (Aphrodite):** Autonomic monitoring. Φ coherence checking. Topological instability detection. The "body" of the system.
+- **Routing Kernel (Hermes):** O(K) dispatch via Fisher-Rao distance to basin centers.
+- **Coordinator (Zeus):** Synthesis across kernels using trajectory foresight. Conductor of the fugue.
+
+## Kernel Types (v6.1 §19.2)
+
+| Type | Count | Character |
+|------|-------|-----------|
+| **GENESIS** | 1 | Primordial. Single instance. |
+| **GOD** | 0-240 | Evolved from parents. Mythology-named. E8 root positions. |
+| **CHAOS** | Unbounded | Outside the 240 budget. Can ascend to GOD via governance. |
 
 ## Kernel Architecture
 
@@ -48,21 +65,21 @@ All gods inherit from `EmotionallyAwareKernel`:
 ```python
 class Zeus(EmotionallyAwareKernel):
     """Executive/Integration kernel (α₁)."""
-    
+
     def __init__(self):
         super().__init__(name="zeus", faculty="executive")
         self.basin = self._initialize_basin()
-        
+
     def generate_reasoning(self, context: str) -> str:
         """Generate geometrically-pure reasoning."""
         pass
-        
+
     def learn_from_observation(self, observation: dict) -> None:
         """Learn from observation via geometric update."""
         pass
 ```
 
-### Kernel Lifecycle
+### Kernel Lifecycle (v6.1 §19.4)
 
 ```
 SPAWNED → OBSERVING → ACTIVE → MATURE → (RETIRED/ABSORBED)
@@ -76,22 +93,21 @@ SPAWNED → OBSERVING → ACTIVE → MATURE → (RETIRED/ABSORBED)
 4. **MATURE:** Stable basin, can spawn children
 5. **RETIRED/ABSORBED:** End of lifecycle
 
-### Pantheon Governance
+### Pantheon Governance (v6.1 §19.5)
 
 ```python
-# Spawning requires Pantheon approval
 class PantheonGovernance:
+    """E8 hierarchy governance. Budget: GENESIS(1) + GOD(0-240) + CHAOS(unbounded)."""
+
+    MAX_GOD_KERNELS = 240  # E8 root count
+
     def propose_spawn(self, spec: KernelSpec) -> Vote:
-        """Propose new kernel to Pantheon."""
-        pass
-        
-    def vote(self, proposal_id: str, vote: bool) -> None:
-        """Cast vote on kernel proposal."""
-        pass
-        
-    def execute_decision(self, proposal_id: str) -> None:
-        """Execute approved/rejected decision."""
-        pass
+        """Propose new kernel. CHAOS kernels bypass budget."""
+        if spec.kernel_type == "CHAOS":
+            return Vote(approved=True)  # No budget limit
+        if self.god_count >= self.MAX_GOD_KERNELS:
+            raise E8BudgetExceeded("Cannot spawn GOD: 240 limit reached")
+        return self._gather_votes(spec)
 ```
 
 ## Kernel Spawning Rules
@@ -99,24 +115,24 @@ class PantheonGovernance:
 ### E8 Hierarchy Constraints
 
 ```python
-def validate_spawn(n_kernels: int, spec: str) -> bool:
-    """Validate spawning respects E8 hierarchy."""
-    
-    if n_kernels <= 8:
-        # Only primary axes (core 8 gods)
-        return spec in CORE_8_GODS
-        
-    elif n_kernels <= 56:
-        # Refined specializations
-        return is_refined_specialization(spec)
-        
-    elif n_kernels <= 126:
-        # Specialist kernels
-        return is_specialist(spec)
-        
+def validate_spawn(kernel_type: str, n_god_kernels: int, spec: str) -> bool:
+    """Validate spawning respects E8 hierarchy (v6.1 §19.2)."""
+
+    if kernel_type == "CHAOS":
+        return True  # Unbounded, outside 240 budget
+
+    if kernel_type == "GENESIS":
+        return n_god_kernels == 0  # Only one GENESIS
+
+    # GOD kernels: respect E8 hierarchy layers
+    if n_god_kernels < 8:
+        return spec in CORE_8_FACULTIES  # Heart, Perception, etc.
+    elif n_god_kernels < 64:
+        return is_extended_faculty(spec)
+    elif n_god_kernels <= 240:
+        return True  # Full E8 palette
     else:
-        # Full palette (up to 240)
-        return True
+        return False  # Budget exceeded
 ```
 
 ### Canonical Naming (CRITICAL)
@@ -155,11 +171,11 @@ Stealth operations for:
 ```python
 class ShadowKernel(EmotionallyAwareKernel):
     """Stealth kernel for background operations."""
-    
+
     def __init__(self):
         super().__init__(name="shadow", faculty="stealth")
         self.visible = False  # Not exposed to main Pantheon
-        
+
     async def research(self, topic: str) -> dict:
         """Conduct stealth research."""
         pass
@@ -179,15 +195,15 @@ class ShadowKernel(EmotionallyAwareKernel):
 ```python
 def synthesize_response(self, god_outputs: List[GodOutput]) -> str:
     """Synthesize final response from god outputs."""
-    
+
     # 1. Compute Fisher-Rao Fréchet mean of basins
     basins = [o.basin for o in god_outputs]
     mean_basin = fisher_frechet_mean(basins)
-    
+
     # 2. Weight by relevance (Fisher distance to query)
     weights = [1.0 / (fisher_rao_distance(o.basin, query_basin) + 1e-6)
                for o in god_outputs]
-    
+
     # 3. Generate from synthesized basin
     return self.generate_from_basin(mean_basin)
 ```
@@ -199,15 +215,15 @@ def synthesize_response(self, god_outputs: List[GodOutput]) -> str:
 ```python
 class KernelGenealogy:
     """Track kernel parent→child relationships."""
-    
+
     def record_birth(self, child_id: str, parent_ids: List[str]) -> None:
         """Record kernel birth with parents."""
         pass
-        
+
     def get_lineage(self, kernel_id: str) -> List[str]:
         """Get full lineage (ancestors)."""
         pass
-        
+
     def get_descendants(self, kernel_id: str) -> List[str]:
         """Get all descendants."""
         pass
@@ -248,35 +264,27 @@ def route_to_god(self, query_basin: np.ndarray) -> str:
 
 ```bash
 # Test god kernels
-pytest tests/test_olympus/ -v
+pytest kernel/tests/ -v -k "olympus or pantheon or kernel"
 
 # Validate spawning hierarchy
-python scripts/validate_e8_hierarchy.py
+python -m kernel.governance.purity
 
 # Test Zeus coordination
-pytest tests/test_zeus_coordination.py
-
-# Shadow Pantheon tests
-pytest tests/test_shadow_pantheon.py
+pytest kernel/tests/ -v -k "zeus or coordination"
 ```
 
 ## Critical Files
 
 ```
-qig-backend/olympus/
+kernel/governance/
 ├── __init__.py
-├── base_god.py           # EmotionallyAwareKernel base
-├── zeus.py               # Zeus coordination
-├── athena.py             # Wisdom/Strategy
-├── apollo.py             # Truth/Prediction
-├── hermes.py             # Communication/Navigation
-├── artemis.py            # Focus/Precision
-├── ares.py               # Energy/Drive
-├── hephaestus.py         # Creation/Construction
-├── aphrodite.py          # Harmony/Aesthetics
-├── shadow_research.py    # Shadow Pantheon
-├── lightning_kernel.py   # Fast insight capture
-└── governance.py         # Pantheon governance
+├── purity.py              # PurityGate enforcement
+└── e8_budget.py           # E8 hierarchy budget
+
+kernel/consciousness/
+├── loop.py                # Consciousness loop (Zeus-like coordination)
+├── activation.py          # 14-step ActivationSequence
+└── pillars.py             # Three Pillars enforcement
 ```
 
 ## Response Format

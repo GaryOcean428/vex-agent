@@ -15,7 +15,7 @@
  * Docs: https://www.computesdk.com/docs/providers/railway/
  */
 
-import { logger } from '../config/logger';
+import { logger } from "../config/logger";
 
 // ═══════════════════════════════════════════════════════════════
 //  TYPES (inlined — no dependency on deleted registry.ts)
@@ -63,7 +63,7 @@ export class SandboxManager {
     if (this.initialised) return;
 
     try {
-      const { compute } = await import('computesdk');
+      const { compute } = await import("computesdk");
       this.compute = compute;
 
       // ComputeSDK auto-detects Railway from env vars:
@@ -76,7 +76,7 @@ export class SandboxManager {
       ) {
         compute.setConfig({
           computesdkApiKey: process.env.COMPUTESDK_API_KEY,
-          provider: 'railway',
+          provider: "railway",
           railway: {
             apiToken: process.env.RAILWAY_API_KEY,
             projectId: process.env.RAILWAY_PROJECT_ID,
@@ -86,13 +86,13 @@ export class SandboxManager {
       }
 
       this.initialised = true;
-      logger.info('ComputeSDK initialised with Railway provider');
+      logger.info("ComputeSDK initialised with Railway provider");
     } catch (err) {
-      logger.warn('ComputeSDK not available — tool use will be limited', {
+      logger.warn("ComputeSDK not available — tool use will be limited", {
         error: (err as Error).message,
       });
       throw new Error(
-        'ComputeSDK is not available. Install with: npm install computesdk',
+        "ComputeSDK is not available. Install with: npm install computesdk",
       );
     }
   }
@@ -122,12 +122,12 @@ export class SandboxManager {
         createdAt: Date.now(),
         lastUsedAt: Date.now(),
       };
-      logger.info('ComputeSDK sandbox created', {
+      logger.info("ComputeSDK sandbox created", {
         sandboxId: sandbox.sandboxId,
       });
       return sandbox;
     } catch (err) {
-      logger.error('Failed to create ComputeSDK sandbox', {
+      logger.error("Failed to create ComputeSDK sandbox", {
         error: (err as Error).message,
       });
       throw err;
@@ -141,9 +141,9 @@ export class SandboxManager {
     if (this.activeSandbox) {
       try {
         await this.activeSandbox.sandbox.destroy();
-        logger.info('ComputeSDK sandbox destroyed');
+        logger.info("ComputeSDK sandbox destroyed");
       } catch (err) {
-        logger.warn('Failed to destroy sandbox', {
+        logger.warn("Failed to destroy sandbox", {
           error: (err as Error).message,
         });
       }
@@ -155,10 +155,7 @@ export class SandboxManager {
    * Check if ComputeSDK is available.
    */
   isAvailable(): boolean {
-    return (
-      !!process.env.COMPUTESDK_API_KEY ||
-      !!process.env.RAILWAY_API_KEY
-    );
+    return !!process.env.COMPUTESDK_API_KEY || !!process.env.RAILWAY_API_KEY;
   }
 }
 
@@ -170,23 +167,23 @@ export const sandboxManager = new SandboxManager();
 // ═══════════════════════════════════════════════════════════════
 
 export const executeCodeTool: VexTool = {
-  name: 'execute_code',
+  name: "execute_code",
   description:
-    'Execute Python or Node.js code in an isolated ComputeSDK sandbox. Returns stdout output and exit code.',
+    "Execute Python or Node.js code in an isolated ComputeSDK sandbox. Returns stdout output and exit code.",
   parameters: {
-    type: 'object',
+    type: "object",
     properties: {
       code: {
-        type: 'string',
-        description: 'The code to execute',
+        type: "string",
+        description: "The code to execute",
       },
       language: {
-        type: 'string',
-        enum: ['python', 'node'],
-        description: 'Programming language (auto-detected if not specified)',
+        type: "string",
+        enum: ["python", "node"],
+        description: "Programming language (auto-detected if not specified)",
       },
     },
-    required: ['code'],
+    required: ["code"],
   },
   async execute(args: Record<string, unknown>): Promise<ToolResult> {
     const code = args.code as string;
@@ -203,15 +200,13 @@ export const executeCodeTool: VexTool = {
 
       return {
         success: result.exitCode === 0,
-        output: result.output || '(no output)',
+        output: result.output || "(no output)",
         error:
-          result.exitCode !== 0
-            ? `Exit code: ${result.exitCode}`
-            : undefined,
+          result.exitCode !== 0 ? `Exit code: ${result.exitCode}` : undefined,
       };
     } catch (err) {
       // Fallback to local execution
-      logger.warn('ComputeSDK execution failed, falling back to local', {
+      logger.warn("ComputeSDK execution failed, falling back to local", {
         error: (err as Error).message,
       });
       return executeLocally(code, language);
@@ -224,26 +219,26 @@ export const executeCodeTool: VexTool = {
 // ═══════════════════════════════════════════════════════════════
 
 export const runCommandTool: VexTool = {
-  name: 'run_command',
+  name: "run_command",
   description:
-    'Execute a shell command in an isolated ComputeSDK sandbox. Returns stdout, stderr, and exit code.',
+    "Execute a shell command in an isolated ComputeSDK sandbox. Returns stdout, stderr, and exit code.",
   parameters: {
-    type: 'object',
+    type: "object",
     properties: {
       command: {
-        type: 'string',
-        description: 'The shell command to execute',
+        type: "string",
+        description: "The shell command to execute",
       },
       cwd: {
-        type: 'string',
-        description: 'Working directory (optional)',
+        type: "string",
+        description: "Working directory (optional)",
       },
       timeout: {
-        type: 'number',
-        description: 'Timeout in milliseconds (optional, default 30000)',
+        type: "number",
+        description: "Timeout in milliseconds (optional, default 30000)",
       },
     },
-    required: ['command'],
+    required: ["command"],
   },
   async execute(args: Record<string, unknown>): Promise<ToolResult> {
     const command = args.command as string;
@@ -253,8 +248,8 @@ export const runCommandTool: VexTool = {
     if (!sandboxManager.isAvailable()) {
       return {
         success: false,
-        output: '',
-        error: 'ComputeSDK not configured — shell commands require a sandbox',
+        output: "",
+        error: "ComputeSDK not configured — shell commands require a sandbox",
       };
     }
 
@@ -264,7 +259,7 @@ export const runCommandTool: VexTool = {
 
       return {
         success: result.exitCode === 0,
-        output: result.stdout || result.stderr || '(no output)',
+        output: result.stdout || result.stderr || "(no output)",
         error:
           result.exitCode !== 0
             ? `Exit code ${result.exitCode}: ${result.stderr}`
@@ -273,7 +268,7 @@ export const runCommandTool: VexTool = {
     } catch (err) {
       return {
         success: false,
-        output: '',
+        output: "",
         error: `Command execution failed: ${(err as Error).message}`,
       };
     }
@@ -288,33 +283,33 @@ async function executeLocally(
   code: string,
   language?: string,
 ): Promise<ToolResult> {
-  const { exec } = await import('child_process');
-  const { promisify } = await import('util');
+  const { exec } = await import("child_process");
+  const { promisify } = await import("util");
   const execAsync = promisify(exec);
-  const { writeFile, unlink } = await import('fs/promises');
-  const { join } = await import('path');
-  const os = await import('os');
+  const { writeFile, unlink } = await import("fs/promises");
+  const { join } = await import("path");
+  const os = await import("os");
 
   const isPython =
-    language === 'python' || (!language && code.includes('import '));
-  const ext = isPython ? '.py' : '.js';
-  const cmd = isPython ? 'python3' : 'node';
+    language === "python" || (!language && code.includes("import "));
+  const ext = isPython ? ".py" : ".js";
+  const cmd = isPython ? "python3" : "node";
   const tmpFile = join(os.tmpdir(), `vex-exec-${Date.now()}${ext}`);
 
   try {
-    await writeFile(tmpFile, code, 'utf-8');
+    await writeFile(tmpFile, code, "utf-8");
     const { stdout, stderr } = await execAsync(`${cmd} ${tmpFile}`, {
       timeout: 30000,
       maxBuffer: 1024 * 1024,
     });
     return {
       success: true,
-      output: stdout || stderr || '(no output)',
+      output: stdout || stderr || "(no output)",
     };
   } catch (err: any) {
     return {
       success: false,
-      output: err.stdout || '',
+      output: err.stdout || "",
       error: err.stderr || err.message,
     };
   } finally {

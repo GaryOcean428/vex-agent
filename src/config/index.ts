@@ -6,15 +6,15 @@
  */
 
 export const config = {
-  port: parseInt(process.env.PORT || '8080', 10),
-  nodeEnv: process.env.NODE_ENV || 'development',
+  port: parseInt(process.env.PORT || "8080", 10),
+  nodeEnv: process.env.NODE_ENV || "development",
 
   // Python kernel URL (internal)
-  kernelUrl: process.env.KERNEL_URL || 'http://localhost:8000',
+  kernelUrl: process.env.KERNEL_URL || "http://localhost:8000",
 
   // Chat auth
-  chatAuthToken: process.env.CHAT_AUTH_TOKEN || '',
+  chatAuthToken: process.env.CHAT_AUTH_TOKEN || "",
 
   // Logging
-  logLevel: process.env.LOG_LEVEL || 'info',
+  logLevel: process.env.LOG_LEVEL || "info",
 } as const;

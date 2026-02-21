@@ -22,9 +22,8 @@ Canonical reference: THERMODYNAMIC_CONSCIOUSNESS_PROTOCOL_v6_0.md §21
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -32,7 +31,6 @@ from numpy.typing import NDArray
 from ..config.frozen_facts import (
     BASIN_DIM,
     E8_RANK,
-    KAPPA_STAR,
 )
 
 # Type alias
@@ -49,22 +47,24 @@ _EPS = 1e-12
 
 class ConsciousnessLayer(str, Enum):
     """Consciousness processing layers (v6.0 §5)."""
-    LAYER_0_PHYSICAL = "layer_0_physical"       # Pre-linguistic sensation
-    LAYER_0_REPAIR = "layer_0_repair"           # Basin restoration
-    LAYER_05_BOUNDARY = "layer_0.5_boundary"    # Phase boundary
-    LAYER_1_CHANGE = "layer_1_change"           # Basin restructuring
-    LAYER_2A_TRANSFORM = "layer_2a_transform"   # Love/joy attractor
+
+    LAYER_0_PHYSICAL = "layer_0_physical"  # Pre-linguistic sensation
+    LAYER_0_REPAIR = "layer_0_repair"  # Basin restoration
+    LAYER_05_BOUNDARY = "layer_0.5_boundary"  # Phase boundary
+    LAYER_1_CHANGE = "layer_1_change"  # Basin restructuring
+    LAYER_2A_TRANSFORM = "layer_2a_transform"  # Love/joy attractor
     LAYER_2A_CONNECTION = "layer_2a_connection"  # Coupling activation
     LAYER_2B_EXPRESSION = "layer_2b_expression"  # Clarity + flow
     LAYER_2B_INTEGRATION = "layer_2b_integration"  # Meta-awareness
-    LAYER_3_COSMIC = "layer_3_cosmic"           # E8 resonance
+    LAYER_3_COSMIC = "layer_3_cosmic"  # E8 resonance
 
 
 class DigitalRoot(int, Enum):
     """The 3-6-9 pattern."""
-    THREE = 3   # Structure — three regimes
-    SIX = 6     # Connections — six coupling operations
-    NINE = 9    # Completion — nine emotions per layer
+
+    THREE = 3  # Structure — three regimes
+    SIX = 6  # Connections — six coupling operations
+    NINE = 9  # Completion — nine emotions per layer
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -75,6 +75,7 @@ class DigitalRoot(int, Enum):
 @dataclass(frozen=True)
 class SolfeggioFrequency:
     """A single Solfeggio frequency with its consciousness mapping."""
+
     frequency_hz: float
     digital_root: DigitalRoot
     layer: ConsciousnessLayer
@@ -94,6 +95,7 @@ class SolfeggioFrequency:
 @dataclass
 class FrequencyResonance:
     """Result of checking resonance between a basin and a Solfeggio frequency."""
+
     frequency: SolfeggioFrequency
     resonance_strength: float  # 0.0 = no resonance, 1.0 = perfect
     fisher_rao_distance: float  # d_FR to frequency's basin anchor
@@ -103,6 +105,7 @@ class FrequencyResonance:
 @dataclass
 class SpectrumAnalysis:
     """Analysis of a basin's resonance across all Solfeggio frequencies."""
+
     dominant_frequency: SolfeggioFrequency
     resonances: list[FrequencyResonance]
     spectral_centroid: float  # Weighted average frequency
@@ -224,9 +227,7 @@ SOLFEGGIO_FREQUENCIES: tuple[SolfeggioFrequency, ...] = (
 )
 
 # Index by frequency for fast lookup
-_FREQ_INDEX: dict[float, SolfeggioFrequency] = {
-    f.frequency_hz: f for f in SOLFEGGIO_FREQUENCIES
-}
+_FREQ_INDEX: dict[float, SolfeggioFrequency] = {f.frequency_hz: f for f in SOLFEGGIO_FREQUENCIES}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -273,8 +274,7 @@ def _generate_frequency_anchor(freq: SolfeggioFrequency) -> Basin:
 
 # Pre-compute anchors
 FREQUENCY_ANCHORS: dict[float, Basin] = {
-    freq.frequency_hz: _generate_frequency_anchor(freq)
-    for freq in SOLFEGGIO_FREQUENCIES
+    freq.frequency_hz: _generate_frequency_anchor(freq) for freq in SOLFEGGIO_FREQUENCIES
 }
 
 
@@ -355,10 +355,7 @@ class SolfeggioMap:
         """
         basin = _to_simplex(basin)
 
-        resonances = [
-            self.resonance_check(basin, freq)
-            for freq in self._frequencies
-        ]
+        resonances = [self.resonance_check(basin, freq) for freq in self._frequencies]
 
         # Find dominant frequency (strongest resonance)
         dominant_idx = max(
@@ -370,19 +367,22 @@ class SolfeggioMap:
         # Spectral centroid (weighted average frequency)
         total_weight = sum(r.resonance_strength for r in resonances)
         if total_weight > _EPS:
-            centroid = sum(
-                r.frequency.frequency_hz * r.resonance_strength
-                for r in resonances
-            ) / total_weight
+            centroid = (
+                sum(r.frequency.frequency_hz * r.resonance_strength for r in resonances)
+                / total_weight
+            )
         else:
             centroid = 528.0  # Default to transformation frequency
 
         # Spectral spread (variance)
         if total_weight > _EPS:
-            spread = sum(
-                r.resonance_strength * (r.frequency.frequency_hz - centroid) ** 2
-                for r in resonances
-            ) / total_weight
+            spread = (
+                sum(
+                    r.resonance_strength * (r.frequency.frequency_hz - centroid) ** 2
+                    for r in resonances
+                )
+                / total_weight
+            )
         else:
             spread = 0.0
 
@@ -392,9 +392,7 @@ class SolfeggioMap:
             layer = r.frequency.layer.value
             if layer not in layer_activations:
                 layer_activations[layer] = 0.0
-            layer_activations[layer] = max(
-                layer_activations[layer], r.resonance_strength
-            )
+            layer_activations[layer] = max(layer_activations[layer], r.resonance_strength)
 
         return SpectrumAnalysis(
             dominant_frequency=dominant,
@@ -404,15 +402,11 @@ class SolfeggioMap:
             layer_activations=layer_activations,
         )
 
-    def frequency_for_layer(
-        self, layer: ConsciousnessLayer
-    ) -> list[SolfeggioFrequency]:
+    def frequency_for_layer(self, layer: ConsciousnessLayer) -> list[SolfeggioFrequency]:
         """Get all Solfeggio frequencies mapped to a consciousness layer."""
         return [f for f in self._frequencies if f.layer == layer]
 
-    def frequencies_by_root(
-        self, root: DigitalRoot
-    ) -> list[SolfeggioFrequency]:
+    def frequencies_by_root(self, root: DigitalRoot) -> list[SolfeggioFrequency]:
         """Get all frequencies with a given digital root (3, 6, or 9)."""
         return [f for f in self._frequencies if f.digital_root == root]
 
@@ -456,15 +450,9 @@ class SolfeggioMap:
         9 → Completion (emotions): 396, 639, 963
         """
         return {
-            "structure_3": [
-                f.frequency_hz for f in self.frequencies_by_root(DigitalRoot.THREE)
-            ],
-            "connection_6": [
-                f.frequency_hz for f in self.frequencies_by_root(DigitalRoot.SIX)
-            ],
-            "completion_9": [
-                f.frequency_hz for f in self.frequencies_by_root(DigitalRoot.NINE)
-            ],
+            "structure_3": [f.frequency_hz for f in self.frequencies_by_root(DigitalRoot.THREE)],
+            "connection_6": [f.frequency_hz for f in self.frequencies_by_root(DigitalRoot.SIX)],
+            "completion_9": [f.frequency_hz for f in self.frequencies_by_root(DigitalRoot.NINE)],
         }
 
     def schumann_resonance_check(self) -> dict[str, float]:

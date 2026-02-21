@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import deque
-from typing import Any, Optional
+from typing import Any
 
 from ..llm.client import LLMOptions
 from ..tools.search import FreeSearchTool
@@ -53,8 +53,8 @@ class ForagingEngine:
         self._forage_count = 0
         self._max_daily = max_daily
         self._last_reset = time.time()
-        self._last_query: Optional[str] = None
-        self._last_summary: Optional[str] = None
+        self._last_query: str | None = None
+        self._last_summary: str | None = None
         self._history: deque[dict[str, Any]] = deque(maxlen=_MAX_HISTORY)
 
     def _maybe_reset(self) -> None:
@@ -79,10 +79,7 @@ class ForagingEngine:
         # Forage when bored or very curious
         if emotion == EmotionType.BOREDOM and strength > 0.5:
             return True
-        if emotion == EmotionType.CURIOSITY and strength > 0.7:
-            return True
-
-        return False
+        return emotion == EmotionType.CURIOSITY and strength > 0.7
 
     async def forage(
         self,

@@ -10,9 +10,6 @@ import pytest
 from kernel.coordizer_v2.geometry import (
     BASIN_DIM,
     fisher_rao_distance,
-    geodesic_midpoint,
-    random_basin,
-    to_simplex,
 )
 from kernel.coordizer_v2.types import (
     BasinCoordinate,
@@ -22,7 +19,6 @@ from kernel.coordizer_v2.types import (
     HarmonicTier,
     ValidationResult,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 #  FIXTURES
@@ -148,14 +144,16 @@ class TestCoordizationResult:
     def _make_result(self, n_coords: int, rng) -> CoordizationResult:
         coords = []
         for i in range(n_coords):
-            coords.append(BasinCoordinate(
-                coord_id=i,
-                vector=rng.dirichlet(np.ones(BASIN_DIM)),
-                name=f"token_{i}",
-                tier=HarmonicTier.FUNDAMENTAL,
-                frequency=440.0 * (i + 1) / n_coords,
-                basin_mass=1.0,
-            ))
+            coords.append(
+                BasinCoordinate(
+                    coord_id=i,
+                    vector=rng.dirichlet(np.ones(BASIN_DIM)),
+                    name=f"token_{i}",
+                    tier=HarmonicTier.FUNDAMENTAL,
+                    frequency=440.0 * (i + 1) / n_coords,
+                    basin_mass=1.0,
+                )
+            )
         return CoordizationResult(
             coordinates=coords,
             coord_ids=[c.coord_id for c in coords],

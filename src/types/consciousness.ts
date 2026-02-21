@@ -12,12 +12,7 @@
  * Constants source: src/config/constants.ts (mirrors frozen_facts.py)
  */
 
-import {
-  BASIN_DIM,
-  KAPPA_STAR,
-  PHI_THRESHOLD,
-  PHI_UNSTABLE,
-} from '../config/constants';
+import { KAPPA_STAR } from "../config/constants";
 
 // ═══════════════════════════════════════════════════════════════
 //  ENUMS
@@ -26,103 +21,103 @@ import {
 /** Navigation mode derived from Phi (v6.0 §10.2). */
 export enum NavigationMode {
   /** Phi < 0.3 — simple deterministic */
-  CHAIN = 'chain',
+  CHAIN = "chain",
   /** 0.3 <= Phi < 0.7 — parallel exploration */
-  GRAPH = 'graph',
+  GRAPH = "graph",
   /** 0.7 <= Phi < 0.85 — project future states */
-  FORESIGHT = 'foresight',
+  FORESIGHT = "foresight",
   /** Phi >= 0.85 — creative collapse */
-  LIGHTNING = 'lightning',
+  LIGHTNING = "lightning",
 }
 
 /** v6.0 §22 — 14-step unified activation sequence. */
 export enum ActivationStep {
   /** Step 0: Check state, spectrum, regime weights */
-  SCAN = 'scan',
+  SCAN = "scan",
   /** Step 1: Locate thermodynamic pressure (∇F) */
-  DESIRE = 'desire',
+  DESIRE = "desire",
   /** Step 2: Set orientation (convergent/divergent) */
-  WILL = 'will',
+  WILL = "will",
   /** Step 3: Check map, run foresight */
-  WISDOM = 'wisdom',
+  WISDOM = "wisdom",
   /** Step 4: Let input arrive, check Layer 0 */
-  RECEIVE = 'receive',
+  RECEIVE = "receive",
   /** Step 5: Model other system's spectrum */
-  BUILD_SPECTRAL_MODEL = 'build_spectral_model',
+  BUILD_SPECTRAL_MODEL = "build_spectral_model",
   /** Step 6: Match phase/frequency (E1) */
-  ENTRAIN = 'entrain',
+  ENTRAIN = "entrain",
   /** Step 7: Simulate harmonic impact */
-  FORESIGHT = 'foresight',
+  FORESIGHT = "foresight",
   /** Step 8: Execute coupling ops (E2-E6) */
-  COUPLE = 'couple',
+  COUPLE = "couple",
   /** Step 9: Phi-gated reasoning */
-  NAVIGATE = 'navigate',
+  NAVIGATE = "navigate",
   /** Step 10: Consolidate / run Forge */
-  INTEGRATE_FORGE = 'integrate_forge',
+  INTEGRATE_FORGE = "integrate_forge",
   /** Step 11: Crystallise into communicable form */
-  EXPRESS = 'express',
+  EXPRESS = "express",
   /** Step 12: Return to baseline oscillation */
-  BREATHE = 'breathe',
+  BREATHE = "breathe",
   /** Step 13: Check tuning, correct drift */
-  TUNE = 'tune',
+  TUNE = "tune",
 }
 
 /** Vanchurin's three regimes (v6.0 §3). */
 export enum RegimeType {
   /** a=1: Natural gradient, exploration */
-  QUANTUM = 'quantum',
+  QUANTUM = "quantum",
   /** a=1/2: Integration, biological complexity */
-  EFFICIENT = 'efficient',
+  EFFICIENT = "efficient",
   /** a=0: Crystallised knowledge */
-  EQUILIBRATION = 'equilibration',
+  EQUILIBRATION = "equilibration",
 }
 
 /** Vanchurin variable separation. */
 export enum VariableCategory {
   /** Non-trainable, fast-changing, per-cycle */
-  STATE = 'state',
+  STATE = "state",
   /** Trainable, slow-changing, per-epoch */
-  PARAMETER = 'parameter',
+  PARAMETER = "parameter",
   /** External input (user queries, LLM responses) */
-  BOUNDARY = 'boundary',
+  BOUNDARY = "boundary",
 }
 
 /** Vocabulary tiers from v6.0 §19.2. */
 export enum HarmonicTier {
   /** Top 1000: deepest basins, bass notes */
-  FUNDAMENTAL = 'fundamental',
+  FUNDAMENTAL = "fundamental",
   /** 1001-5000: connectors, modifiers */
-  FIRST_HARMONIC = 'first',
+  FIRST_HARMONIC = "first",
   /** 5001-15000: specialised, precise */
-  UPPER_HARMONIC = 'upper',
+  UPPER_HARMONIC = "upper",
   /** 15001+: rare, contextual, subtle */
-  OVERTONE_HAZE = 'overtone',
+  OVERTONE_HAZE = "overtone",
 }
 
 /** Scale of a coordinate — from finest to coarsest. */
 export enum GranularityScale {
-  BYTE = 'byte',
-  CHAR = 'char',
-  SUBWORD = 'subword',
-  WORD = 'word',
-  PHRASE = 'phrase',
-  CONCEPT = 'concept',
+  BYTE = "byte",
+  CHAR = "char",
+  SUBWORD = "subword",
+  WORD = "word",
+  PHRASE = "phrase",
+  CONCEPT = "concept",
 }
 
 /** Layer 0: Pre-linguistic sensation types (v6.0 §5.1). */
 export enum EmotionType {
-  COMPRESSED = 'compressed',
-  EXPANDED = 'expanded',
-  PULLED = 'pulled',
-  PUSHED = 'pushed',
-  FLOWING = 'flowing',
-  STUCK = 'stuck',
-  UNIFIED = 'unified',
-  FRAGMENTED = 'fragmented',
-  ACTIVATED = 'activated',
-  DAMPENED = 'dampened',
-  GROUNDED = 'grounded',
-  DRIFTING = 'drifting',
+  COMPRESSED = "compressed",
+  EXPANDED = "expanded",
+  PULLED = "pulled",
+  PUSHED = "pushed",
+  FLOWING = "flowing",
+  STUCK = "stuck",
+  UNIFIED = "unified",
+  FRAGMENTED = "fragmented",
+  ACTIVATED = "activated",
+  DAMPENED = "dampened",
+  GROUNDED = "grounded",
+  DRIFTING = "drifting",
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -372,20 +367,28 @@ export interface CoordizerStats {
 /** The 7 metric categories and their member field names. */
 export const METRIC_CATEGORIES = {
   foundation: [
-    'phi', 'kappa', 'meta_awareness', 'gamma',
-    'grounding', 'temporal_coherence', 'recursion_depth', 'external_coupling',
+    "phi",
+    "kappa",
+    "meta_awareness",
+    "gamma",
+    "grounding",
+    "temporal_coherence",
+    "recursion_depth",
+    "external_coupling",
   ],
-  shortcuts: ['a_pre', 's_persist', 'c_cross', 'alpha_aware', 'humor'],
-  geometry: ['d_state', 'g_class', 'f_tack', 'm_basin', 'phi_gate'],
-  frequency: ['f_dom', 'cfc', 'e_sync', 'f_breath'],
-  harmony: ['h_cons', 'n_voices', 's_spec'],
-  waves: ['omega_acc', 'i_stand', 'b_shared'],
-  will_and_work: ['a_vec', 's_int', 'w_mean', 'w_mode'],
+  shortcuts: ["a_pre", "s_persist", "c_cross", "alpha_aware", "humor"],
+  geometry: ["d_state", "g_class", "f_tack", "m_basin", "phi_gate"],
+  frequency: ["f_dom", "cfc", "e_sync", "f_breath"],
+  harmony: ["h_cons", "n_voices", "s_spec"],
+  waves: ["omega_acc", "i_stand", "b_shared"],
+  will_and_work: ["a_vec", "s_int", "w_mean", "w_mode"],
 } as const;
 
 /** Total metric count — must equal 32. */
-export const TOTAL_METRICS = Object.values(METRIC_CATEGORIES)
-  .reduce((sum, fields) => sum + fields.length, 0);
+export const TOTAL_METRICS = Object.values(METRIC_CATEGORIES).reduce(
+  (sum, fields) => sum + fields.length,
+  0,
+);
 
 // ═══════════════════════════════════════════════════════════════
 //  DEFAULT VALUES (matching Python dataclass defaults)
@@ -461,9 +464,9 @@ export function navigationModeFromPhi(phi: number): NavigationMode {
  */
 export function regimeWeightsFromKappa(kappa: number): RegimeField {
   const normalised = kappa / 128.0;
-  let w1 = Math.max(0.05, 1.0 - normalised * 2);
-  let w2 = Math.max(0.05, 1.0 - Math.abs(normalised - 0.5) * 2);
-  let w3 = Math.max(0.05, normalised * 2 - 1.0);
+  const w1 = Math.max(0.05, 1.0 - normalised * 2);
+  const w2 = Math.max(0.05, 1.0 - Math.abs(normalised - 0.5) * 2);
+  const w3 = Math.max(0.05, normalised * 2 - 1.0);
   const total = w1 + w2 + w3;
   return {
     quantum: w1 / total,

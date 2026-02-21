@@ -22,20 +22,26 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from numpy.typing import NDArray
 
-from .geometry import (
-    BASIN_DIM, KAPPA_STAR, Basin, _EPS,
-    exp_map, fisher_rao_distance, fisher_rao_distance_batch,
-    frechet_mean, log_map, slerp, to_simplex,
-)
-from .types import BasinCoordinate, DomainBias, HarmonicTier, GranularityScale
 from .compress import CompressionResult
+from .geometry import (
+    _EPS,
+    BASIN_DIM,
+    KAPPA_STAR,
+    Basin,
+    exp_map,
+    fisher_rao_distance,
+    fisher_rao_distance_batch,
+    frechet_mean,
+    log_map,
+    slerp,
+    to_simplex,
+)
+from .types import DomainBias, HarmonicTier
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +62,8 @@ class ResonanceBank:
         self.frequencies: dict[int, float] = {}
         self.basin_mass: dict[int, float] = {}
         self.activation_counts: dict[int, int] = {}
-        self._coord_matrix: Optional[NDArray] = None
-        self._coord_ids: Optional[NDArray] = None
+        self._coord_matrix: NDArray | None = None
+        self._coord_ids: NDArray | None = None
         self._dirty: bool = True
         self._domain_biases: list[DomainBias] = []
 
@@ -91,7 +97,9 @@ class ResonanceBank:
         bank.tiers = {int(k): HarmonicTier(v) for k, v in meta.get("tiers", {}).items()}
         bank.frequencies = {int(k): float(v) for k, v in meta.get("frequencies", {}).items()}
         bank.basin_mass = {int(k): float(v) for k, v in meta.get("basin_mass", {}).items()}
-        bank.activation_counts = {int(k): int(v) for k, v in meta.get("activation_counts", {}).items()}
+        bank.activation_counts = {
+            int(k): int(v) for k, v in meta.get("activation_counts", {}).items()
+        }
         bank._rebuild_matrix()
         return bank
 
@@ -168,9 +176,11 @@ class ResonanceBank:
             self._rebuild_matrix()
 
     def activate(
-        self, query: Basin, top_k: int = 64,
-        tier_filter: Optional[set[HarmonicTier]] = None,
-        domain_bias: Optional[DomainBias] = None,
+        self,
+        query: Basin,
+        top_k: int = 64,
+        tier_filter: set[HarmonicTier] | None = None,
+        domain_bias: DomainBias | None = None,
     ) -> list[tuple[int, float]]:
         """Resonance activation: find tokens closest to query on Δ⁶³."""
         self._ensure_matrix()
@@ -183,17 +193,23 @@ class ResonanceBank:
             if bias.strength > 0:
                 query = slerp(query, to_simplex(bias.anchor_basin), bias.strength)
         distances = fisher_rao_distance_batch(query, self._coord_matrix)
-        pairs = list(zip(self._coord_ids.tolist(), distances.tolist()))
+        pairs = list(zip(self._coord_ids.tolist(), distances.tolist(), strict=True))
         if tier_filter is not None:
-            pairs = [(tid, d) for tid, d in pairs
-                     if self.tiers.get(tid, HarmonicTier.OVERTONE_HAZE) in tier_filter]
+            pairs = [
+                (tid, d)
+                for tid, d in pairs
+                if self.tiers.get(tid, HarmonicTier.OVERTONE_HAZE) in tier_filter
+            ]
         if domain_bias is not None:
             if domain_bias.boosted_token_ids:
-                pairs = [(tid, d * 0.5 if tid in domain_bias.boosted_token_ids else d)
-                         for tid, d in pairs]
+                pairs = [
+                    (tid, d * 0.5 if tid in domain_bias.boosted_token_ids else d)
+                    for tid, d in pairs
+                ]
             if domain_bias.suppressed_token_ids:
-                pairs = [(tid, d) for tid, d in pairs
-                         if tid not in domain_bias.suppressed_token_ids]
+                pairs = [
+                    (tid, d) for tid, d in pairs if tid not in domain_bias.suppressed_token_ids
+                ]
         pairs.sort(key=lambda x: x[1])
         for tid, _ in pairs[:top_k]:
             self.activation_counts[tid] = self.activation_counts.get(tid, 0) + 1
@@ -204,9 +220,12 @@ class ResonanceBank:
         return [tid for tid, _ in self.activate(query, top_k)]
 
     def generate_next(
-        self, trajectory: list[Basin], temperature: float = 1.0,
-        top_k: int = 64, context_window: int = 8,
-        domain_bias: Optional[DomainBias] = None,
+        self,
+        trajectory: list[Basin],
+        temperature: float = 1.0,
+        top_k: int = 64,
+        context_window: int = 8,
+        domain_bias: DomainBias | None = None,
     ) -> tuple[int, Basin]:
         """Generate next token via geodesic foresight + resonance."""
         if not trajectory:
@@ -276,7 +295,7 @@ class ResonanceBank:
     def push_domain_bias(self, bias: DomainBias) -> None:
         self._domain_biases.append(bias)
 
-    def pop_domain_bias(self) -> Optional[DomainBias]:
+    def pop_domain_bias(self) -> DomainBias | None:
         if self._domain_biases:
             return self._domain_biases.pop()
         return None
@@ -291,7 +310,7 @@ class ResonanceBank:
             return to_simplex(np.ones(self.dim))
         return frechet_mean(basins)
 
-    def get_coordinate(self, token_id: int) -> Optional[Basin]:
+    def get_coordinate(self, token_id: int) -> Basin | None:
         return self.coordinates.get(token_id)
 
     def get_string(self, token_id: int) -> str:

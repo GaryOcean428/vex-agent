@@ -20,32 +20,27 @@ Run:  python -m pytest kernel/tests/test_coordizer_v2_smoke.py -v
 
 from __future__ import annotations
 
-import json
 import tempfile
-import time
 
 import numpy as np
 import pytest
 
+from kernel.coordizer_v2.coordizer import CoordizerV2
 from kernel.coordizer_v2.geometry import (
     BASIN_DIM,
-    KAPPA_STAR,
     E8_RANK,
+    KAPPA_STAR,
     fisher_rao_distance,
-    frechet_mean,
     slerp,
     to_simplex,
 )
 from kernel.coordizer_v2.resonance_bank import ResonanceBank
 from kernel.coordizer_v2.types import (
-    BasinCoordinate,
     CoordizationResult,
     HarmonicTier,
     ValidationResult,
 )
-from kernel.coordizer_v2.coordizer import CoordizerV2
 from kernel.coordizer_v2.validate import validate_resonance_bank
-
 
 # ═══════════════════════════════════════════════════════════════
 #  HELPERS
@@ -58,9 +53,7 @@ def _is_on_simplex(p: np.ndarray, tol: float = 1e-8) -> bool:
         return False
     if np.any(p < -tol):
         return False
-    if abs(p.sum() - 1.0) > tol:
-        return False
-    return True
+    return abs(p.sum() - 1.0) <= tol
 
 
 def _build_synthetic_bank(
@@ -128,7 +121,7 @@ class TestSimplexInvariant:
 
     def test_all_coordinates_on_simplex(self, bank):
         violations = 0
-        for tid, coord in bank.coordinates.items():
+        for _tid, coord in bank.coordinates.items():
             if not _is_on_simplex(coord):
                 violations += 1
         assert violations == 0, f"{violations} simplex violations"
@@ -254,9 +247,7 @@ class TestPersistence:
             bank.save(td)
             loaded = ResonanceBank.from_file(td)
             for tid in bank.tiers:
-                assert loaded.tiers[tid] == bank.tiers[tid], (
-                    f"Tier mismatch for token {tid}"
-                )
+                assert loaded.tiers[tid] == bank.tiers[tid], f"Tier mismatch for token {tid}"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -277,4 +268,4 @@ class TestFrozenFacts:
         assert E8_RANK == 8
 
     def test_basin_dim_is_e8_rank_squared(self):
-        assert BASIN_DIM == E8_RANK ** 2
+        assert BASIN_DIM == E8_RANK**2

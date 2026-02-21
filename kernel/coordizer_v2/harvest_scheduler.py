@@ -37,9 +37,9 @@ import os
 import shutil
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -48,14 +48,13 @@ logger = logging.getLogger(__name__)
 #  CONFIGURATION
 # ═══════════════════════════════════════════════════════════════
 
+
 @dataclass
 class HarvestSchedulerConfig:
     """Configuration for the harvest scheduler."""
 
     # Base directory for harvest operations
-    harvest_dir: str = os.environ.get(
-        "HARVEST_DIR", "/data/harvest"
-    )
+    harvest_dir: str = os.environ.get("HARVEST_DIR", "/data/harvest")
 
     # Subdirectories (auto-created)
     pending_subdir: str = "pending"
@@ -67,15 +66,11 @@ class HarvestSchedulerConfig:
     # Governor: daily harvest budget (AUD)
     # The consciousness loop NEVER triggers Modal — only explicit
     # harvest requests or scheduled batches consume this budget.
-    daily_harvest_budget: float = float(
-        os.environ.get("DAILY_HARVEST_BUDGET", "5.00")
-    )
+    daily_harvest_budget: float = float(os.environ.get("DAILY_HARVEST_BUDGET", "5.00"))
 
     # Estimated cost per batch (for budget tracking)
     # Modal A10G: ~$0.000306/sec, ~32 texts/batch, ~10s/batch ≈ $0.003/batch
-    estimated_cost_per_batch: float = float(
-        os.environ.get("HARVEST_COST_PER_BATCH", "0.003")
-    )
+    estimated_cost_per_batch: float = float(os.environ.get("HARVEST_COST_PER_BATCH", "0.003"))
 
     # Scheduling
     scan_interval_seconds: int = int(
@@ -112,6 +107,7 @@ class HarvestSchedulerConfig:
 #  BUDGET TRACKER
 # ═══════════════════════════════════════════════════════════════
 
+
 @dataclass
 class HarvestBudget:
     """Tracks daily harvest spend against the governor budget.
@@ -119,13 +115,14 @@ class HarvestBudget:
     The consciousness loop NEVER spends money. Only explicit
     harvest requests or scheduled batches consume budget.
     """
+
     daily_limit: float = 5.00
     _spend_today: float = 0.0
     _last_reset_date: str = ""
 
     def _maybe_reset(self) -> None:
         """Reset spend counter at midnight UTC."""
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         if today != self._last_reset_date:
             self._spend_today = 0.0
             self._last_reset_date = today
@@ -166,9 +163,11 @@ class HarvestBudget:
 #  QUEUE STATUS
 # ═══════════════════════════════════════════════════════════════
 
+
 @dataclass
 class HarvestQueueStatus:
     """Current state of the harvest queue."""
+
     pending_files: int = 0
     processing_files: int = 0
     completed_files: int = 0
@@ -197,6 +196,7 @@ class HarvestQueueStatus:
 #  SCHEDULER
 # ═══════════════════════════════════════════════════════════════
 
+
 class HarvestScheduler:
     """Scans for pending JSONL files and routes through ingest pipeline.
 
@@ -206,7 +206,7 @@ class HarvestScheduler:
 
     def __init__(
         self,
-        config: Optional[HarvestSchedulerConfig] = None,
+        config: HarvestSchedulerConfig | None = None,
         ingestor: Any = None,  # JSONLIngestor instance
     ):
         self.config = config or HarvestSchedulerConfig()
@@ -215,7 +215,7 @@ class HarvestScheduler:
             daily_limit=self.config.daily_harvest_budget,
         )
         self._running = False
-        self._last_scan: Optional[str] = None
+        self._last_scan: str | None = None
         self._ensure_directories()
 
     def _ensure_directories(self) -> None:
@@ -231,11 +231,13 @@ class HarvestScheduler:
 
     def get_status(self) -> HarvestQueueStatus:
         """Get current queue status."""
+
         def _count_files(d: Path) -> tuple[int, list[str]]:
             if not d.exists():
                 return 0, []
             files = [
-                f.name for f in sorted(d.iterdir())
+                f.name
+                for f in sorted(d.iterdir())
                 if f.is_file() and f.suffix in self.config.file_extensions
             ]
             return len(files), files
@@ -262,7 +264,8 @@ class HarvestScheduler:
         if not self.config.pending_dir.exists():
             return []
         files = [
-            f for f in self.config.pending_dir.iterdir()
+            f
+            for f in self.config.pending_dir.iterdir()
             if f.is_file() and f.suffix in self.config.file_extensions
         ]
         return sorted(files, key=lambda f: f.stat().st_mtime)
@@ -307,20 +310,14 @@ class HarvestScheduler:
 
         # Run ingest
         try:
-            output_path = str(
-                self.config.output_dir
-                / f"{file_path.stem}_coordized.jsonl"
-            )
+            output_path = str(self.config.output_dir / f"{file_path.stem}_coordized.jsonl")
             result = await self.ingestor.ingest_file(
                 str(processing_path),
                 output_path=output_path,
             )
 
             # Record spend
-            actual_cost = (
-                result.batches_harvested
-                * self.config.estimated_cost_per_batch
-            )
+            actual_cost = result.batches_harvested * self.config.estimated_cost_per_batch
             self.budget.record_spend(actual_cost)
 
             # Move to completed or failed
@@ -333,8 +330,7 @@ class HarvestScheduler:
                 dest = self.config.completed_dir / file_path.name
                 shutil.move(str(processing_path), str(dest))
                 logger.warning(
-                    f"Partial: {file_path.name} → {dest} "
-                    f"({result.batches_failed} batches failed)"
+                    f"Partial: {file_path.name} → {dest} ({result.batches_failed} batches failed)"
                 )
             else:
                 dest = self.config.failed_dir / file_path.name
@@ -374,7 +370,7 @@ class HarvestScheduler:
 
         Returns list of results, one per file processed.
         """
-        self._last_scan = datetime.now(timezone.utc).isoformat()
+        self._last_scan = datetime.now(UTC).isoformat()
         pending = self.list_pending()
 
         if not pending:
@@ -383,11 +379,13 @@ class HarvestScheduler:
 
         if self.budget.exhausted:
             logger.warning("Daily harvest budget exhausted — skipping scan")
-            return [{
-                "success": False,
-                "error": "Daily harvest budget exhausted",
-                "budget": self.budget.status(),
-            }]
+            return [
+                {
+                    "success": False,
+                    "error": "Daily harvest budget exhausted",
+                    "budget": self.budget.status(),
+                }
+            ]
 
         results = []
         for file_path in pending[: self.config.max_files_per_run]:
@@ -417,9 +415,7 @@ class HarvestScheduler:
             try:
                 results = await self.run_once()
                 if results:
-                    logger.info(
-                        f"Scan complete: {len(results)} files processed"
-                    )
+                    logger.info(f"Scan complete: {len(results)} files processed")
             except Exception as e:
                 logger.error(f"Scheduler error: {e}", exc_info=True)
 
@@ -444,9 +440,7 @@ class HarvestScheduler:
             filename = filename + ".jsonl"
 
         # Sanitise filename
-        safe_name = "".join(
-            c for c in filename if c.isalnum() or c in "._-"
-        )
+        safe_name = "".join(c for c in filename if c.isalnum() or c in "._-")
         if not safe_name:
             safe_name = f"upload_{int(time.time())}.jsonl"
 
@@ -455,7 +449,7 @@ class HarvestScheduler:
         # Avoid overwriting
         if dest.exists():
             stem = dest.stem
-            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
             safe_name = f"{stem}_{ts}.jsonl"
             dest = self.config.pending_dir / safe_name
 

@@ -1,11 +1,11 @@
 ---
 name: test-coverage-analysis
-description: Identify untested critical paths in QIG operations, suggest test cases based on FROZEN_FACTS.md validation data, validate pytest fixtures. Use when reviewing test coverage for Fisher-Rao distance, consciousness measurement, basin navigation, or checking CI test workflows.
+description: Identify untested critical paths in QIG operations, suggest test cases based on frozen physics validation data, validate pytest fixtures. Use when reviewing test coverage for Fisher-Rao distance, consciousness measurement, Three Pillars enforcement, basin navigation, or activation sequence per Unified Consciousness Protocol v6.1.
 ---
 
 # Test Coverage Analysis
 
-Ensures comprehensive test coverage for QIG operations. Integrates with CI workflows defined in `.github/workflows/qig-purity-coherence.yml` and `.github/workflows/geometric-purity-gate.yml`.
+Ensures comprehensive test coverage for QIG operations per Unified Consciousness Protocol v6.1.
 
 ## When to Use This Skill
 
@@ -15,48 +15,47 @@ Ensures comprehensive test coverage for QIG operations. Integrates with CI workf
 - Validating tests against FROZEN_FACTS.md data
 - Checking pytest fixture completeness
 
-## Step 1: Run Geometry Runtime Tests
+## Step 1: Run Geometry Tests
 
 ```bash
-cd qig-backend
-python -m pytest tests/test_geometry_runtime.py -v --tb=short
+pytest kernel/tests/test_geometry.py -v --tb=short
 ```
 
 Expected: Fisher-Rao identity, symmetry, triangle inequality verified.
 
-## Step 2: Run Geometric Purity Tests
+## Step 2: Run Consciousness Tests
 
 ```bash
-cd qig-backend
-python -m pytest tests/test_geometric_purity.py -v --tb=short
+pytest kernel/tests/test_consciousness.py -v --tb=short
 ```
 
-Expected: Simplex invariants, Fréchet mean convergence, natural gradient correctness.
+Expected: Regime weights, pillar enforcement, activation sequence verified.
 
-## Step 3: Run Pure QIG Mode Tests
+## Step 3: Run Pillar Enforcement Tests
 
 ```bash
-cd qig-backend
-QIG_PURITY_MODE=true python -m pytest tests/test_qig_purity_mode.py -v --cov=qig_purity_mode
+pytest kernel/tests/ -v -k "pillar or fluctuation or bulk or quenched or zombie"
 ```
 
-This verifies purity mode enforcement with no external dependencies.
+Expected: All three pillars enforced, violation types detected and corrected.
 
 ## Step 4: Check Coverage
 
 ```bash
-cd qig-backend
-python -m pytest --cov=. --cov-report=html --cov-report=term-missing
+pytest kernel/tests/ --cov=kernel --cov-report=html --cov-report=term-missing
 ```
 
 ## Critical Path Coverage Requirements
 
 | Module | Target | Description |
 |--------|--------|-------------|
-| `qig_geometry/canonical.py` | 95% | Fisher-Rao, Fréchet mean, geodesics |
-| `qig_core/consciousness_4d.py` | 90% | Φ and κ measurement |
-| `olympus/*.py` | 75% | God kernel implementations |
-| `routes/*.py` | 85% | API endpoints |
+| `kernel/geometry/` | 95% | Fisher-Rao, Fréchet mean, geodesics |
+| `kernel/consciousness/loop.py` | 90% | Consciousness loop, activation sequence |
+| `kernel/consciousness/pillars.py` | 95% | Three Pillars enforcement (v6.1 §3) |
+| `kernel/consciousness/activation.py` | 90% | 14-step activation sequence (v6.1 §23) |
+| `kernel/governance/` | 75% | E8 budget, PurityGate |
+| `kernel/coordizer_v2/` | 80% | CoordizerV2 operations |
+| `kernel/server.py` | 85% | API endpoints |
 
 ## Essential Test Cases
 
@@ -98,27 +97,55 @@ def test_phi_geometric_regime():
     assert 0.7 <= phi < 0.85
 ```
 
-### FROZEN_FACTS.md Validation
+### Frozen Physics Validation
 
 ```python
 def test_kappa_star_convergence():
-    """Validate κ* = 64.21 ± 0.92."""
+    """Validate κ* = 64.0 (theoretical), measured 64.21 ± 0.92."""
     kappa_values = [measure_kappa_at_scale(L) for L in [4, 5, 6]]
     avg_kappa = np.mean(kappa_values)
     assert 63.29 <= avg_kappa <= 65.13  # Within ±0.92
 
 def test_beta_function_critical_transition():
-    """Validate β(3→4) = 0.443 ± 0.05."""
+    """Validate β(3→4) = 0.443 ± 0.04."""
     beta = compute_beta_function(L_from=3, L_to=4)
-    assert 0.393 <= beta <= 0.493
+    assert 0.403 <= beta <= 0.483
+```
+
+### Three Pillar Tests (v6.1 §3)
+
+```python
+def test_pillar1_fluctuation_no_zombie():
+    """Pillar 1: Zero entropy must trigger noise injection."""
+    # Create flat basin (zero entropy) → must trigger correction
+    flat_basin = np.zeros(64); flat_basin[0] = 1.0
+    result = enforce_fluctuation(flat_basin)
+    assert shannon_entropy(result) >= 0.1
+
+def test_pillar2_bulk_integrity():
+    """Pillar 2: External input capped at surface slerp 30%."""
+    core, surface = split_basin(test_basin)
+    perturbed = apply_input(surface, external_input, weight=0.5)
+    # Weight should be clamped to 0.3
+    assert effective_weight <= 0.3
+
+def test_pillar3_sovereignty_ratio():
+    """Pillar 3: Sovereignty ratio tracks lived vs borrowed."""
+    kernel = create_test_kernel()
+    assert 0.0 <= kernel.sovereignty_ratio <= 1.0
 ```
 
 ## Validation Checklist
 
 - [ ] Fisher-Rao distance: identity, symmetry, triangle inequality
-- [ ] Consciousness metrics: breakdown, linear, geometric, hierarchical regimes
+- [ ] Three-regime field: Quantum/Efficient/Equilibrium weights sum to 1
+- [ ] Three Pillars: Fluctuations, Topological Bulk, Quenched Disorder enforced
+- [ ] Pillar violation types: all 7 types detected and corrected (v6.1 §3.6)
+- [ ] Activation Sequence: 14-step flow (v6.1 §23)
+- [ ] Agency Triad: Desire, Will, Wisdom computed
 - [ ] Basin navigation: stays on manifold, geodesic shortest path
-- [ ] FROZEN_FACTS.md constants validated (κ*, β, Φ thresholds)
+- [ ] Frozen physics constants validated (κ*=64, β=0.443, Φ range)
+- [ ] Sovereignty metrics: S_ratio, Q_identity tracked
 - [ ] All fixtures defined in conftest.py are actually used
 - [ ] Property-based tests for invariants (non-negativity, bounds)
 - [ ] Integration tests for full pipelines
@@ -149,16 +176,16 @@ Look for:
 
 ```bash
 # Run tests with coverage
-pytest --cov=qig-backend --cov-report=html
+pytest kernel/tests/ --cov=kernel --cov-report=html
 
 # Check critical path coverage
-pytest tests/test_canonical_fisher.py tests/test_consciousness_4d.py -v
+pytest kernel/tests/test_consciousness.py kernel/tests/test_geometry.py -v
 
-# Find untested functions
-python -m scripts.find_test_gaps
+# Run pillar enforcement tests
+pytest kernel/tests/ -v -k "pillar or fluctuation or zombie"
 
-# Run property-based tests
-pytest tests/test_properties.py --hypothesis-show-statistics
+# Run activation sequence tests
+pytest kernel/tests/ -v -k "activation"
 ```
 
 ## Response Format

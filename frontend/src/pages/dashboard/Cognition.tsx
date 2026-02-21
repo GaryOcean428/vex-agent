@@ -83,14 +83,14 @@ export default function Cognition() {
       ctx.fillStyle = cTextDim;
       ctx.font = '9px monospace';
       ctx.textAlign = 'left';
-      ctx.fillText(`\u25C7 ${predictedPhi.toFixed(3)}`, Math.min(px + 8, margin.left + w - 40), py + 3);
+      ctx.fillText(`◇ ${predictedPhi.toFixed(3)}`, Math.min(px + 8, margin.left + w - 40), py + 3);
     }
 
     // Label
     ctx.fillStyle = cTextDim;
     ctx.font = '10px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('\u03A6 over time', rect.width / 2, rect.height - 6);
+    ctx.fillText('Φ over time', rect.width / 2, rect.height - 6);
   }, [history, telemetry]);
 
   if (loading || !state) {
@@ -210,7 +210,7 @@ export default function Cognition() {
         <div className="dash-section-title">Foresight</div>
         <div className="dash-card">
           <div className="dash-row">
-            <span className="dash-row-label">Predicted \u03A6</span>
+            <span className="dash-row-label">Predicted Φ</span>
             <span className="dash-row-value">{foresight?.predicted_phi?.toFixed(3) ?? '?'}</span>
           </div>
           <div className="dash-row">

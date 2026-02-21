@@ -3,8 +3,8 @@ import { useHealth } from '../hooks/index.ts';
 import './Layout.css';
 
 const NAV_ITEMS = [
-  { to: '/chat', label: 'Chat', icon: '\u25C8' },
-  { to: '/dashboard', label: 'Dashboard', icon: '\u25A3' },
+  { to: '/chat', label: 'Chat', icon: '◈' },
+  { to: '/dashboard', label: 'Dashboard', icon: '▣' },
 ] as const;
 
 const DASHBOARD_TABS = [

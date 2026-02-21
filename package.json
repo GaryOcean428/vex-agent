@@ -11,7 +11,11 @@
     "dev": "tsx src/index.ts",
     "dev:frontend": "cd frontend && pnpm run dev",
     "lint": "eslint src/",
-    "typecheck": "tsc --noEmit"
+    "lint:fix": "eslint src/ --fix",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write 'src/**/*.ts'",
+    "format:check": "prettier --check 'src/**/*.ts'",
+    "test": "uv run pytest kernel/tests/ -v"
   },
   "keywords": [
     "ai-agent",
@@ -32,11 +36,15 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@types/express": "^5.0.6",
     "@types/node": "^22.19.11",
     "@types/uuid": "^10.0.0",
+    "eslint": "^9.39.2",
+    "prettier": "^3.5.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.0"
   },
   "engines": {
     "node": ">=20.0.0"

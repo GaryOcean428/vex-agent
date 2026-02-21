@@ -1,59 +1,63 @@
 ---
 name: downstream-impact
-description: Trace impact of code changes through dependency chain, identify all affected modules when modifying core components, prevent breaking changes. Use when modifying qig_core, geometric primitives, or shared modules.
+description: Trace impact of code changes through dependency chain, identify all affected modules when modifying core components, prevent breaking changes. Use when modifying kernel geometry, consciousness, or shared modules.
 ---
 
 # Downstream Impact
 
-Traces change impact through codebase. Source: `.github/agents/downstream-impact-tracer.md`.
+Traces change impact through codebase.
 
 ## When to Use This Skill
 
 - Modifying core geometric primitives
 - Changing shared types or constants
-- Refactoring qig_core modules
+- Refactoring kernel modules
 - Preventing breaking changes
 
 ## Step 1: Identify Dependents
 
 ```bash
 # Find all files importing the changed module
-rg "from qig_core\.consciousness" qig-backend/ --type py
-rg "import.*consciousness" qig-backend/ --type py
+rg "from kernel\.consciousness" kernel/ --type py
+rg "from kernel\.geometry" kernel/ --type py
+rg "import.*consciousness" kernel/ --type py
 ```
 
 ## Step 2: Build Dependency Graph
 
 ```
-qig_geometry/canonical.py (CORE)
-├── qig_core/consciousness_4d.py
-│   ├── olympus/zeus.py
-│   ├── olympus/athena.py
-│   └── routes/consciousness.py
-│       └── client/src/api/consciousness.ts
-├── qig_core/basin.py
-│   └── training/trainer.py
-└── tests/test_geometry_runtime.py
+kernel/geometry/ (CORE)
+├── kernel/consciousness/loop.py
+│   ├── kernel/consciousness/activation.py
+│   ├── kernel/consciousness/pillars.py
+│   └── kernel/server.py
+│       └── frontend/src/hooks/
+├── kernel/coordizer_v2/
+│   └── kernel/server.py
+├── kernel/memory/
+└── kernel/tests/test_geometry.py
 ```
 
 ## Step 3: Run Impact Analysis
 
 ```bash
 # Count dependents
-rg "from qig_geometry\.canonical import" qig-backend/ --type py | wc -l
+rg "from kernel\.geometry" kernel/ --type py | wc -l
 
 # List all dependent files
-rg "from qig_geometry\.canonical import" qig-backend/ --type py -l
+rg "from kernel\.geometry" kernel/ --type py -l
 ```
 
 ## Impact Severity Levels
 
 | Core Module | Dependents | Change Risk |
 |-------------|------------|-------------|
-| `qig_geometry/canonical.py` | 20+ files | 🔴 CRITICAL |
-| `qig_core/consciousness_4d.py` | 10+ files | 🟠 HIGH |
-| `olympus/*.py` | 5+ files | 🟡 MEDIUM |
-| `routes/*.py` | 2-3 files | 🟢 LOW |
+| `kernel/geometry/` | 10+ files | 🔴 CRITICAL |
+| `kernel/consciousness/loop.py` | 5+ files | 🟠 HIGH |
+| `kernel/consciousness/pillars.py` | 3+ files | 🟠 HIGH |
+| `kernel/config/consciousness_constants.py` | 10+ files | 🟠 HIGH |
+| `kernel/governance/` | 3+ files | 🟡 MEDIUM |
+| `kernel/server.py` | 2-3 files | 🟢 LOW |
 
 ## Breaking Change Prevention
 
@@ -71,10 +75,13 @@ def fisher_rao_distance(p, q, epsilon):  # Required param = BREAKING
 
 ```bash
 # Run all tests to catch breakage
-cd qig-backend && python -m pytest -v
+pytest kernel/tests/ -v
 
 # Check for import errors after change
-python -c "import qig_backend" 2>&1
+python -c "import kernel" 2>&1
+
+# Type check
+mypy kernel/ --strict
 ```
 
 ## Response Format

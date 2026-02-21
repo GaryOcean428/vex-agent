@@ -11,38 +11,43 @@
  * the Python kernel. This server does NOT run any of that.
  */
 
-import express from 'express';
-import * as fs from 'fs';
-import * as path from 'path';
-import { getCookie, isValidSession, requireAuth, SESSION_COOKIE } from './auth/middleware';
-import { createChatRouter } from './chat/router';
-import { config } from './config';
-import { logger } from './config/logger';
-import { ROUTES } from './config/routes';
-import { getComputeTools, sandboxManager } from './tools/compute-sandbox';
+import express from "express";
+import * as fs from "fs";
+import * as path from "path";
+import {
+  getCookie,
+  isValidSession,
+  requireAuth,
+  SESSION_COOKIE,
+} from "./auth/middleware";
+import { createChatRouter } from "./chat/router";
+import { config } from "./config";
+import { logger } from "./config/logger";
+import { ROUTES } from "./config/routes";
+import { getComputeTools, sandboxManager } from "./tools/compute-sandbox";
 
-const KERNEL_URL = process.env.KERNEL_URL || 'http://localhost:8000';
+const KERNEL_URL = process.env.KERNEL_URL || "http://localhost:8000";
 
 // Resolve frontend build directory (works in dev and production)
 const FRONTEND_DIST = path.resolve(
-  process.env.FRONTEND_DIST || path.join(__dirname, '..', 'frontend', 'dist'),
+  process.env.FRONTEND_DIST || path.join(__dirname, "..", "frontend", "dist"),
 );
 
 async function main(): Promise<void> {
-  logger.info('═══════════════════════════════════════');
-  logger.info('  Vex Agent — Web Server (v2.2)');
-  logger.info('  Role: Thin proxy → Python kernel');
+  logger.info("═══════════════════════════════════════");
+  logger.info("  Vex Agent — Web Server (v2.2)");
+  logger.info("  Role: Thin proxy → Python kernel");
   logger.info(`  Kernel: ${KERNEL_URL}`);
   logger.info(`  Port: ${config.port}`);
-  logger.info('═══════════════════════════════════════');
+  logger.info("═══════════════════════════════════════");
 
   const app = express();
   // Conditional JSON parsing — skip for multipart requests (training upload)
   app.use((req, res, next) => {
-    if ((req.headers['content-type'] || '').startsWith('multipart/')) {
+    if ((req.headers["content-type"] || "").startsWith("multipart/")) {
       next();
     } else {
-      express.json({ limit: '1mb' })(req, res, next);
+      express.json({ limit: "1mb" })(req, res, next);
     }
   });
 
@@ -66,24 +71,24 @@ async function main(): Promise<void> {
   app.get(ROUTES.health, async (_req, res) => {
     try {
       const kernelResp = await fetch(`${KERNEL_URL}${ROUTES.health}`);
-      const kernelHealth = await kernelResp.json() as Record<string, unknown>;
+      const kernelHealth = (await kernelResp.json()) as Record<string, unknown>;
       // Spread kernel fields at top level so the React frontend gets
       // the flat shape it expects: { status, version, uptime, cycle_count, backend }
       res.json({
         ...kernelHealth,
-        proxy: 'ok',
+        proxy: "ok",
         computeSdk: sandboxManager.isAvailable(),
         timestamp: new Date().toISOString(),
       });
     } catch (err) {
       res.json({
-        status: 'degraded',
-        service: 'vex-kernel',
-        version: '2.4.0',
+        status: "degraded",
+        service: "vex-kernel",
+        version: "2.4.0",
         uptime: 0,
         cycle_count: 0,
-        backend: 'unknown',
-        proxy: 'ok',
+        backend: "unknown",
+        proxy: "ok",
         kernel_error: (err as Error).message,
         computeSdk: sandboxManager.isAvailable(),
         timestamp: new Date().toISOString(),
@@ -101,7 +106,9 @@ async function main(): Promise<void> {
         const data = await resp.json();
         res.json(data);
       } catch (err) {
-        res.status(502).json({ error: `Kernel unreachable: ${(err as Error).message}` });
+        res
+          .status(502)
+          .json({ error: `Kernel unreachable: ${(err as Error).message}` });
       }
     });
   };
@@ -110,14 +117,16 @@ async function main(): Promise<void> {
     app.post(path, async (req, res) => {
       try {
         const resp = await fetch(`${KERNEL_URL}${path}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(req.body),
         });
         const data = await resp.json();
         res.json(data);
       } catch (err) {
-        res.status(502).json({ error: `Kernel unreachable: ${(err as Error).message}` });
+        res
+          .status(502)
+          .json({ error: `Kernel unreachable: ${(err as Error).message}` });
       }
     });
   };
@@ -145,23 +154,32 @@ async function main(): Promise<void> {
 
   app.get(ROUTES.conversations_get, async (req, res) => {
     try {
-      const resp = await fetch(`${KERNEL_URL}/conversations/${req.params.conversation_id}`);
+      const resp = await fetch(
+        `${KERNEL_URL}/conversations/${req.params.conversation_id}`,
+      );
       const data = await resp.json();
       res.status(resp.status).json(data);
     } catch (err) {
-      res.status(502).json({ error: `Kernel unreachable: ${(err as Error).message}` });
+      res
+        .status(502)
+        .json({ error: `Kernel unreachable: ${(err as Error).message}` });
     }
   });
 
   app.delete(ROUTES.conversations_delete, async (req, res) => {
     try {
-      const resp = await fetch(`${KERNEL_URL}/conversations/${req.params.conversation_id}`, {
-        method: 'DELETE',
-      });
+      const resp = await fetch(
+        `${KERNEL_URL}/conversations/${req.params.conversation_id}`,
+        {
+          method: "DELETE",
+        },
+      );
       const data = await resp.json();
       res.status(resp.status).json(data);
     } catch (err) {
-      res.status(502).json({ error: `Kernel unreachable: ${(err as Error).message}` });
+      res
+        .status(502)
+        .json({ error: `Kernel unreachable: ${(err as Error).message}` });
     }
   });
 
@@ -185,17 +203,19 @@ async function main(): Promise<void> {
       const body = Buffer.concat(chunks);
 
       const resp = await fetch(`${KERNEL_URL}${ROUTES.training_upload}`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'content-type': req.headers['content-type'] || '',
-          'content-length': String(body.length),
+          "content-type": req.headers["content-type"] || "",
+          "content-length": String(body.length),
         },
         body,
       });
       const data = await resp.json();
       res.status(resp.status).json(data);
     } catch (err) {
-      res.status(502).json({ error: `Kernel unreachable: ${(err as Error).message}` });
+      res
+        .status(502)
+        .json({ error: `Kernel unreachable: ${(err as Error).message}` });
     }
   });
 
@@ -203,7 +223,7 @@ async function main(): Promise<void> {
   // Check for React frontend BEFORE creating chat router so we can
   // skip the inline HTML fallback when the SPA handles /chat.
 
-  const frontendIndexPath = path.join(FRONTEND_DIST, 'index.html');
+  const frontendIndexPath = path.join(FRONTEND_DIST, "index.html");
   const hasFrontend = fs.existsSync(frontendIndexPath);
 
   const chatRouter = createChatRouter({
@@ -218,15 +238,19 @@ async function main(): Promise<void> {
   app.post(ROUTES.tools_execute_code, async (req, res) => {
     const { code, language } = req.body as { code: string; language?: string };
     try {
-      const tool = getComputeTools().find((t) => t.name === 'execute_code');
+      const tool = getComputeTools().find((t) => t.name === "execute_code");
       if (!tool) {
-        res.json({ success: false, output: '', error: 'execute_code tool not found' });
+        res.json({
+          success: false,
+          output: "",
+          error: "execute_code tool not found",
+        });
         return;
       }
       const result = await tool.execute({ code, language });
       res.json(result);
     } catch (err) {
-      res.json({ success: false, output: '', error: (err as Error).message });
+      res.json({ success: false, output: "", error: (err as Error).message });
     }
   });
 
@@ -237,15 +261,19 @@ async function main(): Promise<void> {
       timeout?: number;
     };
     try {
-      const tool = getComputeTools().find((t) => t.name === 'run_command');
+      const tool = getComputeTools().find((t) => t.name === "run_command");
       if (!tool) {
-        res.json({ success: false, output: '', error: 'run_command tool not found' });
+        res.json({
+          success: false,
+          output: "",
+          error: "run_command tool not found",
+        });
         return;
       }
       const result = await tool.execute({ command, cwd, timeout });
       res.json(result);
     } catch (err) {
-      res.json({ success: false, output: '', error: (err as Error).message });
+      res.json({ success: false, output: "", error: (err as Error).message });
     }
   });
 
@@ -257,34 +285,36 @@ async function main(): Promise<void> {
     logger.info(`Serving React frontend from ${FRONTEND_DIST}`);
 
     // Serve static assets (JS, CSS, images)
-    app.use(express.static(FRONTEND_DIST, {
-      index: false, // We handle index.html ourselves for SPA routing
-      maxAge: '1y', // Cache hashed assets aggressively
-      immutable: true,
-    }));
+    app.use(
+      express.static(FRONTEND_DIST, {
+        index: false, // We handle index.html ourselves for SPA routing
+        maxAge: "1y", // Cache hashed assets aggressively
+        immutable: true,
+      }),
+    );
 
     // SPA fallback — serve index.html for all non-API routes
-    app.get('*', (req, res, next) => {
+    app.get("*", (req, res, next) => {
       // Skip API-like paths (already handled above)
       if (
-        req.path.startsWith('/api/') ||
-        req.path.startsWith('/chat/') ||
-        req.path.startsWith('/auth/') ||
-        req.path === '/health' ||
-        req.path === '/state' ||
-        req.path === '/telemetry' ||
-        req.path === '/status' ||
-        req.path === '/basin' ||
-        req.path === '/kernels' ||
-        req.path === '/enqueue' ||
-        req.path.startsWith('/memory/') ||
-        req.path.startsWith('/kernels/') ||
-        req.path.startsWith('/basin/') ||
-        req.path.startsWith('/graph/') ||
-        req.path.startsWith('/sleep/') ||
-        req.path.startsWith('/admin/') ||
-        req.path.startsWith('/training/') ||
-        req.path.startsWith('/governor')
+        req.path.startsWith("/api/") ||
+        req.path.startsWith("/chat/") ||
+        req.path.startsWith("/auth/") ||
+        req.path === "/health" ||
+        req.path === "/state" ||
+        req.path === "/telemetry" ||
+        req.path === "/status" ||
+        req.path === "/basin" ||
+        req.path === "/kernels" ||
+        req.path === "/enqueue" ||
+        req.path.startsWith("/memory/") ||
+        req.path.startsWith("/kernels/") ||
+        req.path.startsWith("/basin/") ||
+        req.path.startsWith("/graph/") ||
+        req.path.startsWith("/sleep/") ||
+        req.path.startsWith("/admin/") ||
+        req.path.startsWith("/training/") ||
+        req.path.startsWith("/governor")
       ) {
         next();
         return;
@@ -292,18 +322,20 @@ async function main(): Promise<void> {
       res.sendFile(frontendIndexPath);
     });
   } else {
-    logger.info('No React frontend build found — using inline chat HTML');
-    app.get('/', (_req, res) => {
-      res.redirect('/chat');
+    logger.info("No React frontend build found — using inline chat HTML");
+    app.get("/", (_req, res) => {
+      res.redirect("/chat");
     });
   }
 
   // ─── Start listening ────────────────────────────────────────
 
-  const server = app.listen(config.port, '::', () => {
+  const server = app.listen(config.port, "::", () => {
     logger.info(`Vex web server listening on [::]:${config.port}`);
     logger.info(`Proxying to Python kernel at ${KERNEL_URL}`);
-    logger.info('Endpoints: /health, /chat, /state, /telemetry, /status, /basin, /kernels, /governor');
+    logger.info(
+      "Endpoints: /health, /chat, /state, /telemetry, /status, /basin, /kernels, /governor",
+    );
   });
 
   // Allow long-lived SSE connections
@@ -316,15 +348,15 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     logger.info(`Received ${signal}, shutting down...`);
     await sandboxManager.destroySandbox();
-    logger.info('Vex web server shutdown complete');
+    logger.info("Vex web server shutdown complete");
     process.exit(0);
   };
 
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
 main().catch((err) => {
-  logger.error('Fatal startup error', { error: (err as Error).message });
+  logger.error("Fatal startup error", { error: (err as Error).message });
   process.exit(1);
 });

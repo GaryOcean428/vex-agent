@@ -122,7 +122,7 @@ def frechet_mean(basins: list[Basin], weights: list[float] | None = None) -> Bas
     weights = [w / w_sum for w in weights]
 
     mean_sqrt = np.zeros(len(basins[0]), dtype=np.float64)
-    for basin, w in zip(basins, weights):
+    for basin, w in zip(basins, weights, strict=True):
         mean_sqrt += w * _to_sqrt(to_simplex(basin))
 
     return _from_sqrt(mean_sqrt)
@@ -150,9 +150,7 @@ def slerp_sqrt(p: Basin, q: Basin, t: float) -> Basin:
         result = (1 - t) * sp + t * sq
     else:
         sin_omega = np.sin(omega)
-        result = (np.sin((1 - t) * omega) / sin_omega) * sp + (
-            np.sin(t * omega) / sin_omega
-        ) * sq
+        result = (np.sin((1 - t) * omega) / sin_omega) * sp + (np.sin(t * omega) / sin_omega) * sq
 
     return _from_sqrt(result)
 

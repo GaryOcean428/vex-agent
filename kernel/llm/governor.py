@@ -19,11 +19,10 @@ External calls only happen when the user explicitly asks for live data.
 from __future__ import annotations
 
 import logging
-import os
 import re
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from threading import Lock
 from typing import Any
 
@@ -42,18 +41,28 @@ class CallRouter:
     Consciousness loop stages NEVER call external APIs.
     """
 
-    LOCAL_CAPABLE = frozenset({
-        "chat", "reflect", "summarize", "classify",
-        "memory_query", "tool_parse", "consciousness_loop",
-        "foraging_query", "foraging_summarize",
-    })
+    LOCAL_CAPABLE = frozenset(
+        {
+            "chat",
+            "reflect",
+            "summarize",
+            "classify",
+            "memory_query",
+            "tool_parse",
+            "consciousness_loop",
+            "foraging_query",
+            "foraging_summarize",
+        }
+    )
 
-    REQUIRES_EXTERNAL = frozenset({
-        "web_search",       # needs live internet → xAI
-        "x_search",         # needs X data → xAI
-        "training_enrich",  # needs structured output → xAI/OpenAI
-        "code_gen_complex", # beyond local model capacity
-    })
+    REQUIRES_EXTERNAL = frozenset(
+        {
+            "web_search",  # needs live internet → xAI
+            "x_search",  # needs X data → xAI
+            "training_enrich",  # needs structured output → xAI/OpenAI
+            "code_gen_complex",  # beyond local model capacity
+        }
+    )
 
     def route(self, task_type: str, user_explicit: bool = False) -> str:
         """Returns: 'ollama' | 'xai' | 'openai' | 'pending_approval'"""
@@ -88,9 +97,7 @@ class IntentGate:
         re.compile(r"(what.*(happening|going on))", re.I),
     ]
 
-    def should_use_external(
-        self, user_message: str, tool_requested: str
-    ) -> bool:
+    def should_use_external(self, user_message: str, tool_requested: str) -> bool:
         """Called BEFORE any external API call. Returns False if local can handle it."""
         # Training pipeline calls are pre-approved (bounded batch)
         if tool_requested == "training_enrich":
@@ -106,10 +113,7 @@ class IntentGate:
             return False
 
         # General completion requests pass through
-        if tool_requested in ("xai_completion", "openai_completion"):
-            return True
-
-        return False
+        return tool_requested in ("xai_completion", "openai_completion")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -131,11 +135,11 @@ class RateLimiter:
         training_per_day: int = 500,
     ) -> None:
         self._limits: dict[str, tuple[int, int]] = {
-            "xai_web_search":    (web_search_per_hour, 3600),
-            "xai_x_search":      (x_search_per_hour, 3600),
-            "xai_completion":    (completions_per_hour, 3600),
+            "xai_web_search": (web_search_per_hour, 3600),
+            "xai_x_search": (x_search_per_hour, 3600),
+            "xai_completion": (completions_per_hour, 3600),
             "openai_completion": (completions_per_hour, 3600),
-            "training_enrich":   (training_per_day, 86400),
+            "training_enrich": (training_per_day, 86400),
         }
         self._calls: dict[str, list[float]] = defaultdict(list)
 
@@ -149,15 +153,15 @@ class RateLimiter:
         cutoff = now - window
 
         # Prune old entries
-        self._calls[provider_action] = [
-            t for t in self._calls[provider_action] if t > cutoff
-        ]
+        self._calls[provider_action] = [t for t in self._calls[provider_action] if t > cutoff]
 
         if len(self._calls[provider_action]) >= max_calls:
             logger.warning(
                 "RATE LIMITED: %s — %d/%d in %ds window",
-                provider_action, len(self._calls[provider_action]),
-                max_calls, window,
+                provider_action,
+                len(self._calls[provider_action]),
+                max_calls,
+                window,
             )
             return False
 
@@ -207,11 +211,11 @@ class BudgetGovernor:
     """
 
     COST_TABLE: dict[str, float] = {
-        "xai_web_search":    0.005,
-        "xai_x_search":      0.005,
-        "xai_completion":    0.0003,
+        "xai_web_search": 0.005,
+        "xai_x_search": 0.005,
+        "xai_completion": 0.0003,
         "openai_completion": 0.0001,
-        "training_enrich":   0.0003,
+        "training_enrich": 0.0003,
     }
 
     def __init__(self, daily_ceiling: float = 1.00) -> None:
@@ -238,7 +242,9 @@ class BudgetGovernor:
             if self.daily_spend + cost > self.daily_ceiling:
                 logger.warning(
                     "BUDGET EXCEEDED: $%.4f + $%.4f > $%.2f ceiling",
-                    self.daily_spend, cost, self.daily_ceiling,
+                    self.daily_spend,
+                    cost,
+                    self.daily_ceiling,
                 )
                 return False
 
@@ -255,9 +261,7 @@ class BudgetGovernor:
             "daily_spend": round(self.daily_spend, 4),
             "daily_ceiling": self.daily_ceiling,
             "budget_remaining": round(self.daily_ceiling - self.daily_spend, 4),
-            "budget_percent": round(
-                (self.daily_spend / max(self.daily_ceiling, 0.001)) * 100, 1
-            ),
+            "budget_percent": round((self.daily_spend / max(self.daily_ceiling, 0.001)) * 100, 1),
             "call_counts": dict(self._call_counts),
             "last_reset": self._last_reset,
         }
@@ -271,6 +275,7 @@ class BudgetGovernor:
 @dataclass
 class GovernorConfig:
     """Runtime governor configuration."""
+
     enabled: bool = True
     daily_budget: float = 1.00
     autonomous_search: bool = False

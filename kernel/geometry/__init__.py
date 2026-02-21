@@ -12,13 +12,13 @@ Ported from: qig-backend/frozen_physics.py, qig_geometry/canonical.py
 """
 
 from .fisher_rao import (  # noqa: F401
-    fisher_rao_distance,
     bhattacharyya_coefficient,
-    frechet_mean,
-    to_simplex,
-    slerp_sqrt,
-    random_basin,
-    log_map,
     exp_map,
+    fisher_rao_distance,
+    frechet_mean,
+    log_map,
+    random_basin,
+    slerp_sqrt,
+    to_simplex,
 )
 from .hash_to_basin import hash_to_basin  # noqa: F401

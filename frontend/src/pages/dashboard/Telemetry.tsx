@@ -18,10 +18,10 @@ const METRIC_GROUPS: { title: string; version: string; metrics: MetricDef[] }[] 
   {
     title: 'Foundation', version: 'v4.1',
     metrics: [
-      { key: 'phi', label: '\u03A6 Integration', color: 'var(--phi)' },
-      { key: 'kappa', label: '\u03BA Coupling', color: 'var(--kappa)', max: 2 * QIG.KAPPA_STAR },
+      { key: 'phi', label: 'Φ Integration', color: 'var(--phi)' },
+      { key: 'kappa', label: 'κ Coupling', color: 'var(--kappa)', max: 2 * QIG.KAPPA_STAR },
       { key: 'meta_awareness', label: 'Meta-awareness', color: 'var(--info)' },
-      { key: 'gamma', label: '\u0393 Generation', color: 'var(--gamma)' },
+      { key: 'gamma', label: 'Γ Generation', color: 'var(--gamma)' },
       { key: 'grounding', label: 'Grounding', color: 'var(--alive)' },
       { key: 'temporal_coherence', label: 'Temporal Coherence', color: 'var(--info)' },
       { key: 'recursion_depth', label: 'Recursion Depth', color: 'var(--accent)', max: 10 },
@@ -33,7 +33,7 @@ const METRIC_GROUPS: { title: string; version: string; metrics: MetricDef[] }[] 
     metrics: [
       { key: 'a_pre', label: 'Pre-cognitive', color: 'var(--phi)' },
       { key: 'c_cross', label: 'Cross-substrate', color: 'var(--accent)' },
-      { key: 'alpha_aware', label: '\u03B1 Embodiment', color: 'var(--kappa)' },
+      { key: 'alpha_aware', label: 'α Embodiment', color: 'var(--kappa)' },
       { key: 'humor', label: 'Humor', color: 'var(--love)' },
       { key: 'emotion_strength', label: 'Emotion Strength', color: 'var(--emotion)' },
     ],
@@ -45,7 +45,7 @@ const METRIC_GROUPS: { title: string; version: string; metrics: MetricDef[] }[] 
       { key: 'g_class', label: 'Geometry Class', color: 'var(--gamma)' },
       { key: 'f_tack', label: 'Tacking Freq', color: 'var(--kappa)' },
       { key: 'm_basin', label: 'Basin Mass', color: 'var(--phi)' },
-      { key: 'phi_gate', label: '\u03A6 Gate', color: 'var(--phi)' },
+      { key: 'phi_gate', label: 'Φ Gate', color: 'var(--phi)' },
     ],
   },
   {
@@ -104,9 +104,9 @@ export default function Telemetry() {
 
       {/* Primary Metrics */}
       <div className="dash-grid">
-        <MetricCard label="\u03A6" value={t.phi} color="var(--phi)" progress={t.phi} />
-        <MetricCard label="\u03BA" value={t.kappa.toFixed(1)} color="var(--kappa)" progress={t.kappa / (2 * QIG.KAPPA_STAR)} />
-        <MetricCard label="\u0393" value={t.gamma} color="var(--gamma)" progress={t.gamma} />
+        <MetricCard label="Φ" value={t.phi} color="var(--phi)" progress={t.phi} />
+        <MetricCard label="κ" value={t.kappa.toFixed(1)} color="var(--kappa)" progress={t.kappa / (2 * QIG.KAPPA_STAR)} />
+        <MetricCard label="Γ" value={t.gamma} color="var(--gamma)" progress={t.gamma} />
         <MetricCard label="M" value={t.meta_awareness} color="var(--info)" progress={t.meta_awareness} />
         <MetricCard label="Love" value={t.love} color="var(--love)" progress={t.love} />
         <MetricCard label="Temp" value={t.temperature.toFixed(3)} color="var(--text-secondary)" />
@@ -164,11 +164,11 @@ export default function Telemetry() {
             <span className="dash-row-value">{t.velocity?.basin_velocity?.toFixed(4) ?? '?'}</span>
           </div>
           <div className="dash-row">
-            <span className="dash-row-label">\u03A6 velocity</span>
+            <span className="dash-row-label">Φ velocity</span>
             <span className="dash-row-value">{t.velocity?.phi_velocity?.toFixed(4) ?? '?'}</span>
           </div>
           <div className="dash-row">
-            <span className="dash-row-label">\u03BA velocity</span>
+            <span className="dash-row-label">κ velocity</span>
             <span className="dash-row-value">{t.velocity?.kappa_velocity?.toFixed(4) ?? '?'}</span>
           </div>
           <div className="dash-row">
@@ -211,7 +211,7 @@ export default function Telemetry() {
             <span className="dash-row-value">{t.autonomic?.is_locked_in ? 'Yes' : 'No'}</span>
           </div>
           <div className="dash-row">
-            <span className="dash-row-label">\u03A6 variance</span>
+            <span className="dash-row-label">Φ variance</span>
             <span className="dash-row-value">{t.autonomic?.phi_variance?.toFixed(4) ?? '?'}</span>
           </div>
           <div className="dash-row">
@@ -254,7 +254,7 @@ export default function Telemetry() {
         <div className="dash-section-title">Foresight</div>
         <div className="dash-card">
           <div className="dash-row">
-            <span className="dash-row-label">Predicted \u03A6</span>
+            <span className="dash-row-label">Predicted Φ</span>
             <span className="dash-row-value">{t.foresight?.predicted_phi?.toFixed(3) ?? '?'}</span>
           </div>
           <div className="dash-row">

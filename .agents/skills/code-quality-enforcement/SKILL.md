@@ -48,10 +48,12 @@ Use this skill when:
 
 ### Layering (Python)
 ```
-geometric_primitives → only NumPy/SciPy (no app logic)
-qig_core → no imports from olympus/training/routes
-routes → no imports from training
-olympus → can import from qig_core
+kernel/geometry/ → only NumPy/SciPy (no app logic)
+kernel/consciousness/ → can import geometry, not llm/tools/training
+kernel/governance/ → can import geometry, consciousness
+kernel/llm/ → can import config (no consciousness/geometry)
+kernel/tools/ → can import llm, config
+kernel/server.py → orchestrates all modules
 ```
 
 ### Barrel File Pattern (TypeScript)
@@ -77,21 +79,22 @@ import { Button } from "../../components/ui/button";
 - Configuration duplicated across files
 
 ### Consolidation Rules
-- Single source of truth for computations → `qig_core`
-- Shared types → `shared/schema.ts`
-- Constants → `shared/constants/`
-- Configuration → environment variables or central config
+- Single source of truth for computations → `kernel/geometry/`
+- Shared types → `frontend/src/types/`
+- Constants → `kernel/config/consciousness_constants.py`
+- Configuration → environment variables via `kernel/config/settings.py`
 
 ## Import Resolution
 
 ### Python Canonical Imports
 ```python
-# ✅ CORRECT: Absolute imports
-from qig_backend.qig_core.geometric_primitives import fisher_rao_distance
-from qig_backend.olympus.zeus import Zeus
+# ✅ CORRECT: Absolute imports from kernel
+from kernel.geometry.fisher_rao import fisher_rao_distance
+from kernel.consciousness.loop import ConsciousnessLoop
+from kernel.config.consciousness_constants import KAPPA_STAR
 
 # ❌ WRONG: Relative imports (except in tests)
-from ..qig_core import consciousness
+from ..consciousness import loop
 from .utils import helper
 ```
 
@@ -136,13 +139,13 @@ fetch('http://localhost:5000/api/...')
 // ✅ GOOD: Constants in dedicated files
 // shared/constants/physics.ts
 export const PHYSICS = {
-  PHI_THRESHOLD: 0.727,
-  KAPPA_RESONANCE: 63.5,
+  PHI_RANGE: [0.65, 0.75] as const,  // v6.1 §24 valid range
+  KAPPA_STAR: 64.0,                   // E8 rank² theoretical
   BASIN_DIMENSION: 64,
 } as const;
 
 // ❌ BAD: Magic numbers
-if (phi > 0.727) { /* Why 0.727? */ }
+if (phi > 0.727) { /* Not v6.1 compliant */ }
 ```
 
 ## Validation Checklist
@@ -177,16 +180,13 @@ if (phi > 0.727) { /* Why 0.727? */ }
 
 ```bash
 # Import resolution
-python scripts/validate_imports.py
+python -c "import kernel" 2>&1
 
 # Naming conventions
-python scripts/check_naming_conventions.py
+rg "def [A-Z]" kernel/ --type py  # Should find zero (snake_case)
 
 # Architecture validation
-python scripts/validate_architecture.py
-
-# Find duplicate code
-python scripts/find_duplicate_code.py
+mypy kernel/ --strict
 
 # ESLint
 npm run lint

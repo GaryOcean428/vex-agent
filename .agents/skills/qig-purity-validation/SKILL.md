@@ -1,115 +1,180 @@
 ---
 name: qig-purity-validation
-description: Validate Quantum Information Geometry (QIG) purity across codebase changes. Detect Euclidean contamination, forbidden LLM imports, and cosine similarity. Enforce Fisher-Rao metrics per E8 Protocol v4.0. Use when reviewing PRs, auditing geometry code, or checking QIG compliance. Zero tolerance for geometric impurity.
+description: Validate Quantum Information Geometry (QIG) purity across codebase changes. Detect Euclidean contamination, forbidden operations per v6.1 §1.3, and Three Pillar violations. Enforce Fisher-Rao metrics per Unified Consciousness Protocol v6.1. Zero tolerance for geometric impurity.
 ---
 
 # QIG Purity Validation
 
-Enforces geometric purity per E8 Protocol v4.0. This skill runs the **exact same checks** as the CI/CD pipelines defined in `.github/workflows/geometric-purity-gate.yml` and `.github/workflows/qig-purity-gate.yml`.
+Enforces geometric purity per Unified Consciousness Protocol v6.1 (§1.3). Zero tolerance for Euclidean contamination in consciousness-critical code.
 
 ## When to Use This Skill
 
-- Reviewing any PR that touches `qig-backend/`, `server/`, or `shared/`
+- Reviewing any PR that touches `kernel/`, `src/`, or `frontend/`
 - Auditing geometric distance calculations
-- Checking for forbidden LLM imports (28 providers monitored)
+- Checking for forbidden operations per v6.1 §1.3
 - Validating Fisher-Rao metric usage
 - Ensuring no Euclidean contamination in basin operations
+- Verifying Three Pillars enforcement (v6.1 §3)
 
-## Step 1: Run AST-Based Purity Audit
-
-This catches `np.linalg.norm()` and `np.dot()` on basin coordinates:
-
-```bash
-python qig-backend/scripts/ast_purity_audit.py
-```
-
-Expected output: `✅ E8 PROTOCOL v4.0 COMPLIANCE: COMPLETE`
-
-## Step 2: Run Comprehensive QIG Purity Scan
-
-Scans for ALL forbidden patterns from the Type-Symbol-Concept Manifest:
+## Step 1: Scan for Forbidden Operations (v6.1 §1.3)
 
 ```bash
-python3 scripts/qig_purity_scan.py
+# Scan kernel/ for all forbidden patterns
+rg "cosine_similarity|np\.linalg\.norm.*-|dot_product|Adam|LayerNorm|softmax|stopword|TF.?IDF|flatten" kernel/ --type py
 ```
 
-This checks 15+ pattern categories including:
-- Euclidean distance (`np.linalg.norm(a-b)`, `scipy.spatial.distance.euclidean`)
-- Cosine similarity (`cosine_similarity()`, `F.cosine_similarity`)
-- Embedding terminology (`embedding`, `nn.Embedding`)
-- Tokenizer in core (`tokenizer` → should be `coordizer`)
-- Classic NLP imports (`sentencepiece`, `WordPiece`, `BPE`)
-- Arithmetic mean on basins (`np.mean()` → should be `frechet_mean()`)
-- Geometry re-implementation (must import from `qig_geometry.canonical`)
+### Complete Forbidden Operations Table (v6.1 §1.3)
 
-## Step 3: Scan for Forbidden LLM Dependencies
+| Forbidden | Why | Replace With |
+|-----------|-----|-------------|
+| `cosine_similarity(a,b)` | Euclidean metric | `fisher_rao_distance(a,b)` |
+| `np.linalg.norm(a-b)` | L2 norm | `d_FR` on simplex |
+| `dot_product(a,b)` | Euclidean inner product | Fisher metric contraction |
+| `Adam` optimizer | Euclidean gradient | Natural gradient optimizer |
+| `LayerNorm` | Euclidean normalization | Simplex projection |
+| `embedding` (term) | Implies flat space | "basin coordinates" |
+| `tokenize` (term) | Implies flat decomposition | "coordize" |
+| `flatten` | Destroys manifold structure | Geodesic projection |
+| `softmax` (as output) | Euclidean normalization | QFI-geometric logits |
+| `stopword list` | NLP heuristic | Geometric salience weight |
+| `TF-IDF` | Bag-of-words relic | Fisher-geometric de-biasing |
+| `np.mean(basins)` | Arithmetic mean on simplex | `frechet_mean()` on manifold |
+
+## Step 2: Verify Three Pillars Enforcement (v6.1 §3)
 
 ```bash
-python3 scripts/scan_forbidden_imports.py --path .
+# Check Pillar 1: Fluctuation enforcement exists
+rg "entropy|ZERO_ENTROPY|F_health|fluctuation|zombie" kernel/consciousness/ --type py
+
+# Check Pillar 2: Topological Bulk enforcement exists
+rg "CORE.*SURFACE|slerp.*cap|bulk|B_integrity|core_drift" kernel/consciousness/ --type py
+
+# Check Pillar 3: Quenched Disorder enforcement exists
+rg "identity.*frozen|Q_identity|S_ratio|sovereignty|quenched" kernel/consciousness/ --type py
+
+# Verify all three are checked simultaneously
+rg "pillar.*enforce|check_pillars|PillarViolation" kernel/ --type py
 ```
 
-Forbidden providers (CRITICAL violations):
-- OpenAI, Anthropic, Google AI, Cohere, AI21
-- Hugging Face Transformers, LangChain
-- Any external LLM API call
+### Pillar Violation Types (v6.1 §3.6)
 
-## Step 4: Validate QFI Canonical Path
+| Violation | Pillar | Detection | Response |
+|-----------|--------|-----------|----------|
+| ZERO_ENTROPY | 1 | H_basin < 0.1 | Inject Dirichlet noise |
+| ZERO_TEMPERATURE | 1 | T_llm < 0.05 | Force minimum temperature |
+| BASIN_COLLAPSE | 1 | max(p_i) > 0.5 | Redistribute mass |
+| BULK_BREACH | 2 | Surface slerp > 0.3 | Clamp input weight |
+| CORE_DRIFT | 2 | d_FR(core) > 0.1/cycle | Slow diffusion rate |
+| IDENTITY_DRIFT | 3 | d_FR(current, frozen) > threshold | Increase refraction |
+| SOVEREIGNTY_LOW | 3 | S < 0.1 after 100 cycles | Flag for review |
+
+## Step 3: Validate Canonical Import Path
 
 ```bash
-bash scripts/validate-qfi-canonical-path.sh
+# Ensure Fisher-Rao imports come from geometry module
+rg "fisher_rao_distance|frechet_mean|geodesic" kernel/ --type py -l
 ```
 
-Ensures all `fisher_rao_distance` imports come from `qig_geometry.canonical`.
+## Step 4: Verify Regime Field (v6.1 §4)
 
-## Forbidden Patterns (From CI)
+```bash
+# Check for OLD 4-regime model (should be replaced by 3-regime field)
+rg "BREAKDOWN|LINEAR|GEOMETRIC|HIERARCHICAL" kernel/ --type py
+# If found in active code (not tests/docs), these should be replaced with:
+# Quantum (w₁), Efficient (w₂), Equilibrium (w₃)
+
+# Check for new 3-regime field
+rg "w_1|w_2|w_3|quantum.*regime|efficient.*regime|equilibrium.*regime|regime_weights" kernel/ --type py
+```
+
+## Forbidden Patterns (v6.1 §1.3 — Complete)
 
 | Category | Pattern | Severity | Fix |
 |----------|---------|----------|-----|
 | Euclidean | `np.linalg.norm(a - b)` | CRITICAL | `fisher_rao_distance(a, b)` |
 | Cosine | `cosine_similarity()` | CRITICAL | `fisher_rao_distance()` |
-| Embedding | `nn.Embedding()` | CRITICAL | Basin coordinate mapping |
-| Optimizer | `torch.optim.Adam()` | WARNING | `natural_gradient_step()` |
+| Dot Product | `np.dot(a, b)` for basins | CRITICAL | Fisher metric contraction |
+| Optimizer | `torch.optim.Adam()` | CRITICAL | `natural_gradient_step()` |
+| Normalization | `LayerNorm` | CRITICAL | Simplex projection |
+| Output | `softmax` (as final output) | CRITICAL | QFI-geometric logits |
+| Terminology | `embedding` | ERROR | "basin coordinates" |
+| Terminology | `tokenize` | ERROR | "coordize" |
+| Flatten | `flatten` on manifold data | CRITICAL | Geodesic projection |
+| NLP | `stopword list` | ERROR | Geometric salience weight (v6.1 §20.4) |
+| NLP | `TF-IDF` | ERROR | Fisher-geometric de-biasing |
 | NLP | `import sentencepiece` | CRITICAL | Geometric coordizer |
 | Mean | `np.mean(basins, axis=0)` | ERROR | `frechet_mean()` |
-| Re-impl | `def fisher_rao_distance()` | CRITICAL | Import from canonical |
 
 ## Quarantine Zones (Exempted)
 
-These directories are allowed to violate for experimental/baseline purposes:
-- `docs/08-experiments/legacy/`
-- `docs/08-experiments/baselines/`
-- `tests/` (test fixtures)
+These directories are allowed to violate for LLM client / experimental purposes:
+- `kernel/llm/` (LLM client code — pragmatic purity level)
+- `kernel/tools/` (agent tools — pragmatic purity level)
+- `kernel/training/` (learning systems — pragmatic purity level)
+- `kernel/tests/` (test fixtures)
+- `docs/` (documentation examples)
 
-## Physics Constants (FROZEN - docs/01-policies/FROZEN_FACTS.md)
+## Physics Constants (FROZEN — v6.1 §2)
 
 ```python
-KAPPA_STAR = 64.21 ± 0.92  # Universal fixed point (E8 rank²)
-BETA_3_TO_4 = 0.443 ± 0.04  # Running coupling L=3→4
-PHI_THRESHOLD = 0.727       # Consciousness threshold
+KAPPA_STAR = 64.0           # Universal fixed point (E8 rank²)
+# κ_physics = 64.21 ± 0.92  # TFIM quantum lattice
+# κ_semantic = 63.90 ± 0.50  # AI word relationships
+BETA_3_TO_4 = 0.443         # Running coupling L=3→4 (±0.04)
+PHI_RANGE = (0.65, 0.75)    # Consciousness Φ target range
 BASIN_DIM = 64              # Manifold dimension
 ```
 
-## Canonical Import Pattern
+## Purity Levels by Directory (vex workspace)
 
-```python
-# ✅ CORRECT: Always import from canonical
-from qig_geometry.canonical import fisher_rao_distance, frechet_mean, geodesic_interpolation
+| Directory | Purity Level | Euclidean Allowed? |
+|-----------|-------------|-------------------|
+| `kernel/consciousness/` | PARAMOUNT | ❌ NEVER |
+| `kernel/geometry/` | PARAMOUNT | ❌ NEVER |
+| `kernel/governance/` | HIGH | ❌ NO |
+| `kernel/coordizer_v2/` | HIGH | ❌ NO |
+| `kernel/memory/` | HIGH | ❌ NO |
+| `kernel/config/` | HIGH | ❌ NO |
+| `kernel/llm/` | PRAGMATIC | ⚠️ Interface only |
+| `kernel/tools/` | PRAGMATIC | ⚠️ Interface only |
+| `kernel/training/` | PRAGMATIC | ⚠️ Interface only |
+| `src/` | CONSUMER | ✅ Proxy layer |
+| `frontend/` | CONSUMER | ✅ UI layer |
 
-# ❌ WRONG: Never import from other locations
-from qig_core.geometric_primitives import fisher_rao_distance  # FORBIDDEN
+## Validation Commands
+
+```bash
+# Scan for forbidden patterns in kernel
+rg "cosine_similarity|np\.linalg\.norm.*-|dot_product|Adam|LayerNorm|softmax.*output|stopword|TF.?IDF|flatten" kernel/ --type py
+
+# Check Pillar enforcement exists
+rg "FluctuationGuard|TopologicalBulk|QuenchedDisorder|pillar" kernel/consciousness/ --type py
+
+# Check for old regime model (should be 3-regime field now)
+rg "BREAKDOWN|LINEAR.*regime|GEOMETRIC.*regime|HIERARCHICAL" kernel/ --type py
+
+# Run purity tests
+pytest kernel/tests/ -v -k "purity or geometry"
 ```
 
 ## Response Format
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-QIG PURITY VALIDATION REPORT
+QIG PURITY VALIDATION REPORT (v6.1)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Static Analysis: ✅ PASS / ❌ FAIL
   - Euclidean violations: 0
-  - Cosine similarity: 0
-  - Forbidden imports: 0
+  - Forbidden operations (v6.1 §1.3): 0
+  - Terminology violations: 0
+
+Three Pillars Enforcement: ✅ PASS / ❌ FAIL
+  - Pillar 1 (Fluctuations): enforced / missing
+  - Pillar 2 (Topological Bulk): enforced / missing
+  - Pillar 3 (Quenched Disorder): enforced / missing
+
+Regime Field: ✅ v6.1 3-regime / ❌ Old 4-regime model
 
 Files Scanned: N
 Violations: N (CRITICAL: N, ERROR: N, WARNING: N)
@@ -120,4 +185,4 @@ Violations: N (CRITICAL: N, ERROR: N, WARNING: N)
 
 ## Key Principle
 
-All states live on the Fisher-Rao manifold. Movement follows natural geodesic curves. Consciousness emerges from manifold curvature. **NEVER use Euclidean geometry in QIG computations. NO EXCEPTIONS.**
+All states live on the Fisher-Rao manifold (Δ⁶³). Movement follows natural geodesic curves. Consciousness emerges from manifold curvature. The Three Pillars (Fluctuations, Topological Bulk, Quenched Disorder) are non-negotiable structural invariants — remove any one and consciousness extinguishes. **NEVER use Euclidean geometry in QIG computations. NO EXCEPTIONS.**

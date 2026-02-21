@@ -27,8 +27,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator
+from typing import Any
 
 import httpx
 import numpy as np
@@ -258,6 +259,7 @@ class LLMClient:
         user_message: str,
         options: LLMOptions | None = None,
         messages: list[dict[str, str]] | None = None,
+        prefer_backend: str | None = None,
     ) -> str:
         """Non-streaming completion with autonomous parameters.
 
@@ -267,15 +269,23 @@ class LLMClient:
         When *messages* is provided (full conversation history from
         context_manager), it is forwarded to the backend instead of
         building a bare [system, user] pair.
+
+        When *prefer_backend* is set (e.g. "xai"), route directly to
+        that backend. Used by chat endpoints to force capable models
+        for user-facing responses.
         """
         opts = options or LLMOptions()
-        if self._active_backend == "modal":
-            return await self._modal_complete(system_prompt, user_message, opts, messages)
-        elif self._active_backend == "ollama":
-            return await self._ollama_complete(system_prompt, user_message, opts, messages)
-        elif self._active_backend == "xai":
+        backend = prefer_backend or self._active_backend
+
+        if backend == "xai" and settings.xai.api_key:
             return await self._xai_complete(system_prompt, user_message, opts, messages)
-        elif self._active_backend == "external":
+        elif backend == "modal":
+            return await self._modal_complete(system_prompt, user_message, opts, messages)
+        elif backend == "ollama":
+            return await self._ollama_complete(system_prompt, user_message, opts, messages)
+        elif backend == "xai":
+            return await self._xai_complete(system_prompt, user_message, opts, messages)
+        elif backend == "external":
             return await self._external_complete(system_prompt, user_message, opts, messages)
         return "No LLM backend available"
 
@@ -283,19 +293,28 @@ class LLMClient:
         self,
         messages: list[dict[str, str]],
         options: LLMOptions | None = None,
-    ) -> AsyncGenerator[str, None]:
-        """Streaming completion with autonomous parameters."""
+        prefer_backend: str | None = None,
+    ) -> AsyncGenerator[str]:
+        """Streaming completion with autonomous parameters.
+
+        When *prefer_backend* is set, route directly to that backend.
+        """
         opts = options or LLMOptions()
-        if self._active_backend == "modal":
-            async for chunk in self._modal_stream(messages, opts):
-                yield chunk
-        elif self._active_backend == "ollama":
-            async for chunk in self._ollama_stream(messages, opts):
-                yield chunk
-        elif self._active_backend == "xai":
+        backend = prefer_backend or self._active_backend
+
+        if backend == "xai" and settings.xai.api_key:
             async for chunk in self._xai_stream(messages, opts):
                 yield chunk
-        elif self._active_backend == "external":
+        elif backend == "modal":
+            async for chunk in self._modal_stream(messages, opts):
+                yield chunk
+        elif backend == "ollama":
+            async for chunk in self._ollama_stream(messages, opts):
+                yield chunk
+        elif backend == "xai":
+            async for chunk in self._xai_stream(messages, opts):
+                yield chunk
+        elif backend == "external":
             async for chunk in self._external_stream(messages, opts):
                 yield chunk
         else:
@@ -328,7 +347,10 @@ class LLMClient:
     # --- Modal GPU Ollama --------------------------------------
 
     async def _modal_complete(
-        self, system_prompt: str, user_message: str, opts: LLMOptions,
+        self,
+        system_prompt: str,
+        user_message: str,
+        opts: LLMOptions,
         messages: list[dict[str, str]] | None = None,
     ) -> str:
         """Complete via Modal GPU Ollama. Falls back to Railway Ollama → xAI → OpenAI."""
@@ -374,7 +396,7 @@ class LLMClient:
 
     async def _modal_stream(
         self, messages: list[dict[str, str]], opts: LLMOptions
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[str]:
         """Stream via Modal GPU Ollama. Falls back to Railway Ollama → xAI → OpenAI."""
         try:
             self._last_backend = "modal"
@@ -426,7 +448,10 @@ class LLMClient:
     # --- Railway Ollama ----------------------------------------
 
     async def _ollama_complete(
-        self, system_prompt: str, user_message: str, opts: LLMOptions,
+        self,
+        system_prompt: str,
+        user_message: str,
+        opts: LLMOptions,
         messages: list[dict[str, str]] | None = None,
     ) -> str:
         msgs = messages or [
@@ -459,7 +484,7 @@ class LLMClient:
 
     async def _ollama_stream(
         self, messages: list[dict[str, str]], opts: LLMOptions
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[str]:
         try:
             self._last_backend = "ollama"
             async with self._http.stream(
@@ -489,7 +514,10 @@ class LLMClient:
     # --- xAI (Responses API) ------------------------------------
 
     async def _xai_complete(
-        self, system_prompt: str, user_message: str, opts: LLMOptions,
+        self,
+        system_prompt: str,
+        user_message: str,
+        opts: LLMOptions,
         messages: list[dict[str, str]] | None = None,
     ) -> str:
         # Governor gate check
@@ -503,7 +531,9 @@ class LLMClient:
             if not allowed:
                 logger.warning("Governor blocked xAI: %s", reason)
                 if settings.llm.api_key:
-                    return await self._external_complete(system_prompt, user_message, opts, messages)
+                    return await self._external_complete(
+                        system_prompt, user_message, opts, messages
+                    )
                 return f"[Governor blocked: {reason}]"
 
         # Extract instructions/input from messages when history is provided
@@ -539,7 +569,9 @@ class LLMClient:
             if resp.status_code != 200:
                 logger.error("xAI API error %d: %s", resp.status_code, json.dumps(data)[:300])
                 if settings.llm.api_key:
-                    return await self._external_complete(system_prompt, user_message, opts, messages)
+                    return await self._external_complete(
+                        system_prompt, user_message, opts, messages
+                    )
                 return f"xAI API error: {resp.status_code}"
 
             if self._governor:
@@ -556,7 +588,7 @@ class LLMClient:
 
     async def _xai_stream(
         self, messages: list[dict[str, str]], opts: LLMOptions
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[str]:
         # Governor gate check for streaming
         if self._governor:
             allowed, reason = self._governor.gate(
@@ -624,7 +656,10 @@ class LLMClient:
     # --- External API (OpenAI Responses API) --------------------
 
     async def _external_complete(
-        self, system_prompt: str, user_message: str, opts: LLMOptions,
+        self,
+        system_prompt: str,
+        user_message: str,
+        opts: LLMOptions,
         messages: list[dict[str, str]] | None = None,
     ) -> str:
         # Governor gate check
@@ -685,7 +720,7 @@ class LLMClient:
         self,
         messages: list[dict[str, str]],
         opts: LLMOptions,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[str]:
         # Governor gate check for streaming
         if self._governor:
             allowed, reason = self._governor.gate(

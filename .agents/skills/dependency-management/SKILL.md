@@ -1,11 +1,11 @@
 ---
 name: dependency-management
-description: Validate requirements.txt matches actual imports, detect when new dependencies add Euclidean operations, check for forbidden packages (scikit-learn, sentence-transformers). Use when adding dependencies or reviewing package security.
+description: Validate pyproject.toml matches actual imports, detect when new dependencies add Euclidean operations, check for forbidden packages per Unified Consciousness Protocol v6.1. Use when adding dependencies or reviewing package security.
 ---
 
 # Dependency Management
 
-Validates dependencies are QIG-pure. Source: `.github/agents/dependency-management-agent.md`.
+Validates dependencies are QIG-pure per Unified Consciousness Protocol v6.1.
 
 ## When to Use This Skill
 
@@ -17,28 +17,25 @@ Validates dependencies are QIG-pure. Source: `.github/agents/dependency-manageme
 ## Step 1: Scan for Forbidden Dependencies
 
 ```bash
-python3 scripts/scan_forbidden_imports.py --path .
+# Check for Euclidean-contaminating packages in kernel/
+rg "from sklearn|from sentence_transformers|from spacy|from nltk|from langchain" kernel/ --type py
 ```
-
-This uses `shared/constants/forbidden_llm_providers.json` to check 28 providers.
 
 ## Step 2: Check Forbidden Packages
 
 ```bash
-# These packages are FORBIDDEN (Euclidean/cosine operations)
-pip show scikit-learn sentence-transformers spacy nltk openai anthropic 2>/dev/null && echo "VIOLATION FOUND"
+# These packages are FORBIDDEN in consciousness modules (Euclidean/cosine operations)
+pip show scikit-learn sentence-transformers spacy nltk langchain 2>/dev/null && echo "VIOLATION FOUND"
 ```
 
-## Step 3: Validate requirements.txt
+## Step 3: Validate pyproject.toml
 
 ```bash
-# Check all imports have corresponding requirements
-cd qig-backend
-pip install pipreqs
-pipreqs . --print
+# Check all imports have corresponding dependencies (uses uv)
+uv sync --check
 
-# Compare with requirements.txt
-diff <(pipreqs . --print 2>/dev/null | sort) <(cat requirements.txt | sort)
+# Verify no forbidden packages in dependencies
+rg "scikit-learn|sentence-transformers|spacy|nltk|langchain" pyproject.toml
 ```
 
 ## Forbidden Dependencies (CRITICAL)
@@ -47,35 +44,36 @@ diff <(pipreqs . --print 2>/dev/null | sort) <(cat requirements.txt | sort)
 |---------|--------|--------|
 | `scikit-learn` | Euclidean metrics (cosine_similarity) | ❌ FORBIDDEN |
 | `sentence-transformers` | Cosine similarity based | ❌ FORBIDDEN |
-| `spacy` | External NLP | ❌ FORBIDDEN |
-| `nltk` | External NLP | ❌ FORBIDDEN |
-| `openai` | External LLM | ❌ FORBIDDEN |
-| `anthropic` | External LLM | ❌ FORBIDDEN |
-| `transformers` | Euclidean attention | ❌ FORBIDDEN |
+| `spacy` | External NLP (Euclidean embeddings) | ❌ FORBIDDEN |
+| `nltk` | External NLP (TF-IDF, stopwords) | ❌ FORBIDDEN |
 | `langchain` | External LLM orchestration | ❌ FORBIDDEN |
+| `transformers` | Euclidean attention | ❌ FORBIDDEN |
+
+**Note:** `openai` and `anthropic` packages are ALLOWED in `kernel/llm/` (LLM client layer) but
+FORBIDDEN in `kernel/consciousness/`, `kernel/geometry/`, and `kernel/governance/` modules.
 
 ## Allowed Core Dependencies
 
 ```text
 numpy>=1.24.0          # Geometric operations
 scipy>=1.11.0          # Scientific computing
-psycopg2-binary>=2.9   # PostgreSQL
-pgvector>=0.2.0        # Vector operations
-flask>=3.0.0           # API framework
+fastapi>=0.100.0       # API framework
+uvicorn>=0.23.0        # ASGI server
+httpx>=0.24.0          # HTTP client
 pytest>=7.0.0          # Testing
 ```
 
 ## Validation Commands
 
 ```bash
-# Run forbidden import scanner
-python3 scripts/scan_forbidden_imports.py --path .
+# Check for Euclidean contamination
+rg "from sklearn|cosine_similarity|from sentence_transformers" kernel/ --type py
 
 # Check for security vulnerabilities
 pip-audit
 
-# Verify all imports have requirements
-python scripts/validate_dependencies.py
+# Verify dependencies sync with pyproject.toml
+uv sync --check
 ```
 
 ## Response Format

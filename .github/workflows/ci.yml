@@ -1,0 +1,156 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Python Quality — Ruff lint + format check
+  # ──────────────────────────────────────────────────────────────────────────
+  python-quality:
+    name: Python Quality (Ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: uv sync --extra lint
+
+      - name: Ruff lint
+        run: uv run ruff check kernel/ modal/ --output-format=github
+
+      - name: Ruff format check
+        run: uv run ruff format --check kernel/ modal/
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. Python Type Checking — mypy strict
+  # ──────────────────────────────────────────────────────────────────────────
+  python-types:
+    name: Python Types (mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: uv sync --extra lint
+
+      - name: mypy
+        run: uv run mypy kernel/
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. PurityGate — Geometric Purity (ZERO TOLERANCE)
+  # ──────────────────────────────────────────────────────────────────────────
+  purity-gate:
+    name: PurityGate (Geometric Purity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run PurityGate
+        run: uv run python -m kernel.governance.purity
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 4. Python Tests — pytest with coverage
+  # ──────────────────────────────────────────────────────────────────────────
+  python-tests:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: uv sync --extra test
+
+      - name: Run pytest
+        run: uv run pytest kernel/tests/ -v --cov=kernel --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 5. TypeScript Quality — ESLint + tsc typecheck (root proxy)
+  # ──────────────────────────────────────────────────────────────────────────
+  typescript-quality:
+    name: TypeScript Quality (proxy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: ESLint
+        run: pnpm run lint
+
+      - name: TypeScript type check
+        run: pnpm run typecheck
+
+      - name: Prettier format check
+        run: pnpm run format:check
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 6. Frontend Quality — ESLint + tsc build (React dashboard)
+  # ──────────────────────────────────────────────────────────────────────────
+  frontend-quality:
+    name: Frontend Quality + Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: cd frontend && pnpm install
+
+      - name: ESLint
+        run: cd frontend && pnpm run lint
+
+      - name: Frontend build (type-checks + bundle)
+        run: cd frontend && pnpm run build

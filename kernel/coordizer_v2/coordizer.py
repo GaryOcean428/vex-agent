@@ -40,22 +40,29 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
-from numpy.typing import NDArray
 
-from .geometry import (
-    BASIN_DIM, KAPPA_STAR, Basin, _EPS,
-    fisher_rao_distance, frechet_mean, slerp, to_simplex,
-)
-from .types import (
-    BasinCoordinate, CoordizationResult, DomainBias,
-    GranularityScale, HarmonicTier, ValidationResult,
-)
-from .resonance_bank import ResonanceBank
 from .compress import CompressionResult, compress
-from .harvest import HarvestConfig, HarvestResult, Harvester
+from .geometry import (
+    _EPS,
+    BASIN_DIM,
+    KAPPA_STAR,
+    Basin,
+    fisher_rao_distance,
+    frechet_mean,
+    to_simplex,
+)
+from .harvest import HarvestConfig, Harvester
+from .resonance_bank import ResonanceBank
+from .types import (
+    BasinCoordinate,
+    CoordizationResult,
+    DomainBias,
+    GranularityScale,
+    HarmonicTier,
+    ValidationResult,
+)
 from .validate import validate_resonance_bank
 
 logger = logging.getLogger(__name__)
@@ -84,17 +91,19 @@ class CoordizerV2:
         self._tokenizer = tokenizer
         self._string_to_id: dict[str, int] = {}
         self._rebuild_string_cache()
-        self._compression_result: Optional[CompressionResult] = None
+        self._compression_result: CompressionResult | None = None
 
     # ─── Factory Methods ─────────────────────────────────────
 
     @classmethod
     def from_harvest(
-        cls, model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
-        corpus_path: Optional[str] = None,
-        corpus_texts: Optional[list[str]] = None,
+        cls,
+        model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
+        corpus_path: str | None = None,
+        corpus_texts: list[str] | None = None,
         output_dir: str = "./coordizer_data",
-        device: str = "cpu", min_contexts: int = 10,
+        device: str = "cpu",
+        min_contexts: int = 10,
         target_dim: int = BASIN_DIM,
     ) -> CoordizerV2:
         """Build a CoordizerV2 from scratch via Method 1 harvesting.
@@ -113,8 +122,11 @@ class CoordizerV2:
         # Phase A: Harvest
         logger.info("\n── Phase A: Harvesting output distributions ──")
         config = HarvestConfig(
-            corpus_path=corpus_path, corpus_texts=corpus_texts,
-            output_dir=output_dir, device=device, min_contexts=min_contexts,
+            corpus_path=corpus_path,
+            corpus_texts=corpus_texts,
+            output_dir=output_dir,
+            device=device,
+            min_contexts=min_contexts,
         )
         harvester = Harvester(config)
         harvest = harvester.harvest_transformers(model_id)
@@ -133,6 +145,7 @@ class CoordizerV2:
         tokenizer = None
         try:
             from transformers import AutoTokenizer
+
             tokenizer = AutoTokenizer.from_pretrained(model_id)
         except Exception as e:
             logger.warning(f"Could not load tokenizer: {e}")
@@ -185,13 +198,16 @@ class CoordizerV2:
         for tid in token_ids:
             coord = self.bank.get_coordinate(tid)
             if coord is not None:
-                coordinates.append(BasinCoordinate(
-                    coord_id=tid, vector=coord,
-                    name=self.bank.get_string(tid),
-                    tier=self.bank.tiers.get(tid, HarmonicTier.OVERTONE_HAZE),
-                    frequency=self.bank.frequencies.get(tid, 0.0),
-                    basin_mass=self.bank.basin_mass.get(tid, 0.0),
-                ))
+                coordinates.append(
+                    BasinCoordinate(
+                        coord_id=tid,
+                        vector=coord,
+                        name=self.bank.get_string(tid),
+                        tier=self.bank.tiers.get(tid, HarmonicTier.OVERTONE_HAZE),
+                        frequency=self.bank.frequencies.get(tid, 0.0),
+                        basin_mass=self.bank.basin_mass.get(tid, 0.0),
+                    )
+                )
                 valid_ids.append(tid)
             else:
                 logger.debug(f"Token {tid} not in bank, finding nearest")
@@ -199,14 +215,19 @@ class CoordizerV2:
                 nearest_tid, _ = self.bank.nearest_token(uniform)
                 coord = self.bank.get_coordinate(nearest_tid)
                 if coord is not None:
-                    coordinates.append(BasinCoordinate(
-                        coord_id=nearest_tid, vector=coord,
-                        name=self.bank.get_string(nearest_tid),
-                        tier=self.bank.tiers.get(nearest_tid, HarmonicTier.OVERTONE_HAZE),
-                    ))
+                    coordinates.append(
+                        BasinCoordinate(
+                            coord_id=nearest_tid,
+                            vector=coord,
+                            name=self.bank.get_string(nearest_tid),
+                            tier=self.bank.tiers.get(nearest_tid, HarmonicTier.OVERTONE_HAZE),
+                        )
+                    )
                     valid_ids.append(nearest_tid)
 
-        result = CoordizationResult(coordinates=coordinates, coord_ids=valid_ids, original_text=text)
+        result = CoordizationResult(
+            coordinates=coordinates, coord_ids=valid_ids, original_text=text
+        )
         result.compute_metrics()
         return result
 
@@ -222,12 +243,16 @@ class CoordizerV2:
 
             if tid is not None and tid in self.bank.coordinates:
                 coord = self.bank.coordinates[tid]
-                coordinates.append(BasinCoordinate(
-                    coord_id=tid, vector=coord, name=word,
-                    tier=self.bank.tiers.get(tid, HarmonicTier.OVERTONE_HAZE),
-                    frequency=self.bank.frequencies.get(tid, 0.0),
-                    basin_mass=self.bank.basin_mass.get(tid, 0.0),
-                ))
+                coordinates.append(
+                    BasinCoordinate(
+                        coord_id=tid,
+                        vector=coord,
+                        name=word,
+                        tier=self.bank.tiers.get(tid, HarmonicTier.OVERTONE_HAZE),
+                        frequency=self.bank.frequencies.get(tid, 0.0),
+                        basin_mass=self.bank.basin_mass.get(tid, 0.0),
+                    )
+                )
                 coord_ids.append(tid)
             else:
                 char_basins = []
@@ -240,13 +265,19 @@ class CoordizerV2:
                     nearest_tid, _ = self.bank.nearest_token(composed)
                     coord = self.bank.get_coordinate(nearest_tid)
                     if coord is not None:
-                        coordinates.append(BasinCoordinate(
-                            coord_id=nearest_tid, vector=coord, name=word,
-                            scale=GranularityScale.WORD,
-                        ))
+                        coordinates.append(
+                            BasinCoordinate(
+                                coord_id=nearest_tid,
+                                vector=coord,
+                                name=word,
+                                scale=GranularityScale.WORD,
+                            )
+                        )
                         coord_ids.append(nearest_tid)
 
-        result = CoordizationResult(coordinates=coordinates, coord_ids=coord_ids, original_text=text)
+        result = CoordizationResult(
+            coordinates=coordinates, coord_ids=coord_ids, original_text=text
+        )
         result.compute_metrics()
         return result
 
@@ -279,20 +310,28 @@ class CoordizerV2:
     # ─── Generation ──────────────────────────────────────────
 
     def generate_next(
-        self, trajectory: list[Basin], temperature: float = 1.0,
-        top_k: int = 64, context_window: int = 8,
-        domain_bias: Optional[DomainBias] = None,
+        self,
+        trajectory: list[Basin],
+        temperature: float = 1.0,
+        top_k: int = 64,
+        context_window: int = 8,
+        domain_bias: DomainBias | None = None,
     ) -> tuple[int, Basin]:
         """Generate next token via geodesic foresight + resonance."""
         return self.bank.generate_next(
-            trajectory=trajectory, temperature=temperature,
-            top_k=top_k, context_window=context_window,
+            trajectory=trajectory,
+            temperature=temperature,
+            top_k=top_k,
+            context_window=context_window,
             domain_bias=domain_bias,
         )
 
     def generate_sequence(
-        self, seed_text: str, max_tokens: int = 50,
-        temperature: float = 1.0, top_k: int = 64,
+        self,
+        seed_text: str,
+        max_tokens: int = 50,
+        temperature: float = 1.0,
+        top_k: int = 64,
         stop_on_convergence: bool = True,
         convergence_threshold: float = 0.01,
     ) -> str:
@@ -307,7 +346,9 @@ class CoordizerV2:
 
         for step in range(max_tokens):
             tid, basin = self.generate_next(
-                trajectory=trajectory, temperature=temperature, top_k=top_k,
+                trajectory=trajectory,
+                temperature=temperature,
+                top_k=top_k,
             )
             trajectory.append(basin)
             generated_ids.append(tid)
@@ -323,9 +364,10 @@ class CoordizerV2:
     # ─── Domain Bias ─────────────────────────────────────────
 
     def set_domain(
-        self, domain_name: str,
-        seed_words: Optional[list[str]] = None,
-        seed_token_ids: Optional[list[int]] = None,
+        self,
+        domain_name: str,
+        seed_words: list[str] | None = None,
+        seed_token_ids: list[int] | None = None,
         strength: float = 0.1,
     ) -> None:
         """Set domain bias for the coordizer."""
@@ -342,8 +384,10 @@ class CoordizerV2:
             return
         anchor = self.bank.compute_domain_anchor(token_ids)
         bias = DomainBias(
-            domain_name=domain_name, anchor_basin=anchor,
-            strength=strength, boosted_token_ids=set(token_ids),
+            domain_name=domain_name,
+            anchor_basin=anchor,
+            strength=strength,
+            boosted_token_ids=set(token_ids),
         )
         self.bank.push_domain_bias(bias)
         logger.info(f"Domain bias set: {domain_name} (strength={strength})")

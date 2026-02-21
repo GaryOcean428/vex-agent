@@ -53,7 +53,7 @@ export default function Memory() {
           <div className="dash-row">
             <span className="dash-row-label">Basin Projection</span>
             <span className="dash-row-value">
-              SHA-256 \u2192 \u0394\u2076\u00B3
+              SHA-256 → Δ⁶³
             </span>
           </div>
           <div className="dash-row">

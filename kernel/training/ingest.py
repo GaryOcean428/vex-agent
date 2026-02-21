@@ -28,13 +28,12 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-
-from ..llm.governor import GovernorStack
 from fastapi import APIRouter, File, Form, UploadFile
 from pydantic import BaseModel
 
 from ..config.settings import settings
 from ..llm.client import LLMClient, LLMOptions
+from ..llm.governor import GovernorStack
 
 logger = logging.getLogger("vex.training")
 
@@ -51,26 +50,28 @@ _write_lock = asyncio.Lock()
 
 class E8Primitive(str, Enum):
     """E8-aligned consciousness primitives."""
-    PER = "PER"    # Perception
-    MEM = "MEM"    # Memory
-    ACT = "ACT"    # Action
-    PRD = "PRD"    # Prediction
-    ETH = "ETH"    # Ethics
+
+    PER = "PER"  # Perception
+    MEM = "MEM"  # Memory
+    ACT = "ACT"  # Action
+    PRD = "PRD"  # Prediction
+    ETH = "ETH"  # Ethics
     META = "META"  # Meta-cognition
-    HRT = "HRT"    # Heart/affect
-    REL = "REL"    # Relationship
-    MIX = "MIX"    # Multi-domain
+    HRT = "HRT"  # Heart/affect
+    REL = "REL"  # Relationship
+    MIX = "MIX"  # Multi-domain
 
 
 class ProcessingMode(str, Enum):
-    FAST = "fast"           # Chunk + store only, no LLM enrichment
-    STANDARD = "standard"   # Chunk + LLM tag + basic Q&A
-    DEEP = "deep"           # Full enrichment + concept extraction
+    FAST = "fast"  # Chunk + store only, no LLM enrichment
+    STANDARD = "standard"  # Chunk + LLM tag + basic Q&A
+    DEEP = "deep"  # Full enrichment + concept extraction
 
 
 @dataclass
 class ChunkRecord:
     """A single training chunk in JSONL format."""
+
     source: str
     category: str
     chunk_index: int
@@ -88,6 +89,7 @@ class ChunkRecord:
 @dataclass
 class IngestionResult:
     """Result of a document ingestion."""
+
     status: str
     source: str
     format: str
@@ -174,10 +176,10 @@ def _extract_pdf(content: bytes) -> str:
     """Extract text from PDF using pymupdf in-process."""
     try:
         import fitz  # type: ignore[import-untyped]
-    except ImportError:
+    except ImportError as exc:
         raise RuntimeError(
             "PDF extraction requires pymupdf. Install with: pip install pymupdf"
-        )
+        ) from exc
 
     doc = fitz.open(stream=content, filetype="pdf")
     pages: list[str] = []
@@ -195,9 +197,7 @@ def _extract_text(content: bytes, filename: str) -> str:
 
     if ext == "pdf":
         return _extract_pdf(content)
-    elif ext in ("md", "markdown", "txt"):
-        return content.decode("utf-8", errors="replace")
-    elif ext == "jsonl":
+    elif ext in ("md", "markdown", "txt") or ext == "jsonl":
         return content.decode("utf-8", errors="replace")
     else:
         raise ValueError(f"Unsupported format: .{ext}. Use .pdf, .md, .txt, or .jsonl")
@@ -226,7 +226,7 @@ def chunk_text(text: str, max_tokens: int = 512) -> list[str]:
                 chunks.append(current.strip())
             if len(para) > max_chars:
                 for i in range(0, len(para), max_chars):
-                    chunks.append(para[i:i + max_chars].strip())
+                    chunks.append(para[i : i + max_chars].strip())
                 current = ""
             else:
                 current = para
@@ -283,7 +283,10 @@ async def _enrich_chunk_xai(
     # Governor gate — blocks if kill switch, budget exceeded, or rate limited
     if governor:
         allowed, reason = governor.gate(
-            "training_enrich", "training_enrich", chunk_text[:100], False,
+            "training_enrich",
+            "training_enrich",
+            chunk_text[:100],
+            False,
         )
         if not allowed:
             logger.debug("Governor blocked enrichment: %s", reason)
@@ -310,8 +313,9 @@ async def _enrich_chunk_xai(
             )
             data = resp.json()
             if resp.status_code != 200:
-                logger.warning("xAI enrichment API error %d: %s",
-                               resp.status_code, json.dumps(data)[:200])
+                logger.warning(
+                    "xAI enrichment API error %d: %s", resp.status_code, json.dumps(data)[:200]
+                )
                 return {}
 
             content = _extract_responses_text(data)
@@ -389,9 +393,13 @@ async def ingest_document(
         dest.write_bytes(content)
         lines = content.decode("utf-8").strip().split("\n")
         return IngestionResult(
-            status="ingested", source=filename, format="jsonl",
-            total_chars=len(content), chunks_written=len(lines),
-            chunks_enriched=0, qa_pairs_generated=0,
+            status="ingested",
+            source=filename,
+            format="jsonl",
+            total_chars=len(content),
+            chunks_written=len(lines),
+            chunks_enriched=0,
+            qa_pairs_generated=0,
             processing_time_s=round(time.time() - start, 2),
             output_path=str(dest),
         )
@@ -401,22 +409,32 @@ async def ingest_document(
         text = _extract_text(content, filename)
     except Exception as e:
         return IngestionResult(
-            status="error", source=filename, format=ext,
-            total_chars=0, chunks_written=0, chunks_enriched=0,
+            status="error",
+            source=filename,
+            format=ext,
+            total_chars=0,
+            chunks_written=0,
+            chunks_enriched=0,
             qa_pairs_generated=0,
             processing_time_s=round(time.time() - start, 2),
-            output_path="", errors=[str(e)],
+            output_path="",
+            errors=[str(e)],
         )
 
     # Chunk
     chunks = chunk_text(text)
     if not chunks:
         return IngestionResult(
-            status="empty", source=filename, format=ext,
-            total_chars=len(text), chunks_written=0, chunks_enriched=0,
+            status="empty",
+            source=filename,
+            format=ext,
+            total_chars=len(text),
+            chunks_written=0,
+            chunks_enriched=0,
             qa_pairs_generated=0,
             processing_time_s=round(time.time() - start, 2),
-            output_path="", errors=["No usable text extracted"],
+            output_path="",
+            errors=["No usable text extracted"],
         )
 
     # Enrich + build records
@@ -426,8 +444,11 @@ async def ingest_document(
 
     for i, chunk in enumerate(chunks):
         record = ChunkRecord(
-            source=filename, category=category, chunk_index=i,
-            text=chunk, hash=hashlib.md5(chunk.encode()).hexdigest(),
+            source=filename,
+            category=category,
+            chunk_index=i,
+            text=chunk,
+            hash=hashlib.md5(chunk.encode()).hexdigest(),
         )
 
         if mode != ProcessingMode.FAST:
@@ -466,11 +487,16 @@ async def ingest_document(
             f.write(json.dumps(asdict(record), ensure_ascii=False) + "\n")
 
     return IngestionResult(
-        status="ingested", source=filename, format=ext,
-        total_chars=len(text), chunks_written=len(records),
-        chunks_enriched=enriched_count, qa_pairs_generated=qa_count,
+        status="ingested",
+        source=filename,
+        format=ext,
+        total_chars=len(text),
+        chunks_written=len(records),
+        chunks_enriched=enriched_count,
+        qa_pairs_generated=qa_count,
         processing_time_s=round(time.time() - start, 2),
-        output_path=str(dest), errors=errors,
+        output_path=str(dest),
+        errors=errors,
     )
 
 
@@ -483,7 +509,7 @@ def _count_lines(filepath: Path) -> int:
     """Count non-empty lines in a JSONL file."""
     if not filepath.exists():
         return 0
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         return sum(1 for line in f if line.strip())
 
 
@@ -525,19 +551,21 @@ def export_openai_format() -> dict[str, Any]:
     # Conversations
     conv_file = TRAINING_DIR / "conversations.jsonl"
     if conv_file.exists():
-        with open(conv_file, "r", encoding="utf-8") as f:
+        with open(conv_file, encoding="utf-8") as f:
             for raw in f:
                 raw = raw.strip()
                 if not raw:
                     continue
                 try:
                     entry = json.loads(raw)
-                    lines.append({
-                        "messages": [
-                            {"role": "user", "content": entry.get("user_message", "")},
-                            {"role": "assistant", "content": entry.get("response", "")},
-                        ]
-                    })
+                    lines.append(
+                        {
+                            "messages": [
+                                {"role": "user", "content": entry.get("user_message", "")},
+                                {"role": "assistant", "content": entry.get("response", "")},
+                            ]
+                        }
+                    )
                 except (json.JSONDecodeError, KeyError):
                     continue
 
@@ -545,7 +573,7 @@ def export_openai_format() -> dict[str, Any]:
     curriculum_dir = TRAINING_DIR / "curriculum"
     if curriculum_dir.exists():
         for jsonl_file in curriculum_dir.glob("*.jsonl"):
-            with open(jsonl_file, "r", encoding="utf-8") as f:
+            with open(jsonl_file, encoding="utf-8") as f:
                 for raw in f:
                     raw = raw.strip()
                     if not raw:
@@ -556,12 +584,14 @@ def export_openai_format() -> dict[str, Any]:
                             q = qa.get("question", qa.get("q", ""))
                             a = qa.get("answer", qa.get("a", ""))
                             if q and a:
-                                lines.append({
-                                    "messages": [
-                                        {"role": "user", "content": q},
-                                        {"role": "assistant", "content": a},
-                                    ]
-                                })
+                                lines.append(
+                                    {
+                                        "messages": [
+                                            {"role": "user", "content": q},
+                                            {"role": "assistant", "content": a},
+                                        ]
+                                    }
+                                )
                     except (json.JSONDecodeError, KeyError):
                         continue
 

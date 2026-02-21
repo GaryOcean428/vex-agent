@@ -22,11 +22,9 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
 
 from .geometry import _EPS
 from .harvest import HarvestResult
@@ -37,6 +35,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ModalHarvestConfig:
     """Configuration for Modal-based harvesting."""
+
     model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking"
     target_tokens: int = 2000
     batch_size: int = 32
@@ -48,7 +47,7 @@ class ModalHarvestConfig:
 async def modal_harvest(
     model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
     target_tokens: int = 2000,
-    corpus_texts: Optional[list[str]] = None,
+    corpus_texts: list[str] | None = None,
     timeout: float = 600.0,
 ) -> HarvestResult:
     """Call Modal GPU endpoint to harvest LLM distributions.

@@ -5,7 +5,6 @@ A resonance bank is a manifold of standing waves, NOT a lookup table.
 All activation and generation use Fisher-Rao proximity.
 """
 
-import math
 import tempfile
 
 import numpy as np
@@ -13,7 +12,6 @@ import pytest
 
 from kernel.coordizer_v2.geometry import (
     BASIN_DIM,
-    KAPPA_STAR,
     fisher_rao_distance,
     frechet_mean,
     random_basin,
@@ -22,7 +20,6 @@ from kernel.coordizer_v2.geometry import (
 )
 from kernel.coordizer_v2.resonance_bank import ResonanceBank
 from kernel.coordizer_v2.types import DomainBias, HarmonicTier
-
 
 # ═══════════════════════════════════════════════════════════════
 #  FIXTURES
@@ -67,7 +64,7 @@ class TestBankCreation:
             assert np.all(basin >= 0), f"Token {tid} has negative values"
 
     def test_correct_dimension(self, small_bank):
-        for tid, basin in small_bank.coordinates.items():
+        for _tid, basin in small_bank.coordinates.items():
             assert len(basin) == BASIN_DIM
 
     def test_contains(self, small_bank):

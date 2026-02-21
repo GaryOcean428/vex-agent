@@ -293,6 +293,7 @@ class CoordizerHarvester:
                     for idx, logit_value in zip(
                         top_indices.cpu().tolist(),
                         top_logits.cpu().tolist(),
+                        strict=False,
                     ):
                         if idx not in seen_tokens:
                             token_str = self.tokenizer.decode([idx])

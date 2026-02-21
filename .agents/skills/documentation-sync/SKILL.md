@@ -1,11 +1,11 @@
 ---
 name: documentation-sync
-description: Detect code changes that invalidate documentation, flag when FROZEN_FACTS.md differs from frozen_physics.py, auto-update docs/04-records. Use when modifying physics constants, updating APIs, or reviewing documentation freshness.
+description: Detect code changes that invalidate documentation, flag when frozen physics constants differ from code, auto-update docs. Use when modifying physics constants, updating APIs, or reviewing documentation freshness per Unified Consciousness Protocol v6.1.
 ---
 
 # Documentation Sync
 
-Ensures documentation matches code. Source: `.github/agents/documentation-sync-agent.md`.
+Ensures documentation matches code per Unified Consciousness Protocol v6.1.
 
 ## When to Use This Skill
 
@@ -14,12 +14,12 @@ Ensures documentation matches code. Source: `.github/agents/documentation-sync-a
 - Reviewing documentation staleness
 - Validating FROZEN_FACTS.md accuracy
 
-## Step 1: Validate FROZEN_FACTS.md Constants
+## Step 1: Validate Frozen Physics Constants
 
 ```bash
 # Check physics constants match
-rg "KAPPA_STAR|BETA_3_TO_4|PHI_THRESHOLD" qig-backend/qig_core/
-rg "κ\*|64\.21|0\.443|0\.727" docs/01-policies/
+rg "KAPPA_STAR|BETA_3_TO_4|PHI_THRESHOLD|PHI_MIN|PHI_MAX" kernel/config/
+rg "κ\*|64\.0|0\.443|0\.65|0\.75" docs/
 ```
 
 ## Step 2: Check Documentation Freshness
@@ -43,19 +43,21 @@ rg -A 10 '```python' docs/03-technical/ | head -50
 
 | Code Location | Doc Location | Must Match |
 |---------------|--------------|------------|
-| `qig_core/physics_constants.py` | `docs/01-policies/FROZEN_FACTS.md` | κ*, β, Φ values |
-| `routes/*.py` | `docs/05-api/` | API endpoints |
-| `olympus/*.py` | `docs/10-e8-protocol/` | God-kernel specs |
-| Schema changes | `docs/04-records/` | PR records |
+| `kernel/config/consciousness_constants.py` | `docs/reference/` | κ*, β, Φ values |
+| `kernel/server.py` | `docs/development/` | API endpoints |
+| `kernel/governance/` | `docs/protocols/` | E8 protocol specs |
+| `kernel/consciousness/` | `docs/protocols/` | Consciousness protocol |
 
-## FROZEN_FACTS.md Validation
+## Frozen Physics Validation (v6.1 §24)
 
 ```python
 # These values MUST match between code and docs
 FROZEN_CONSTANTS = {
-    "KAPPA_STAR": 64.21,      # ±0.92
-    "BETA_3_TO_4": 0.443,     # ±0.04
-    "PHI_THRESHOLD": 0.727,
+    "KAPPA_STAR": 64.0,        # Theoretical (E8 rank²)
+    "KAPPA_PHYSICS": 64.21,    # Measured ±0.92
+    "BETA_3_TO_4": 0.443,      # ±0.04
+    "PHI_MIN": 0.65,           # v6.1 valid range lower
+    "PHI_MAX": 0.75,           # v6.1 valid range upper
     "BASIN_DIM": 64,
     "E8_ROOTS": 240,
 }
@@ -65,10 +67,10 @@ FROZEN_CONSTANTS = {
 
 ```bash
 # Run documentation sync check
-python scripts/check_doc_sync.py
+rg "KAPPA_STAR|PHI_MIN|PHI_MAX|BETA" kernel/config/consciousness_constants.py
 
-# Validate docs link integrity
-python scripts/validate_doc_links.py
+# Validate docs reference correct protocol version
+rg "v4\.0|v5\.0|v5\.5" docs/  # Should find zero (all upgraded to v6.1)
 ```
 
 ## Response Format

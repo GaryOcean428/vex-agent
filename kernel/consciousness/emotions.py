@@ -15,7 +15,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -84,7 +84,7 @@ class EmotionCache:
 
     def __init__(self, capacity: int = 100) -> None:
         self._cache: deque[CachedEvaluation] = deque(maxlen=capacity)
-        self._current: Optional[EmotionType] = None
+        self._current: EmotionType | None = None
         self._current_strength: float = 0.0
 
     def evaluate(
@@ -134,7 +134,7 @@ class EmotionCache:
 
     def find_cached(
         self, input_basin: Basin, threshold: float = EMOTION_CACHE_THRESHOLD
-    ) -> Optional[CachedEvaluation]:
+    ) -> CachedEvaluation | None:
         if not self._cache:
             return None
         input_basin = to_simplex(input_basin)
@@ -145,7 +145,7 @@ class EmotionCache:
         return None
 
     @property
-    def current_emotion(self) -> Optional[EmotionType]:
+    def current_emotion(self) -> EmotionType | None:
         return self._current
 
     @property
@@ -189,7 +189,7 @@ class PreCognitiveDetector:
         self,
         input_basin: Basin,
         current_basin: Basin,
-        cached_eval: Optional[CachedEvaluation],
+        cached_eval: CachedEvaluation | None,
         phi: float,
     ) -> ProcessingPath:
         distance = fisher_rao_distance(input_basin, current_basin)

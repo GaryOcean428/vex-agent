@@ -17,8 +17,7 @@ Configuration:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
@@ -30,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 # ─── Configuration ───────────────────────────────────────────────────
 
+
 @dataclass
 class ModalIntegrationConfig:
     """Runtime configuration for Modal GPU harvesting.
@@ -37,6 +37,7 @@ class ModalIntegrationConfig:
     Derived from kernel.config.settings.ModalConfig to avoid
     env-var duplication. All env vars are read once via settings.modal.
     """
+
     enabled: bool = False
     harvest_url: str = ""
     health_url: str = ""
@@ -67,15 +68,11 @@ class ModalIntegrationConfig:
 
     def is_configured(self) -> bool:
         """Check if all required fields are present."""
-        return bool(
-            self.enabled
-            and self.harvest_url
-            and self.token_id
-            and self.token_secret
-        )
+        return bool(self.enabled and self.harvest_url and self.token_id and self.token_secret)
 
 
 # ─── Modal Client ────────────────────────────────────────────────────
+
 
 class ModalHarvestClient:
     """Async client for the Modal GPU harvest endpoint.
@@ -88,9 +85,9 @@ class ModalHarvestClient:
         - Transformation of raw logits to HarvestResult format
     """
 
-    def __init__(self, config: Optional[ModalIntegrationConfig] = None):
+    def __init__(self, config: ModalIntegrationConfig | None = None):
         self.config = config or ModalIntegrationConfig.from_settings()
-        self._healthy: Optional[bool] = None
+        self._healthy: bool | None = None
 
     async def check_health(self) -> bool:
         """Check if the Modal endpoint is reachable."""
@@ -124,7 +121,7 @@ class ModalHarvestClient:
         self,
         texts: list[str],
         max_length: int = 512,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Send texts to Modal for GPU harvesting.
 
         Args:
@@ -148,21 +145,18 @@ class ModalHarvestClient:
             logger.warning("Modal not configured, skipping harvest")
             return None
 
-        import httpx
-
         all_results = []
         batch_size = self.config.batch_size
         vocab_size = 0
         total_elapsed = 0.0
 
         for batch_start in range(0, len(texts), batch_size):
-            batch = texts[batch_start:batch_start + batch_size]
+            batch = texts[batch_start : batch_start + batch_size]
             result = await self._harvest_batch(batch, max_length)
 
             if result is None:
                 logger.warning(
-                    f"Batch {batch_start // batch_size} failed, "
-                    f"skipping {len(batch)} texts"
+                    f"Batch {batch_start // batch_size} failed, skipping {len(batch)} texts"
                 )
                 continue
 
@@ -187,7 +181,7 @@ class ModalHarvestClient:
         texts: list[str],
         min_contexts: int = 10,
         max_length: int = 512,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Harvest and compute Fréchet mean fingerprints per token.
 
         This is the full pipeline:
@@ -245,16 +239,12 @@ class ModalHarvestClient:
             fingerprints[token_id] = mean_dist
 
         logger.info(
-            f"Computed {len(fingerprints)} token fingerprints "
-            f"from {len(raw['results'])} texts"
+            f"Computed {len(fingerprints)} token fingerprints from {len(raw['results'])} texts"
         )
 
         return {
             "fingerprints": fingerprints,
-            "context_counts": {
-                tid: dist_counts[tid]
-                for tid in fingerprints
-            },
+            "context_counts": {tid: dist_counts[tid] for tid in fingerprints},
             "vocab_size": vocab_size,
         }
 
@@ -262,7 +252,7 @@ class ModalHarvestClient:
         self,
         texts: list[str],
         max_length: int,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Send a single batch with retry."""
         import httpx
 
@@ -283,9 +273,7 @@ class ModalHarvestClient:
                     return resp.json()
 
             except httpx.TimeoutException:
-                logger.warning(
-                    f"Modal timeout (attempt {attempt + 1}/{self.config.max_retries})"
-                )
+                logger.warning(f"Modal timeout (attempt {attempt + 1}/{self.config.max_retries})")
             except httpx.HTTPStatusError as e:
                 logger.warning(
                     f"Modal HTTP {e.response.status_code} "
@@ -293,8 +281,7 @@ class ModalHarvestClient:
                 )
             except Exception as e:
                 logger.warning(
-                    f"Modal request failed: {e} "
-                    f"(attempt {attempt + 1}/{self.config.max_retries})"
+                    f"Modal request failed: {e} (attempt {attempt + 1}/{self.config.max_retries})"
                 )
 
         return None
@@ -309,6 +296,7 @@ class ModalHarvestClient:
 
 
 # ─── Fallback: Synthetic Harvest ─────────────────────────────────────
+
 
 def generate_synthetic_harvest(
     vocab_size: int = 32000,

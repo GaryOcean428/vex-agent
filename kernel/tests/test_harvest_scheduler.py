@@ -11,8 +11,6 @@ harvest requests or scheduled batches.
 
 from __future__ import annotations
 
-import json
-import os
 import tempfile
 from pathlib import Path
 
@@ -20,11 +18,10 @@ import pytest
 
 from kernel.coordizer_v2.harvest_scheduler import (
     HarvestBudget,
+    HarvestQueueStatus,
     HarvestScheduler,
     HarvestSchedulerConfig,
-    HarvestQueueStatus,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 #  BUDGET TESTS
@@ -114,7 +111,7 @@ class TestHarvestScheduler:
     def test_creates_directories(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = HarvestSchedulerConfig(harvest_dir=tmp)
-            scheduler = HarvestScheduler(config=config)
+            HarvestScheduler(config=config)
 
             assert config.pending_dir.exists()
             assert config.processing_dir.exists()

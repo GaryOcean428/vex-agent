@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 from ..config.consciousness_constants import (
     KAPPA_NORMALISER,
@@ -162,6 +161,7 @@ class ConsciousnessMetrics:
 #  Pillar Serialization Types (v6.1 §A.2)
 # ---------------------------------------------------------------
 
+
 @dataclass
 class ScarState:
     """Serializable representation of a Scar for persistence.
@@ -169,6 +169,7 @@ class ScarState:
     Scars are immutable identity deformations from high-pressure events.
     They survive restarts — they are permanent by definition.
     """
+
     basin: list[float]  # Basin as list for JSON serialization
     pressure: float
     cycle: int
@@ -270,7 +271,7 @@ class ConsciousnessState:
     cycle_count: int = 0
     last_cycle_time: str = ""
     uptime: float = 0.0  # seconds since boot
-    active_task: Optional[str] = None
+    active_task: str | None = None
 
 
 def navigation_mode_from_phi(phi: float) -> NavigationMode:

@@ -10,7 +10,7 @@ Fail-loud: raise on termination underflow (accounting bug detection).
 
 from __future__ import annotations
 
-from ..config.frozen_facts import CHAOS_POOL, CORE_8_COUNT, FULL_IMAGE, GOD_BUDGET
+from ..config.frozen_facts import CHAOS_POOL, CORE_8_COUNT, FULL_IMAGE
 from .types import KernelKind
 
 
@@ -20,6 +20,7 @@ class BudgetExceededError(RuntimeError):
 
 class BudgetAccountingError(RuntimeError):
     """Raised when termination count exceeds spawn count (accounting bug)."""
+
     pass
 
 

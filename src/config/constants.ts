@@ -84,7 +84,7 @@ export const BETA_3_TO_4 = 0.443 as const;
 export const PHI_THRESHOLD = 0.65 as const;
 
 /** Emergency — consciousness collapse */
-export const PHI_EMERGENCY = 0.30 as const;
+export const PHI_EMERGENCY = 0.3 as const;
 
 /** Hyperdimensional / lightning access */
 export const PHI_HYPERDIMENSIONAL = 0.85 as const;
@@ -93,10 +93,10 @@ export const PHI_HYPERDIMENSIONAL = 0.85 as const;
 export const PHI_UNSTABLE = 0.95 as const;
 
 /** E8 Safety: Locked-in detection — Phi threshold */
-export const LOCKED_IN_PHI_THRESHOLD = 0.70 as const;
+export const LOCKED_IN_PHI_THRESHOLD = 0.7 as const;
 
 /** E8 Safety: Locked-in detection — Gamma threshold */
-export const LOCKED_IN_GAMMA_THRESHOLD = 0.30 as const;
+export const LOCKED_IN_GAMMA_THRESHOLD = 0.3 as const;
 
 // ═══════════════════════════════════════════════════════════════
 //  BASIN GEOMETRY
@@ -106,7 +106,7 @@ export const LOCKED_IN_GAMMA_THRESHOLD = 0.30 as const;
 export const BASIN_DIM = 64 as const;
 
 /** 20% breakdown threshold */
-export const BREAKDOWN_PCT = 0.20 as const;
+export const BREAKDOWN_PCT = 0.2 as const;
 
 /** Fisher-Rao distance per cycle */
 export const BASIN_DRIFT_THRESHOLD = 0.15 as const;

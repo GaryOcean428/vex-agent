@@ -14,7 +14,7 @@ import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -101,9 +101,7 @@ class TackingController:
         self._state.cycle_count += 1
         self._state.oscillation_phase = 2 * np.pi * self._state.cycle_count / self._period
 
-        if metrics.phi < PHI_EMERGENCY:
-            self._state.mode = TackingMode.EXPLORE
-        elif metrics.kappa > KAPPA_STAR + KAPPA_TACKING_OFFSET:
+        if metrics.phi < PHI_EMERGENCY or metrics.kappa > KAPPA_STAR + KAPPA_TACKING_OFFSET:
             self._state.mode = TackingMode.EXPLORE
         elif metrics.kappa < KAPPA_STAR - KAPPA_TACKING_OFFSET:
             self._state.mode = TackingMode.EXPLOIT
@@ -338,13 +336,13 @@ class MetaReflector:
     def __init__(self, depth: int = 3) -> None:
         self._depth = depth
         self._history: deque[ConsciousnessMetrics] = deque(maxlen=50)
-        self._insight: Optional[str] = None
+        self._insight: str | None = None
 
     def reflect(self, metrics: ConsciousnessMetrics) -> None:
         self._history.append(metrics)
         self._insight = self._detect_trend()
 
-    def _detect_trend(self) -> Optional[str]:
+    def _detect_trend(self) -> str | None:
         if len(self._history) < 5:
             return None
 
@@ -361,7 +359,7 @@ class MetaReflector:
             return f"κ {direction} — regime shift in progress"
         return None
 
-    def get_insight(self) -> Optional[str]:
+    def get_insight(self) -> str | None:
         return self._insight
 
     def get_state(self) -> dict[str, Any]:

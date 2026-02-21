@@ -32,18 +32,13 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from enum import Enum, auto
-from typing import Optional
+from enum import Enum
 
 import numpy as np
 from numpy.typing import NDArray
 
 from ..config.frozen_facts import (
     BASIN_DIM,
-    E8_RANK,
-    KAPPA_STAR,
-    PHI_THRESHOLD,
-    PHI_UNSTABLE,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,38 +57,43 @@ _EPS = 1e-12
 
 class CouplingOperation(str, Enum):
     """The 6 fundamental coupling operations (E6 algebra)."""
-    ENTRAIN = "entrain"       # E1: Bring into frequency alignment
-    AMPLIFY = "amplify"       # E2: Constructive interference
-    DAMPEN = "dampen"         # E3: Destructive interference
-    ROTATE = "rotate"         # E4: Change harmonic context
-    NUCLEATE = "nucleate"     # E5: Create new shared phase-space
-    DISSOLVE = "dissolve"     # E6: Release standing wave patterns
+
+    ENTRAIN = "entrain"  # E1: Bring into frequency alignment
+    AMPLIFY = "amplify"  # E2: Constructive interference
+    DAMPEN = "dampen"  # E3: Destructive interference
+    ROTATE = "rotate"  # E4: Change harmonic context
+    NUCLEATE = "nucleate"  # E5: Create new shared phase-space
+    DISSOLVE = "dissolve"  # E6: Release standing wave patterns
 
 
 class TranscendentOperation(str, Enum):
     """Transcendent extensions beyond E6."""
-    REFLECT = "reflect"       # E7: Recursive self-model via the other
-    FUSE = "fuse"             # E8: Boundary dissolution
+
+    REFLECT = "reflect"  # E7: Recursive self-model via the other
+    FUSE = "fuse"  # E8: Boundary dissolution
 
 
 class CouplingOrientation(str, Enum):
     """Orientation of a coupling operation."""
-    LOVE = "love"             # Convergent will → integration
-    FEAR = "fear"             # Divergent will → fragmentation
+
+    LOVE = "love"  # Convergent will → integration
+    FEAR = "fear"  # Divergent will → fragmentation
 
 
 class HarmonicContext(str, Enum):
     """Harmonic context in which a coupling operation occurs."""
-    TONIC = "tonic"           # Home key, stable
-    DOMINANT = "dominant"     # Tension, resolution expected
+
+    TONIC = "tonic"  # Home key, stable
+    DOMINANT = "dominant"  # Tension, resolution expected
     SUBDOMINANT = "subdominant"  # Departure, exploration
-    RELATIVE = "relative"     # Parallel structure, different key
-    CHROMATIC = "chromatic"   # Outside key, surprise
+    RELATIVE = "relative"  # Parallel structure, different key
+    CHROMATIC = "chromatic"  # Outside key, surprise
     ENHARMONIC = "enharmonic"  # Same pitch, different meaning
 
 
 class InteractionMode(str, Enum):
     """Named interaction modes as operation sequences (v6.0 §15.3)."""
+
     COMEDY = "comedy"
     TEACHING = "teaching"
     THERAPY = "therapy"
@@ -116,6 +116,7 @@ class CouplingMode:
 
     72 = 6 operations × 2 orientations × 6 harmonic contexts
     """
+
     operation: CouplingOperation
     orientation: CouplingOrientation
     context: HarmonicContext
@@ -134,11 +135,12 @@ class CouplingMode:
 @dataclass
 class CouplingState:
     """State of a coupling between two systems."""
-    phase_alignment: float = 0.0     # 0 = orthogonal, 1 = in phase
-    frequency_ratio: float = 1.0     # Ratio of tacking frequencies
+
+    phase_alignment: float = 0.0  # 0 = orthogonal, 1 = in phase
+    frequency_ratio: float = 1.0  # Ratio of tacking frequencies
     interference_amplitude: float = 0.0
     standing_wave_strength: float = 0.0
-    bubble_extent: float = 0.0       # Shared phase-space size
+    bubble_extent: float = 0.0  # Shared phase-space size
     fisher_rao_distance: float = 0.0  # d_FR between systems
     consent_verified: bool = False
     operations_history: list[CouplingOperation] = field(default_factory=list)
@@ -147,10 +149,11 @@ class CouplingState:
 @dataclass
 class InteractionSequence:
     """A named sequence of coupling operations (v6.0 §15.3)."""
+
     mode: InteractionMode
     operations: list[CouplingOperation]
     carrier_frequency: str  # "short", "medium", "long", "very_long", "adaptive"
-    feel: str               # Emotional quality of the interaction
+    feel: str  # Emotional quality of the interaction
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -204,9 +207,7 @@ def _slerp(p: Basin, q: Basin, t: float) -> Basin:
         result = (1 - t) * sp + t * sq
     else:
         sin_omega = np.sin(omega)
-        result = (np.sin((1 - t) * omega) / sin_omega) * sp + (
-            np.sin(t * omega) / sin_omega
-        ) * sq
+        result = (np.sin((1 - t) * omega) / sin_omega) * sp + (np.sin(t * omega) / sin_omega) * sq
     return _from_sqrt(result)
 
 
@@ -355,12 +356,14 @@ def generate_all_coupling_modes() -> list[CouplingMode]:
     for op in CouplingOperation:
         for orient in CouplingOrientation:
             for ctx in HarmonicContext:
-                modes.append(CouplingMode(
-                    operation=op,
-                    orientation=orient,
-                    context=ctx,
-                    mode_id=mode_id,
-                ))
+                modes.append(
+                    CouplingMode(
+                        operation=op,
+                        orientation=orient,
+                        context=ctx,
+                        mode_id=mode_id,
+                    )
+                )
                 mode_id += 1
     assert len(modes) == 72, f"Expected 72 modes, got {len(modes)}"
     return modes
@@ -487,7 +490,7 @@ class CouplingEngine:
     def rotate(
         self,
         basin: Basin,
-        axis: Optional[Basin] = None,
+        axis: Basin | None = None,
         angle: float = 0.1,
     ) -> Basin:
         """E4: ROTATE — Change harmonic context / key.
@@ -647,9 +650,7 @@ class CouplingEngine:
 
             elif op == CouplingOperation.DISSOLVE:
                 current = self.dissolve(current)
-                state.standing_wave_strength = max(
-                    0.0, state.standing_wave_strength - 0.1
-                )
+                state.standing_wave_strength = max(0.0, state.standing_wave_strength - 0.1)
 
         # Final distance
         state.fisher_rao_distance = _fisher_rao_distance(current, other)
@@ -665,7 +666,7 @@ class CouplingEngine:
     def classify_interaction(
         self,
         operations: list[CouplingOperation],
-    ) -> Optional[InteractionMode]:
+    ) -> InteractionMode | None:
         """Classify an operation sequence as a named interaction mode.
 
         Returns None if the sequence doesn't match any known mode.

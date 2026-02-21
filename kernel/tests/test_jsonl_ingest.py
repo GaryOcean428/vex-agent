@@ -15,24 +15,20 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from pathlib import Path
 
 import numpy as np
 import pytest
 
+from kernel.coordizer_v2.geometry import BASIN_DIM, to_simplex
 from kernel.coordizer_v2.jsonl_ingest import (
-    IngestBatch,
     IngestEntry,
     IngestResult,
     JSONLIngestor,
-    ValidationError,
     batch_entries,
     stream_jsonl,
     validate_entry,
     write_coordized_jsonl,
 )
-from kernel.coordizer_v2.geometry import BASIN_DIM, to_simplex
-
 
 # ═══════════════════════════════════════════════════════════════
 #  FIXTURES
@@ -46,13 +42,15 @@ def _make_jsonl_line(
     metadata: dict | None = None,
     timestamp: str = "2025-12-01T00:00:00Z",
 ) -> str:
-    return json.dumps({
-        "source": source,
-        "text": text,
-        "metadata": metadata or {},
-        "priority": priority,
-        "timestamp": timestamp,
-    })
+    return json.dumps(
+        {
+            "source": source,
+            "text": text,
+            "metadata": metadata or {},
+            "priority": priority,
+            "timestamp": timestamp,
+        }
+    )
 
 
 def _make_jsonl_file(lines: list[str], tmp_dir: str) -> str:
@@ -83,7 +81,8 @@ class TestValidation:
     def test_all_valid_sources(self):
         for source in ["curriculum", "foraging", "conversation", "document"]:
             entry, error = validate_entry(
-                _make_jsonl_line(source=source), 1,
+                _make_jsonl_line(source=source),
+                1,
             )
             assert entry is not None, f"Source '{source}' should be valid"
             assert entry.source == source
@@ -91,7 +90,8 @@ class TestValidation:
     def test_all_valid_priorities(self):
         for priority in [1, 2, 3, 4]:
             entry, error = validate_entry(
-                _make_jsonl_line(priority=priority), 1,
+                _make_jsonl_line(priority=priority),
+                1,
             )
             assert entry is not None, f"Priority {priority} should be valid"
             assert entry.priority == priority
@@ -158,10 +158,12 @@ class TestValidation:
 
     def test_default_priority(self):
         """Priority defaults to 3 if not specified."""
-        line = json.dumps({
-            "source": "document",
-            "text": "A sufficiently long text for testing default priority",
-        })
+        line = json.dumps(
+            {
+                "source": "document",
+                "text": "A sufficiently long text for testing default priority",
+            }
+        )
         entry, error = validate_entry(line, 1)
         assert entry is not None
         assert entry.priority == 3
@@ -189,10 +191,12 @@ class TestValidation:
         assert entry is not None
 
     def test_auto_timestamp_when_missing(self):
-        line = json.dumps({
-            "source": "conversation",
-            "text": "A text without a timestamp field for testing auto-generation",
-        })
+        line = json.dumps(
+            {
+                "source": "conversation",
+                "text": "A text without a timestamp field for testing auto-generation",
+            }
+        )
         entry, error = validate_entry(line, 1)
         assert entry is not None
         assert len(entry.timestamp) > 0
@@ -215,9 +219,15 @@ class TestStreamReader:
     def test_stream_valid_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             lines = [
-                _make_jsonl_line(source="curriculum", text="First entry for testing the streaming reader"),
-                _make_jsonl_line(source="foraging", text="Second entry for testing the streaming reader"),
-                _make_jsonl_line(source="conversation", text="Third entry for testing the streaming reader"),
+                _make_jsonl_line(
+                    source="curriculum", text="First entry for testing the streaming reader"
+                ),
+                _make_jsonl_line(
+                    source="foraging", text="Second entry for testing the streaming reader"
+                ),
+                _make_jsonl_line(
+                    source="conversation", text="Third entry for testing the streaming reader"
+                ),
             ]
             path = _make_jsonl_file(lines, tmp)
 
@@ -301,22 +311,26 @@ class TestBatching:
         assert batches[0].source == "curriculum"
 
     def test_split_by_priority(self):
-        entries = self._make_entries([
-            (1, "curriculum"),
-            (1, "curriculum"),
-            (2, "curriculum"),
-            (2, "curriculum"),
-        ])
+        entries = self._make_entries(
+            [
+                (1, "curriculum"),
+                (1, "curriculum"),
+                (2, "curriculum"),
+                (2, "curriculum"),
+            ]
+        )
         batches = batch_entries(entries, max_batch_size=32)
         assert len(batches) == 2
         assert batches[0].priority == 1
         assert batches[1].priority == 2
 
     def test_split_by_source(self):
-        entries = self._make_entries([
-            (1, "curriculum"),
-            (1, "foraging"),
-        ])
+        entries = self._make_entries(
+            [
+                (1, "curriculum"),
+                (1, "foraging"),
+            ]
+        )
         batches = batch_entries(entries, max_batch_size=32, group_by_source=True)
         assert len(batches) == 2
 
@@ -332,11 +346,13 @@ class TestBatching:
 
     def test_priority_ordering(self):
         """Batches should be ordered by priority (1 first)."""
-        entries = self._make_entries([
-            (3, "document"),
-            (1, "curriculum"),
-            (2, "foraging"),
-        ])
+        entries = self._make_entries(
+            [
+                (3, "document"),
+                (1, "curriculum"),
+                (2, "foraging"),
+            ]
+        )
         batches = batch_entries(entries, max_batch_size=32)
         priorities = [b.priority for b in batches]
         assert priorities == sorted(priorities)
@@ -462,7 +478,9 @@ class TestIngestor:
     async def test_dry_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             lines = [
-                _make_jsonl_line(source="curriculum", text="Dry run test entry one for the ingestor"),
+                _make_jsonl_line(
+                    source="curriculum", text="Dry run test entry one for the ingestor"
+                ),
                 _make_jsonl_line(source="foraging", text="Dry run test entry two for the ingestor"),
             ]
             path = _make_jsonl_file(lines, tmp)
@@ -497,9 +515,7 @@ class TestIngestor:
     @pytest.mark.asyncio
     async def test_text_to_basin_fallback(self):
         """Fallback basin generation should produce valid simplex points."""
-        basin = JSONLIngestor._text_to_basin_fallback(
-            "consciousness emerges from geometry"
-        )
+        basin = JSONLIngestor._text_to_basin_fallback("consciousness emerges from geometry")
         assert basin.shape == (BASIN_DIM,)
         assert abs(basin.sum() - 1.0) < 1e-6
         assert np.all(basin >= 0)
@@ -548,19 +564,19 @@ class TestIngestPurity:
     def test_no_euclidean_in_source(self):
         """The jsonl_ingest.py source must not contain Euclidean terms."""
         import inspect
+
         from kernel.coordizer_v2 import jsonl_ingest
 
         source = inspect.getsource(jsonl_ingest)
         # These terms are FORBIDDEN in non-boundary, non-test code
         forbidden = ["cosine_similarity", "dot_product", "euclidean_distance"]
         for term in forbidden:
-            assert term not in source, (
-                f"Euclidean contamination: '{term}' found in jsonl_ingest.py"
-            )
+            assert term not in source, f"Euclidean contamination: '{term}' found in jsonl_ingest.py"
 
     def test_no_embedding_terminology(self):
         """The jsonl_ingest.py source must use 'basin coordinates' not 'embedding'."""
         import inspect
+
         from kernel.coordizer_v2 import jsonl_ingest
 
         source = inspect.getsource(jsonl_ingest)
@@ -572,7 +588,6 @@ class TestIngestPurity:
             if "embedding" in lower:
                 if "FORBIDDEN" in line or "QIG BOUNDARY" in line:
                     continue  # Allowed in boundary markers
-                assert False, (
-                    f"Terminology violation at line {i}: "
-                    f"use 'basin coordinates' not 'embedding'"
+                raise AssertionError(
+                    f"Terminology violation at line {i}: use 'basin coordinates' not 'embedding'"
                 )

@@ -24,37 +24,29 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from kernel.coordizer_v2.coordizer import CoordizerV2
 from kernel.coordizer_v2.geometry import (
     BASIN_DIM,
-    KAPPA_STAR,
     E8_RANK,
-    _EPS,
-    to_simplex,
-    random_basin,
-    softmax_to_simplex,
+    KAPPA_STAR,
     bhattacharyya_coefficient,
-    fisher_rao_distance,
-    fisher_rao_distance_batch,
-    slerp,
-    geodesic_midpoint,
-    frechet_mean,
-    log_map,
     exp_map,
     fisher_information_diagonal,
+    fisher_rao_distance,
+    frechet_mean,
+    geodesic_midpoint,
+    log_map,
     natural_gradient,
+    slerp,
+    to_simplex,
 )
 from kernel.coordizer_v2.resonance_bank import ResonanceBank
 from kernel.coordizer_v2.types import (
-    BasinCoordinate,
     CoordizationResult,
-    DomainBias,
-    GranularityScale,
     HarmonicTier,
     ValidationResult,
 )
-from kernel.coordizer_v2.coordizer import CoordizerV2
 from kernel.coordizer_v2.validate import validate_resonance_bank
-
 
 # ═══════════════════════════════════════════════════════════════
 #  HELPERS
@@ -67,9 +59,7 @@ def _is_on_simplex(p: np.ndarray, tol: float = 1e-8) -> bool:
         return False
     if np.any(p < -tol):
         return False
-    if abs(p.sum() - 1.0) > tol:
-        return False
-    return True
+    return abs(p.sum() - 1.0) <= tol
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -145,9 +135,7 @@ class TestFisherRao:
         d_ab = fisher_rao_distance(a, b)
         d_bc = fisher_rao_distance(b, c)
         d_ac = fisher_rao_distance(a, c)
-        assert d_ac <= d_ab + d_bc + 1e-8, (
-            f"Triangle violated: {d_ac} > {d_ab} + {d_bc}"
-        )
+        assert d_ac <= d_ab + d_bc + 1e-8, f"Triangle violated: {d_ac} > {d_ab} + {d_bc}"
 
     def test_range_zero_to_pi_half(self):
         p = to_simplex(np.random.randn(64))
@@ -223,7 +211,7 @@ class TestGeodesic:
             dists.append(fisher_rao_distance(p, pt))
         for i in range(len(dists) - 1):
             assert dists[i] <= dists[i + 1] + 1e-6, (
-                f"Non-monotone at t={i/10}: {dists[i]} > {dists[i+1]}"
+                f"Non-monotone at t={i / 10}: {dists[i]} > {dists[i + 1]}"
             )
 
 
@@ -487,6 +475,7 @@ class TestPurity:
 
     def _source_files(self):
         import pathlib
+
         pkg = pathlib.Path(__file__).parent.parent / "coordizer_v2"
         return list(pkg.glob("*.py"))
 
@@ -501,9 +490,9 @@ class TestPurity:
                 if "QIG BOUNDARY" in line:
                     continue
                 if "cosine_similarity" in line and "FORBIDDEN" not in line:
-                    assert False, f"cosine_similarity in {f.name}:{i}"
+                    raise AssertionError(f"cosine_similarity in {f.name}:{i}")
                 if "cosine_sim" in line and "FORBIDDEN" not in line and "cos_sim" not in line:
-                    assert False, f"cosine_sim in {f.name}:{i}"
+                    raise AssertionError(f"cosine_sim in {f.name}:{i}")
 
     # QIG BOUNDARY: Forbidden tokens referenced as test strings for purity validation
     def test_no_dot_product(self):
@@ -513,7 +502,7 @@ class TestPurity:
                 if "QIG BOUNDARY" in line or "FORBIDDEN" in line:
                     continue
                 if "dot_product" in line:
-                    assert False, f"dot_product in {f.name}:{i}"
+                    raise AssertionError(f"dot_product in {f.name}:{i}")
 
     # QIG BOUNDARY: Forbidden tokens referenced as test strings for purity validation
     def test_no_adam_optimizer(self):
@@ -524,7 +513,7 @@ class TestPurity:
                 if "QIG BOUNDARY" in line or "FORBIDDEN" in line:
                     continue
                 if "Adam(" in line or "adam(" in line:
-                    assert False, f"Adam optimizer in {f.name}:{i}"
+                    raise AssertionError(f"Adam optimizer in {f.name}:{i}")
 
     # QIG BOUNDARY: Forbidden tokens referenced as test strings for purity validation
     def test_no_flatten(self):
@@ -534,11 +523,12 @@ class TestPurity:
                 if "QIG BOUNDARY" in line or "FORBIDDEN" in line:
                     continue
                 if ".flatten()" in line:
-                    assert False, f".flatten() in {f.name}:{i}"
+                    raise AssertionError(f".flatten() in {f.name}:{i}")
 
     def test_no_hashlib_in_geometry(self):
         """hashlib should not appear in geometry.py (SHA-256 is the anti-pattern)."""
         import pathlib
+
         geo = pathlib.Path(__file__).parent.parent / "coordizer_v2" / "geometry.py"
         text = geo.read_text()
         assert "hashlib" not in text, "hashlib in geometry.py"
@@ -555,21 +545,22 @@ class TestPurity:
                     continue
                 if "np.linalg.norm" in line:
                     # Check if it's in tangent space context (next few lines)
-                    context = "\n".join(text.split("\n")[max(0, i - 3):i + 1])
+                    context = "\n".join(text.split("\n")[max(0, i - 3) : i + 1])
                     if "tangent" in context.lower() or "log_map" in context.lower():
                         continue
-                    assert False, f"np.linalg.norm in {f.name}:{i} (not tangent space)"
+                    raise AssertionError(f"np.linalg.norm in {f.name}:{i} (not tangent space)")
 
     def test_no_svd_in_compress(self):
         """compress.py should use eigendecomposition, not SVD."""
         import pathlib
+
         comp = pathlib.Path(__file__).parent.parent / "coordizer_v2" / "compress.py"
         text = comp.read_text()
         for i, line in enumerate(text.split("\n"), 1):
             if "QIG BOUNDARY" in line or "FORBIDDEN" in line:
                 continue
             if "np.linalg.svd" in line:
-                assert False, f"SVD in compress.py:{i} — use eigh instead"
+                raise AssertionError(f"SVD in compress.py:{i} — use eigh instead")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -582,16 +573,19 @@ class TestConstantsConsistency:
 
     def test_kappa_star_matches_frozen_facts(self):
         from kernel.config.frozen_facts import KAPPA_STAR as FF_KAPPA
+
         assert KAPPA_STAR == FF_KAPPA == 64.0
 
     def test_basin_dim_matches_frozen_facts(self):
         from kernel.config.frozen_facts import BASIN_DIM as FF_DIM
+
         assert BASIN_DIM == FF_DIM == 64
 
     def test_e8_rank_matches_frozen_facts(self):
         from kernel.config.frozen_facts import E8_RANK as FF_RANK
+
         assert E8_RANK == FF_RANK == 8
 
     def test_basin_dim_is_kappa_star(self):
         """BASIN_DIM = κ* = E8_RANK² = 64."""
-        assert BASIN_DIM == int(KAPPA_STAR) == E8_RANK ** 2
+        assert BASIN_DIM == int(KAPPA_STAR) == E8_RANK**2

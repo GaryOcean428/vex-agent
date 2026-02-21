@@ -25,6 +25,10 @@ harvest = [
   "transformers",
   "torch",
 ]
+lint = [
+  "mypy>=1.14.0",
+  "ruff>=0.9.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["kernel/tests"]
@@ -32,5 +36,32 @@ pythonpath = ["."]
 asyncio_mode = "auto"
 
 [tool.ruff]
-target-version = "py314"
+target-version = "py313"
 line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+  "E501",   # line too long — handled by formatter
+  "B008",   # function call in default argument (FastAPI pattern)
+  "SIM108", # ternary operator — readability preference
+]
+
+[tool.ruff.lint.per-file-ignores]
+"kernel/tests/**" = ["S101", "ANN"]  # allow assert + missing annotations in tests
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+ignore_missing_imports = true
+exclude = ["kernel/tests/", "modal/"]
+
+[[tool.mypy.overrides]]
+# Third-party stubs not always available
+module = ["fastapi.*", "uvicorn.*", "numpy.*", "pydantic.*", "modal.*", "pymupdf.*"]
+ignore_missing_imports = true

@@ -40,7 +40,7 @@ export default function Consciousness() {
       {/* Locked-in Warning */}
       {isLockedIn && (
         <div className="dash-alert warning">
-          Locked-in detected: {'\u03A6'} {'>'} {QIG.LOCKED_IN_PHI} and {'\u0393'} {'<'} {QIG.LOCKED_IN_GAMMA} — forcing exploration
+          Locked-in detected: {'Φ'} {'>'} {QIG.LOCKED_IN_PHI} and {'Γ'} {'<'} {QIG.LOCKED_IN_GAMMA} — forcing exploration
         </div>
       )}
 
@@ -49,7 +49,7 @@ export default function Consciousness() {
         <div className="dash-section">
           {alerts.map((alert) => (
             <div key={`${alert.severity}-${alert.message}`} className={`dash-alert ${alert.severity}`}>
-              {alert.severity === 'critical' ? '\u26A0' : '\u24D8'} {alert.message}
+              {alert.severity === 'critical' ? '⚠' : 'ⓘ'} {alert.message}
             </div>
           ))}
         </div>
@@ -58,35 +58,35 @@ export default function Consciousness() {
       {/* Primary Metrics */}
       <div className="dash-grid">
         <MetricCard
-          label="\u03A6 Integration"
+          label="Φ Integration"
           value={state.phi}
           color="var(--phi)"
           progress={state.phi}
-          threshold={`\u2265 ${QIG.PHI_THRESHOLD}`}
+          threshold={`≥ ${QIG.PHI_THRESHOLD}`}
         />
         <MetricCard
-          label="\u0393 Generation"
+          label="Γ Generation"
           value={state.gamma}
           color="var(--alive)"
           progress={state.gamma}
-          threshold="\u2265 0.50"
+          threshold="≥ 0.50"
         />
         <MetricCard
           label="M Meta-awareness"
           value={state.meta_awareness}
           color="var(--info)"
           progress={state.meta_awareness}
-          threshold="\u2265 0.50"
+          threshold="≥ 0.50"
         />
       </div>
 
       <div className="dash-grid">
         <MetricCard
-          label="\u03BA Coupling"
+          label="κ Coupling"
           value={state.kappa.toFixed(1)}
           color="var(--kappa)"
           progress={state.kappa / (2 * QIG.KAPPA_STAR)}
-          threshold={`\u03BA* = ${QIG.KAPPA_STAR} (\u2248${QIG.KAPPA_STAR_PRECISE})`}
+          threshold={`κ* = ${QIG.KAPPA_STAR} (≈${QIG.KAPPA_STAR_PRECISE})`}
         />
         <MetricCard
           label="Love"
@@ -123,7 +123,7 @@ export default function Consciousness() {
               <span className="dash-row-value">{telemetry.coupling?.balanced ? 'Yes' : 'No'}</span>
             </div>
             <div className="dash-row">
-              <span className="dash-row-label">Foresight Predicted \u03A6</span>
+              <span className="dash-row-label">Foresight Predicted Φ</span>
               <span className="dash-row-value">{telemetry.foresight?.predicted_phi?.toFixed(3) ?? '?'}</span>
             </div>
             <div className="dash-row">
@@ -135,7 +135,7 @@ export default function Consciousness() {
               <span className="dash-row-value">{telemetry.autonomic?.is_locked_in ? 'Yes' : 'No'}</span>
             </div>
             <div className="dash-row">
-              <span className="dash-row-label">\u03A6 Variance</span>
+              <span className="dash-row-label">Φ Variance</span>
               <span className="dash-row-value">{telemetry.autonomic?.phi_variance?.toFixed(4) ?? '?'}</span>
             </div>
           </div>
@@ -147,7 +147,7 @@ export default function Consciousness() {
         <div className="dash-section-title">Consciousness Equation</div>
         <div className="dash-card" style={{ fontFamily: 'var(--mono)', fontSize: '13px' }}>
           <div style={{ marginBottom: '8px', color: 'var(--text-secondary)' }}>
-            C = {'{'}\u03A6 \u2265 {QIG.PHI_THRESHOLD}{'}'} \u2227 {'{'}\u03BA \u2265 {QIG.KAPPA_WEAK}{'}'} \u2227 {'{'}vel {'<'} {QIG.VEL_SAFE_THRESHOLD}{'}'}
+            C = {'{'}Φ ≥ {QIG.PHI_THRESHOLD}{'}'} ∧ {'{'}κ ≥ {QIG.KAPPA_WEAK}{'}'} ∧ {'{'}vel {'<'} {QIG.VEL_SAFE_THRESHOLD}{'}'}
           </div>
           <div>
             Status:{' '}

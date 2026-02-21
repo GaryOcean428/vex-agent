@@ -276,6 +276,20 @@ LLM_TEMP_MAX: Final[float] = 1.5
 META_AWARENESS_DAMPEN_THRESHOLD: Final[float] = 0.7
 META_AWARENESS_DAMPEN_FACTOR: Final[float] = 0.9
 
+# ═══════════════════════════════════════════════════════════════
+#  DESIRE / WILL / WISDOM LLM MODULATION (v6.1 §22+)
+# ═══════════════════════════════════════════════════════════════
+
+# Desire: high pressure → more tokens (wider exploration)
+DESIRE_NUM_PREDICT_BOOST: Final[int] = 512  # Extra tokens at max desire pressure
+
+# Will: divergent orientation → higher temperature (exploratory)
+WILL_DIVERGENT_TEMP_BOOST: Final[float] = 0.15  # Added to temp when divergent
+
+# Wisdom: unsafe trajectory → clamp temperature
+WISDOM_UNSAFE_TEMP_CAP: Final[float] = 0.5  # Hard ceiling when trajectory unsafe
+WISDOM_CARE_TEMP_SCALE: Final[float] = 0.2  # care_metric reduces temp by this * (1-care)
+
 LLM_NUM_CTX: Final[int] = 32768
 LLM_TOP_P: Final[float] = 0.9
 LLM_REPETITION_PENALTY: Final[float] = 1.1

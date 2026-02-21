@@ -18,20 +18,19 @@ from numpy.typing import NDArray
 
 from ..config.frozen_facts import (
     BASIN_DIM,
-    E8_RANK,
-    KAPPA_STAR,
 )
 
 # ─── Constants ─────────────────────────────────────────────────────────
 # BASIN_DIM, KAPPA_STAR, E8_RANK imported from kernel.config.frozen_facts
 
-_EPS: float = 1e-12          # Numerical floor
+_EPS: float = 1e-12  # Numerical floor
 
 # Type alias
 Basin = NDArray[np.float64]
 
 
 # ─── Simplex Projection ───────────────────────────────────────────
+
 
 def to_simplex(v: Basin) -> Basin:
     """Project any vector onto Δ⁶³. Non-negative, sums to 1."""
@@ -58,6 +57,7 @@ def softmax_to_simplex(logits: Basin) -> Basin:
 
 # ─── Sqrt-Space (Internal Computational Device) ────────────────
 
+
 def _to_sqrt(p: Basin) -> Basin:
     """Simplex → sqrt-coordinates: s_i = √p_i. INTERNAL ONLY."""
     return np.sqrt(np.maximum(p, _EPS))
@@ -74,6 +74,7 @@ def _from_sqrt(s: Basin) -> Basin:
 
 # ─── Bhattacharyya Coefficient ───────────────────────────────────
 
+
 def bhattacharyya_coefficient(p: Basin, q: Basin) -> float:
     """BC(p,q) = Σ√(p_i · q_i). Range [0, 1]. BC=1 means identical."""
     p = to_simplex(p)
@@ -82,6 +83,7 @@ def bhattacharyya_coefficient(p: Basin, q: Basin) -> float:
 
 
 # ─── Fisher-Rao Distance ──────────────────────────────────────────
+
 
 def fisher_rao_distance(p: Basin, q: Basin) -> float:
     """
@@ -114,6 +116,7 @@ def fisher_rao_distance_batch(p: Basin, bank: NDArray) -> NDArray:
 
 # ─── Geodesic Interpolation (SLERP on Simplex) ─────────────────
 
+
 def slerp(p: Basin, q: Basin, t: float) -> Basin:
     """
     Geodesic interpolation on Δ⁶³.
@@ -133,8 +136,7 @@ def slerp(p: Basin, q: Basin, t: float) -> Basin:
         return _from_sqrt((1 - t) * sp + t * sq)
 
     sin_omega = np.sin(omega)
-    result = (np.sin((1 - t) * omega) / sin_omega) * sp + \
-             (np.sin(t * omega) / sin_omega) * sq
+    result = (np.sin((1 - t) * omega) / sin_omega) * sp + (np.sin(t * omega) / sin_omega) * sq
 
     return _from_sqrt(result)
 
@@ -145,6 +147,7 @@ def geodesic_midpoint(p: Basin, q: Basin) -> Basin:
 
 
 # ─── Fréchet Mean ─────────────────────────────────────────────────
+
 
 def frechet_mean(
     points: list[Basin] | NDArray,
@@ -209,6 +212,7 @@ def frechet_mean(
 
 # ─── Log Map / Exp Map ─────────────────────────────────────────────
 
+
 def log_map(base: Basin, target: Basin) -> Basin:
     """
     Logarithmic map: project target into tangent space at base.
@@ -255,6 +259,7 @@ def exp_map(base: Basin, tangent: Basin) -> Basin:
 
 
 # ─── Fisher Information Matrix (Diagonal Approximation) ────────
+
 
 def fisher_information_diagonal(p: Basin) -> Basin:
     """

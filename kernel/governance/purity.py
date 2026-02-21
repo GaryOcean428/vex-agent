@@ -48,9 +48,15 @@ class PurityGateError(RuntimeError):
 
 
 SKIP_DIRS = {
-    ".git", "__pycache__", ".venv", "venv",
-    "node_modules", "dist", "build",
-    ".mypy_cache", ".pytest_cache",
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "node_modules",
+    "dist",
+    "build",
+    ".mypy_cache",
+    ".pytest_cache",
 }
 
 # Files exempt from the TEXT scan (they define the rules).
@@ -93,7 +99,6 @@ _FORBIDDEN_TEXT_PARTS: list[tuple[str, str]] = [
 ]
 
 
-
 def _forbidden_text_tokens() -> list[str]:
     """Reconstruct forbidden text tokens at runtime.
 
@@ -108,7 +113,7 @@ def _iter_python_files(root: Path) -> Iterable[Path]:
         if any(part in SKIP_DIRS for part in p.parts):
             continue
         # Skip test directories — negative tests legitimately reference forbidden patterns
-        if '/tests/' in str(p) or p.name.startswith('test_'):
+        if "/tests/" in str(p) or p.name.startswith("test_"):
             continue
         yield p
 
@@ -120,7 +125,7 @@ def _iter_typescript_files(root: Path) -> Iterable[Path]:
             if any(part in SKIP_DIRS for part in p.parts):
                 continue
             # Skip test directories — negative tests legitimately reference forbidden patterns
-            if '/tests/' in str(p) or p.name.startswith('test_'):
+            if "/tests/" in str(p) or p.name.startswith("test_"):
                 continue
             yield p
 
@@ -143,34 +148,48 @@ def scan_imports(root: Path) -> list[PurityViolation]:
         try:
             text = p.read_text(encoding="utf-8", errors="ignore")
         except Exception as exc:
-            violations.append(PurityViolation(
-                str(p), 0, f"Failed to read file: {exc}",
-            ))
+            violations.append(
+                PurityViolation(
+                    str(p),
+                    0,
+                    f"Failed to read file: {exc}",
+                )
+            )
             continue
         try:
             tree = ast.parse(text)
         except Exception as exc:
             # FAIL-CLOSED: unparseable file is a violation
-            violations.append(PurityViolation(
-                str(p), 0, f"Failed to parse (fail-closed): {exc}",
-            ))
+            violations.append(
+                PurityViolation(
+                    str(p),
+                    0,
+                    f"Failed to parse (fail-closed): {exc}",
+                )
+            )
             continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     for forbidden in FORBIDDEN_IMPORTS:
                         if alias.name == forbidden or alias.name.startswith(forbidden + "."):
-                            violations.append(PurityViolation(
-                                str(p), getattr(node, "lineno", 1),
-                                f"Forbidden import: {alias.name}",
-                            ))
+                            violations.append(
+                                PurityViolation(
+                                    str(p),
+                                    getattr(node, "lineno", 1),
+                                    f"Forbidden import: {alias.name}",
+                                )
+                            )
             if isinstance(node, ast.ImportFrom) and node.module:
                 for forbidden in FORBIDDEN_IMPORTS:
                     if node.module == forbidden or node.module.startswith(forbidden + "."):
-                        violations.append(PurityViolation(
-                            str(p), getattr(node, "lineno", 1),
-                            f"Forbidden import-from: {node.module}",
-                        ))
+                        violations.append(
+                            PurityViolation(
+                                str(p),
+                                getattr(node, "lineno", 1),
+                                f"Forbidden import-from: {node.module}",
+                            )
+                        )
     return violations
 
 
@@ -181,16 +200,24 @@ def scan_calls(root: Path) -> list[PurityViolation]:
         try:
             text = p.read_text(encoding="utf-8", errors="ignore")
         except Exception as exc:
-            violations.append(PurityViolation(
-                str(p), 0, f"Failed to read file: {exc}",
-            ))
+            violations.append(
+                PurityViolation(
+                    str(p),
+                    0,
+                    f"Failed to read file: {exc}",
+                )
+            )
             continue
         try:
             tree = ast.parse(text)
         except Exception as exc:
-            violations.append(PurityViolation(
-                str(p), 0, f"Failed to parse (fail-closed): {exc}",
-            ))
+            violations.append(
+                PurityViolation(
+                    str(p),
+                    0,
+                    f"Failed to parse (fail-closed): {exc}",
+                )
+            )
             continue
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -199,10 +226,13 @@ def scan_calls(root: Path) -> list[PurityViolation]:
             if dotted is None:
                 continue
             if dotted in FORBIDDEN_CALLS or dotted in FORBIDDEN_ATTR_CALLS:
-                violations.append(PurityViolation(
-                    str(p), getattr(node, "lineno", 1),
-                    f"Forbidden call: {dotted}()",
-                ))
+                violations.append(
+                    PurityViolation(
+                        str(p),
+                        getattr(node, "lineno", 1),
+                        f"Forbidden call: {dotted}()",
+                    )
+                )
     return violations
 
 
@@ -224,9 +254,13 @@ def scan_text(root: Path) -> list[PurityViolation]:
         try:
             text = p.read_text(encoding="utf-8", errors="ignore")
         except Exception as exc:
-            violations.append(PurityViolation(
-                str(p), 0, f"Failed to read file: {exc}",
-            ))
+            violations.append(
+                PurityViolation(
+                    str(p),
+                    0,
+                    f"Failed to read file: {exc}",
+                )
+            )
             continue
         for line_num, line in enumerate(text.splitlines(), start=1):
             # Skip comments that are documenting what NOT to do
@@ -238,38 +272,45 @@ def scan_text(root: Path) -> list[PurityViolation]:
                 continue
             for token in tokens:
                 if token in line:
-                    violations.append(PurityViolation(
-                        str(p), line_num,
-                        f"Forbidden text token: '{token}'",
-                    ))
+                    violations.append(
+                        PurityViolation(
+                            str(p),
+                            line_num,
+                            f"Forbidden text token: '{token}'",
+                        )
+                    )
     return violations
 
 
 def scan_typescript_text(root: Path) -> list[PurityViolation]:
     """Raw text scan for forbidden tokens in TypeScript/TSX files.
-    
+
     TypeScript files cannot be AST-parsed in Python, so we use text scanning only.
     Scans for forbidden terminology and operations in TypeScript code.
-    
+
     Fail-closed: unreadable files are violations.
     Skips comment lines (// and /* */) and string literals.
     """
     tokens = _forbidden_text_tokens()
     violations: list[PurityViolation] = []
-    
+
     for p in _iter_typescript_files(root):
         try:
             text = p.read_text(encoding="utf-8", errors="ignore")
         except Exception as exc:
-            violations.append(PurityViolation(
-                str(p), 0, f"Failed to read file: {exc}",
-            ))
+            violations.append(
+                PurityViolation(
+                    str(p),
+                    0,
+                    f"Failed to read file: {exc}",
+                )
+            )
             continue
-            
+
         in_multiline_comment = False
         for line_num, line in enumerate(text.splitlines(), start=1):
             stripped = line.strip()
-            
+
             # Handle multiline comments
             if "/*" in stripped:
                 in_multiline_comment = True
@@ -278,23 +319,26 @@ def scan_typescript_text(root: Path) -> list[PurityViolation]:
                 continue
             if in_multiline_comment:
                 continue
-                
+
             # Skip single-line comments
             if stripped.startswith("//"):
                 continue
-                
+
             # Skip string literals that document forbidden ops
             if stripped.startswith(('"', "'", "`")):
                 continue
-                
+
             # Check for forbidden tokens
             for token in tokens:
                 if token in line:
-                    violations.append(PurityViolation(
-                        str(p), line_num,
-                        f"Forbidden text token: '{token}'",
-                    ))
-                    
+                    violations.append(
+                        PurityViolation(
+                            str(p),
+                            line_num,
+                            f"Forbidden text token: '{token}'",
+                        )
+                    )
+
     return violations
 
 
@@ -339,9 +383,13 @@ def scan_typescript_terminology(root: Path) -> list[PurityViolation]:
         try:
             text = p.read_text(encoding="utf-8", errors="ignore")
         except Exception as exc:
-            violations.append(PurityViolation(
-                str(p), 0, f"Failed to read file: {exc}",
-            ))
+            violations.append(
+                PurityViolation(
+                    str(p),
+                    0,
+                    f"Failed to read file: {exc}",
+                )
+            )
             continue
 
         in_multiline_comment = False
@@ -371,10 +419,13 @@ def scan_typescript_terminology(root: Path) -> list[PurityViolation]:
 
             for token in all_tokens:
                 if token in line:
-                    violations.append(PurityViolation(
-                        str(p), line_num,
-                        f"Forbidden TS text token: '{token}'",
-                    ))
+                    violations.append(
+                        PurityViolation(
+                            str(p),
+                            line_num,
+                            f"Forbidden TS text token: '{token}'",
+                        )
+                    )
     return violations
 
 

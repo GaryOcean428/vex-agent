@@ -6,12 +6,12 @@
  * static assets) require a valid session cookie.
  */
 
-import { Request, Response, NextFunction } from 'express';
-import * as crypto from 'crypto';
-import { config } from '../config';
+import { Request, Response, NextFunction } from "express";
+import * as crypto from "crypto";
+import { config } from "../config";
 
 /** Session cookie name */
-export const SESSION_COOKIE = 'vex_session';
+export const SESSION_COOKIE = "vex_session";
 
 /** Session duration: 7 days in ms */
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -26,10 +26,10 @@ const sessions = new Map<string, Session>();
 
 /** Paths that never require authentication */
 const AUTH_EXEMPT_PATHS = new Set([
-  '/health',
-  '/chat/auth',
-  '/auth/check',
-  '/login',
+  "/health",
+  "/chat/auth",
+  "/auth/check",
+  "/login",
 ]);
 
 /** Check if a path looks like a static asset (has a file extension) */
@@ -38,7 +38,7 @@ function isStaticAsset(path: string): boolean {
 }
 
 export function createSession(): string {
-  const id = crypto.randomBytes(32).toString('hex');
+  const id = crypto.randomBytes(32).toString("hex");
   const now = Date.now();
   sessions.set(id, { id, createdAt: now, expiresAt: now + SESSION_TTL_MS });
   return id;
@@ -58,9 +58,9 @@ export function isValidSession(sessionId: string | undefined): boolean {
 export function getCookie(req: Request, name: string): string | undefined {
   const header = req.headers.cookie;
   if (!header) return undefined;
-  const match = header.split(';').find((c) => c.trim().startsWith(name + '='));
+  const match = header.split(";").find((c) => c.trim().startsWith(name + "="));
   if (!match) return undefined;
-  return match.split('=').slice(1).join('=').trim();
+  return match.split("=").slice(1).join("=").trim();
 }
 
 /**
@@ -71,7 +71,11 @@ export function getCookie(req: Request, name: string): string | undefined {
  * - Browser navigation requests (HTML accept) → redirect to /login.
  * - API requests → 401 JSON.
  */
-export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+export function requireAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
   // No auth configured — pass everything through
   if (!config.chatAuthToken) {
     next();
@@ -98,11 +102,11 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
 
   // Not authenticated — check if browser or API request
-  const acceptsHtml = req.headers.accept?.includes('text/html');
+  const acceptsHtml = req.headers.accept?.includes("text/html");
   if (acceptsHtml) {
-    res.redirect('/login');
+    res.redirect("/login");
     return;
   }
 
-  res.status(401).json({ error: 'Authentication required' });
+  res.status(401).json({ error: "Authentication required" });
 }

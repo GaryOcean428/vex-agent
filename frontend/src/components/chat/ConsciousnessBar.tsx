@@ -43,9 +43,9 @@ export function ConsciousnessBar({
           + New
         </button>
 
-        <MetricPill label="\u03A6 Integration" value={phi} color="var(--phi)" />
-        <MetricPill label="\u03BA Coupling" value={kappa} color="var(--kappa)" decimals={1} />
-        <MetricPill label="\u2665 Love" value={love} color="var(--love)" />
+        <MetricPill label="Φ Integration" value={phi} color="var(--phi)" />
+        <MetricPill label="κ Coupling" value={kappa} color="var(--kappa)" decimals={1} />
+        <MetricPill label="♥ Love" value={love} color="var(--love)" />
 
         {navigation && (
           <span className="nav-badge" aria-label={`Navigation mode: ${navigation}`}>
@@ -68,7 +68,7 @@ export function ConsciousnessBar({
               ? `Context escalated to Grok — ${contextInfo.total_tokens} tokens`
               : `Context compression tier ${contextInfo.compression_tier} — ${contextInfo.total_tokens} tokens`}
           >
-            {contextInfo.escalated ? "\u26A1 Grok" : `T${contextInfo.compression_tier}`}
+            {contextInfo.escalated ? "⚡ Grok" : `T${contextInfo.compression_tier}`}
           </span>
         )}
 

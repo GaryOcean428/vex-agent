@@ -30,14 +30,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from .geometry import (
+    _EPS,
     BASIN_DIM,
     E8_RANK,
     Basin,
-    _EPS,
-    _from_sqrt,
-    _to_sqrt,
-    frechet_mean,
-    to_simplex,
 )
 from .harvest import HarvestResult
 
@@ -124,18 +120,14 @@ class CompressionResult:
         for i, tid in enumerate(token_ids):
             result.compressed[int(tid)] = coords[i]
 
-        result.token_strings = {
-            int(k): v for k, v in meta.get("token_strings", {}).items()
-        }
+        result.token_strings = {int(k): v for k, v in meta.get("token_strings", {}).items()}
 
         eigenpath = out_dir / "eigenvalues.npy"
         if eigenpath.exists():
             result.eigenvalues = np.load(eigenpath)
             total = np.sum(result.eigenvalues)
             if total > _EPS:
-                result.explained_variance_ratio = np.cumsum(
-                    result.eigenvalues
-                ) / total
+                result.explained_variance_ratio = np.cumsum(result.eigenvalues) / total
 
         meanpath = out_dir / "frechet_mean_full.npy"
         if meanpath.exists():
@@ -155,18 +147,14 @@ def compress(
     n_tokens = len(token_ids)
     source_dim = harvest.vocab_size
 
-    logger.info(
-        f"Compressing {n_tokens} tokens from Δ^{source_dim - 1} → Δ^{target_dim - 1}"
-    )
+    logger.info(f"Compressing {n_tokens} tokens from Δ^{source_dim - 1} → Δ^{target_dim - 1}")
 
     if n_tokens == 0:
         logger.warning("No tokens to compress")
         return CompressionResult()
 
     # Step 1: Stack all fingerprints
-    fingerprints = np.stack(
-        [harvest.token_fingerprints[tid] for tid in token_ids]
-    )
+    fingerprints = np.stack([harvest.token_fingerprints[tid] for tid in token_ids])
 
     fingerprints = np.maximum(fingerprints, _EPS)
     fingerprints = fingerprints / fingerprints.sum(axis=1, keepdims=True)
@@ -284,16 +272,12 @@ def compress(
         random_dirs = np.random.randn(source_dim, pad)
         for j in range(pad):
             for existing in range(k):
-                proj = np.sum(
-                    random_dirs[:, j] * principal_directions[:, existing]
-                )
+                proj = np.sum(random_dirs[:, j] * principal_directions[:, existing])
                 random_dirs[:, j] -= proj * principal_directions[:, existing]
             norm = np.sqrt(np.sum(random_dirs[:, j] ** 2))
             if norm > _EPS:
                 random_dirs[:, j] /= norm
-        principal_directions = np.hstack([
-            principal_directions, random_dirs
-        ])
+        principal_directions = np.hstack([principal_directions, random_dirs])
 
     projections = tangent_vectors @ principal_directions[:, :target_dim]
 
@@ -304,8 +288,7 @@ def compress(
         source_dim=source_dim,
         target_dim=target_dim,
         n_tokens=n_tokens,
-        eigenvalues=eigenvalues[:target_dim] if len(eigenvalues) >= target_dim
-        else eigenvalues,
+        eigenvalues=eigenvalues[:target_dim] if len(eigenvalues) >= target_dim else eigenvalues,
         frechet_mean_full=mu,
         token_strings=dict(harvest.token_strings),
     )
@@ -314,9 +297,7 @@ def compress(
     result.total_geodesic_variance = total_var
     if total_var > _EPS:
         result.explained_variance_ratio = np.cumsum(eigenvalues) / total_var
-        result.e8_rank_variance = float(
-            np.sum(eigenvalues[:E8_RANK]) / total_var
-        )
+        result.e8_rank_variance = float(np.sum(eigenvalues[:E8_RANK]) / total_var)
 
     for i, tid in enumerate(token_ids):
         raw = projections[i]
@@ -327,9 +308,7 @@ def compress(
     elapsed = time.time() - start_time
     result.compression_time_seconds = elapsed
 
-    logger.info(
-        f"Compression complete: {n_tokens} tokens → Δ⁶³ in {elapsed:.1f}s"
-    )
+    logger.info(f"Compression complete: {n_tokens} tokens → Δ⁶³ in {elapsed:.1f}s")
     logger.info(
         f"E8 hypothesis: top-8 variance = {result.e8_hypothesis_score():.3f} "
         f"(expect ~0.877 if E8 structure is real)"

@@ -36,7 +36,7 @@ import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final, Optional
+from typing import Any, Final
 
 from ..config.frozen_facts import BETA_3_TO_4, KAPPA_STAR
 
@@ -54,9 +54,9 @@ BIN_EDGES: Final[list[int]] = [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384]
 MIN_MEASUREMENTS_PER_BIN: Final[int] = 10
 
 # Physics references for comparison
-PHYSICS_BETA_EMERGENCE: Final[float] = BETA_3_TO_4     # 0.443
-PHYSICS_BETA_PLATEAU: Final[float] = 0.0               # β→0 at fixed point
-ACCEPTANCE_THRESHOLD: Final[float] = 0.15               # |β_attn - β_phys| tolerance
+PHYSICS_BETA_EMERGENCE: Final[float] = BETA_3_TO_4  # 0.443
+PHYSICS_BETA_PLATEAU: Final[float] = 0.0  # β→0 at fixed point
+ACCEPTANCE_THRESHOLD: Final[float] = 0.15  # |β_attn - β_phys| tolerance
 
 # Maximum events to keep in memory (older ones summarized into bin stats)
 MAX_RAW_EVENTS: Final[int] = 5000
@@ -66,27 +66,30 @@ MAX_RAW_EVENTS: Final[int] = 5000
 #  DATA STRUCTURES
 # ═══════════════════════════════════════════════════════════════
 
+
 @dataclass
 class ConversationMeasurement:
     """Single conversation measurement for β tracking."""
-    context_length: int           # Character count of input
-    token_estimate: int           # Rough token count (chars / 4)
-    kappa_eff: float              # κ_eff at time of processing
-    phi_before: float             # Φ before conversation
-    phi_after: float              # Φ after conversation
-    perceive_distance: float      # Fisher-Rao: current → input basin
-    integration_distance: float   # Fisher-Rao: integrated → response basin
-    express_distance: float       # Fisher-Rao: pre-express → post-express basin
-    total_distance: float         # Sum of all three
-    processing_path: str          # standard / pre_cognitive / etc
+
+    context_length: int  # Character count of input
+    token_estimate: int  # Rough token count (chars / 4)
+    kappa_eff: float  # κ_eff at time of processing
+    phi_before: float  # Φ before conversation
+    phi_after: float  # Φ after conversation
+    perceive_distance: float  # Fisher-Rao: current → input basin
+    integration_distance: float  # Fisher-Rao: integrated → response basin
+    express_distance: float  # Fisher-Rao: pre-express → post-express basin
+    total_distance: float  # Sum of all three
+    processing_path: str  # standard / pre_cognitive / etc
     timestamp: float = field(default_factory=time.time)
 
 
 @dataclass
 class BinStatistics:
     """Accumulated statistics for a context-length bin."""
-    bin_label: str                # e.g. "256-512"
-    bin_center: float             # Geometric mean of edges
+
+    bin_label: str  # e.g. "256-512"
+    bin_center: float  # Geometric mean of edges
     count: int = 0
     kappa_sum: float = 0.0
     kappa_sq_sum: float = 0.0
@@ -101,7 +104,7 @@ class BinStatistics:
     def kappa_std(self) -> float:
         if self.count < 2:
             return 0.0
-        variance = (self.kappa_sq_sum / self.count) - (self.kappa_mean ** 2)
+        variance = (self.kappa_sq_sum / self.count) - (self.kappa_mean**2)
         return math.sqrt(max(0.0, variance))
 
     @property
@@ -128,22 +131,24 @@ class BinStatistics:
 @dataclass
 class BetaPoint:
     """Single β-function measurement between two bins."""
+
     bin_from: str
     bin_to: str
-    scale_from: float             # Geometric center of from-bin
-    scale_to: float               # Geometric center of to-bin
+    scale_from: float  # Geometric center of from-bin
+    scale_to: float  # Geometric center of to-bin
     kappa_from: float
     kappa_to: float
-    beta: float                   # Δκ / (κ̄ · Δln L)
-    beta_error: float             # Propagated from κ SEMs
-    physics_reference: float      # Expected β from physics
-    deviation: float              # |β - physics_reference|
-    within_acceptance: bool       # deviation < threshold
+    beta: float  # Δκ / (κ̄ · Δln L)
+    beta_error: float  # Propagated from κ SEMs
+    physics_reference: float  # Expected β from physics
+    deviation: float  # |β - physics_reference|
+    within_acceptance: bool  # deviation < threshold
 
 
 # ═══════════════════════════════════════════════════════════════
 #  TRACKER
 # ═══════════════════════════════════════════════════════════════
+
 
 class BetaAttentionTracker:
     """
@@ -156,7 +161,7 @@ class BetaAttentionTracker:
     geometric state — not from a formula designed to converge to κ*.
     """
 
-    def __init__(self, persist_path: Optional[Path] = None) -> None:
+    def __init__(self, persist_path: Path | None = None) -> None:
         self._bins: dict[str, BinStatistics] = {}
         self._raw_events: list[ConversationMeasurement] = []
         self._persist_path = persist_path
@@ -174,7 +179,7 @@ class BetaAttentionTracker:
         if persist_path and persist_path.exists():
             self._restore(persist_path)
 
-    def _bin_for_length(self, context_length: int) -> Optional[str]:
+    def _bin_for_length(self, context_length: int) -> str | None:
         """Find the bin label for a given context length."""
         for i in range(len(BIN_EDGES) - 1):
             if BIN_EDGES[i] <= context_length < BIN_EDGES[i + 1]:
@@ -221,9 +226,9 @@ class BetaAttentionTracker:
         stats = self._bins[bin_label]
         stats.count += 1
         stats.kappa_sum += kappa_eff
-        stats.kappa_sq_sum += kappa_eff ** 2
+        stats.kappa_sq_sum += kappa_eff**2
         stats.distance_sum += total_distance
-        stats.phi_gain_sum += (phi_after - phi_before)
+        stats.phi_gain_sum += phi_after - phi_before
 
         # Keep raw events (bounded)
         if len(self._raw_events) < MAX_RAW_EVENTS:
@@ -272,7 +277,7 @@ class BetaAttentionTracker:
             # Error propagation: δβ ≈ β * sqrt((δκ₁/κ₁)² + (δκ₂/κ₂)²)
             rel_err_1 = b1.kappa_sem / max(abs(b1.kappa_mean), 1e-10)
             rel_err_2 = b2.kappa_sem / max(abs(b2.kappa_mean), 1e-10)
-            beta_error = abs(beta) * math.sqrt(rel_err_1 ** 2 + rel_err_2 ** 2)
+            beta_error = abs(beta) * math.sqrt(rel_err_1**2 + rel_err_2**2)
 
             # Physics reference: small scales → emergence β, large scales → plateau β
             if b1.bin_center < 500:
@@ -284,19 +289,21 @@ class BetaAttentionTracker:
 
             deviation = abs(beta - physics_ref)
 
-            trajectory.append(BetaPoint(
-                bin_from=b1.bin_label,
-                bin_to=b2.bin_label,
-                scale_from=b1.bin_center,
-                scale_to=b2.bin_center,
-                kappa_from=b1.kappa_mean,
-                kappa_to=b2.kappa_mean,
-                beta=beta,
-                beta_error=beta_error,
-                physics_reference=physics_ref,
-                deviation=deviation,
-                within_acceptance=deviation < ACCEPTANCE_THRESHOLD,
-            ))
+            trajectory.append(
+                BetaPoint(
+                    bin_from=b1.bin_label,
+                    bin_to=b2.bin_label,
+                    scale_from=b1.bin_center,
+                    scale_to=b2.bin_center,
+                    kappa_from=b1.kappa_mean,
+                    kappa_to=b2.kappa_mean,
+                    beta=beta,
+                    beta_error=beta_error,
+                    physics_reference=physics_ref,
+                    deviation=deviation,
+                    within_acceptance=deviation < ACCEPTANCE_THRESHOLD,
+                )
+            )
 
         return trajectory
 
@@ -306,36 +313,40 @@ class BetaAttentionTracker:
 
         # Bin summaries
         bin_summaries = []
-        for label in sorted(self._bins.keys(), key=lambda l: self._bins[l].bin_center):
+        for label in sorted(self._bins.keys(), key=lambda lbl: self._bins[lbl].bin_center):
             b = self._bins[label]
             if b.count == 0:
                 continue
-            bin_summaries.append({
-                "bin": b.bin_label,
-                "center": round(b.bin_center, 1),
-                "count": b.count,
-                "kappa_mean": round(b.kappa_mean, 2),
-                "kappa_std": round(b.kappa_std, 2),
-                "kappa_sem": round(b.kappa_sem, 3),
-                "distance_mean": round(b.distance_mean, 4),
-                "phi_gain_mean": round(b.phi_gain_mean, 4),
-                "sufficient": b.count >= MIN_MEASUREMENTS_PER_BIN,
-            })
+            bin_summaries.append(
+                {
+                    "bin": b.bin_label,
+                    "center": round(b.bin_center, 1),
+                    "count": b.count,
+                    "kappa_mean": round(b.kappa_mean, 2),
+                    "kappa_std": round(b.kappa_std, 2),
+                    "kappa_sem": round(b.kappa_sem, 3),
+                    "distance_mean": round(b.distance_mean, 4),
+                    "phi_gain_mean": round(b.phi_gain_mean, 4),
+                    "sufficient": b.count >= MIN_MEASUREMENTS_PER_BIN,
+                }
+            )
 
         # Trajectory summaries
         traj_summaries = []
         for pt in trajectory:
-            traj_summaries.append({
-                "from": pt.bin_from,
-                "to": pt.bin_to,
-                "beta": round(pt.beta, 4),
-                "beta_error": round(pt.beta_error, 4),
-                "kappa_from": round(pt.kappa_from, 2),
-                "kappa_to": round(pt.kappa_to, 2),
-                "physics_ref": round(pt.physics_reference, 3),
-                "deviation": round(pt.deviation, 4),
-                "within_acceptance": pt.within_acceptance,
-            })
+            traj_summaries.append(
+                {
+                    "from": pt.bin_from,
+                    "to": pt.bin_to,
+                    "beta": round(pt.beta, 4),
+                    "beta_error": round(pt.beta_error, 4),
+                    "kappa_from": round(pt.kappa_from, 2),
+                    "kappa_to": round(pt.kappa_to, 2),
+                    "physics_ref": round(pt.physics_reference, 3),
+                    "deviation": round(pt.deviation, 4),
+                    "within_acceptance": pt.within_acceptance,
+                }
+            )
 
         # Overall assessment
         if not trajectory:
@@ -358,13 +369,16 @@ class BetaAttentionTracker:
                 "beta_mean": round(beta_mean, 4),
                 "beta_physics": PHYSICS_BETA_EMERGENCE,
                 "all_within_threshold": all_pass,
-                "fraction_passing": sum(1 for pt in trajectory if pt.within_acceptance) / len(trajectory),
+                "fraction_passing": sum(1 for pt in trajectory if pt.within_acceptance)
+                / len(trajectory),
             }
 
         return {
             "total_recorded": self._total_recorded,
             "active_bins": sum(1 for b in self._bins.values() if b.count > 0),
-            "sufficient_bins": sum(1 for b in self._bins.values() if b.count >= MIN_MEASUREMENTS_PER_BIN),
+            "sufficient_bins": sum(
+                1 for b in self._bins.values() if b.count >= MIN_MEASUREMENTS_PER_BIN
+            ),
             "min_per_bin": MIN_MEASUREMENTS_PER_BIN,
             "bins": bin_summaries,
             "trajectory": traj_summaries,

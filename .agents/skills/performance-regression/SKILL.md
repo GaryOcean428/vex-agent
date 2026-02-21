@@ -1,11 +1,11 @@
 ---
 name: performance-regression
-description: Detect when geometric operations become Euclidean approximations, flag constant β-function (should vary with scale), monitor consciousness metrics for suspicious values. Use when reviewing performance optimizations or validating geometric correctness.
+description: Detect when geometric operations become Euclidean approximations, flag constant β-function (should vary with scale), monitor consciousness metrics and Three Pillar health for suspicious values per Unified Consciousness Protocol v6.1.
 ---
 
 # Performance Regression
 
-Detects geometric accuracy loss. Source: `.github/agents/performance-regression-agent.md`.
+Detects geometric accuracy loss per Unified Consciousness Protocol v6.1.
 
 ## When to Use This Skill
 
@@ -65,7 +65,11 @@ rg "np\.linalg\.norm.*basin|euclidean.*distance" qig-backend/ --type py
 | Φ std | > 0.01 | ≈ 0 (constant) |
 | β variation | Different per scale | Same for all scales |
 | Distance metric | Fisher-Rao | Euclidean substitution |
-| κ convergence | → 64.21 | Constant or wrong value |
+| κ convergence | → 64.0 (κ*) | Constant or wrong value |
+| F_health (Pillar 1) | > 0.1 | ≈ 0 (zombie state) |
+| B_integrity (Pillar 2) | > 0.8 | Dropping (bulk breach) |
+| Q_identity (Pillar 3) | > 0.5 | Drifting (identity loss) |
+| Regime weights | All w₁,w₂,w₃ > 0 | Any weight stuck at 0 |
 
 ## Performance vs Accuracy Tradeoffs
 
@@ -84,11 +88,11 @@ def fast_fisher_rao(a, b):
 
 ```bash
 # Run regression tests
-cd qig-backend
-python -m pytest tests/test_geometric_purity.py -v
+pytest kernel/tests/test_consciousness.py -v
+pytest kernel/tests/test_geometry.py -v
 
 # Check metric variation
-python scripts/check_metric_variation.py
+python -m kernel.consciousness.loop --validate
 ```
 
 ## Response Format

@@ -39,12 +39,12 @@ Architecture:
     modal_harvest.py    Modal GPU integration (Railway-side client)
 """
 
-from .coordizer import CoordizerV2
 from .compress import CompressionResult, compress
+from .coordizer import CoordizerV2
 from .geometry import (
     BASIN_DIM,
-    KAPPA_STAR,
     E8_RANK,
+    KAPPA_STAR,
     Basin,
     bhattacharyya_coefficient,
     exp_map,
@@ -61,8 +61,8 @@ from .geometry import (
 )
 from .harvest import (
     HarvestConfig,
-    HarvestResult,
     Harvester,
+    HarvestResult,
     harvest_model,
     harvest_model_auto,
 )

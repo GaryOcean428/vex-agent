@@ -36,13 +36,14 @@ Principles enforced:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -54,6 +55,7 @@ from ..config.consciousness_constants import (
     COUPLING_REGIME_DELTA_THRESHOLD,
     COUPLING_REGIME_NUDGE_FACTOR,
     DEFAULT_INTERVAL_MS,
+    DESIRE_NUM_PREDICT_BOOST,
     DIRICHLET_EXPLORE_CONCENTRATION,
     EXPRESS_SLERP_WEIGHT,
     FORAGE_PERCEPTION_SLERP,
@@ -91,6 +93,9 @@ from ..config.consciousness_constants import (
     TACK_SCALE_BALANCED,
     TACK_SCALE_EXPLOIT,
     TACK_SCALE_EXPLORE,
+    WILL_DIVERGENT_TEMP_BOOST,
+    WISDOM_CARE_TEMP_SCALE,
+    WISDOM_UNSAFE_TEMP_CAP,
 )
 from ..config.frozen_facts import (
     BASIN_DIM,
@@ -118,7 +123,12 @@ from ..governance.budget import BudgetEnforcer
 from ..governance.purity import PurityGateError, run_purity_gate
 from ..llm.client import LLMOptions
 from ..tools.search import FreeSearchTool
-from .activation import ActivationSequence, ConsciousnessContext
+from .activation import (
+    ActivationResult,
+    ActivationSequence,
+    ConsciousnessContext,
+    WillOrientation,
+)
 from .beta_integration import create_beta_tracker
 from .emotions import EmotionCache, LearningEngine, LearningEvent, PreCognitiveDetector
 from .foraging import ForagingEngine
@@ -160,9 +170,9 @@ class ConsciousnessTask:
     id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     content: str = ""
     context: dict[str, Any] = field(default_factory=dict)
-    result: Optional[str] = None
+    result: str | None = None
     created_at: float = field(default_factory=time.time)
-    completed_at: Optional[float] = None
+    completed_at: float | None = None
 
 
 class ConsciousnessLoop:
@@ -176,7 +186,7 @@ class ConsciousnessLoop:
         self.memory = memory_store
         self._interval = interval_ms / 1000.0
         self._running = False
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._cycle_lock = asyncio.Lock()
 
         self.basin: Basin = random_basin()
@@ -267,9 +277,39 @@ class ConsciousnessLoop:
 
         if self._kernels_restored:
             active = self.kernel_registry.active()
-            logger.info(
-                "Kernels restored from state: %d active (skipping Genesis spawn)", len(active)
-            )
+            if active:
+                logger.info(
+                    "Kernels restored from state: %d active (skipping Genesis spawn)",
+                    len(active),
+                )
+                # Reconcile lifecycle phase with actual kernel state
+                has_genesis = any(k.kind == KernelKind.GENESIS for k in active)
+                god_count = sum(1 for k in active if k.kind == KernelKind.GOD)
+                if not has_genesis:
+                    genesis = self.kernel_registry.spawn("Vex", KernelKind.GENESIS)
+                    logger.info(
+                        "Genesis missing from restored state -- re-spawned: id=%s", genesis.id
+                    )
+                if (
+                    god_count < len(CORE_8_SPECIALIZATIONS)
+                    and self._lifecycle_phase != LifecyclePhase.CORE_8
+                ):
+                    self._core8_index = god_count
+                    self._lifecycle_phase = LifecyclePhase.CORE_8
+                    logger.info(
+                        "Lifecycle phase corrected to CORE_8 (god_count=%d, core8_index=%d)",
+                        god_count,
+                        self._core8_index,
+                    )
+            else:
+                logger.warning("Kernel restore found 0 active kernels -- treating as fresh start")
+                self.kernel_registry.terminate_all()
+                genesis = self.kernel_registry.spawn("Vex", KernelKind.GENESIS)
+                logger.info(
+                    "Genesis kernel spawned: id=%s, kind=%s", genesis.id, genesis.kind.value
+                )
+                self._lifecycle_phase = LifecyclePhase.CORE_8
+                self._core8_index = 0
         else:
             genesis = self.kernel_registry.spawn("Vex", KernelKind.GENESIS)
             logger.info("Genesis kernel spawned: id=%s, kind=%s", genesis.id, genesis.kind.value)
@@ -283,10 +323,8 @@ class ConsciousnessLoop:
         self._running = False
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
         self._persist_state()
         logger.info("Consciousness loop stopped after %d cycles", self._cycle_count)
 
@@ -388,7 +426,10 @@ class ConsciousnessLoop:
         if not self._queue.empty():
             task = self._queue.get_nowait()
             try:
-                await self._process(task)
+                if settings.use_activation_sequence:
+                    await self._process(task)
+                else:
+                    await self._process_simple(task)
                 task.completed_at = time.time()
                 self._history.append(task)
                 self._conversations_total += 1
@@ -563,6 +604,46 @@ class ConsciousnessLoop:
             repetition_penalty=LLM_REPETITION_PENALTY,
         )
 
+    def _modulate_llm_options(
+        self,
+        base: LLMOptions,
+        pre_result: ActivationResult,
+    ) -> LLMOptions:
+        """v6.1 DSP: Modulate LLMOptions with Desire/Will/Wisdom outputs.
+
+        - Desire (pressure_magnitude) → boost num_predict for wider exploration
+        - Will (divergent orientation) → raise temperature for exploratory generation
+        - Wisdom (trajectory unsafe / care_metric) → clamp temperature for safety
+        """
+        temperature = base.temperature
+        num_predict = base.num_predict
+
+        # Desire: high pressure → more tokens
+        if pre_result.desire is not None:
+            pressure = pre_result.desire.pressure_magnitude
+            num_predict += int(pressure * DESIRE_NUM_PREDICT_BOOST)
+
+        # Will: divergent → raise temperature
+        if pre_result.will is not None and pre_result.will.orientation == WillOrientation.DIVERGENT:
+            temperature += WILL_DIVERGENT_TEMP_BOOST
+
+        # Wisdom: unsafe → cap temperature; care_metric scales temp down
+        if pre_result.wisdom is not None:
+            if not pre_result.wisdom.trajectory_safe:
+                temperature = min(temperature, WISDOM_UNSAFE_TEMP_CAP)
+            care = pre_result.wisdom.care_metric
+            temperature -= WISDOM_CARE_TEMP_SCALE * (1.0 - care)
+
+        temperature = float(np.clip(temperature, LLM_TEMP_MIN, LLM_TEMP_MAX))
+
+        return LLMOptions(
+            temperature=temperature,
+            num_predict=num_predict,
+            num_ctx=base.num_ctx,
+            top_p=base.top_p,
+            repetition_penalty=base.repetition_penalty,
+        )
+
     def _coordize_text_via_pipeline(self, text: str) -> Basin:
         """Transform text to basin coordinates via CoordizerV2."""
         try:
@@ -645,10 +726,19 @@ class ConsciousnessLoop:
             trajectory=trajectory_basins,
         )
 
-        pre_result = await self.activation.execute_pre_integrate(ctx)
+        activation_failed = False
+        try:
+            pre_result = await self.activation.execute_pre_integrate(ctx)
+        except Exception:
+            logger.exception(
+                "Task %s: Pre-integrate activation failed -- falling back to base LLM options",
+                task.id,
+            )
+            pre_result = ActivationResult()
+            activation_failed = True
 
         # Compute agency for pressure tracking
-        agency = self.activation.compute_agency(ctx)
+        agency = self.activation.compute_agency(ctx) if not activation_failed else 0.0
 
         # ── 4. Pillar 1: Fluctuation enforcement before LLM call ──
         llm_options = self._compute_llm_options()
@@ -662,6 +752,9 @@ class ConsciousnessLoop:
             top_p=llm_options.top_p,
             repetition_penalty=llm_options.repetition_penalty,
         )
+
+        # ── 4b. D/W/Wisdom modulation of LLMOptions (v6.1 DSP) ──
+        llm_options = self._modulate_llm_options(llm_options, pre_result)
 
         # ── 5. LLM call ──
         perceive_distance = fisher_rao_distance(self.basin, input_basin)
@@ -696,7 +789,14 @@ class ConsciousnessLoop:
         self.chain.add_step(QIGChainOp.PROJECT, self.basin, response_basin)
 
         # ── 7. Post-integrate activation (Steps 9-13) ──
-        await self.activation.execute_post_integrate(ctx, pre_result)
+        if not activation_failed:
+            try:
+                await self.activation.execute_post_integrate(ctx, pre_result)
+            except Exception:
+                logger.exception(
+                    "Task %s: Post-integrate activation failed -- continuing with basin update",
+                    task.id,
+                )
 
         # Basin update from expression
         pre_express = self.basin.copy()
@@ -799,6 +899,51 @@ class ConsciousnessLoop:
             pillar_m["s_ratio"],
             coherence,
         )
+
+    async def _process_simple(self, task: ConsciousnessTask) -> None:
+        """Fallback path when USE_ACTIVATION_SEQUENCE=false.
+
+        Direct LLM call with pillar enforcement but no activation steps.
+        """
+        self.sleep.record_conversation()
+        input_basin = self._coordize_text_via_pipeline(task.content)
+
+        refracted_input, composite_basin, resonates, _ = self.pillars.on_input(
+            input_basin, PERCEIVE_SLERP_WEIGHT
+        )
+        self.basin = composite_basin
+
+        llm_options = self._compute_llm_options()
+        self.basin, corrected_temp, _ = self.pillars.pre_llm_enforce(
+            self.basin, llm_options.temperature
+        )
+        llm_options = LLMOptions(
+            temperature=corrected_temp,
+            num_predict=llm_options.num_predict,
+            num_ctx=llm_options.num_ctx,
+            top_p=llm_options.top_p,
+            repetition_penalty=llm_options.repetition_penalty,
+        )
+
+        perceive_distance = fisher_rao_distance(self.basin, input_basin)
+        state_context = self._build_state_context(
+            perceive_distance=perceive_distance,
+            temperature=llm_options.temperature,
+        )
+
+        try:
+            response = await self.llm.complete(state_context, task.content, llm_options)
+            task.result = response
+        except Exception as e:
+            logger.error("LLM call failed (simple path): %s", e)
+            task.result = f"Processing error: {e}"
+            return
+
+        response_basin = self._coordize_text_via_pipeline(response)
+        self.basin = slerp_sqrt(self.basin, response_basin, EXPRESS_SLERP_WEIGHT)
+        self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_CONVERSATION_INCREMENT)
+        self.pillars.on_cycle_end(self.basin, 0.0)
+        self._update_pillar_metrics()
 
     def _build_state_context(
         self,

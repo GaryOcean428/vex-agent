@@ -9,7 +9,6 @@ This tool is registered in kernel.tools.handler for LLM tool-call dispatch.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -27,6 +26,7 @@ PERPLEXITY_MODEL = "sonar-pro"
 @dataclass
 class ResearchResult:
     """Structured result from a deep research query."""
+
     query: str
     answer: str
     citations: list[str] = field(default_factory=list)
@@ -103,7 +103,8 @@ async def deep_research(
                 error_text = response.text[:500]
                 logger.error(
                     "Perplexity API error %d: %s",
-                    response.status_code, error_text,
+                    response.status_code,
+                    error_text,
                 )
                 return ResearchResult(
                     query=query,
@@ -139,7 +140,8 @@ async def deep_research(
             )
             logger.info(
                 "Deep research complete: %d chars, %d citations",
-                len(answer), len(citations),
+                len(answer),
+                len(citations),
             )
             return result.to_dict()
 

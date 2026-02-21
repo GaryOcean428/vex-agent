@@ -9,10 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 import numpy as np
-from numpy.typing import NDArray
 
 from .geometry import (
     BASIN_DIM,
@@ -22,8 +20,8 @@ from .geometry import (
     to_simplex,
 )
 
-
 # ─── Harmonic Tiers ─────────────────────────────────────────────
+
 
 class HarmonicTier(str, Enum):
     """
@@ -31,14 +29,16 @@ class HarmonicTier(str, Enum):
 
     Assignment based on activation frequency (basin mass).
     """
-    FUNDAMENTAL = "fundamental"    # Top 1000: deepest basins, bass notes
-    FIRST_HARMONIC = "first"       # 1001-5000: connectors, modifiers
-    UPPER_HARMONIC = "upper"       # 5001-15000: specialized, precise
-    OVERTONE_HAZE = "overtone"     # 15001+: rare, contextual, subtle
+
+    FUNDAMENTAL = "fundamental"  # Top 1000: deepest basins, bass notes
+    FIRST_HARMONIC = "first"  # 1001-5000: connectors, modifiers
+    UPPER_HARMONIC = "upper"  # 5001-15000: specialized, precise
+    OVERTONE_HAZE = "overtone"  # 15001+: rare, contextual, subtle
 
 
 class GranularityScale(str, Enum):
     """Scale of a coordinate — from finest to coarsest."""
+
     BYTE = "byte"
     CHAR = "char"
     SUBWORD = "subword"
@@ -48,6 +48,7 @@ class GranularityScale(str, Enum):
 
 
 # ─── Basin Coordinate ───────────────────────────────────────────
+
 
 @dataclass
 class BasinCoordinate:
@@ -60,19 +61,17 @@ class BasinCoordinate:
     """
 
     coord_id: int
-    vector: Basin                           # Shape (64,), on Δ⁶³
-    name: Optional[str] = None
+    vector: Basin  # Shape (64,), on Δ⁶³
+    name: str | None = None
     scale: GranularityScale = GranularityScale.SUBWORD
     tier: HarmonicTier = HarmonicTier.UPPER_HARMONIC
-    basin_mass: float = 0.0                 # M = ∫ Φ·κ dx (activation weight)
-    frequency: float = 0.0                  # Characteristic oscillation frequency
-    activation_count: int = 0               # Times activated (for tier assignment)
+    basin_mass: float = 0.0  # M = ∫ Φ·κ dx (activation weight)
+    frequency: float = 0.0  # Characteristic oscillation frequency
+    activation_count: int = 0  # Times activated (for tier assignment)
 
     def __post_init__(self):
         if len(self.vector) != BASIN_DIM:
-            raise ValueError(
-                f"Basin coordinate must be {BASIN_DIM}D, got {len(self.vector)}"
-            )
+            raise ValueError(f"Basin coordinate must be {BASIN_DIM}D, got {len(self.vector)}")
         # Enforce simplex constraint
         self.vector = to_simplex(self.vector)
 
@@ -87,6 +86,7 @@ class BasinCoordinate:
 
 # ─── Coordization Result ─────────────────────────────────────────
 
+
 @dataclass
 class CoordizationResult:
     """
@@ -94,14 +94,15 @@ class CoordizationResult:
 
     Contains the coordinate sequence plus geometric metadata.
     """
+
     coordinates: list[BasinCoordinate]
     coord_ids: list[int]
     original_text: str
 
     # Geometric metrics (populated after coordization)
-    basin_velocity: Optional[float] = None    # Avg d_FR between consecutive
-    trajectory_curvature: Optional[float] = None  # Second-order geodesic deviation
-    harmonic_consonance: Optional[float] = None   # Coherence of frequency ratios
+    basin_velocity: float | None = None  # Avg d_FR between consecutive
+    trajectory_curvature: float | None = None  # Second-order geodesic deviation
+    harmonic_consonance: float | None = None  # Coherence of frequency ratios
 
     def compute_metrics(self) -> None:
         """Compute all geometric metrics for the trajectory."""
@@ -171,6 +172,7 @@ class CoordizationResult:
 
 # ─── Domain Bias ─────────────────────────────────────────────────
 
+
 @dataclass
 class DomainBias:
     """
@@ -179,23 +181,26 @@ class DomainBias:
     Shifts activation patterns toward domain-relevant tokens
     via Fisher-Rao weighted mean shift.
     """
+
     domain_name: str
     anchor_basin: Basin = field(default_factory=lambda: np.ones(BASIN_DIM) / BASIN_DIM)
-    strength: float = 0.1                   # 0 = no bias, 1 = full shift
+    strength: float = 0.1  # 0 = no bias, 1 = full shift
     boosted_token_ids: set[int] = field(default_factory=set)
     suppressed_token_ids: set[int] = field(default_factory=set)
 
 
 # ─── Validation Result ───────────────────────────────────────────
 
+
 @dataclass
 class ValidationResult:
     """Result of geometric validation on the resonance bank."""
-    kappa_measured: float = 0.0             # Should converge to κ* ≈ 64
+
+    kappa_measured: float = 0.0  # Should converge to κ* ≈ 64
     kappa_std: float = 0.0
-    beta_running: float = 0.0              # Should → 0 at plateau
-    semantic_correlation: float = 0.0       # d_FR vs human-judged distance
-    harmonic_ratio_quality: float = 0.0     # Quality of frequency ratio structure
+    beta_running: float = 0.0  # Should → 0 at plateau
+    semantic_correlation: float = 0.0  # d_FR vs human-judged distance
+    harmonic_ratio_quality: float = 0.0  # Quality of frequency ratio structure
     tier_distribution: dict[str, int] = field(default_factory=dict)
     passed: bool = False
 

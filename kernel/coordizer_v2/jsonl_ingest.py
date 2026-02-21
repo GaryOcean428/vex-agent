@@ -36,18 +36,17 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
+from collections.abc import Generator
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Generator, Optional
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 from .geometry import BASIN_DIM, to_simplex
-from .types import HarmonicTier
 
 logger = logging.getLogger(__name__)
 
@@ -59,16 +58,18 @@ logger = logging.getLogger(__name__)
 VALID_SOURCES = frozenset({"curriculum", "foraging", "conversation", "document"})
 VALID_PRIORITIES = frozenset({1, 2, 3, 4})
 MAX_TEXT_LENGTH = 100_000  # 100KB per entry — reject larger
-MIN_TEXT_LENGTH = 10       # Reject trivially short entries
+MIN_TEXT_LENGTH = 10  # Reject trivially short entries
 
 
 # ═══════════════════════════════════════════════════════════════
 #  TYPES
 # ═══════════════════════════════════════════════════════════════
 
+
 @dataclass
 class IngestEntry:
     """A single validated JSONL entry ready for harvesting."""
+
     source: str
     text: str
     metadata: dict[str, Any]
@@ -84,6 +85,7 @@ class IngestEntry:
 @dataclass
 class IngestBatch:
     """A batch of entries grouped by priority and source."""
+
     priority: int
     source: str
     entries: list[IngestEntry] = field(default_factory=list)
@@ -100,6 +102,7 @@ class IngestBatch:
 @dataclass
 class IngestResult:
     """Result of a JSONL ingestion run."""
+
     total_lines: int = 0
     valid_entries: int = 0
     invalid_entries: int = 0
@@ -126,6 +129,7 @@ class IngestResult:
 @dataclass
 class ValidationError:
     """A single validation error for a JSONL line."""
+
     line_number: int
     reason: str
     raw_line: str = ""
@@ -135,7 +139,10 @@ class ValidationError:
 #  VALIDATION
 # ═══════════════════════════════════════════════════════════════
 
-def validate_entry(line: str, line_number: int) -> tuple[Optional[IngestEntry], Optional[ValidationError]]:
+
+def validate_entry(
+    line: str, line_number: int
+) -> tuple[IngestEntry | None, ValidationError | None]:
     """Validate a single JSONL line and return an IngestEntry or error.
 
     Checks:
@@ -223,7 +230,7 @@ def validate_entry(line: str, line_number: int) -> tuple[Optional[IngestEntry], 
                 reason=f"Invalid timestamp: {timestamp}",
             )
     else:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
 
     return IngestEntry(
         source=source,
@@ -239,11 +246,12 @@ def validate_entry(line: str, line_number: int) -> tuple[Optional[IngestEntry], 
 #  STREAMING READER
 # ═══════════════════════════════════════════════════════════════
 
+
 def stream_jsonl(
     path: str,
     *,
     skip_invalid: bool = True,
-) -> Generator[tuple[IngestEntry, Optional[ValidationError]], None, None]:
+) -> Generator[tuple[IngestEntry, ValidationError | None]]:
     """Stream JSONL entries from a file, yielding validated entries.
 
     Reads line-by-line — never loads the full file into memory.
@@ -253,14 +261,12 @@ def stream_jsonl(
     if not file_path.exists():
         raise FileNotFoundError(f"JSONL file not found: {path}")
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         for line_number, line in enumerate(f, start=1):
             entry, error = validate_entry(line, line_number)
             if error is not None:
                 if skip_invalid:
-                    logger.warning(
-                        f"Line {line_number}: {error.reason}"
-                    )
+                    logger.warning(f"Line {line_number}: {error.reason}")
                 yield None, error
             elif entry is not None:
                 yield entry, None
@@ -270,6 +276,7 @@ def stream_jsonl(
 # ═══════════════════════════════════════════════════════════════
 #  BATCHING
 # ═══════════════════════════════════════════════════════════════
+
 
 def batch_entries(
     entries: list[IngestEntry],
@@ -286,7 +293,7 @@ def batch_entries(
     sorted_entries = sorted(entries, key=lambda e: (e.priority, e.source))
 
     batches: list[IngestBatch] = []
-    current_batch: Optional[IngestBatch] = None
+    current_batch: IngestBatch | None = None
 
     for entry in sorted_entries:
         needs_new_batch = (
@@ -316,10 +323,11 @@ def batch_entries(
 #  COORDIZED OUTPUT
 # ═══════════════════════════════════════════════════════════════
 
+
 def write_coordized_jsonl(
     output_path: str,
     entries: list[IngestEntry],
-    basin_coordinates: list[Optional[NDArray]],
+    basin_coordinates: list[NDArray | None],
 ) -> int:
     """Write coordized entries back as JSONL with basin coordinates appended.
 
@@ -335,7 +343,7 @@ def write_coordized_jsonl(
 
     written = 0
     with open(output_path, "a", encoding="utf-8") as f:
-        for entry, basin in zip(entries, basin_coordinates):
+        for entry, basin in zip(entries, basin_coordinates, strict=True):
             record = {
                 "source": entry.source,
                 "text": entry.text,
@@ -346,7 +354,7 @@ def write_coordized_jsonl(
             if basin is not None:
                 record["basin_coordinates"] = basin.tolist()
                 record["basin_dim"] = int(basin.shape[0])
-            record["coordized_at"] = datetime.now(timezone.utc).isoformat()
+            record["coordized_at"] = datetime.now(UTC).isoformat()
             f.write(json.dumps(record) + "\n")
             written += 1
 
@@ -356,6 +364,7 @@ def write_coordized_jsonl(
 # ═══════════════════════════════════════════════════════════════
 #  INGEST PIPELINE
 # ═══════════════════════════════════════════════════════════════
+
 
 class JSONLIngestor:
     """Full JSONL ingestion pipeline: read → validate → batch → harvest → write.
@@ -390,7 +399,7 @@ class JSONLIngestor:
         self,
         jsonl_path: str,
         *,
-        output_path: Optional[str] = None,
+        output_path: str | None = None,
         dry_run: bool = False,
     ) -> IngestResult:
         """Ingest a JSONL file: validate, batch, harvest, write output.
@@ -442,10 +451,8 @@ class JSONLIngestor:
         # ── 3. Route and harvest ──
         if output_path is None:
             stem = Path(jsonl_path).stem
-            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            output_path = str(
-                Path(self.output_dir) / f"{stem}_coordized_{ts}.jsonl"
-            )
+            ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+            output_path = str(Path(self.output_dir) / f"{stem}_coordized_{ts}.jsonl")
 
         if self.modal_enabled and self.modal_client is not None:
             result.harvest_backend = "modal"
@@ -482,7 +489,9 @@ class JSONLIngestor:
                 # Convert raw logits to basin coordinates
                 basins = self._logits_to_basins(raw)
                 written = write_coordized_jsonl(
-                    output_path, batch.entries, basins,
+                    output_path,
+                    batch.entries,
+                    basins,
                 )
                 result.entries_coordized += written
                 result.batches_harvested += 1
@@ -501,20 +510,23 @@ class JSONLIngestor:
         """Use the local CoordizerV2 to coordize entries directly."""
         for batch in batches:
             try:
-                basins: list[Optional[NDArray]] = []
+                basins: list[NDArray | None] = []
                 for entry in batch.entries:
                     cr = self.coordizer.coordize(entry.text)
                     if cr.coordinates:
                         # Use Fréchet mean of all coordinates as the
                         # document-level basin coordinate
                         from .geometry import frechet_mean
+
                         vectors = [bc.vector for bc in cr.coordinates]
                         basins.append(frechet_mean(vectors))
                     else:
                         basins.append(None)
 
                 written = write_coordized_jsonl(
-                    output_path, batch.entries, basins,
+                    output_path,
+                    batch.entries,
+                    basins,
                 )
                 result.entries_coordized += written
                 result.batches_harvested += 1
@@ -534,7 +546,7 @@ class JSONLIngestor:
         import httpx
 
         for batch in batches:
-            basins: list[Optional[NDArray]] = []
+            basins: list[NDArray | None] = []
             for entry in batch.entries:
                 try:
                     async with httpx.AsyncClient(timeout=30) as client:
@@ -575,7 +587,9 @@ class JSONLIngestor:
 
             try:
                 written = write_coordized_jsonl(
-                    output_path, batch.entries, basins,
+                    output_path,
+                    batch.entries,
+                    basins,
                 )
                 result.entries_coordized += written
                 result.batches_harvested += 1
@@ -584,21 +598,24 @@ class JSONLIngestor:
                 result.errors.append(f"Ollama write error: {e}")
 
     def _logits_to_basins(
-        self, raw: dict,
-    ) -> list[Optional[NDArray]]:
+        self,
+        raw: dict,
+    ) -> list[NDArray | None]:
         """Convert raw Modal harvest response to basin coordinates.
 
         Takes the raw logits from each result entry and projects
         them onto the probability simplex Δ⁶³.
         """
-        basins: list[Optional[NDArray]] = []
+        basins: list[NDArray | None] = []
         results = raw.get("results", [])
 
         for entry in results:
             logits = entry.get("logits", [])
             if logits and len(logits) > 0:
                 # Take the last-token logits and project to simplex
-                raw_logits = np.array(logits[-1] if isinstance(logits[0], list) else logits, dtype=np.float64)
+                raw_logits = np.array(
+                    logits[-1] if isinstance(logits[0], list) else logits, dtype=np.float64
+                )
                 # Truncate or pad to BASIN_DIM
                 if len(raw_logits) >= BASIN_DIM:
                     raw_logits = raw_logits[:BASIN_DIM]
@@ -623,6 +640,7 @@ class JSONLIngestor:
         structure — it's a placeholder until real harvesting runs.
         """
         import hashlib
+
         # SHA-512 gives 64 bytes = BASIN_DIM
         h = hashlib.sha512(text.encode("utf-8")).digest()
         raw = np.array([b for b in h[:BASIN_DIM]], dtype=np.float64)

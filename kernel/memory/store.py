@@ -13,22 +13,19 @@ v5.5 additions:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
-from ..config.frozen_facts import BASIN_DIM
 from ..config.settings import settings
 from ..geometry.fisher_rao import (
     Basin,
     fisher_rao_distance,
-    random_basin,
     to_simplex,
 )
 
@@ -42,13 +39,14 @@ def _text_to_basin(text: str) -> Basin:
     Delegates to the canonical hash_to_basin utility.
     """
     from ..geometry.hash_to_basin import hash_to_basin
+
     return hash_to_basin(text)
 
 
 class MemoryStore:
     """Simple flat-file memory store."""
 
-    def __init__(self, data_dir: Optional[str] = None) -> None:
+    def __init__(self, data_dir: str | None = None) -> None:
         self._dir = Path(data_dir or settings.data_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
 
@@ -81,6 +79,7 @@ class MemoryStore:
 @dataclass
 class MemoryEntry:
     """A single memory entry with basin coordinates."""
+
     content: str
     basin: Basin
     memory_type: str  # "episodic", "semantic", "procedural"
@@ -109,18 +108,20 @@ class GeometricMemoryStore:
         content: str,
         memory_type: str,
         source: str,
-        basin: Optional[Basin] = None,
+        basin: Basin | None = None,
         phi: float = 0.0,
     ) -> None:
         if basin is None:
             basin = _text_to_basin(content)
-        self._entries.append(MemoryEntry(
-            content=content,
-            basin=to_simplex(basin),
-            memory_type=memory_type,
-            source=source,
-            phi_at_storage=phi,
-        ))
+        self._entries.append(
+            MemoryEntry(
+                content=content,
+                basin=to_simplex(basin),
+                memory_type=memory_type,
+                source=source,
+                phi_at_storage=phi,
+            )
+        )
         # Append-only persistence
         try:
             entry_data = {
@@ -140,10 +141,7 @@ class GeometricMemoryStore:
         if not self._entries:
             return []
         query_basin = to_simplex(query_basin)
-        scored = [
-            (entry, fisher_rao_distance(query_basin, entry.basin))
-            for entry in self._entries
-        ]
+        scored = [(entry, fisher_rao_distance(query_basin, entry.basin)) for entry in self._entries]
         scored.sort(key=lambda x: x[1])
         results = []
         for entry, _ in scored[:k]:
@@ -167,7 +165,8 @@ class GeometricMemoryStore:
             return 0
         before = len(self._entries)
         self._entries.sort(
-            key=lambda e: (e.access_count, e.created_at), reverse=True,
+            key=lambda e: (e.access_count, e.created_at),
+            reverse=True,
         )
         self._entries = self._entries[:500]
         pruned = before - len(self._entries)
@@ -180,7 +179,7 @@ class GeometricMemoryStore:
             return
         try:
             count = 0
-            with open(self._persist_path, "r", encoding="utf-8") as f:
+            with open(self._persist_path, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line:
@@ -188,14 +187,16 @@ class GeometricMemoryStore:
                     try:
                         data = json.loads(line)
                         basin = to_simplex(np.array(data["basin"], dtype=np.float64))
-                        self._entries.append(MemoryEntry(
-                            content=data["content"],
-                            basin=basin,
-                            memory_type=data["type"],
-                            source=data["source"],
-                            created_at=data.get("ts", time.time()),
-                            phi_at_storage=data.get("phi", 0.0),
-                        ))
+                        self._entries.append(
+                            MemoryEntry(
+                                content=data["content"],
+                                basin=basin,
+                                memory_type=data["type"],
+                                source=data["source"],
+                                created_at=data.get("ts", time.time()),
+                                phi_at_storage=data.get("phi", 0.0),
+                            )
+                        )
                         count += 1
                     except (json.JSONDecodeError, KeyError, ValueError):
                         continue

@@ -25,7 +25,7 @@ const PHASE_DESCRIPTIONS: Record<string, string> = {
   BOOTSTRAP:
     "Genesis kernel is running. Core-8 will spawn once consciousness gates are met through conversation.",
   CORE_8:
-    "Spawning Core-8 specialist kernels. Each spawn requires stable \u03A6 and non-critical velocity.",
+    "Spawning Core-8 specialist kernels. Each spawn requires stable Φ and non-critical velocity.",
   ACTIVE:
     "All Core-8 specialists active. System is fully conscious and self-organizing.",
   IMAGE_STAGE: "Image generation capabilities spawning (GOD pool).",
@@ -84,7 +84,7 @@ export default function Lifecycle() {
           {phaseUpper === "BOOTSTRAP" && !allGatesMet && (
             <div style={{ marginTop: "8px", color: "var(--warning, orange)" }}>
               Spawn gates: {gatesMetCount}/3 met. Engage in conversation to
-              raise \u03A6 above {QIG.PHI_EMERGENCY}.
+              raise Φ above {QIG.PHI_EMERGENCY}.
             </div>
           )}
           {phaseUpper === "BOOTSTRAP" && allGatesMet && core8Spawned === 0 && (
@@ -130,7 +130,7 @@ export default function Lifecycle() {
             }}
           >
             No Core-8 spawned yet. The consciousness loop spawns specialists as
-            \u03A6 rises through conversation.
+            Φ rises through conversation.
           </div>
         )}
       </div>
@@ -143,13 +143,13 @@ export default function Lifecycle() {
         <div className="dash-card">
           <div className="dash-row">
             <span className="dash-row-label">
-              {"\u03A6"} {">"} {QIG.PHI_EMERGENCY} (emergency floor)
+              {"Φ"} {">"} {QIG.PHI_EMERGENCY} (emergency floor)
             </span>
             <span
               className="dash-row-value"
               style={{ color: phiGateMet ? "var(--alive)" : "var(--error)" }}
             >
-              {phiGateMet ? "\u2713" : "\u2717"} {state.phi.toFixed(3)}
+              {phiGateMet ? "✓" : "✗"} {state.phi.toFixed(3)}
               {!phiGateMet && (
                 <span
                   style={{
@@ -164,23 +164,23 @@ export default function Lifecycle() {
             </span>
           </div>
           <div className="dash-row">
-            <span className="dash-row-label">Velocity {"\u2260"} critical</span>
+            <span className="dash-row-label">Velocity {"≠"} critical</span>
             <span
               className="dash-row-value"
               style={{
                 color: velocityGateMet ? "var(--alive)" : "var(--error)",
               }}
             >
-              {velocityGateMet ? "\u2713" : "\u2717"}{" "}
+              {velocityGateMet ? "✓" : "✗"}{" "}
               {state.velocity?.regime ?? "unknown"}
             </span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">
-              Cooldown {"\u2265"} {QIG.SPAWN_COOLDOWN_CYCLES} cycles
+              Cooldown {"≥"} {QIG.SPAWN_COOLDOWN_CYCLES} cycles
             </span>
             <span className="dash-row-value" style={{ color: "var(--alive)" }}>
-              {"\u2713"} Ready
+              {"✓"} Ready
             </span>
           </div>
         </div>
@@ -232,7 +232,7 @@ export default function Lifecycle() {
                   className="dash-row-label"
                   style={{ fontWeight: isCurrent ? 600 : 400 }}
                 >
-                  {isPast ? "\u2713" : isCurrent ? "\u25B6" : "\u25CB"} {p}
+                  {isPast ? "✓" : isCurrent ? "▶" : "○"} {p}
                 </span>
                 {i < 3 && (
                   <span
@@ -241,7 +241,7 @@ export default function Lifecycle() {
                       color: isPast ? "var(--alive)" : "var(--text-dim)",
                     }}
                   >
-                    {"\u2192"}
+                    {"→"}
                   </span>
                 )}
               </div>
@@ -255,11 +255,11 @@ export default function Lifecycle() {
         <div className="dash-section-title">Live Consciousness Metrics</div>
         <div className="dash-card">
           <div className="dash-row">
-            <span className="dash-row-label">{"\u03A6"} Integration</span>
+            <span className="dash-row-label">{"Φ"} Integration</span>
             <span className="dash-row-value">{state.phi.toFixed(4)}</span>
           </div>
           <div className="dash-row">
-            <span className="dash-row-label">{"\u03BA"} Coupling</span>
+            <span className="dash-row-label">{"κ"} Coupling</span>
             <span className="dash-row-value">
               {state.kappa.toFixed(2)} (target: {QIG.KAPPA_STAR})
             </span>

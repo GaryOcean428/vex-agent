@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Callable
+from collections.abc import Callable
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -67,7 +67,9 @@ class KernelAuthMiddleware(BaseHTTPMiddleware):
         if provided_key != KERNEL_API_KEY:
             logger.warning(
                 "Auth rejected: %s %s from %s",
-                request.method, request.url.path, client_host,
+                request.method,
+                request.url.path,
+                client_host,
             )
             return JSONResponse(
                 status_code=401,

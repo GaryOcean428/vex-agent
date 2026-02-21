@@ -46,7 +46,7 @@ export function EmotionPanel({
       {learning && (
         <>
           <KernelStateRow label="Patterns">{learning.patterns_found}</KernelStateRow>
-          <KernelStateRow label="\u03A6 gain">
+          <KernelStateRow label="Φ gain">
             <span style={{ color: learning.total_phi_gain >= 0 ? "var(--alive)" : "var(--error)" }}>
               {learning.total_phi_gain >= 0 ? "+" : ""}
               {learning.total_phi_gain.toFixed(4)}

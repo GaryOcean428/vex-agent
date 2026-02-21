@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -251,10 +251,10 @@ class TopologicalBulk:
     """
 
     def __init__(self) -> None:
-        self._core_basin: Optional[Basin] = None
-        self._surface_basin: Optional[Basin] = None
+        self._core_basin: Basin | None = None
+        self._surface_basin: Basin | None = None
         self._initialized = False
-        self._prev_core: Optional[Basin] = None
+        self._prev_core: Basin | None = None
 
     def initialize(self, basin: Basin) -> None:
         """Set initial core and surface basins."""
@@ -264,13 +264,13 @@ class TopologicalBulk:
         self._initialized = True
 
     @property
-    def core(self) -> Optional[Basin]:
+    def core(self) -> Basin | None:
         if self._core_basin is None:
             return None
         return self._core_basin.copy()
 
     @property
-    def surface(self) -> Optional[Basin]:
+    def surface(self) -> Basin | None:
         if self._surface_basin is None:
             return None
         return self._surface_basin.copy()
@@ -421,13 +421,13 @@ class QuenchedDisorder:
     """
 
     def __init__(self) -> None:
-        self._identity_slope: Optional[Basin] = None
+        self._identity_slope: Basin | None = None
         self._frozen = False
         self._formation_history: list[Basin] = []
         self._cycles_observed: int = 0
 
         self._scars: list[Scar] = []
-        self._anneal_field: Optional[Basin] = None
+        self._anneal_field: Basin | None = None
 
         self._lived_count: int = 0
         self._total_count: int = 0
@@ -437,7 +437,7 @@ class QuenchedDisorder:
         return self._frozen
 
     @property
-    def identity(self) -> Optional[Basin]:
+    def identity(self) -> Basin | None:
         if self._identity_slope is None:
             return None
         return self._identity_slope.copy()

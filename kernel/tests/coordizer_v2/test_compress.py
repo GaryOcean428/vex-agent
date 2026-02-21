@@ -13,11 +13,8 @@ from kernel.coordizer_v2.compress import CompressionResult
 from kernel.coordizer_v2.geometry import (
     BASIN_DIM,
     E8_RANK,
-    KAPPA_STAR,
     fisher_rao_distance,
-    to_simplex,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 #  FIXTURES
@@ -161,6 +158,7 @@ class TestGeometricIntegrity:
     def test_distances_bounded(self, sample_compression_result):
         """Fisher-Rao distances must be bounded by π/2."""
         import math
+
         tids = list(sample_compression_result.compressed.keys())[:10]
         for i in range(len(tids)):
             for j in range(i + 1, len(tids)):
@@ -173,6 +171,7 @@ class TestGeometricIntegrity:
     def test_frechet_mean_exists(self, sample_compression_result):
         """Fréchet mean of compressed tokens should exist and be on simplex."""
         from kernel.coordizer_v2.geometry import frechet_mean
+
         basins = list(sample_compression_result.compressed.values())[:20]
         mean = frechet_mean(basins)
         assert abs(mean.sum() - 1.0) < 1e-8
