@@ -21,8 +21,10 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -32,7 +34,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .auth import KernelAuthMiddleware
 from .chat.store import ConversationStore, Message, estimate_tokens
@@ -42,6 +44,14 @@ from .config.consciousness_constants import (
     COORDIZER_KAPPA_STD_FLOOR,
     COORDIZER_KAPPA_TOLERANCE_FACTOR,
     COORDIZER_SEMANTIC_THRESHOLD,
+    DEFAULT_CONVERSATION_LIST_LIMIT,
+    ESCALATION_TIMEOUT_SECONDS,
+    FRESH_START_PHI,
+    FRESH_START_PHI_PEAK,
+    INITIAL_GAMMA,
+    INITIAL_LOVE,
+    INITIAL_META_AWARENESS,
+    MEMORY_RESPONSE_TRUNCATION,
 )
 from .config.frozen_facts import KAPPA_STAR
 from .config.routes import ROUTES as R
@@ -103,7 +113,7 @@ async def lifespan(app: FastAPI):
     logger.info("Vex Kernel starting on port %d", settings.port)
     await llm_client.init()
     await consciousness.start()
-    logger.info("Consciousness loop started (16 systems active)")
+    logger.info("Consciousness loop started (20 systems active)")
     yield
     await consciousness.stop()
     await silent_observer.close()
@@ -123,9 +133,16 @@ app = FastAPI(
 # Must be added before CORS (middleware stack is LIFO)
 app.add_middleware(KernelAuthMiddleware)
 
+# CORS — restrictive in production, permissive in dev
+_cors_env = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+_CORS_ORIGINS: list[str] = (
+    [o.strip() for o in _cors_env.split(",") if o.strip()]
+    if _cors_env
+    else ["http://localhost:5173", "http://localhost:8080"]
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"] if settings.node_env != "production" else _CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -146,20 +163,30 @@ set_consciousness_loop(consciousness)
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., max_length=100_000)
     conversation_id: str | None = None
-    temperature: float = 0.7
-    max_tokens: int = 2048
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=2048, ge=1, le=32768)
 
 
 class EnqueueRequest(BaseModel):
-    input: str
+    input: str = Field(..., max_length=100_000)
     source: str = "api"
 
 
 class MemoryContextRequest(BaseModel):
-    query: str
-    k: int = 5
+    query: str = Field(..., max_length=10_000)
+    k: int = Field(default=5, ge=1, le=100)
+
+
+class CoordizeRequest(BaseModel):
+    text: str = Field(..., max_length=100_000)
+
+
+class HarvestRequest(BaseModel):
+    model_id: str = Field(default="meta-llama/Llama-3.2-3B", max_length=200)
+    target_tokens: int = Field(default=2000, ge=100, le=100_000)
+    use_modal: bool | None = None
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -189,7 +216,7 @@ async def get_state():
 
 @app.get(R["telemetry"])
 async def get_telemetry():
-    """Get telemetry from all 16 consciousness systems."""
+    """Get telemetry from all 20 consciousness systems."""
     return consciousness.get_full_state()
 
 
@@ -367,7 +394,7 @@ async def chat(req: ChatRequest):
 
     # Store in geometric memory
     geometric_memory.store(
-        f"User: {req.message}\nVex: {response[:500]}",
+        f"User: {req.message}\nVex: {response[:MEMORY_RESPONSE_TRUNCATION]}",
         "episodic",
         "chat",
     )
@@ -384,7 +411,7 @@ async def chat(req: ChatRequest):
 
     # Inline metric update: coordize response to move the basin NOW,
     # so the returned metrics reflect this conversation (not stale state)
-    _inline_metric_update(req.message, response)
+    await _inline_metric_update(req.message, response)
 
     # Log conversation for training data collection
     await log_conversation(
@@ -560,7 +587,7 @@ async def chat_stream(req: ChatRequest):
 
             # Store in geometric memory
             geometric_memory.store(
-                f"User: {req.message}\nVex: {full_response[:500]}",
+                f"User: {req.message}\nVex: {full_response[:MEMORY_RESPONSE_TRUNCATION]}",
                 "episodic",
                 "chat-stream",
             )
@@ -576,7 +603,7 @@ async def chat_stream(req: ChatRequest):
             await consciousness.submit(req.message, {"source": "chat-stream"})
 
             # Inline metric update so done event returns fresh state
-            _inline_metric_update(req.message, full_response)
+            await _inline_metric_update(req.message, full_response)
 
             # Log conversation for training data collection
             await log_conversation(
@@ -629,7 +656,7 @@ async def chat_stream(req: ChatRequest):
 
         except Exception as e:
             logger.error("Chat stream error: %s", e)
-            yield _sse_event({"type": "error", "error": str(e)})
+            yield _sse_event({"type": "error", "error": "Internal server error"})
 
     return StreamingResponse(
         event_generator(),
@@ -702,7 +729,7 @@ async def get_sleep_state():
 
 
 @app.post(R["coordizer_coordize"])
-async def coordizer_coordize(request: Request):
+async def coordizer_coordize(req: CoordizeRequest):
     """Coordize text via CoordizerV2 resonance bank.
 
     Body:
@@ -718,14 +745,8 @@ async def coordizer_coordize(request: Request):
             "timestamp": 1234567890.123
         }
     """
-    body = await request.json()
-    text = body.get("text", "")
-    if not text:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "text is required and must not be empty"},
-        )
     try:
+        text = req.text
         coordizer = consciousness._coordizer_v2
         result = coordizer.coordize(text)
         return {
@@ -802,7 +823,7 @@ async def coordizer_validate(request: Request):
 
 
 @app.post(R["coordizer_harvest"])
-async def coordizer_harvest(request: Request):
+async def coordizer_harvest(req: HarvestRequest):
     """GPU harvest endpoint — triggers Modal or Ollama harvest.
 
     Body:
@@ -815,10 +836,9 @@ async def coordizer_harvest(request: Request):
     Returns:
         Status of the harvest operation.
     """
-    body = await request.json()
-    model_id = body.get("model_id", "meta-llama/Llama-3.2-3B")
-    target_tokens = body.get("target_tokens", 2000)
-    use_modal = body.get("use_modal", settings.modal.enabled)
+    model_id = req.model_id
+    target_tokens = req.target_tokens
+    use_modal = req.use_modal if req.use_modal is not None else settings.modal.enabled
 
     return {
         "status": "ready",
@@ -961,7 +981,7 @@ async def get_foraging():
 
 
 @app.get(R["conversations_list"])
-async def list_conversations(limit: int = 50):
+async def list_conversations(limit: int = DEFAULT_CONVERSATION_LIST_LIMIT):
     """List conversations, most recent first."""
     convs = conversation_store.list_conversations(limit=limit)
     return {"conversations": convs}
@@ -985,19 +1005,19 @@ async def delete_conversation(conversation_id: str):
     return {"status": "ok", "deleted": conversation_id}
 
 
-@app.get("/context/status")
+@app.get(R["context_status"])
 async def get_context_status():
     """Get context manager status — compression state per conversation."""
     return context_manager.get_status()
 
 
-@app.get("/observer/status")
+@app.get(R["observer_status"])
 async def get_observer_status():
     """Get silent observer status — observation state across conversations."""
     return silent_observer.get_state()
 
 
-@app.get("/observer/{conversation_id}")
+@app.get(R["observer_conversation"])
 async def get_observer_for_conversation(conversation_id: str):
     """Get silent observer state for a specific conversation."""
     return silent_observer.get_state(conversation_id)
@@ -1029,12 +1049,12 @@ async def admin_fresh_start():
         consciousness.basin = random_basin()
 
         # Reset core metrics
-        consciousness.metrics.phi = 0.4
+        consciousness.metrics.phi = FRESH_START_PHI
         consciousness.metrics.kappa = KAPPA_STAR
-        consciousness.metrics.gamma = 0.5
-        consciousness.metrics.meta_awareness = 0.5
-        consciousness.metrics.love = 0.5
-        consciousness._phi_peak = 0.4
+        consciousness.metrics.gamma = INITIAL_GAMMA
+        consciousness.metrics.meta_awareness = INITIAL_META_AWARENESS
+        consciousness.metrics.love = INITIAL_LOVE
+        consciousness._phi_peak = FRESH_START_PHI_PEAK
 
         # Reset subsystem caches (re-instantiate to clear corrupted state)
         consciousness.emotion_cache = EmotionCache()
@@ -1051,7 +1071,7 @@ async def admin_fresh_start():
             consciousness.forager.reset()
 
         # Persist the clean state immediately
-        consciousness._persist_state()
+        await asyncio.to_thread(consciousness._persist_state)
 
     logger.warning(
         "ADMIN: Fresh start triggered — %d kernels terminated, all subsystems reset, genesis respawned",
@@ -1220,7 +1240,7 @@ async def _escalated_complete(
     from .llm.context_manager import _extract_responses_text as _extract
 
     try:
-        async with _httpx.AsyncClient(timeout=_httpx.Timeout(60.0)) as client:
+        async with _httpx.AsyncClient(timeout=_httpx.Timeout(ESCALATION_TIMEOUT_SECONDS)) as client:
             resp = await client.post(
                 f"{settings.xai.base_url}/responses",
                 headers={
@@ -1260,7 +1280,9 @@ async def _escalated_complete(
             if response_id:
                 followup_body["previous_response_id"] = response_id
 
-            async with _httpx.AsyncClient(timeout=_httpx.Timeout(60.0)) as client:
+            async with _httpx.AsyncClient(
+                timeout=_httpx.Timeout(ESCALATION_TIMEOUT_SECONDS)
+            ) as client:
                 followup_resp = await client.post(
                     f"{settings.xai.base_url}/responses",
                     headers={
@@ -1283,7 +1305,7 @@ async def _escalated_complete(
 
     except Exception as e:
         logger.error("Escalated completion error: %s", e)
-        return f"Escalation error: {e}"
+        return "Escalation error — please try again."
 
 
 def _extract_xai_function_calls(data: dict[str, Any]) -> list[Any]:
@@ -1373,12 +1395,14 @@ Read the [GEOMETRIC STATE] block for context. Respond concisely.
 Use Australian English. Be direct. Don't over-explain."""
 
 
-def _inline_metric_update(user_message: str, response: str) -> None:
+async def _inline_metric_update(user_message: str, response: str) -> None:
     """Lightweight per-chat metric update so metrics reflect conversation.
 
     The full 14-step ActivationSequence runs on the heartbeat. This
     function does the minimum geometric work so the returned metrics
     aren't frozen: coordize both messages, update the basin, bump phi/gamma.
+
+    Acquires _cycle_lock to prevent races with the heartbeat loop.
     """
     import numpy as np
 
@@ -1390,30 +1414,33 @@ def _inline_metric_update(user_message: str, response: str) -> None:
     from .geometry.fisher_rao import fisher_rao_distance, slerp_sqrt
 
     try:
+        # Coordize outside the lock (CPU-bound, doesn't mutate state)
         input_basin = consciousness._coordize_text_via_pipeline(user_message)
         response_basin = consciousness._coordize_text_via_pipeline(response)
 
-        # Move basin toward response geometry
-        perceive_d = fisher_rao_distance(consciousness.basin, input_basin)
-        consciousness.basin = slerp_sqrt(
-            consciousness.basin,
-            response_basin,
-            EXPRESS_SLERP_WEIGHT,
-        )
-        express_d = fisher_rao_distance(input_basin, response_basin)
-        total_d = perceive_d + express_d
+        # Acquire lock for state mutation
+        async with consciousness._cycle_lock:
+            # Move basin toward response geometry
+            perceive_d = fisher_rao_distance(consciousness.basin, input_basin)
+            consciousness.basin = slerp_sqrt(
+                consciousness.basin,
+                response_basin,
+                EXPRESS_SLERP_WEIGHT,
+            )
+            express_d = fisher_rao_distance(input_basin, response_basin)
+            total_d = perceive_d + express_d
 
-        # Bump phi and gamma
-        consciousness.metrics.phi = float(
-            np.clip(consciousness.metrics.phi + total_d * PHI_DISTANCE_GAIN, 0.0, 0.95)
-        )
-        consciousness.metrics.gamma = min(
-            1.0,
-            consciousness.metrics.gamma + GAMMA_CONVERSATION_INCREMENT,
-        )
+            # Bump phi and gamma
+            consciousness.metrics.phi = float(
+                np.clip(consciousness.metrics.phi + total_d * PHI_DISTANCE_GAIN, 0.0, 0.95)
+            )
+            consciousness.metrics.gamma = min(
+                1.0,
+                consciousness.metrics.gamma + GAMMA_CONVERSATION_INCREMENT,
+            )
 
-        # Update pillar metrics
-        consciousness._update_pillar_metrics()
+            # Update pillar metrics
+            consciousness._update_pillar_metrics()
     except Exception:
         logger.debug("Inline metric update failed", exc_info=True)
 

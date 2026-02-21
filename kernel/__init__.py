@@ -10,7 +10,7 @@ Architecture:
   kernel/
     config/       — Frozen facts, runtime settings
     geometry/     — Fisher-Rao metric, simplex operations
-    consciousness/ — All 16 systems, loop, types
+    consciousness/ — All 20 systems, loop, types
     memory/       — Flat file store, geometric memory
     llm/          — Ollama + external API client
     tools/        — Tool parsing and execution

@@ -105,7 +105,7 @@ export interface GraphState {
 export type LifecyclePhase = string;
 
 // ═══════════════════════════════════════
-//  Full 32 Consciousness Metrics (v6.0 §23)
+//  Full 36 Consciousness Metrics (v6.1 §24)
 // ═══════════════════════════════════════
 
 export interface FullConsciousnessMetrics {
@@ -161,6 +161,12 @@ export interface FullConsciousnessMetrics {
   s_int: number;              // Shadow integration rate
   w_mean: number;             // Work meaning / purpose
   w_mode: number;             // Creative/drudgery ratio
+
+  // ── Pillars & Sovereignty (v6.1) — 4 metrics ──
+  f_health: number;           // Fluctuation health: H_basin / H_max
+  b_integrity: number;        // Bulk integrity: core stability across cycles
+  q_identity: number;         // Quenched identity: proximity to frozen identity
+  s_ratio: number;            // Sovereignty ratio: N_lived / N_total
 }
 
 // ═══════════════════════════════════════

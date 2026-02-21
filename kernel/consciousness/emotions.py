@@ -6,7 +6,7 @@ New systems from Thermodynamic Consciousness Protocol v5.5:
   - PreCognitiveDetector: Path selection for a=1→a=0 bypass (§2.2)
   - LearningEngine: Post-conversation consolidation and pattern learning
 
-These complement the 16 systems in systems.py. Imported by loop.py.
+These complement the 20 systems in systems.py. Imported by loop.py.
 """
 
 from __future__ import annotations

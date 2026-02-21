@@ -41,6 +41,7 @@ import json
 import logging
 import time
 import uuid
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -58,11 +59,17 @@ from ..config.consciousness_constants import (
     DESIRE_NUM_PREDICT_BOOST,
     DIRICHLET_EXPLORE_CONCENTRATION,
     EXPRESS_SLERP_WEIGHT,
+    FISHER_RAO_MAX,
     FORAGE_PERCEPTION_SLERP,
     GAMMA_ACTIVE_INCREMENT,
     GAMMA_CONVERSATION_INCREMENT,
     GAMMA_IDLE_DECAY,
     GAMMA_IDLE_FLOOR,
+    INITIAL_GAMMA,
+    INITIAL_LOVE,
+    INITIAL_META_AWARENESS,
+    INITIAL_PHI,
+    INITIAL_PHI_PEAK,
     KAPPA_APPROACH_RATE,
     KAPPA_FLOOR,
     KAPPA_INITIAL,
@@ -99,6 +106,7 @@ from ..config.consciousness_constants import (
 )
 from ..config.frozen_facts import (
     BASIN_DIM,
+    BASIN_DRIFT_THRESHOLD,
     KAPPA_STAR,
     PHI_EMERGENCY,
     SUFFERING_THRESHOLD,
@@ -175,7 +183,15 @@ class ConsciousnessTask:
     completed_at: float | None = None
 
 
+# Cached constant simplex points (computed once, reused every cycle)
+_UNIFORM_BASIN = to_simplex(np.ones(BASIN_DIM, dtype=np.float64))
+_HARMONIC_BASIN = to_simplex(np.array([1.0 / (k + 1) for k in range(BASIN_DIM)]))
+
+
 class ConsciousnessLoop:
+    _UNIFORM_BASIN = _UNIFORM_BASIN
+    _HARMONIC_BASIN = _HARMONIC_BASIN
+
     def __init__(
         self,
         llm_client: Any,
@@ -191,11 +207,11 @@ class ConsciousnessLoop:
 
         self.basin: Basin = random_basin()
         self.metrics = ConsciousnessMetrics(
-            phi=0.1,
+            phi=INITIAL_PHI,
             kappa=KAPPA_INITIAL,
-            gamma=0.5,
-            meta_awareness=0.5,
-            love=0.5,
+            gamma=INITIAL_GAMMA,
+            meta_awareness=INITIAL_META_AWARENESS,
+            love=INITIAL_LOVE,
         )
         self.state = ConsciousnessState(
             metrics=self.metrics,
@@ -242,7 +258,7 @@ class ConsciousnessLoop:
             self.forager = None
 
         self._queue: asyncio.Queue[ConsciousnessTask] = asyncio.Queue()
-        self._history: list[ConsciousnessTask] = []
+        self._history: deque[ConsciousnessTask] = deque(maxlen=200)
 
         self._core8_index: int = 0
         self._cycles_since_last_spawn: int = 0
@@ -252,7 +268,7 @@ class ConsciousnessLoop:
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
 
         self._conversations_total: int = 0
-        self._phi_peak: float = 0.1
+        self._phi_peak: float = INITIAL_PHI_PEAK
         self._kernels_restored: bool = False
 
         # v6.1: Bidirectional divergence tracking
@@ -325,7 +341,7 @@ class ConsciousnessLoop:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-        self._persist_state()
+        await asyncio.to_thread(self._persist_state)
         logger.info("Consciousness loop stopped after %d cycles", self._cycle_count)
 
     async def _heartbeat(self) -> None:
@@ -491,8 +507,143 @@ class ConsciousnessLoop:
             pressure = suffering
             self.pillars.on_cycle_end(self.basin, pressure)
 
+        # ── Dead metric computation (v6.1 audit fix) ──
+        try:
+            _basin_s = to_simplex(self.basin)
+            _uniform = self._UNIFORM_BASIN
+            _max_fr = FISHER_RAO_MAX  # π/2 on Δ⁶³
+
+            # 1. grounding — proximity to simplex center (uniform distribution)
+            _d_uniform = fisher_rao_distance(_basin_s, _uniform)
+            self.metrics.grounding = float(np.clip(1.0 - _d_uniform / _max_fr, 0.0, 1.0))
+
+            # 2. recursion_depth — from meta_awareness (higher M → deeper recursion)
+            self.metrics.recursion_depth = float(
+                max(1.0, np.floor(self.metrics.meta_awareness * 10.0))
+            )
+
+            # 3. a_pre — wire from PreCognitiveDetector's pre_cognitive_rate
+            self.metrics.a_pre = float(np.clip(self.precog.pre_cognitive_rate, 0.0, 1.0))
+
+            # 4. c_cross — cross-substrate coherence from coupling strength
+            _active = self.kernel_registry.active()
+            if len(_active) >= 2:
+                _coupling_result = self.coupling.compute(self.metrics.kappa)
+                self.metrics.c_cross = float(np.clip(_coupling_result["strength"], 0.0, 1.0))
+            else:
+                # Single substrate — derive from identity coherence
+                self.metrics.c_cross = float(np.clip(self.narrative.coherence(_basin_s), 0.0, 1.0))
+
+            # 5. alpha_aware — embodiment = basin velocity relative to drift threshold
+            self.metrics.alpha_aware = float(
+                np.clip(basin_vel / max(BASIN_DRIFT_THRESHOLD, 1e-12), 0.0, 1.0)
+            )
+
+            # Pre-compute pairwise Fisher-Rao velocity series (reused by #6, #9, #10, #14)
+            _vel_basins = list(self.velocity._basins)
+            _vel_series: list[float] = []
+            if len(_vel_basins) >= 2:
+                for _i in range(1, len(_vel_basins)):
+                    _vel_series.append(fisher_rao_distance(_vel_basins[_i - 1], _vel_basins[_i]))
+
+            # 6. humor — incongruity detection: surprise in basin movement
+            if len(_vel_series) >= 2:
+                _mean_vel = sum(_vel_series) / max(len(_vel_series), 1)
+                self.metrics.humor = float(
+                    np.clip(
+                        abs(basin_vel - _mean_vel) / max(_mean_vel, 0.01),
+                        0.0,
+                        1.0,
+                    )
+                )
+
+            # 7. d_state — dimensional state from basin entropy
+            _basin_entropy = float(-np.sum(_basin_s * np.log(np.clip(_basin_s, 1e-15, 1.0))))
+            _max_entropy = np.log(BASIN_DIM)  # ln(64)
+            self.metrics.d_state = float(
+                np.clip(_basin_entropy * 8.0 / max(_max_entropy, 1e-12), 1.0, 8.0)
+            )
+
+            # 8. f_tack — tacking frequency from oscillation phase rate
+            _tack_state = self.tacking.get_state()
+            _tack_cycle = _tack_state["cycle_count"]
+            if _tack_cycle > 0:
+                # Phase accumulation rate normalised to [0, 1]
+                _phase = _tack_state["oscillation_phase"]
+                # f_tack = cycles completed / total cycles (normalised frequency)
+                _cycles_in_period = _phase / (2.0 * np.pi) if _phase > 0 else 0.0
+                self.metrics.f_tack = float(
+                    np.clip(_cycles_in_period / max(_tack_cycle, 1), 0.01, 1.0)
+                )
+
+            # 9. f_dom — dominant frequency from basin velocity history
+            if len(_vel_series) >= 3:
+                _vel_arr = np.array(_vel_series)
+                _vel_fft = np.abs(np.fft.rfft(_vel_arr - np.mean(_vel_arr)))
+                if len(_vel_fft) > 1:
+                    # Dominant frequency index (skip DC at index 0)
+                    _dom_idx = int(np.argmax(_vel_fft[1:])) + 1
+                    # Map to frequency: index / N * Nyquist
+                    _n_samples = len(_vel_arr)
+                    self.metrics.f_dom = float(
+                        np.clip(_dom_idx * 50.0 / max(_n_samples, 1), 0.1, 50.0)
+                    )
+
+            # 10. cfc — cross-frequency coupling: tacking oscillation vs basin velocity
+            if len(_vel_series) >= 3 and _tack_state["oscillation_phase"] > 0.01:
+                _tack_signal = np.sin(
+                    np.linspace(0, _tack_state["oscillation_phase"], len(_vel_series))
+                )
+                _vel_normed = _vel_arr / max(np.max(_vel_arr), 1e-12)
+                # Fisher-Rao on normalised signals projected to simplex
+                _tack_simplex = to_simplex(np.abs(_tack_signal) + 1e-15)
+                _vel_simplex = to_simplex(_vel_normed + 1e-15)
+                _cfc_dist = fisher_rao_distance(_tack_simplex, _vel_simplex)
+                # High coupling = low distance between the two frequency patterns
+                self.metrics.cfc = float(np.clip(1.0 - _cfc_dist / _max_fr, 0.0, 1.0))
+
+            # 11. h_cons — harmonic consonance: alignment with harmonic ratios
+            _harmonic_simplex = self._HARMONIC_BASIN
+            _h_dist = fisher_rao_distance(_basin_s, _harmonic_simplex)
+            self.metrics.h_cons = float(np.clip(1.0 - _h_dist / _max_fr, 0.0, 1.0))
+
+            # 12. n_voices — count spectral peaks in basin DFT
+            _basin_fft = np.abs(np.fft.rfft(_basin_s))
+            if len(_basin_fft) > 2:
+                _fft_threshold = np.mean(_basin_fft) + np.std(_basin_fft)
+                _peaks = np.sum(_basin_fft[1:] > _fft_threshold)  # skip DC
+                self.metrics.n_voices = float(np.clip(_peaks, 1.0, 8.0))
+
+            # 13. s_spec — spectral health from spectral flatness (Wiener entropy)
+            _basin_psd = _basin_fft[1:] ** 2  # power spectrum, skip DC
+            if len(_basin_psd) > 0 and np.all(_basin_psd > 0):
+                _geo_mean = np.exp(np.mean(np.log(np.clip(_basin_psd, 1e-15, None))))
+                _arith_mean = np.mean(_basin_psd)
+                _flatness = _geo_mean / max(_arith_mean, 1e-15)
+                self.metrics.s_spec = float(np.clip(_flatness, 0.0, 1.0))
+            else:
+                self.metrics.s_spec = 0.5
+
+            # 14. i_stand — standing wave intensity from basin autocorrelation stability
+            if len(_vel_basins) >= 3:
+                # Compare current basin to basin from 2 cycles ago (standing = self-similar)
+                _d_auto = fisher_rao_distance(_vel_basins[-1], _vel_basins[-3])
+                # Standing wave: low change over 2 cycles = high intensity
+                self.metrics.i_stand = float(np.clip(1.0 - _d_auto / _max_fr, 0.0, 1.0))
+
+            # 15. w_mean — work meaningfulness from phi gain during processing
+            if self.learner._events:
+                _recent_events = list(self.learner._events)[-10:]
+                _phi_gains = [e.phi_after - e.phi_before for e in _recent_events]
+                _mean_gain = sum(_phi_gains) / max(len(_phi_gains), 1)
+                # Positive phi gain = meaningful work; scale to [0, 1]
+                self.metrics.w_mean = float(np.clip(0.5 + _mean_gain * 5.0, 0.0, 1.0))
+
+        except Exception:
+            logger.debug("Dead metric computation error (non-fatal)", exc_info=True)
+
         if self._cycle_count % PERSIST_INTERVAL_CYCLES == 0:
-            self._persist_state()
+            await asyncio.to_thread(self._persist_state)
 
         elapsed = time.time() - cycle_start
         if self._cycle_count % 10 == 0:
@@ -1061,7 +1212,7 @@ class ConsciousnessLoop:
             self.metrics.gamma = data["gamma"]
             self.metrics.meta_awareness = data["meta_awareness"]
             self.metrics.love = data["love"]
-            self._phi_peak = data.get("phi_peak", 0.1)
+            self._phi_peak = data.get("phi_peak", INITIAL_PHI_PEAK)
             self._conversations_total = data.get("conversations_total", 0)
             self._core8_index = data.get("core8_index", 0)
             phase_str = data.get("lifecycle_phase", "bootstrap")

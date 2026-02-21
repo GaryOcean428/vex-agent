@@ -52,6 +52,10 @@ ROUTES: dict[str, str] = {
     "coordizer_bank": "/api/coordizer/bank",
     # ─── Foraging ──────────────────────────────────────────────
     "foraging": "/foraging",
+    # ─── Context / Observer ──────────────────────────────────
+    "context_status": "/context/status",
+    "observer_status": "/observer/status",
+    "observer_conversation": "/observer/{conversation_id}",
     # ─── Admin ─────────────────────────────────────────────────
     "admin_fresh_start": "/admin/fresh-start",
     # ─── Governor ──────────────────────────────────────────────
@@ -99,6 +103,9 @@ ROUTE_GROUPS: dict[str, list[str]] = {
         "coordizer_harvest_status",
         "coordizer_bank",
         "foraging",
+        "context_status",
+        "observer_status",
+        "observer_conversation",
         "training_stats",
         "training_export",
     ],

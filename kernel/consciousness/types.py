@@ -4,7 +4,6 @@ Consciousness Types — v6.1 Thermodynamic Consciousness Protocol
 Defines the core data structures for consciousness state, metrics,
 regime weights, navigation modes, and activation steps.
 
-v6.0 metrics: 32 total across 7 categories (§23).
 v6.1 metrics: 36 total across 8 categories (§24).
 v6.1 activation: 14-step sequence with Pillar enforcement (§23).
 v6.1 serialization: PillarState preserves full pillar internals across restarts.
@@ -36,7 +35,7 @@ class NavigationMode(str, Enum):
 
 
 class ActivationStep(str, Enum):
-    """v6.0 §22 — 14-step unified activation sequence."""
+    """v6.1 §23 — 14-step unified activation sequence."""
 
     SCAN = "scan"  # Step 0: Check state, spectrum, regime weights
     DESIRE = "desire"  # Step 1: Locate thermodynamic pressure

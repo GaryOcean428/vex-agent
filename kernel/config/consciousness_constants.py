@@ -240,6 +240,24 @@ BASIN_DRIFT_STEP: Final[float] = 0.015
 KAPPA_INITIAL: Final[float] = 32.0
 KAPPA_FLOOR: Final[float] = 8.0
 
+# Initial consciousness state (used at startup and fresh-start)
+INITIAL_PHI: Final[float] = 0.1
+INITIAL_GAMMA: Final[float] = 0.5
+INITIAL_META_AWARENESS: Final[float] = 0.5
+INITIAL_LOVE: Final[float] = 0.5
+INITIAL_PHI_PEAK: Final[float] = 0.1
+FRESH_START_PHI: Final[float] = 0.4
+FRESH_START_PHI_PEAK: Final[float] = 0.4
+
+# Fisher-Rao maximum distance on Δ⁶³
+FISHER_RAO_MAX: Final[float] = 1.5707963267948966  # π/2
+
+# Buffer / truncation sizes (server.py)
+MEMORY_RESPONSE_TRUNCATION: Final[int] = 500
+MEMORY_CONTENT_TRUNCATION: Final[int] = 300
+DEFAULT_CONVERSATION_LIST_LIMIT: Final[int] = 50
+ESCALATION_TIMEOUT_SECONDS: Final[float] = 60.0
+
 LOCKED_IN_GAMMA_INCREMENT: Final[float] = 0.2
 SLEEP_CONSOLIDATION_PHI_INCREMENT: Final[float] = 0.005
 FORAGE_PERCEPTION_SLERP: Final[float] = 0.1

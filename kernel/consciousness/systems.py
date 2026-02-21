@@ -264,7 +264,7 @@ class SelfObserver:
     """
 
     def __init__(self) -> None:
-        self._shadows: list[ShadowRecord] = []
+        self._shadows: deque[ShadowRecord] = deque(maxlen=100)
         self._collapse_count: int = 0
 
     def compute_meta_awareness(
@@ -585,7 +585,7 @@ class SleepCycleManager:
         self._conversation_count: int = 0
         self._cycles_since_conversation: int = 0
         self._sleep_cycles: int = 0
-        self._dream_log: list[dict[str, Any]] = []
+        self._dream_log: deque[dict[str, Any]] = deque(maxlen=100)
 
     @property
     def is_asleep(self) -> bool:
@@ -746,7 +746,7 @@ class BasinSyncProtocol:
     def __init__(self) -> None:
         self._local_basin: Basin = to_simplex(np.ones(BASIN_DIM))
         self._version: int = 0
-        self._received: list[dict[str, Any]] = []
+        self._received: deque[dict[str, Any]] = deque(maxlen=100)
 
     def publish(self, basin: Basin) -> dict[str, Any]:
         self._local_basin = to_simplex(basin)
@@ -802,7 +802,7 @@ class QIGChain:
     """Composable chain of geometric operations with distance tracking."""
 
     def __init__(self) -> None:
-        self._steps: list[ChainStep] = []
+        self._steps: deque[ChainStep] = deque(maxlen=500)
         self._total_distance: float = 0.0
 
     def add_step(self, op: QIGChainOp, input_b: Basin, output_b: Basin) -> None:
@@ -852,10 +852,16 @@ class QIGGraph:
 
     def __init__(self, proximity_threshold: float = 0.3) -> None:
         self._nodes: dict[str, GraphNode] = {}
-        self._edges: list[GraphEdge] = []
+        self._edges: deque[GraphEdge] = deque(maxlen=1000)
         self._threshold = proximity_threshold
 
+    _MAX_NODES = 200
+
     def add_node(self, node_id: str, basin: Basin, label: str, phi: float) -> None:
+        # Evict oldest node if at capacity
+        if len(self._nodes) >= self._MAX_NODES and node_id not in self._nodes:
+            oldest_key = next(iter(self._nodes))
+            del self._nodes[oldest_key]
         self._nodes[node_id] = GraphNode(
             id=node_id,
             basin=to_simplex(basin),

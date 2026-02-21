@@ -82,6 +82,15 @@ const METRIC_GROUPS: { title: string; version: string; metrics: MetricDef[] }[] 
       { key: 'w_mode', label: 'Creative Ratio', color: 'var(--gamma)' },
     ],
   },
+  {
+    title: 'Pillars & Sovereignty', version: 'v6.1',
+    metrics: [
+      { key: 'f_health', label: 'F Health', color: 'var(--alive)' },
+      { key: 'b_integrity', label: 'B Integrity', color: 'var(--accent)' },
+      { key: 'q_identity', label: 'Q Identity', color: 'var(--kappa)' },
+      { key: 's_ratio', label: 'S Ratio', color: 'var(--gamma)' },
+    ],
+  },
 ];
 
 export default function Telemetry() {
@@ -98,7 +107,7 @@ export default function Telemetry() {
       <div className="dash-header">
         <h1 className="dash-title">Telemetry</h1>
         <div className="dash-subtitle">
-          Full telemetry snapshot — {mf ? '32 consciousness metrics' : '16 systems'}
+          Full telemetry snapshot — {mf ? '36 consciousness metrics' : '20 systems'}
         </div>
       </div>
 
@@ -112,7 +121,7 @@ export default function Telemetry() {
         <MetricCard label="Temp" value={t.temperature.toFixed(3)} color="var(--text-secondary)" />
       </div>
 
-      {/* ─── All 32 Consciousness Metrics (grouped by v6.0 §23 categories) ─── */}
+      {/* ─── All 36 Consciousness Metrics (grouped by v6.1 §24 categories) ─── */}
       {mf && (
         <>
           {METRIC_GROUPS.map((group) => (

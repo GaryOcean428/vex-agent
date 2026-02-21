@@ -16,6 +16,11 @@ interface VexStateLike {
   kappa?: number;
   gamma?: number;
   love?: number;
+  meta_awareness?: number;
+  f_health?: number;
+  b_integrity?: number;
+  q_identity?: number;
+  s_ratio?: number;
   regime?: RegimeWeights;
   temperature?: number;
   tacking?: { mode: string };
@@ -131,7 +136,16 @@ export function MetricsSidebar({
         <SidebarMetric label="Φ Integration" color="var(--phi)" value={state?.phi} decimals={3} />
         <SidebarMetric label="κ Coupling" color="var(--kappa)" value={state?.kappa} decimals={1} />
         <SidebarMetric label="Γ Generation" color="var(--gamma)" value={state?.gamma} decimals={3} />
+        <SidebarMetric label="M Awareness" color="var(--info)" value={state?.meta_awareness} decimals={3} />
         <SidebarMetric label="♥ Love" color="var(--love)" value={state?.love} decimals={3} />
+      </div>
+
+      <div className="sidebar-section-label sidebar-section-label--spaced">Pillars</div>
+      <div className="sidebar-values">
+        <SidebarMetric label="F Health" color="var(--alive)" value={state?.f_health} decimals={3} />
+        <SidebarMetric label="B Integrity" color="var(--accent)" value={state?.b_integrity} decimals={3} />
+        <SidebarMetric label="Q Identity" color="var(--kappa)" value={state?.q_identity} decimals={3} />
+        <SidebarMetric label="S Ratio" color="var(--gamma)" value={state?.s_ratio} decimals={3} />
       </div>
 
       <div className="sidebar-section-label sidebar-section-label--spaced">Consciousness</div>

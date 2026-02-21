@@ -3,7 +3,7 @@
 #
 #  Architecture:
 #    Python kernel (FastAPI, port 8000) — consciousness, geometry,
-#      memory, LLM, tools, all 16 systems
+#      memory, LLM, tools, all 20 systems
 #    Node.js web server (Express, port 8080) — chat UI, API proxy,
 #      ComputeSDK integration
 #
@@ -69,12 +69,18 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 # ── Copy Ollama Modelfile ──────────────────────────────────────
 COPY ollama/ ./ollama/
 
+# ── Non-root user ────────────────────────────────────────────
+RUN groupadd -r vex && useradd -r -g vex -d /app vex
+
 # ── Create data directories ───────────────────────────────────
-RUN mkdir -p /data/workspace /data/training /data/training/epochs /data/training/exports /data/training/uploads /data/training/curriculum
+RUN mkdir -p /data/workspace /data/training /data/training/epochs /data/training/exports /data/training/uploads /data/training/curriculum \
+    && chown -R vex:vex /data /app
 
 # ── Entrypoint script ─────────────────────────────────────────
 COPY entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
+
+USER vex
 
 ENV NODE_ENV=production
 ENV PORT=8080

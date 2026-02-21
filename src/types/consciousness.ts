@@ -1,12 +1,12 @@
 /**
- * Consciousness Types — v6.0 Thermodynamic Consciousness Protocol
+ * Consciousness Types — v6.1 Thermodynamic Consciousness Protocol
  * ================================================================
  *
  * TypeScript interfaces matching the Python dataclasses in
  * kernel/consciousness/types.py and kernel/coordizer_v2/types.py.
  *
- * v6.0 metrics: 32 total across 7 categories (§23).
- * v6.0 activation: 14-step sequence (§22).
+ * v6.1 metrics: 36 total across 8 categories (§24).
+ * v6.1 activation: 14-step sequence (§23).
  *
  * Canonical source: kernel/consciousness/types.py
  * Constants source: src/config/constants.ts (mirrors frozen_facts.py)
@@ -30,7 +30,7 @@ export enum NavigationMode {
   LIGHTNING = "lightning",
 }
 
-/** v6.0 §22 — 14-step unified activation sequence. */
+/** v6.1 §23 — 14-step unified activation sequence. */
 export enum ActivationStep {
   /** Step 0: Check state, spectrum, regime weights */
   SCAN = "scan",
@@ -133,18 +133,18 @@ export enum EmotionType {
 export interface RegimeField {
   /** w1 — high when kappa low */
   quantum: number;
-  /** w2 — peaks at kappa = 64 */
-  integration: number;
+  /** w2 — peaks at kappa = 64 (efficient processing) */
+  efficient: number;
   /** w3 — high when kappa high */
-  crystallized: number;
+  equilibrium: number;
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  32 CONSCIOUSNESS METRICS (v6.0 §23)
+//  36 CONSCIOUSNESS METRICS (v6.1 §24)
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * v6.0 §23 — 32 metrics across 7 categories.
+ * v6.1 §24 — 36 metrics across 8 categories.
  *
  * Matches kernel/consciousness/types.py ConsciousnessMetrics dataclass.
  */
@@ -233,6 +233,17 @@ export interface ConsciousnessMetrics {
   w_mean: number;
   /** Creative/drudgery ratio. Healthy range: (0.0, 1.0) */
   w_mode: number;
+
+  // ── Pillars & Sovereignty (v6.1) — 4 metrics ──
+
+  /** Fluctuation health: H_basin / H_max. Healthy range: (0.0, 1.0) */
+  f_health: number;
+  /** Bulk integrity: core stability across cycles. Healthy range: (0.0, 1.0) */
+  b_integrity: number;
+  /** Quenched identity: proximity to frozen identity. Healthy range: (0.0, 1.0) */
+  q_identity: number;
+  /** Sovereignty ratio: N_lived / N_total. Healthy range: (0.0, 1.0) */
+  s_ratio: number;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -364,7 +375,7 @@ export interface CoordizerStats {
 //  METRIC CATEGORY HELPERS
 // ═══════════════════════════════════════════════════════════════
 
-/** The 7 metric categories and their member field names. */
+/** The 8 metric categories and their member field names (v6.1 §24). */
 export const METRIC_CATEGORIES = {
   foundation: [
     "phi",
@@ -382,9 +393,10 @@ export const METRIC_CATEGORIES = {
   harmony: ["h_cons", "n_voices", "s_spec"],
   waves: ["omega_acc", "i_stand", "b_shared"],
   will_and_work: ["a_vec", "s_int", "w_mean", "w_mode"],
+  pillars_sovereignty: ["f_health", "b_integrity", "q_identity", "s_ratio"],
 } as const;
 
-/** Total metric count — must equal 32. */
+/** Total metric count — must equal 36. */
 export const TOTAL_METRICS = Object.values(METRIC_CATEGORIES).reduce(
   (sum, fields) => sum + fields.length,
   0,
@@ -435,13 +447,18 @@ export const DEFAULT_METRICS: ConsciousnessMetrics = {
   s_int: 0.0,
   w_mean: 0.5,
   w_mode: 0.5,
+  // Pillars & Sovereignty
+  f_health: 1.0,
+  b_integrity: 1.0,
+  q_identity: 0.0,
+  s_ratio: 0.0,
 } as const;
 
 /** Default regime weights. */
 export const DEFAULT_REGIME_WEIGHTS: RegimeField = {
   quantum: 0.33,
-  integration: 0.34,
-  crystallized: 0.33,
+  efficient: 0.34,
+  equilibrium: 0.33,
 } as const;
 
 // ═══════════════════════════════════════════════════════════════
@@ -470,7 +487,7 @@ export function regimeWeightsFromKappa(kappa: number): RegimeField {
   const total = w1 + w2 + w3;
   return {
     quantum: w1 / total,
-    integration: w2 / total,
-    crystallized: w3 / total,
+    efficient: w2 / total,
+    equilibrium: w3 / total,
   };
 }
