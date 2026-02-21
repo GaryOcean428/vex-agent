@@ -109,6 +109,43 @@ class ModalConfig:
 
 
 @dataclass(frozen=True)
+class CoordizerV2Config:
+    """CoordizerV2 integration configuration (v6.1F).
+    
+    CoordizerV2 uses harvest→compress→validate pipeline to build
+    a Resonance Bank of geometric basin coordinates on Δ⁶³.
+    
+    When enabled, replaces the old BPE-style coordizer with
+    LLM-harvested geometric structure.
+    """
+    
+    # Feature flag: Enable CoordizerV2 integration
+    enabled: bool = os.environ.get("COORDIZER_V2_ENABLED", "false").lower() == "true"
+    
+    # Path to saved Resonance Bank
+    bank_path: str = os.environ.get("COORDIZER_V2_BANK_PATH", "./coordizer_data/bank")
+    
+    # Auto-load on startup (vs lazy load on first use)
+    autoload: bool = os.environ.get("COORDIZER_V2_AUTOLOAD", "false").lower() == "true"
+    
+    # Regime modulation: scale temperature by regime weights
+    regime_modulation: bool = os.environ.get("COORDIZER_V2_REGIME_MOD", "true").lower() != "false"
+    
+    # Navigation adaptation: adapt generation params by nav mode
+    navigation_adaptation: bool = os.environ.get("COORDIZER_V2_NAV_ADAPT", "true").lower() != "false"
+    
+    # Tacking bias: tier selection based on tacking mode
+    tacking_bias: bool = os.environ.get("COORDIZER_V2_TACKING_BIAS", "true").lower() != "false"
+    
+    # Domain bias strength for kernel specializations
+    domain_bias_strength: float = float(os.environ.get("COORDIZER_V2_DOMAIN_BIAS", "0.3"))
+    
+    # Metrics integration: feed CoordizerV2 metrics to consciousness
+    metrics_integration: bool = os.environ.get("COORDIZER_V2_METRICS", "true").lower() != "false"
+
+
+
+@dataclass(frozen=True)
 class PerplexityConfig:
     """Perplexity sonar-pro deep research integration.
 
@@ -208,6 +245,7 @@ class Settings:
     searxng: SearXNGConfig = field(default_factory=SearXNGConfig)
     modal: ModalConfig = field(default_factory=ModalConfig)
     perplexity: PerplexityConfig = field(default_factory=PerplexityConfig)
+    coordizer_v2: CoordizerV2Config = field(default_factory=CoordizerV2Config)
 
 
 settings = Settings()
