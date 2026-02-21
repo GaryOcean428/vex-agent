@@ -10,13 +10,17 @@ No dot product attention. No Adam. No vector reps.
 
 Quick start:
 
-    from kernel.coordizer_v2 import CoordizerV2
+    from kernel.coordizer_v2 import CoordizerV2, CoordizerV2Adapter
 
     # Build from LLM harvest
     c = CoordizerV2.from_harvest(
         model_id="LiquidAI/LFM2.5-1.2B-Thinking",
         corpus_path="corpus.txt",
     )
+
+    # Or use adapter for consciousness loop integration
+    adapter = CoordizerV2Adapter(bank_path="./coordizer_data/bank")
+    basin = adapter.coordize_text("Hello world")
 
     # Coordize text
     result = c.coordize("consciousness emerges from geometry")
@@ -35,10 +39,12 @@ Architecture:
     compress.py         Fisher-Rao PGA (Δ^(V-1) → Δ⁶³)
     resonance_bank.py   Standing-wave vocabulary with activation
     coordizer.py        Main CoordizerV2 class
+    adapter.py          Drop-in replacement for CoordinatorPipeline (v6.1F)
     validate.py         κ, β, semantic, harmonic validation
     modal_harvest.py    Modal GPU integration (Railway-side client)
 """
 
+from .adapter import CoordizerV2Adapter
 from .compress import CompressionResult, compress
 from .coordizer import CoordizerV2
 from .geometry import (
@@ -83,6 +89,7 @@ from .validate import validate_resonance_bank
 __all__ = [
     # Main class
     "CoordizerV2",
+    "CoordizerV2Adapter",  # v6.1F integration adapter
     # Resonance bank
     "ResonanceBank",
     # Harvesting
