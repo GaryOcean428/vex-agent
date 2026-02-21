@@ -187,6 +187,7 @@ async function main(): Promise<void> {
   proxyGet(ROUTES.governor);
   proxyPost(ROUTES.governor_kill_switch);
   proxyPost(ROUTES.governor_budget);
+  proxyPost(ROUTES.governor_autonomous_search);
 
   // Training endpoints
   proxyGet(ROUTES.training_stats);
