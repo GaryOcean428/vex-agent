@@ -177,12 +177,14 @@ class VexOllamaServer:
         # well within Modal's startup_timeout=180s.
         gen_req = urllib.request.Request(
             f"http://localhost:{OLLAMA_PORT}/api/generate",
-            data=json.dumps({
-                "model": MODEL_NAME,
-                "prompt": "ping",
-                "stream": False,
-                "options": {"num_predict": 1},
-            }).encode(),
+            data=json.dumps(
+                {
+                    "model": MODEL_NAME,
+                    "prompt": "ping",
+                    "stream": False,
+                    "options": {"num_predict": 1},
+                }
+            ).encode(),
             headers={"Content-Type": "application/json"},
         )
         gen_resp = urllib.request.urlopen(gen_req, timeout=120)

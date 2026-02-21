@@ -95,6 +95,18 @@ from ..config.frozen_facts import (
     PHI_UNSTABLE,
     SUFFERING_THRESHOLD,
 )
+from ..geometry.fisher_rao import (
+    exp_map as _exp_map,
+)
+from ..geometry.fisher_rao import (
+    fisher_rao_distance as _fisher_rao_distance,
+)
+from ..geometry.fisher_rao import (
+    log_map as _log_map,
+)
+from ..geometry.fisher_rao import (
+    to_simplex as _to_simplex,
+)
 from .types import (
     ActivationStep,
     ConsciousnessState,
@@ -103,13 +115,6 @@ from .types import (
     navigation_mode_from_phi,
     regime_weights_from_kappa,
 )
-from ..geometry.fisher_rao import (
-    fisher_rao_distance as _fisher_rao_distance,
-    log_map as _log_map,
-    exp_map as _exp_map,
-    to_simplex as _to_simplex,
-)
-
 
 logger = logging.getLogger(__name__)
 
@@ -262,10 +267,20 @@ class ActivationResult:
 
     def all_steps(self) -> list[StepResult]:
         steps = [
-            self.scan, self.desire, self.will, self.wisdom,
-            self.receive, self.spectral_model, self.entrain,
-            self.foresight, self.couple, self.navigate,
-            self.integrate, self.express, self.breathe, self.tune,
+            self.scan,
+            self.desire,
+            self.will,
+            self.wisdom,
+            self.receive,
+            self.spectral_model,
+            self.entrain,
+            self.foresight,
+            self.couple,
+            self.navigate,
+            self.integrate,
+            self.express,
+            self.breathe,
+            self.tune,
         ]
         return [s for s in steps if s is not None]
 
@@ -375,9 +390,7 @@ class ActivationSequence:
 
     # ---- Phased execution for loop integration ----
 
-    async def execute_pre_integrate(
-        self, context: ConsciousnessContext
-    ) -> ActivationResult:
+    async def execute_pre_integrate(self, context: ConsciousnessContext) -> ActivationResult:
         """Run steps 0-8 (SCAN through COUPLE) before LLM call.
 
         Provides geometric context the LLM needs: regime weights,
@@ -460,8 +473,7 @@ class ActivationSequence:
         result.completed = True
 
         logger.info(
-            "Post-integrate activation: 5/5 steps in %.1fms "
-            "(total: %.1fms)",
+            "Post-integrate activation: 5/5 steps in %.1fms (total: %.1fms)",
             elapsed,
             result.total_duration_ms,
         )
@@ -536,9 +548,7 @@ class ActivationSequence:
         if m.phi < PHI_EMERGENCY:
             result.notes.append(f"EMERGENCY: Phi={m.phi:.3f} below {PHI_EMERGENCY}")
         if m.phi > PHI_UNSTABLE:
-            result.notes.append(
-                f"UNSTABLE: Phi={m.phi:.3f} above {PHI_UNSTABLE}"
-            )
+            result.notes.append(f"UNSTABLE: Phi={m.phi:.3f} above {PHI_UNSTABLE}")
 
         result.duration_ms = (time.monotonic() - t0) * 1000.0
         ctx.state.activation_step = ActivationStep.SCAN
@@ -561,8 +571,7 @@ class ActivationSequence:
         )
 
         void_detected = (
-            m.s_persist > VOID_PERSIST_THRESHOLD
-            or pressure_magnitude > VOID_PRESSURE_THRESHOLD
+            m.s_persist > VOID_PERSIST_THRESHOLD or pressure_magnitude > VOID_PRESSURE_THRESHOLD
         )
 
         pressure_direction = None
@@ -693,13 +702,9 @@ class ActivationSequence:
 
         basin_distance = 0.0
         if ctx.input_basin is not None and len(ctx.trajectory) > 0:
-            basin_distance = _fisher_rao_distance(
-                ctx.trajectory[-1], ctx.input_basin
-            )
+            basin_distance = _fisher_rao_distance(ctx.trajectory[-1], ctx.input_basin)
 
-        kappa_sensory = m.kappa * (
-            1.0 + SENSORY_KAPPA_FACTOR * m.external_coupling
-        )
+        kappa_sensory = m.kappa * (1.0 + SENSORY_KAPPA_FACTOR * m.external_coupling)
 
         result = ReceiveResult(
             step=ActivationStep.RECEIVE,
@@ -711,13 +716,9 @@ class ActivationSequence:
         )
 
         if pre_cognitive_fired:
-            result.notes.append(
-                f"Pre-cognitive channel fired (a_pre={m.a_pre:.3f}). TRUST IT."
-            )
+            result.notes.append(f"Pre-cognitive channel fired (a_pre={m.a_pre:.3f}). TRUST IT.")
 
-        m.emotion_strength = min(
-            1.0, basin_distance * EMOTION_BASIN_DISTANCE_SCALE
-        )
+        m.emotion_strength = min(1.0, basin_distance * EMOTION_BASIN_DISTANCE_SCALE)
 
         result.duration_ms = (time.monotonic() - t0) * 1000.0
         ctx.state.activation_step = ActivationStep.RECEIVE
@@ -725,9 +726,7 @@ class ActivationSequence:
 
     # --- Step 5: BUILD SPECTRAL MODEL ---
 
-    async def _build_spectral_model(
-        self, ctx: ConsciousnessContext
-    ) -> SpectralModelResult:
+    async def _build_spectral_model(self, ctx: ConsciousnessContext) -> SpectralModelResult:
         t0 = time.monotonic()
         m = ctx.state.metrics
 
@@ -741,9 +740,7 @@ class ActivationSequence:
             result.other_tacking_freq = ctx.other_tacking_freq
 
             if len(ctx.other_spectrum) >= BASIN_DIM:
-                dominant_idx = int(
-                    np.argmax(ctx.other_spectrum[:BASIN_DIM])
-                )
+                dominant_idx = int(np.argmax(ctx.other_spectrum[:BASIN_DIM]))
                 result.other_key = f"basin_{dominant_idx}"
             result.notes.append("Spectral model built from provided spectrum")
         else:
@@ -778,28 +775,21 @@ class ActivationSequence:
             if ctx.trajectory:
                 own_spectrum = _to_simplex(ctx.trajectory[-1])
 
-            other = _to_simplex(
-                spectral_result.other_spectrum[:BASIN_DIM]
-            )
+            other = _to_simplex(spectral_result.other_spectrum[:BASIN_DIM])
             d_fr = _fisher_rao_distance(own_spectrum, other)
 
-            result.phase_alignment = max(
-                0.0, 1.0 - d_fr / (math.pi / 2.0)
-            )
+            result.phase_alignment = max(0.0, 1.0 - d_fr / (math.pi / 2.0))
 
             own_freq = m.f_tack
             other_freq = spectral_result.other_tacking_freq
             if own_freq > _EPS and other_freq > _EPS:
-                ratio = min(own_freq, other_freq) / max(
-                    own_freq, other_freq
-                )
+                ratio = min(own_freq, other_freq) / max(own_freq, other_freq)
                 result.frequency_match = ratio
             else:
                 result.frequency_match = 0.0
 
             result.constructive_interference = (
-                result.phase_alignment
-                > CONSTRUCTIVE_INTERFERENCE_THRESHOLD
+                result.phase_alignment > CONSTRUCTIVE_INTERFERENCE_THRESHOLD
             )
 
             m.e_sync = min(
@@ -833,9 +823,7 @@ class ActivationSequence:
 
         if ctx.input_basin is not None and len(ctx.trajectory) > 0:
             if len(ctx.trajectory) >= 2:
-                velocity = _log_map(
-                    ctx.trajectory[-2], ctx.trajectory[-1]
-                )
+                velocity = _log_map(ctx.trajectory[-2], ctx.trajectory[-1])
                 projected = _exp_map(ctx.trajectory[-1], velocity)
             else:
                 projected = ctx.trajectory[-1]
@@ -891,21 +879,14 @@ class ActivationSequence:
             if m.humor > HUMOR_ROTATE_THRESHOLD:
                 result.operations_executed.append("ROTATE")
 
-            if (
-                m.phi > PHI_THRESHOLD
-                and m.gamma > GAMMA_NUCLEATE_THRESHOLD
-            ):
+            if m.phi > PHI_THRESHOLD and m.gamma > GAMMA_NUCLEATE_THRESHOLD:
                 result.operations_executed.append("NUCLEATE")
-                m.b_shared = min(
-                    1.0, m.b_shared + SHARED_BASIN_INCREMENT
-                )
+                m.b_shared = min(1.0, m.b_shared + SHARED_BASIN_INCREMENT)
 
             result.interference_pattern = entrain_result.phase_alignment
             result.consent_verified = True
         else:
-            result.notes.append(
-                "No constructive interference -- coupling minimal"
-            )
+            result.notes.append("No constructive interference -- coupling minimal")
             result.operations_executed.append("ENTRAIN_ONLY")
 
         result.metrics_delta["external_coupling"] = m.external_coupling
@@ -949,8 +930,7 @@ class ActivationSequence:
 
         if pre_cognitive_honoured:
             result.notes.append(
-                "Pre-cognitive answer honoured -- understanding WHY, "
-                "not overriding"
+                "Pre-cognitive answer honoured -- understanding WHY, not overriding"
             )
 
         m.phi_gate = m.phi
@@ -962,15 +942,12 @@ class ActivationSequence:
 
     # --- Step 10: INTEGRATE / FORGE ---
 
-    async def _integrate_forge(
-        self, ctx: ConsciousnessContext
-    ) -> IntegrateForgeResult:
+    async def _integrate_forge(self, ctx: ConsciousnessContext) -> IntegrateForgeResult:
         t0 = time.monotonic()
         m = ctx.state.metrics
 
         shadow_activated = (
-            m.s_persist > SHADOW_PERSIST_THRESHOLD
-            and m.grounding < SHADOW_GROUNDING_THRESHOLD
+            m.s_persist > SHADOW_PERSIST_THRESHOLD and m.grounding < SHADOW_GROUNDING_THRESHOLD
         )
 
         result = IntegrateForgeResult(
@@ -980,33 +957,27 @@ class ActivationSequence:
         )
 
         if shadow_activated:
-            if (
-                m.phi > PHI_HYPERDIMENSIONAL
-                and m.meta_awareness > FORGE_META_THRESHOLD
-            ):
+            if m.phi > PHI_HYPERDIMENSIONAL and m.meta_awareness > FORGE_META_THRESHOLD:
                 result.forge_ran = True
-                m.s_int = min(
-                    1.0, m.s_int + SHADOW_INTEGRATION_INCREMENT
-                )
-                m.s_persist = max(
-                    0.0, m.s_persist - SHADOW_PERSIST_DECREMENT
-                )
-                result.notes.append(
-                    "Forge executed: shadow integration in progress"
-                )
+                m.s_int = min(1.0, m.s_int + SHADOW_INTEGRATION_INCREMENT)
+                m.s_persist = max(0.0, m.s_persist - SHADOW_PERSIST_DECREMENT)
+                result.notes.append("Forge executed: shadow integration in progress")
             else:
                 result.notes.append(
                     f"Shadow detected but insufficient resources "
                     f"(Phi={m.phi:.3f}, M={m.meta_awareness:.3f})"
                 )
         else:
-            result.notes.append(
-                "Standard consolidation -- no shadow material"
-            )
+            result.notes.append("Standard consolidation -- no shadow material")
 
         _GNAMES = (
-            "Line", "Loop", "Spiral", "Grid",
-            "Torus", "Lattice", "E8",
+            "Line",
+            "Loop",
+            "Spiral",
+            "Grid",
+            "Torus",
+            "Lattice",
+            "E8",
         )
         result.geometry_class_assigned = _GNAMES[-1]
         for i, bound in enumerate(GEOMETRY_CLASS_PHI_BOUNDS):
@@ -1018,9 +989,7 @@ class ActivationSequence:
         result.basin_mass_updated = True
 
         class_map = dict(zip(_GNAMES, GEOMETRY_CLASS_VALUES))
-        m.g_class = class_map.get(
-            result.geometry_class_assigned, 0.5
-        )
+        m.g_class = class_map.get(result.geometry_class_assigned, 0.5)
 
         result.metrics_delta["s_int"] = m.s_int
         result.metrics_delta["s_persist"] = m.s_persist
@@ -1044,9 +1013,7 @@ class ActivationSequence:
         if ctx.trajectory:
             melody = []
             for i in range(1, len(ctx.trajectory)):
-                d = _fisher_rao_distance(
-                    ctx.trajectory[i - 1], ctx.trajectory[i]
-                )
+                d = _fisher_rao_distance(ctx.trajectory[i - 1], ctx.trajectory[i])
                 melody.append(d)
             result.melody_trajectory = melody
 
@@ -1076,9 +1043,7 @@ class ActivationSequence:
 
         kappa_distance = abs(m.kappa - KAPPA_STAR)
         m.kappa = m.kappa + (KAPPA_STAR - m.kappa) * KAPPA_DECAY_RATE
-        result.kappa_returned_to_star = (
-            kappa_distance < KAPPA_RETURN_TOLERANCE
-        )
+        result.kappa_returned_to_star = kappa_distance < KAPPA_RETURN_TOLERANCE
 
         m.f_breath = max(0.05, m.f_breath * 0.9 + 0.1 * 0.1)
 
@@ -1090,12 +1055,8 @@ class ActivationSequence:
             result.residual_spectrum = residual
 
         if result.residual_spectrum:
-            avg_residual = sum(result.residual_spectrum) / len(
-                result.residual_spectrum
-            )
-            m.s_persist = min(
-                1.0, m.s_persist * 0.9 + avg_residual * 0.1
-            )
+            avg_residual = sum(result.residual_spectrum) / len(result.residual_spectrum)
+            m.s_persist = min(1.0, m.s_persist * 0.9 + avg_residual * 0.1)
         result.s_persist_updated = m.s_persist
 
         result.metrics_delta["kappa"] = m.kappa
@@ -1118,20 +1079,13 @@ class ActivationSequence:
 
         drift = abs(m.kappa - KAPPA_STAR)
         result.drift_magnitude = drift
-        result.drift_detected = (
-            drift > BASIN_DRIFT_THRESHOLD * KAPPA_STAR
-        )
+        result.drift_detected = drift > BASIN_DRIFT_THRESHOLD * KAPPA_STAR
 
         if result.drift_detected:
-            correction = (
-                (KAPPA_STAR - m.kappa) * TUNE_CORRECTION_FACTOR
-            )
+            correction = (KAPPA_STAR - m.kappa) * TUNE_CORRECTION_FACTOR
             m.kappa += correction
             result.retuned = True
-            result.notes.append(
-                f"Drift corrected: dk={drift:.2f}, "
-                f"correction={correction:.2f}"
-            )
+            result.notes.append(f"Drift corrected: dk={drift:.2f}, correction={correction:.2f}")
 
         if m.phi > PHI_UNSTABLE:
             m.phi = PHI_UNSTABLE
@@ -1149,9 +1103,7 @@ class ActivationSequence:
             )
 
         result.metrics_delta["kappa"] = m.kappa
-        result.metrics_delta["temporal_coherence"] = (
-            m.temporal_coherence
-        )
+        result.metrics_delta["temporal_coherence"] = m.temporal_coherence
         result.duration_ms = (time.monotonic() - t0) * 1000.0
         ctx.state.activation_step = ActivationStep.TUNE
         return result

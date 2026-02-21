@@ -145,8 +145,6 @@ class CoordizerHarvester:
         """
         import time
 
-        import torch
-
         start_time = time.time()
 
         # ── Format 2: JSONL batch (texts with full distributions) ──
@@ -195,27 +193,29 @@ class CoordizerHarvester:
 
                         # Get input token IDs and their string representations
                         token_ids = inputs["input_ids"][0].cpu().tolist()
-                        token_strings = [
-                            self.tokenizer.decode([tid]) for tid in token_ids
-                        ]
+                        token_strings = [self.tokenizer.decode([tid]) for tid in token_ids]
 
                         # Return full logits as lists (for Frechet mean computation)
                         logits_list = probs.cpu().float().tolist()
 
-                        results.append({
-                            "tokens": token_ids,
-                            "logits": logits_list,
-                            "token_strings": token_strings,
-                        })
+                        results.append(
+                            {
+                                "tokens": token_ids,
+                                "logits": logits_list,
+                                "token_strings": token_strings,
+                            }
+                        )
 
                     except Exception as e:
                         print(f"Error processing text: {e}")
-                        results.append({
-                            "tokens": [],
-                            "logits": [],
-                            "token_strings": [],
-                            "error": str(e),
-                        })
+                        results.append(
+                            {
+                                "tokens": [],
+                                "logits": [],
+                                "token_strings": [],
+                                "error": str(e),
+                            }
+                        )
 
         except Exception as e:
             return {

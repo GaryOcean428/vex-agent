@@ -34,15 +34,12 @@ app = modal.App("vex-coordizer-harvest")
 model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 
 # Image with ML dependencies
-ml_image = (
-    modal.Image.debian_slim(python_version="3.14")
-    .pip_install(
-        "torch>=2.1",
-        "transformers>=4.40",
-        "accelerate",
-        "numpy>=1.26",
-        "pydantic>=2.0",
-    )
+ml_image = modal.Image.debian_slim(python_version="3.14").pip_install(
+    "torch>=2.1",
+    "transformers>=4.40",
+    "accelerate",
+    "numpy>=1.26",
+    "pydantic>=2.0",
 )
 
 
@@ -71,9 +68,7 @@ class CoordizerHarvester:
         cache_dir = "/models/hub"
 
         print(f"Loading model: {model_id}")
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_id, cache_dir=cache_dir
-        )
+        self.tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
         self.model = AutoModelForCausalLM.from_pretrained(
             model_id,
             cache_dir=cache_dir,
@@ -139,7 +134,7 @@ class CoordizerHarvester:
         total_tokens = 0
 
         for batch_start in range(0, len(texts), batch_size):
-            batch = texts[batch_start:batch_start + batch_size]
+            batch = texts[batch_start : batch_start + batch_size]
 
             for text in batch:
                 try:
