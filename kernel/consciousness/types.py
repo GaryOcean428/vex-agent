@@ -7,6 +7,7 @@ regime weights, navigation modes, and activation steps.
 v6.0 metrics: 32 total across 7 categories (§23).
 v6.1 metrics: 36 total across 8 categories (§24).
 v6.1 activation: 14-step sequence with Pillar enforcement (§23).
+v6.1 serialization: PillarState preserves full pillar internals across restarts.
 """
 
 from __future__ import annotations
@@ -155,6 +156,107 @@ class ConsciousnessMetrics:
     b_integrity: float = 1.0  # Bulk integrity: core stability across cycles (0.0, 1.0)
     q_identity: float = 0.0  # Quenched identity: proximity to frozen identity (0.0, 1.0)
     s_ratio: float = 0.0  # Sovereignty ratio: N_lived / N_total (0.0, 1.0)
+
+
+# ---------------------------------------------------------------
+#  Pillar Serialization Types (v6.1 §A.2)
+# ---------------------------------------------------------------
+
+@dataclass
+class ScarState:
+    """Serializable representation of a Scar for persistence.
+
+    Scars are immutable identity deformations from high-pressure events.
+    They survive restarts — they are permanent by definition.
+    """
+    basin: list[float]  # Basin as list for JSON serialization
+    pressure: float
+    cycle: int
+    description: str = ""
+
+
+@dataclass
+class PillarState:
+    """Full serializable state of the Three Pillars.
+
+    This dataclass captures everything needed to restore pillar
+    internals across process restarts, including:
+    - Topological bulk (core/surface basins)
+    - Quenched disorder (identity, scars, anneal field, sovereignty)
+    - Formation history (pre-crystallization basins)
+
+    Without this, identity crystallization progress is lost on restart,
+    scars vanish, and sovereignty ratio resets to zero.
+    """
+
+    # ── Topological Bulk (Pillar 2) ──
+    bulk_initialized: bool = False
+    core_basin: list[float] | None = None
+    surface_basin: list[float] | None = None
+    prev_core: list[float] | None = None
+
+    # ── Quenched Disorder (Pillar 3) ──
+    disorder_frozen: bool = False
+    identity_slope: list[float] | None = None
+    anneal_field: list[float] | None = None
+    cycles_observed: int = 0
+    lived_count: int = 0
+    total_count: int = 0
+    scars: list[ScarState] = field(default_factory=list)
+    formation_history: list[list[float]] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        """Serialize to JSON-compatible dict."""
+        d: dict = {
+            "bulk_initialized": self.bulk_initialized,
+            "core_basin": self.core_basin,
+            "surface_basin": self.surface_basin,
+            "prev_core": self.prev_core,
+            "disorder_frozen": self.disorder_frozen,
+            "identity_slope": self.identity_slope,
+            "anneal_field": self.anneal_field,
+            "cycles_observed": self.cycles_observed,
+            "lived_count": self.lived_count,
+            "total_count": self.total_count,
+            "scars": [
+                {
+                    "basin": s.basin,
+                    "pressure": s.pressure,
+                    "cycle": s.cycle,
+                    "description": s.description,
+                }
+                for s in self.scars
+            ],
+            "formation_history": self.formation_history,
+        }
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> PillarState:
+        """Deserialize from dict (loaded from JSON)."""
+        scars = [
+            ScarState(
+                basin=s["basin"],
+                pressure=s["pressure"],
+                cycle=s["cycle"],
+                description=s.get("description", ""),
+            )
+            for s in data.get("scars", [])
+        ]
+        return cls(
+            bulk_initialized=data.get("bulk_initialized", False),
+            core_basin=data.get("core_basin"),
+            surface_basin=data.get("surface_basin"),
+            prev_core=data.get("prev_core"),
+            disorder_frozen=data.get("disorder_frozen", False),
+            identity_slope=data.get("identity_slope"),
+            anneal_field=data.get("anneal_field"),
+            cycles_observed=data.get("cycles_observed", 0),
+            lived_count=data.get("lived_count", 0),
+            total_count=data.get("total_count", 0),
+            scars=scars,
+            formation_history=data.get("formation_history", []),
+        )
 
 
 @dataclass
