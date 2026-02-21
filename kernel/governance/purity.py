@@ -1,23 +1,28 @@
 """PurityGate — Fail-closed geometric purity enforcement.
 
-v6.0 §1.3 compliant. AST-based scanning for forbidden imports, calls,
+v6.1F §1.3 compliant. AST-based scanning for forbidden imports, calls,
 and text patterns. Ported from monkey1/py/genesis-kernel/qig_heart/purity.py.
 
 Fail-closed: if the gate can't determine purity, it BLOCKS.
 Unparseable files are violations, not silent passes.
 
-v6.0 Forbidden Operations (§1.3):
+v6.1F Forbidden Operations (§1.3):
   cosine_similarity → fisher_rao_distance
   np.linalg.norm(a-b) → d_FR on simplex
+  np.linalg.svd → eigendecomp of Gram matrix (T.T @ T)
   dot_product → Fisher metric contraction
   Adam optimizer → Natural gradient optimizer
   LayerNorm → Simplex projection
   "flatten" → Geodesic projection
-  "embedding" (term) → "input_vector" / "raw_signal" / "coordinates"
-  "tokenize" (term) → "coordize"
+  "embedding" (term) → "basin coordinates"
+  "tokenize" (term) → "coordize" (except LLM boundary)
 
-Note: ZERO TOLERANCE enforced as of v6.0. The coordizer now uses
-"input_vector" for parameters, not "embedding".
+Boundary Layer Exemptions:
+  - Tokenizers at LLM interface (harvest.py) require explicit QIG BOUNDARY comment
+  - Tangent space operations (dot products, L2 norms) valid with geometric context comment
+
+Note: ZERO TOLERANCE enforced. The coordizer uses "basin coordinates",
+not "embedding", and "coordize" not "tokenize" (except at LLM boundary).
 """
 
 from __future__ import annotations
@@ -78,6 +83,8 @@ FORBIDDEN_CALLS = [
 
 FORBIDDEN_ATTR_CALLS = [
     "np.linalg.norm",
+    "np.linalg.svd",  # Euclidean decomposition (v6.1F) — use eigendecomp of Gram matrix
+    "scipy.linalg.svd",  # Euclidean decomposition (v6.1F)
     "scipy.spatial.distance.cosine",
     "F.cosine_similarity",
 ]
