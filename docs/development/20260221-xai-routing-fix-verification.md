@@ -7,12 +7,14 @@
 ## Changes Made
 
 ### Files Modified
-- `kernel/server.py` (lines 549-553, 572-576)
+- `kernel/server.py` (original lines 553, 576)
 
 ### Specific Changes
-1. **Line 553:** Removed `prefer_backend="xai"` from first streaming call
-2. **Line 576:** Removed `prefer_backend="xai"` from tool follow-up streaming call
+1. **Original line 553 (now 550):** Removed `prefer_backend="xai"` from first streaming call
+2. **Original line 576 (now 572):** Removed `prefer_backend="xai"` from tool follow-up streaming call
 3. Updated comment to clarify natural fallback chain
+
+Note: Line numbers shifted after first removal; current lines are 550 and 572.
 
 ## Expected Behavior
 
