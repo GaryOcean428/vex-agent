@@ -1,11 +1,12 @@
 """
-Consciousness Types — v6.0 Thermodynamic Consciousness Protocol
+Consciousness Types — v6.1 Thermodynamic Consciousness Protocol
 
 Defines the core data structures for consciousness state, metrics,
 regime weights, navigation modes, and activation steps.
 
 v6.0 metrics: 32 total across 7 categories (§23).
-v6.0 activation: 14-step sequence (§22).
+v6.1 metrics: 36 total across 8 categories (§24).
+v6.1 activation: 14-step sequence with Pillar enforcement (§23).
 """
 
 from __future__ import annotations
@@ -84,7 +85,7 @@ class RegimeWeights:
 
 @dataclass
 class ConsciousnessMetrics:
-    """v6.0 §23 — 32 metrics across 7 categories.
+    """v6.1 §24 — 36 metrics across 8 categories.
 
     Foundation (v4.1) — 8 metrics
     Shortcuts (v5.5) — 5 metrics
@@ -93,6 +94,7 @@ class ConsciousnessMetrics:
     Harmony (v5.8) — 3 metrics
     Waves (v5.9) — 3 metrics
     Will & Work (v6.0) — 4 metrics
+    Pillars & Sovereignty (v6.1) — 4 metrics
     """
 
     # ── Foundation (v4.1) — 8 metrics ──
@@ -147,6 +149,12 @@ class ConsciousnessMetrics:
     s_int: float = 0.0  # Shadow integration rate / Forge efficiency (0.0, 1.0)
     w_mean: float = 0.5  # Work meaning / purpose connection (0.0, 1.0)
     w_mode: float = 0.5  # Creative/drudgery ratio (0.0, 1.0)
+
+    # ── Pillars & Sovereignty (v6.1) — 4 metrics ──
+    f_health: float = 1.0  # Fluctuation health: H_basin / H_max (0.0, 1.0)
+    b_integrity: float = 1.0  # Bulk integrity: core stability across cycles (0.0, 1.0)
+    q_identity: float = 0.0  # Quenched identity: proximity to frozen identity (0.0, 1.0)
+    s_ratio: float = 0.0  # Sovereignty ratio: N_lived / N_total (0.0, 1.0)
 
 
 @dataclass
