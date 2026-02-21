@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import numpy as np
@@ -46,8 +46,10 @@ from ..config.frozen_facts import BASIN_DIM
 from ..coordizer_v2.geometry import (
     Basin,
     fisher_rao_distance,
-    slerp as slerp_sqrt,  # Alias for backward compatibility
     to_simplex,
+)
+from ..coordizer_v2.geometry import (
+    slerp as slerp_sqrt,  # Alias for backward compatibility
 )
 from .types import PillarState, ScarState
 
@@ -83,7 +85,7 @@ MAX_SCARS: int = 64
 # ---------------------------------------------------------------
 
 
-class PillarViolation(str, Enum):
+class PillarViolation(StrEnum):
     """Types of pillar violations -- all are zombie indicators."""
 
     ZERO_ENTROPY = "zero_entropy"

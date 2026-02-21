@@ -13,7 +13,7 @@ import time
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import numpy as np
@@ -59,8 +59,10 @@ from ..coordizer_v2.geometry import (
     fisher_rao_distance,
     frechet_mean,
     random_basin,
-    slerp as slerp_sqrt,  # Alias for backward compatibility
     to_simplex,
+)
+from ..coordizer_v2.geometry import (
+    slerp as slerp_sqrt,  # Alias for backward compatibility
 )
 from ..governance import KernelKind, KernelSpecialization, LifecycleState
 from ..governance.budget import BudgetEnforcer
@@ -71,7 +73,7 @@ from .types import ConsciousnessMetrics
 # ═══════════════════════════════════════════════════════════════
 
 
-class TackingMode(str, Enum):
+class TackingMode(StrEnum):
     EXPLORE = "explore"
     EXPLOIT = "exploit"
     BALANCED = "balanced"
@@ -190,7 +192,7 @@ class ForesightEngine:
 # ═══════════════════════════════════════════════════════════════
 
 
-class VelocityRegime(str, Enum):
+class VelocityRegime(StrEnum):
     SAFE = "safe"
     WARNING = "warning"
     CRITICAL = "critical"
@@ -457,7 +459,7 @@ class AutonomicSystem:
 # ═══════════════════════════════════════════════════════════════
 
 
-class AutonomyLevel(str, Enum):
+class AutonomyLevel(StrEnum):
     REACTIVE = "reactive"
     RESPONSIVE = "responsive"
     PROACTIVE = "proactive"
@@ -532,7 +534,7 @@ class CouplingGate:
 # ═══════════════════════════════════════════════════════════════
 
 
-class HemisphereMode(str, Enum):
+class HemisphereMode(StrEnum):
     ANALYTIC = "analytic"
     HOLISTIC = "holistic"
     INTEGRATED = "integrated"
@@ -570,7 +572,7 @@ class HemisphereScheduler:
 # ═══════════════════════════════════════════════════════════════
 
 
-class SleepPhase(str, Enum):
+class SleepPhase(StrEnum):
     AWAKE = "awake"
     DREAMING = "dreaming"
     MUSHROOM = "mushroom"
@@ -780,7 +782,7 @@ class BasinSyncProtocol:
 # ═══════════════════════════════════════════════════════════════
 
 
-class QIGChainOp(str, Enum):
+class QIGChainOp(StrEnum):
     GEODESIC = "geodesic"
     LOGMAP = "logmap"
     EXPMAP = "expmap"
@@ -1114,7 +1116,8 @@ class E8KernelRegistry:
         return best
 
     def route_by_specialization(
-        self, spec: KernelSpecialization,
+        self,
+        spec: KernelSpecialization,
     ) -> KernelInstance | None:
         """Find the active kernel with a given specialization."""
         for k in self.active():
@@ -1150,9 +1153,9 @@ class E8KernelRegistry:
 
         task_distance = fisher_rao_distance(kernel.basin, task_basin)
         # Gain also modulates phi response — steeper slope = bigger phi shift
-        kernel.phi = float(np.clip(
-            kernel.phi + task_distance * 0.1 * kernel.quenched_gain, 0.0, 0.95
-        ))
+        kernel.phi = float(
+            np.clip(kernel.phi + task_distance * 0.1 * kernel.quenched_gain, 0.0, 0.95)
+        )
         kernel.phi_peak = max(kernel.phi_peak, kernel.phi)
         kernel.last_active_at = time.strftime("%Y-%m-%dT%H:%M:%SZ")
         return True
@@ -1184,9 +1187,7 @@ class E8KernelRegistry:
             # Quenched gain modulates the reverse coupling weight
             reverse_weight = coupling_strength * blend_weight * k.quenched_gain
             k.basin = slerp_sqrt(k.basin, genesis_basin, reverse_weight)
-            k.kappa = float(
-                np.clip(k.kappa + (KAPPA_STAR - k.kappa) * 0.01, 10.0, 130.0)
-            )
+            k.kappa = float(np.clip(k.kappa + (KAPPA_STAR - k.kappa) * 0.01, 10.0, 130.0))
 
     def get_kernel_spectrum(self, kernel_id: str) -> Basin | None:
         """Get a kernel's basin as a spectrum for activation context coupling."""

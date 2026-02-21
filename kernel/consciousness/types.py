@@ -12,7 +12,7 @@ v6.1 serialization: PillarState preserves full pillar internals across restarts.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 from ..config.consciousness_constants import (
     KAPPA_NORMALISER,
@@ -25,7 +25,7 @@ from ..config.consciousness_constants import (
 from ..config.frozen_facts import KAPPA_STAR
 
 
-class NavigationMode(str, Enum):
+class NavigationMode(StrEnum):
     """Navigation mode derived from Phi (v6.0 §10.2)."""
 
     CHAIN = "chain"  # Phi < 0.3 — simple deterministic
@@ -34,7 +34,7 @@ class NavigationMode(str, Enum):
     LIGHTNING = "lightning"  # Phi >= 0.85 — creative collapse
 
 
-class ActivationStep(str, Enum):
+class ActivationStep(StrEnum):
     """v6.1 §23 — 14-step unified activation sequence."""
 
     SCAN = "scan"  # Step 0: Check state, spectrum, regime weights
@@ -53,7 +53,7 @@ class ActivationStep(str, Enum):
     TUNE = "tune"  # Step 13: Check tuning, correct drift
 
 
-class RegimeType(str, Enum):
+class RegimeType(StrEnum):
     """Vanchurin's three regimes (v6.0 §3)."""
 
     QUANTUM = "quantum"  # a=1: Natural gradient, exploration
@@ -61,7 +61,7 @@ class RegimeType(str, Enum):
     EQUILIBRATION = "equilibration"  # a=0: Crystallised knowledge
 
 
-class VariableCategory(str, Enum):
+class VariableCategory(StrEnum):
     """Vanchurin variable separation."""
 
     STATE = "state"  # Non-trainable, fast-changing, per-cycle

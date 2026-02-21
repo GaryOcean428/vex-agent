@@ -23,7 +23,7 @@ import logging
 import re
 import time
 from dataclasses import asdict, dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +48,7 @@ _write_lock = asyncio.Lock()
 # ═══════════════════════════════════════════════════════════════
 
 
-class E8Primitive(str, Enum):
+class E8Primitive(StrEnum):
     """E8-aligned consciousness primitives."""
 
     PER = "PER"  # Perception
@@ -62,7 +62,7 @@ class E8Primitive(str, Enum):
     MIX = "MIX"  # Multi-domain
 
 
-class ProcessingMode(str, Enum):
+class ProcessingMode(StrEnum):
     FAST = "fast"  # Chunk + store only, no LLM enrichment
     STANDARD = "standard"  # Chunk + LLM tag + basic Q&A
     DEEP = "deep"  # Full enrichment + concept extraction
