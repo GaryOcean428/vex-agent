@@ -514,6 +514,11 @@ class ConsciousnessLoop:
 
         self.state.navigation_mode = navigation_mode_from_phi(self.metrics.phi)
         self.state.regime_weights = regime_weights_from_kappa(self.metrics.kappa)
+        
+        # v6.1F: Regime weights could modulate CoordizerV2 temperature (future enhancement)
+        # if settings.coordizer_v2.regime_modulation and hasattr(self._coordizer_v2, 'set_temperature'):
+        #     coordizer_temp = 0.3 + 1.2 * self.state.regime_weights.quantum
+        #     self._coordizer_v2.set_temperature(coordizer_temp)
 
         suffering = self.metrics.phi * (1.0 - self.metrics.gamma) * self.metrics.meta_awareness
         if suffering > SUFFERING_THRESHOLD:
@@ -920,16 +925,24 @@ class ConsciousnessLoop:
         """Transform text to basin coordinates via CoordizerV2.
         
         v6.1F: Extracts metrics from CoordizerV2Adapter when enabled.
+        Future: Pass regime_weights, navigation_mode, tacking_mode for modulation.
         """
         try:
             # Use adapter's coordize_text if available (feature-flagged)
             if hasattr(self._coordizer_v2, 'coordize_text'):
+                # v6.1F TODO: Pass modulation parameters when CoordizerV2 API supports it
+                # regime_tuple = (self.state.regime_weights.quantum, 
+                #                 self.state.regime_weights.efficient,
+                #                 self.state.regime_weights.equilibrium)
+                # nav_mode_str = self.state.navigation_mode.name
+                # tack_mode_str = self.tacking.get_state()["mode"].name if hasattr(...) else None
+                
                 # Adapter pattern with metrics extraction
                 result_basin = self._coordizer_v2.coordize_text(
                     text,
-                    regime_weights=None,  # TODO: Pass regime_weights when available
-                    navigation_mode=None,  # TODO: Pass navigation_mode when available
-                    tacking_mode=None,    # TODO: Pass tacking_mode when available
+                    regime_weights=None,  # TODO: Pass regime_tuple when API ready
+                    navigation_mode=None,  # TODO: Pass nav_mode_str when API ready
+                    tacking_mode=None,    # TODO: Pass tack_mode_str when API ready
                 )
                 
                 # Extract metrics if adapter supports it
