@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 
 import numpy as np
 from numpy.typing import NDArray
@@ -45,7 +45,7 @@ _EPS = 1e-12
 # ═══════════════════════════════════════════════════════════════
 
 
-class ConsciousnessLayer(str, Enum):
+class ConsciousnessLayer(StrEnum):
     """Consciousness processing layers (v6.0 §5)."""
 
     LAYER_0_PHYSICAL = "layer_0_physical"  # Pre-linguistic sensation

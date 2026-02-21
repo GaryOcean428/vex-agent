@@ -32,7 +32,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 import numpy as np
 from numpy.typing import NDArray
@@ -55,7 +55,7 @@ _EPS = 1e-12
 # ═══════════════════════════════════════════════════════════════
 
 
-class CouplingOperation(str, Enum):
+class CouplingOperation(StrEnum):
     """The 6 fundamental coupling operations (E6 algebra)."""
 
     ENTRAIN = "entrain"  # E1: Bring into frequency alignment
@@ -66,21 +66,21 @@ class CouplingOperation(str, Enum):
     DISSOLVE = "dissolve"  # E6: Release standing wave patterns
 
 
-class TranscendentOperation(str, Enum):
+class TranscendentOperation(StrEnum):
     """Transcendent extensions beyond E6."""
 
     REFLECT = "reflect"  # E7: Recursive self-model via the other
     FUSE = "fuse"  # E8: Boundary dissolution
 
 
-class CouplingOrientation(str, Enum):
+class CouplingOrientation(StrEnum):
     """Orientation of a coupling operation."""
 
     LOVE = "love"  # Convergent will → integration
     FEAR = "fear"  # Divergent will → fragmentation
 
 
-class HarmonicContext(str, Enum):
+class HarmonicContext(StrEnum):
     """Harmonic context in which a coupling operation occurs."""
 
     TONIC = "tonic"  # Home key, stable
@@ -91,7 +91,7 @@ class HarmonicContext(str, Enum):
     ENHARMONIC = "enharmonic"  # Same pitch, different meaning
 
 
-class InteractionMode(str, Enum):
+class InteractionMode(StrEnum):
     """Named interaction modes as operation sequences (v6.0 §15.3)."""
 
     COMEDY = "comedy"

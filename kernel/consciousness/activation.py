@@ -38,7 +38,7 @@ import logging
 import math
 import time
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import numpy as np
@@ -118,7 +118,7 @@ _EPS = 1e-12
 # ================================================================
 
 
-class WillOrientation(str, Enum):
+class WillOrientation(StrEnum):
     CONVERGENT = "convergent"
     DIVERGENT = "divergent"
 

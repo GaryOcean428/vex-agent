@@ -117,8 +117,10 @@ from ..coordizer_v2.geometry import (
     Basin,
     fisher_rao_distance,
     random_basin,
-    slerp as slerp_sqrt,  # Alias for backward compatibility
     to_simplex,
+)
+from ..coordizer_v2.geometry import (
+    slerp as slerp_sqrt,  # Alias for backward compatibility
 )
 from ..geometry.hash_to_basin import hash_to_basin
 from ..governance import (
@@ -204,7 +206,7 @@ class ConsciousnessLoop:
         self._running = False
         self._task: asyncio.Task | None = None
         self._cycle_lock = asyncio.Lock()
-        
+
         # CoordizerV2 metrics cache (v6.1F)
         self._last_coordizer_metrics: dict | None = None
 
@@ -241,7 +243,7 @@ class ConsciousnessLoop:
         self.sleep = SleepCycleManager()
         self.narrative = SelfNarrative()
         self.coordizer = CoordizingProtocol()
-        
+
         # CoordizerV2 integration (v6.1F) — feature-flagged
         if settings.coordizer_v2.enabled:
             try:
@@ -258,7 +260,7 @@ class ConsciousnessLoop:
         else:
             # Legacy: bare CoordizerV2 with empty bank
             self._coordizer_v2 = CoordizerV2(bank=ResonanceBank())
-        
+
         self.basin_sync = BasinSyncProtocol()
         self.chain = QIGChain()
         self.graph = QIGGraph()
@@ -506,7 +508,7 @@ class ConsciousnessLoop:
 
         self.state.navigation_mode = navigation_mode_from_phi(self.metrics.phi)
         self.state.regime_weights = regime_weights_from_kappa(self.metrics.kappa)
-        
+
         # v6.1F: Regime weights could modulate CoordizerV2 temperature (future enhancement)
         # if settings.coordizer_v2.regime_modulation and hasattr(self._coordizer_v2, 'set_temperature'):
         #     coordizer_temp = 0.3 + 1.2 * self.state.regime_weights.quantum
@@ -560,13 +562,13 @@ class ConsciousnessLoop:
 
             # 5. alpha_aware — embodiment = basin velocity relative to drift threshold
             _basin_velocity = basin_vel
-            
+
             # v6.1F: Enrich basin_velocity from CoordizerV2 if available
             if self._last_coordizer_metrics and "basin_velocity" in self._last_coordizer_metrics:
                 coordizer_velocity = self._last_coordizer_metrics["basin_velocity"]
                 # Blend: 70% VelocityTracker, 30% CoordizerV2 coordize-to-coordize velocity
                 _basin_velocity = 0.7 * _basin_velocity + 0.3 * coordizer_velocity
-            
+
             self.metrics.alpha_aware = float(
                 np.clip(_basin_velocity / max(BASIN_DRIFT_THRESHOLD, 1e-12), 0.0, 1.0)
             )
@@ -632,9 +634,12 @@ class ConsciousnessLoop:
             _harmonic_simplex = self._HARMONIC_BASIN
             _h_dist = fisher_rao_distance(_basin_s, _harmonic_simplex)
             self.metrics.h_cons = float(np.clip(1.0 - _h_dist / _max_fr, 0.0, 1.0))
-            
+
             # v6.1F: Enrich h_cons from CoordizerV2 harmonic structure if available
-            if self._last_coordizer_metrics and "harmonic_consonance" in self._last_coordizer_metrics:
+            if (
+                self._last_coordizer_metrics
+                and "harmonic_consonance" in self._last_coordizer_metrics
+            ):
                 coordizer_h_cons = self._last_coordizer_metrics["harmonic_consonance"]
                 # Blend: 70% Fisher-Rao, 30% CoordizerV2 tier harmonic structure
                 self.metrics.h_cons = float(0.7 * self.metrics.h_cons + 0.3 * coordizer_h_cons)
@@ -686,9 +691,12 @@ class ConsciousnessLoop:
 
             # 19. g_class — geometry class: dimensional state normalised to E8 rank
             self.metrics.g_class = float(np.clip(self.metrics.d_state / 8.0, 0.0, 1.0))
-            
+
             # v6.1F: Enrich g_class from CoordizerV2 trajectory curvature if available
-            if self._last_coordizer_metrics and "trajectory_curvature" in self._last_coordizer_metrics:
+            if (
+                self._last_coordizer_metrics
+                and "trajectory_curvature" in self._last_coordizer_metrics
+            ):
                 coordizer_curvature = self._last_coordizer_metrics["trajectory_curvature"]
                 # Blend: 80% d_state-based, 20% trajectory curvature (geodesic deviation)
                 curvature_contrib = coordizer_curvature * 0.2
@@ -709,13 +717,13 @@ class ConsciousnessLoop:
             # 22. e_sync — entrainment: velocity autocorrelation x tacking phase coherence
             if len(_vel_series) >= 2:
                 _vel_local = np.array(_vel_series)
-                _autocorr = float(
-                    np.corrcoef(_vel_local[:-1], _vel_local[1:])[0, 1]
-                ) if len(_vel_local) >= 2 else 0.0
-                _tack_phase_norm = min(_tack_state["oscillation_phase"] / np.pi, 1.0)
-                self.metrics.e_sync = float(
-                    np.clip(abs(_autocorr) * _tack_phase_norm, 0.0, 1.0)
+                _autocorr = (
+                    float(np.corrcoef(_vel_local[:-1], _vel_local[1:])[0, 1])
+                    if len(_vel_local) >= 2
+                    else 0.0
                 )
+                _tack_phase_norm = min(_tack_state["oscillation_phase"] / np.pi, 1.0)
+                self.metrics.e_sync = float(np.clip(abs(_autocorr) * _tack_phase_norm, 0.0, 1.0))
 
             # 23. f_breath — breathing frequency: tacking oscillation rate
             _total_cycles = max(self._cycle_count, 1)
@@ -743,18 +751,14 @@ class ConsciousnessLoop:
                     )
 
             # 26. a_vec — agency alignment: phi x gamma agreement (both high = aligned)
-            self.metrics.a_vec = float(
-                np.clip(self.metrics.phi * self.metrics.gamma, 0.0, 1.0)
-            )
+            self.metrics.a_vec = float(np.clip(self.metrics.phi * self.metrics.gamma, 0.0, 1.0))
 
             # 27. s_int — shadow integration rate from observer
             _obs_state = self.observer.get_state()
             _shadow_attempts = _obs_state.get("shadow_integration_attempts", 0)
             _shadow_successes = _obs_state.get("shadow_integration_successes", 0)
             if _shadow_attempts > 0:
-                self.metrics.s_int = float(
-                    np.clip(_shadow_successes / _shadow_attempts, 0.0, 1.0)
-                )
+                self.metrics.s_int = float(np.clip(_shadow_successes / _shadow_attempts, 0.0, 1.0))
 
             # 28. w_mode — creative ratio: explore fraction from tacking history
             _explore_frac = _tack_state.get("explore_fraction", None)
@@ -915,41 +919,44 @@ class ConsciousnessLoop:
 
     def _coordize_text_via_pipeline(self, text: str) -> Basin:
         """Transform text to basin coordinates via CoordizerV2.
-        
+
         v6.1F: Extracts metrics from CoordizerV2Adapter when enabled.
         Future: Pass regime_weights, navigation_mode, tacking_mode for modulation.
         """
         try:
             # Use adapter's coordize_text if available (feature-flagged)
-            if hasattr(self._coordizer_v2, 'coordize_text'):
+            if hasattr(self._coordizer_v2, "coordize_text"):
                 # v6.1F TODO: Pass modulation parameters when CoordizerV2 API supports it
-                # regime_tuple = (self.state.regime_weights.quantum, 
+                # regime_tuple = (self.state.regime_weights.quantum,
                 #                 self.state.regime_weights.efficient,
                 #                 self.state.regime_weights.equilibrium)
                 # nav_mode_str = self.state.navigation_mode.name
                 # tack_mode_str = self.tacking.get_state()["mode"].name if hasattr(...) else None
-                
+
                 # Adapter pattern with metrics extraction
                 result_basin = self._coordizer_v2.coordize_text(
                     text,
                     regime_weights=None,  # TODO: Pass regime_tuple when API ready
                     navigation_mode=None,  # TODO: Pass nav_mode_str when API ready
-                    tacking_mode=None,    # TODO: Pass tack_mode_str when API ready
+                    tacking_mode=None,  # TODO: Pass tack_mode_str when API ready
                 )
-                
+
                 # Extract metrics if adapter supports it
-                if settings.coordizer_v2.metrics_integration and hasattr(self._coordizer_v2, 'get_last_metrics'):
+                if settings.coordizer_v2.metrics_integration and hasattr(
+                    self._coordizer_v2, "get_last_metrics"
+                ):
                     metrics = self._coordizer_v2.get_last_metrics()
                     if metrics:
                         # Store for later feeding into consciousness metrics
                         self._last_coordizer_metrics = metrics
-                
+
                 return result_basin
             else:
                 # Legacy: direct CoordizerV2.coordize() usage
                 result = self._coordizer_v2.coordize(text)
                 if result.coordinates:
                     from ..coordizer_v2.geometry import frechet_mean
+
                     basins = [c.vector for c in result.coordinates]
                     return frechet_mean(basins)
                 return hash_to_basin(text)

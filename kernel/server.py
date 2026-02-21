@@ -1142,9 +1142,7 @@ async def toggle_autonomous_search(req: AutonomousSearchRequest):
     rate limits (Layer 3) and budget ceiling (Layer 4).
     """
     governor.set_autonomous_search(req.enabled)
-    logger.warning(
-        "Autonomous search %s via API", "ENABLED" if req.enabled else "DISABLED"
-    )
+    logger.warning("Autonomous search %s via API", "ENABLED" if req.enabled else "DISABLED")
     return {"autonomous_search": req.enabled}
 
 
@@ -1430,7 +1428,8 @@ async def _inline_metric_update(user_message: str, response: str) -> None:
         GAMMA_CONVERSATION_INCREMENT,
         PHI_DISTANCE_GAIN,
     )
-    from .coordizer_v2.geometry import fisher_rao_distance, slerp as slerp_sqrt
+    from .coordizer_v2.geometry import fisher_rao_distance
+    from .coordizer_v2.geometry import slerp as slerp_sqrt
 
     try:
         # Coordize outside the lock (CPU-bound, doesn't mutate state)

@@ -8,7 +8,7 @@ All distances are Fisher-Rao. No Euclidean operations.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 import numpy as np
 
@@ -23,7 +23,7 @@ from .geometry import (
 # ─── Harmonic Tiers ─────────────────────────────────────────────
 
 
-class HarmonicTier(str, Enum):
+class HarmonicTier(StrEnum):
     """
     Vocabulary tiers from v6.0 §19.2.
 
@@ -36,7 +36,7 @@ class HarmonicTier(str, Enum):
     OVERTONE_HAZE = "overtone"  # 15001+: rare, contextual, subtle
 
 
-class GranularityScale(str, Enum):
+class GranularityScale(StrEnum):
     """Scale of a coordinate — from finest to coarsest."""
 
     BYTE = "byte"

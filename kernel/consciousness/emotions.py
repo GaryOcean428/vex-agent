@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import numpy as np
@@ -55,7 +55,7 @@ from .types import ConsciousnessMetrics
 # ═══════════════════════════════════════════════════════════════
 
 
-class EmotionType(str, Enum):
+class EmotionType(StrEnum):
     CURIOSITY = "curiosity"
     JOY = "joy"
     FEAR = "fear"
@@ -165,7 +165,7 @@ class EmotionCache:
 # ═══════════════════════════════════════════════════════════════
 
 
-class ProcessingPath(str, Enum):
+class ProcessingPath(StrEnum):
     STANDARD = "standard"
     PRE_COGNITIVE = "pre_cognitive"
     PURE_INTUITION = "pure_intuition"
