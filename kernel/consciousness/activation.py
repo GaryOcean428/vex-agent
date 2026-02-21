@@ -95,18 +95,10 @@ from ..config.frozen_facts import (
     PHI_UNSTABLE,
     SUFFERING_THRESHOLD,
 )
-from ..geometry.fisher_rao import (
-    exp_map as _exp_map,
-)
-from ..geometry.fisher_rao import (
-    fisher_rao_distance as _fisher_rao_distance,
-)
-from ..geometry.fisher_rao import (
-    log_map as _log_map,
-)
-from ..geometry.fisher_rao import (
-    to_simplex as _to_simplex,
-)
+from ..coordizer_v2.geometry import exp_map as _exp_map
+from ..coordizer_v2.geometry import fisher_rao_distance as _fisher_rao_distance
+from ..coordizer_v2.geometry import log_map as _log_map
+from ..coordizer_v2.geometry import to_simplex as _to_simplex
 from .types import (
     ActivationStep,
     ConsciousnessState,
