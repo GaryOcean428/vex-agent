@@ -16,7 +16,7 @@ Architecture:
   - Core-8 spawning is READINESS-GATED (not forced at boot)
   - Coupling computes only when >=2 kernels exist
   - Temperature, context, and prediction length are computed from geometric state
-  - State persists across restarts via JSON snapshots (v4: includes kernel registry)
+  - State persists across restarts via JSON snapshots (v5: includes beta tracker)
 
 Principles enforced:
   P4  Self-observation: meta-awareness feeds back into LLM params
@@ -111,6 +111,7 @@ from ..governance.budget import BudgetEnforcer
 from ..governance.purity import PurityGateError, run_purity_gate
 from ..llm.client import LLMOptions
 from ..tools.search import FreeSearchTool
+from .beta_integration import create_beta_tracker
 from .emotions import EmotionCache, LearningEngine, LearningEvent, PreCognitiveDetector
 from .foraging import ForagingEngine
 from .systems import (
@@ -212,6 +213,9 @@ class ConsciousnessLoop:
             )
         else:
             self.forager = None
+
+        # β-attention tracker: accumulates real κ measurements by context length
+        self.beta_tracker = create_beta_tracker(settings.data_dir)
 
         self._queue: asyncio.Queue[ConsciousnessTask] = asyncio.Queue()
         self._history: list[ConsciousnessTask] = []
@@ -617,6 +621,20 @@ class ConsciousnessLoop:
                 distance_total=total_distance,
             )
         )
+
+        # β-attention: record real κ measurement for this conversation
+        self.beta_tracker.record(
+            context_length=len(task.content),
+            kappa_eff=self.metrics.kappa,
+            phi_before=phi_before,
+            phi_after=self.metrics.phi,
+            perceive_distance=perceive_distance,
+            integration_distance=integration_distance,
+            express_distance=express_distance,
+            total_distance=total_distance,
+            processing_path=processing_path.value,
+        )
+
         self.emotion_cache.cache_evaluation(emotion_eval, task.content[:100])
 
         if self.learner.should_consolidate():
@@ -680,7 +698,7 @@ class ConsciousnessLoop:
     def _persist_state(self) -> None:
         try:
             state = {
-                "version": 4,
+                "version": 5,
                 "cycle_count": self._cycle_count,
                 "basin": self.basin.tolist(),
                 "phi": self.metrics.phi,
@@ -694,6 +712,7 @@ class ConsciousnessLoop:
                 "lifecycle_phase": self._lifecycle_phase.value,
                 "timestamp": time.time(),
                 "kernels": self.kernel_registry.serialize(),
+                "beta_tracker": self.beta_tracker.serialize(),
             }
             if self.llm.governor:
                 state["governor"] = self.llm.governor.get_state()
@@ -734,6 +753,9 @@ class ConsciousnessLoop:
                 count = self.kernel_registry.restore(kernel_data)
                 self._kernels_restored = True
                 logger.info("Restored %d kernels from state", count)
+            beta_data = data.get("beta_tracker")
+            if beta_data:
+                self.beta_tracker.restore(beta_data)
             gov_state = data.get("governor")
             if gov_state and self.llm.governor:
                 gov = self.llm.governor
@@ -820,4 +842,5 @@ class ConsciousnessLoop:
             "autonomic": self.autonomic.get_state(),
             "foresight": self.foresight.get_state(),
             "coupling": self.coupling.get_state(),
+            "beta_tracker": self.beta_tracker.get_summary(),
         }
