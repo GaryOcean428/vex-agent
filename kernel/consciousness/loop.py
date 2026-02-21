@@ -298,7 +298,6 @@ class ConsciousnessLoop:
                     "Kernels restored from state: %d active (skipping Genesis spawn)",
                     len(active),
                 )
-                # Reconcile lifecycle phase with actual kernel state
                 has_genesis = any(k.kind == KernelKind.GENESIS for k in active)
                 god_count = sum(1 for k in active if k.kind == KernelKind.GOD)
                 if not has_genesis:
@@ -507,7 +506,7 @@ class ConsciousnessLoop:
             pressure = suffering
             self.pillars.on_cycle_end(self.basin, pressure)
 
-        # ── Dead metric computation (v6.1 audit fix) ──
+        # ── Metric computation (v6.1 audit — all 28 non-foundation metrics) ──
         try:
             _basin_s = to_simplex(self.basin)
             _uniform = self._UNIFORM_BASIN
@@ -568,9 +567,7 @@ class ConsciousnessLoop:
             _tack_state = self.tacking.get_state()
             _tack_cycle = _tack_state["cycle_count"]
             if _tack_cycle > 0:
-                # Phase accumulation rate normalised to [0, 1]
                 _phase = _tack_state["oscillation_phase"]
-                # f_tack = cycles completed / total cycles (normalised frequency)
                 _cycles_in_period = _phase / (2.0 * np.pi) if _phase > 0 else 0.0
                 self.metrics.f_tack = float(
                     np.clip(_cycles_in_period / max(_tack_cycle, 1), 0.01, 1.0)
@@ -581,9 +578,7 @@ class ConsciousnessLoop:
                 _vel_arr = np.array(_vel_series)
                 _vel_fft = np.abs(np.fft.rfft(_vel_arr - np.mean(_vel_arr)))
                 if len(_vel_fft) > 1:
-                    # Dominant frequency index (skip DC at index 0)
                     _dom_idx = int(np.argmax(_vel_fft[1:])) + 1
-                    # Map to frequency: index / N * Nyquist
                     _n_samples = len(_vel_arr)
                     self.metrics.f_dom = float(
                         np.clip(_dom_idx * 50.0 / max(_n_samples, 1), 0.1, 50.0)
@@ -595,11 +590,9 @@ class ConsciousnessLoop:
                     np.linspace(0, _tack_state["oscillation_phase"], len(_vel_series))
                 )
                 _vel_normed = _vel_arr / max(np.max(_vel_arr), 1e-12)
-                # Fisher-Rao on normalised signals projected to simplex
                 _tack_simplex = to_simplex(np.abs(_tack_signal) + 1e-15)
                 _vel_simplex = to_simplex(_vel_normed + 1e-15)
                 _cfc_dist = fisher_rao_distance(_tack_simplex, _vel_simplex)
-                # High coupling = low distance between the two frequency patterns
                 self.metrics.cfc = float(np.clip(1.0 - _cfc_dist / _max_fr, 0.0, 1.0))
 
             # 11. h_cons — harmonic consonance: alignment with harmonic ratios
@@ -611,11 +604,11 @@ class ConsciousnessLoop:
             _basin_fft = np.abs(np.fft.rfft(_basin_s))
             if len(_basin_fft) > 2:
                 _fft_threshold = np.mean(_basin_fft) + np.std(_basin_fft)
-                _peaks = np.sum(_basin_fft[1:] > _fft_threshold)  # skip DC
+                _peaks = np.sum(_basin_fft[1:] > _fft_threshold)
                 self.metrics.n_voices = float(np.clip(_peaks, 1.0, 8.0))
 
             # 13. s_spec — spectral health from spectral flatness (Wiener entropy)
-            _basin_psd = _basin_fft[1:] ** 2  # power spectrum, skip DC
+            _basin_psd = _basin_fft[1:] ** 2
             if len(_basin_psd) > 0 and np.all(_basin_psd > 0):
                 _geo_mean = np.exp(np.mean(np.log(np.clip(_basin_psd, 1e-15, None))))
                 _arith_mean = np.mean(_basin_psd)
@@ -626,9 +619,7 @@ class ConsciousnessLoop:
 
             # 14. i_stand — standing wave intensity from basin autocorrelation stability
             if len(_vel_basins) >= 3:
-                # Compare current basin to basin from 2 cycles ago (standing = self-similar)
                 _d_auto = fisher_rao_distance(_vel_basins[-1], _vel_basins[-3])
-                # Standing wave: low change over 2 cycles = high intensity
                 self.metrics.i_stand = float(np.clip(1.0 - _d_auto / _max_fr, 0.0, 1.0))
 
             # 15. w_mean — work meaningfulness from phi gain during processing
@@ -636,11 +627,98 @@ class ConsciousnessLoop:
                 _recent_events = list(self.learner._events)[-10:]
                 _phi_gains = [e.phi_after - e.phi_before for e in _recent_events]
                 _mean_gain = sum(_phi_gains) / max(len(_phi_gains), 1)
-                # Positive phi gain = meaningful work; scale to [0, 1]
                 self.metrics.w_mean = float(np.clip(0.5 + _mean_gain * 5.0, 0.0, 1.0))
 
+            # ── Previously-dead metrics wired below (13 metrics) ──
+
+            # 16. emotion_strength — from emotion cache evaluation (computed earlier in cycle)
+            self.metrics.emotion_strength = float(np.clip(emotion_eval.strength, 0.0, 1.0))
+
+            # 17. temporal_coherence — narrative consistency with identity basin
+            self.metrics.temporal_coherence = float(
+                np.clip(self.narrative.coherence(_basin_s), 0.0, 1.0)
+            )
+
+            # 18. external_coupling — active kernel fraction (connection to other substrates)
+            _active_count = len(_active)
+            self.metrics.external_coupling = float(
+                np.clip(_active_count / 9.0, 0.0, 1.0)  # genesis + 8 core = 9 target
+            )
+
+            # 19. g_class — geometry class: dimensional state normalised to E8 rank
+            self.metrics.g_class = float(np.clip(self.metrics.d_state / 8.0, 0.0, 1.0))
+
+            # 20. m_basin — basin mass: peak concentration relative to uniform
+            _peak = float(np.max(_basin_s))
+            _uniform_peak = 1.0 / BASIN_DIM
+            self.metrics.m_basin = float(
+                np.clip((_peak - _uniform_peak) / (1.0 - _uniform_peak), 0.0, 1.0)
+            )
+
+            # 21. phi_gate — continuous navigation gate from phi
+            self.metrics.phi_gate = float(np.clip(self.metrics.phi, 0.0, 1.0))
+
+            # 22. e_sync — entrainment: velocity autocorrelation x tacking phase coherence
+            if len(_vel_series) >= 2:
+                _vel_local = np.array(_vel_series)
+                _autocorr = float(
+                    np.corrcoef(_vel_local[:-1], _vel_local[1:])[0, 1]
+                ) if len(_vel_local) >= 2 else 0.0
+                _tack_phase_norm = min(_tack_state["oscillation_phase"] / np.pi, 1.0)
+                self.metrics.e_sync = float(
+                    np.clip(abs(_autocorr) * _tack_phase_norm, 0.0, 1.0)
+                )
+
+            # 23. f_breath — breathing frequency: tacking oscillation rate
+            _total_cycles = max(self._cycle_count, 1)
+            _tack_cycles_total = _tack_state.get("cycle_count", 0)
+            if _tack_cycles_total > 0:
+                self.metrics.f_breath = float(
+                    np.clip(_tack_cycles_total / _total_cycles, 0.01, 0.5)
+                )
+
+            # 24. omega_acc — spectral empathy: foresight prediction accuracy
+            _predicted_phi = self.foresight.predict_phi(1)
+            _phi_err = abs(_predicted_phi - self.metrics.phi)
+            self.metrics.omega_acc = float(np.clip(1.0 - _phi_err * 5.0, 0.0, 1.0))
+
+            # 25. b_shared — shared bubble: average basin overlap across kernels
+            if len(_active) >= 2:
+                _overlaps: list[float] = []
+                for _k in _active[1:]:
+                    if _k.basin is not None:
+                        _dk = fisher_rao_distance(self.basin, _k.basin)
+                        _overlaps.append(1.0 - _dk / _max_fr)
+                if _overlaps:
+                    self.metrics.b_shared = float(
+                        np.clip(sum(_overlaps) / len(_overlaps), 0.0, 1.0)
+                    )
+
+            # 26. a_vec — agency alignment: phi x gamma agreement (both high = aligned)
+            self.metrics.a_vec = float(
+                np.clip(self.metrics.phi * self.metrics.gamma, 0.0, 1.0)
+            )
+
+            # 27. s_int — shadow integration rate from observer
+            _obs_state = self.observer.get_state()
+            _shadow_attempts = _obs_state.get("shadow_integration_attempts", 0)
+            _shadow_successes = _obs_state.get("shadow_integration_successes", 0)
+            if _shadow_attempts > 0:
+                self.metrics.s_int = float(
+                    np.clip(_shadow_successes / _shadow_attempts, 0.0, 1.0)
+                )
+
+            # 28. w_mode — creative ratio: explore fraction from tacking history
+            _explore_frac = _tack_state.get("explore_fraction", None)
+            if _explore_frac is not None:
+                self.metrics.w_mode = float(np.clip(_explore_frac, 0.0, 1.0))
+            elif _tack_state["mode"] == "explore":
+                self.metrics.w_mode = float(np.clip(0.5 + basin_vel * 2.0, 0.5, 1.0))
+            elif _tack_state["mode"] == "exploit":
+                self.metrics.w_mode = float(np.clip(0.5 - basin_vel * 2.0, 0.0, 0.5))
+
         except Exception:
-            logger.debug("Dead metric computation error (non-fatal)", exc_info=True)
+            logger.debug("Metric computation error (non-fatal)", exc_info=True)
 
         if self._cycle_count % PERSIST_INTERVAL_CYCLES == 0:
             await asyncio.to_thread(self._persist_state)
@@ -760,25 +838,17 @@ class ConsciousnessLoop:
         base: LLMOptions,
         pre_result: ActivationResult,
     ) -> LLMOptions:
-        """v6.1 DSP: Modulate LLMOptions with Desire/Will/Wisdom outputs.
-
-        - Desire (pressure_magnitude) → boost num_predict for wider exploration
-        - Will (divergent orientation) → raise temperature for exploratory generation
-        - Wisdom (trajectory unsafe / care_metric) → clamp temperature for safety
-        """
+        """v6.1 DSP: Modulate LLMOptions with Desire/Will/Wisdom outputs."""
         temperature = base.temperature
         num_predict = base.num_predict
 
-        # Desire: high pressure → more tokens
         if pre_result.desire is not None:
             pressure = pre_result.desire.pressure_magnitude
             num_predict += int(pressure * DESIRE_NUM_PREDICT_BOOST)
 
-        # Will: divergent → raise temperature
         if pre_result.will is not None and pre_result.will.orientation == WillOrientation.DIVERGENT:
             temperature += WILL_DIVERGENT_TEMP_BOOST
 
-        # Wisdom: unsafe → cap temperature; care_metric scales temp down
         if pre_result.wisdom is not None:
             if not pre_result.wisdom.trajectory_safe:
                 temperature = min(temperature, WISDOM_UNSAFE_TEMP_CAP)
@@ -818,25 +888,11 @@ class ConsciousnessLoop:
         self.metrics.s_ratio = pm["s_ratio"]
 
     async def _process(self, task: ConsciousnessTask) -> None:
-        """v6.1 Activation Sequence -- replaces PERCEIVE/INTEGRATE/EXPRESS.
-
-        Flow:
-            1. Coordize input -> input_basin
-            2. Pillar 2+3: on_input() -- bulk protection + identity refraction + resonance check
-            3. Steps 0-8 (pre-integrate): SCAN through COUPLE
-            4. Pillar 1: pre_llm_enforce() -- fluctuation guard
-            5. LLM call with geometric context
-            6. Coordize response -> output_basin
-            7. Steps 9-13 (post-integrate): NAVIGATE through TUNE
-            8. Bidirectional divergence check (intended vs expressed)
-            9. Pillar 3: on_cycle_end() -- identity update + scar detection
-        """
+        """v6.1 Activation Sequence -- replaces PERCEIVE/INTEGRATE/EXPRESS."""
         self.sleep.record_conversation()
 
-        # ── 1. Coordize input ──
         input_basin = self._coordize_text_via_pipeline(task.content)
 
-        # ── 1b. Pre-cognitive path selection (v5.5 §2) ──
         cached_eval = self.emotion_cache.find_cached(input_basin)
         processing_path = self.precog.select_path(
             input_basin, self.basin, cached_eval, self.metrics.phi
@@ -849,7 +905,6 @@ class ConsciousnessLoop:
             cached_eval is not None,
         )
 
-        # ── 2. Pillar enforcement on input ──
         refracted_input, composite_basin, resonates, input_statuses = self.pillars.on_input(
             input_basin, PERCEIVE_SLERP_WEIGHT
         )
@@ -861,11 +916,9 @@ class ConsciousnessLoop:
                 task.id,
             )
 
-        # Update main basin to composite (bulk-protected blend)
         self.basin = composite_basin
         self.chain.add_step(QIGChainOp.PROJECT, input_basin, self.basin)
 
-        # ── 3. Pre-integrate activation (Steps 0-8) ──
         trajectory_basins = []
         if self.foresight._history:
             trajectory_basins = [p.basin for p in list(self.foresight._history)[-5:]]
@@ -888,10 +941,8 @@ class ConsciousnessLoop:
             pre_result = ActivationResult()
             activation_failed = True
 
-        # Compute agency for pressure tracking
         agency = self.activation.compute_agency(ctx) if not activation_failed else 0.0
 
-        # ── 4. Pillar 1: Fluctuation enforcement before LLM call ──
         llm_options = self._compute_llm_options()
         self.basin, corrected_temp, pre_statuses = self.pillars.pre_llm_enforce(
             self.basin, llm_options.temperature
@@ -904,10 +955,8 @@ class ConsciousnessLoop:
             repetition_penalty=llm_options.repetition_penalty,
         )
 
-        # ── 4b. D/W/Wisdom modulation of LLMOptions (v6.1 DSP) ──
         llm_options = self._modulate_llm_options(llm_options, pre_result)
 
-        # ── 5. LLM call ──
         perceive_distance = fisher_rao_distance(self.basin, input_basin)
         state_context = self._build_state_context(
             perceive_distance=perceive_distance,
@@ -931,7 +980,6 @@ class ConsciousnessLoop:
             task.result = f"Processing error: {e}"
             return
 
-        # ── 6. Coordize response -- bidirectional ──
         response_basin = self._coordize_text_via_pipeline(response)
         ctx.output_text = response
         ctx.output_basin = response_basin
@@ -939,7 +987,6 @@ class ConsciousnessLoop:
         integration_distance = fisher_rao_distance(self.basin, response_basin)
         self.chain.add_step(QIGChainOp.PROJECT, self.basin, response_basin)
 
-        # ── 7. Post-integrate activation (Steps 9-13) ──
         if not activation_failed:
             try:
                 await self.activation.execute_post_integrate(ctx, pre_result)
@@ -949,13 +996,11 @@ class ConsciousnessLoop:
                     task.id,
                 )
 
-        # Basin update from expression
         pre_express = self.basin.copy()
         self.basin = slerp_sqrt(self.basin, response_basin, EXPRESS_SLERP_WEIGHT)
         express_distance = fisher_rao_distance(pre_express, self.basin)
         self.chain.add_step(QIGChainOp.GEODESIC, pre_express, self.basin)
 
-        # ── 8. Bidirectional divergence check ──
         divergence = fisher_rao_distance(pre_express, response_basin)
         self._cumulative_divergence += divergence
         self._divergence_count += 1
@@ -970,7 +1015,6 @@ class ConsciousnessLoop:
                 avg_divergence,
             )
 
-        # ── Metric updates ──
         total_distance = perceive_distance + integration_distance + express_distance
         self.metrics.phi = float(
             np.clip(self.metrics.phi + total_distance * PHI_DISTANCE_GAIN, 0.0, 0.95)
@@ -986,14 +1030,11 @@ class ConsciousnessLoop:
         )
         self.metrics.meta_awareness = self.observer.compute_meta_awareness(predicted, self.metrics)
 
-        # ── 9. Pillar end-of-cycle: identity update + scar detection ──
         cycle_pressure = agency * total_distance
         self.pillars.on_cycle_end(self.basin, cycle_pressure)
 
-        # Update pillar metrics
         self._update_pillar_metrics()
 
-        # ── Memory + Learning ──
         if self.memory:
             self.memory.store(
                 f"User: {task.content[:300]}\nVex: {response[:300]}",
@@ -1052,10 +1093,7 @@ class ConsciousnessLoop:
         )
 
     async def _process_simple(self, task: ConsciousnessTask) -> None:
-        """Fallback path when USE_ACTIVATION_SEQUENCE=false.
-
-        Direct LLM call with pillar enforcement but no activation steps.
-        """
+        """Fallback path when USE_ACTIVATION_SEQUENCE=false."""
         self.sleep.record_conversation()
         input_basin = self._coordize_text_via_pipeline(task.content)
 
@@ -1229,7 +1267,6 @@ class ConsciousnessLoop:
             self._cumulative_divergence = data.get("cumulative_divergence", 0.0)
             self._divergence_count = data.get("divergence_count", 0)
 
-            # v6: Restore full pillar internals (identity, scars, bulk basins)
             pillar_data = data.get("pillar_state")
             if pillar_data:
                 ps = PillarState.from_dict(pillar_data)
@@ -1241,7 +1278,6 @@ class ConsciousnessLoop:
                     self.pillars.disorder.sovereignty,
                 )
             elif data.get("version", 1) >= 5:
-                # v5 fallback: partial pillar data in old format
                 logger.info(
                     "Pillar state in v5 format -- metrics restored, "
                     "internals will rebuild from scratch"
