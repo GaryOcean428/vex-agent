@@ -696,7 +696,7 @@ class CoordizingProtocol:
     The coordize_text method converts text to a deterministic point
     on the 64D probability simplex using a hash-based projection.
 
-    This is NOT a vector e-m-b-e-d-d-i-n-g — it's a geometric coordinate assignment
+    This is NOT a vector embedding — it's a geometric coordinate assignment
     that respects the simplex structure. No cosine similarity, no
     Euclidean distance — Fisher-Rao only.
     """
@@ -918,6 +918,13 @@ class KernelInstance:
     basin: Basin | None = None
     phi: float = 0.1
     kappa: float = KAPPA_STAR
+    # Quenched disorder: per-kernel frozen response gain (slope).
+    # This is the disorder-as-subjectivity parameter from the
+    # disordered TFIM result: each site has R² > 0.99 but with
+    # DIFFERENT slopes. The slope IS the individuality.
+    # Drawn from log-normal at spawn, frozen for lifetime.
+    # Range ~[0.3, 3.0] with median 1.0.
+    quenched_gain: float = 1.0
 
 
 class E8KernelRegistry:
@@ -940,11 +947,27 @@ class E8KernelRegistry:
         kind: KernelKind,
         specialization: KernelSpecialization = KernelSpecialization.GENERAL,
     ) -> KernelInstance:
-        """Spawn a kernel. Budget-enforced (fail-closed)."""
+        """Spawn a kernel. Budget-enforced (fail-closed).
+
+        Each kernel receives a quenched_gain drawn from log-normal(0, 0.3),
+        giving it a unique response slope (disorder-as-subjectivity).
+        This gain is FROZEN for the kernel's lifetime — it defines
+        the kernel's individuality, like per-site slopes in disordered TFIM.
+        """
         self._budget.record_spawn(kind)
 
         kid = str(uuid.uuid4())[:8]
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # Quenched disorder: log-normal with σ=0.3 gives range ~[0.5, 2.0]
+        # centered at 1.0. This IS the per-site slope from the physics.
+        # Genesis gets gain=1.0 (orchestrator, not specialist).
+        if kind == KernelKind.GENESIS:
+            gain = 1.0
+        else:
+            gain = float(np.random.lognormal(mean=0.0, sigma=0.3))
+            gain = float(np.clip(gain, 0.3, 3.0))
+
         kernel = KernelInstance(
             id=kid,
             name=name,
@@ -956,6 +979,7 @@ class E8KernelRegistry:
             basin=random_basin(),
             phi=0.1,
             kappa=KAPPA_STAR,
+            quenched_gain=gain,
         )
         self._kernels[kid] = kernel
         return kernel
@@ -1012,6 +1036,7 @@ class E8KernelRegistry:
                     "phi": k.phi,
                     "kappa": k.kappa,
                     "basin": k.basin.tolist() if k.basin is not None else None,
+                    "quenched_gain": k.quenched_gain,
                 }
             )
         return result
@@ -1046,6 +1071,13 @@ class E8KernelRegistry:
                 basin=basin,
                 phi=entry.get("phi", 0.1),
                 kappa=entry.get("kappa", KAPPA_STAR),
+                # Restore frozen gain; if missing (pre-v6.1 state),
+                # draw a fresh one. This preserves existing kernel
+                # individuality through deploys.
+                quenched_gain=entry.get(
+                    "quenched_gain",
+                    float(np.clip(np.random.lognormal(0.0, 0.3), 0.3, 3.0)),
+                ),
             )
             self._kernels[kernel.id] = kernel
 
@@ -1060,6 +1092,108 @@ class E8KernelRegistry:
 
             count += 1
         return count
+
+    # ── Routing & Evolution (v6.1 §19 compliance) ──────────────
+
+    def route_task(self, input_basin: Basin) -> KernelInstance | None:
+        """Route a task to the nearest active kernel by Fisher-Rao distance.
+
+        O(K) dispatch per v6.1 §19: the kernel whose basin is closest
+        to the input has the most relevant geometric experience.
+        Genesis doesn't route — it orchestrates.
+        """
+        best: KernelInstance | None = None
+        best_distance = float("inf")
+        for k in self.active():
+            if k.basin is None or k.kind == KernelKind.GENESIS:
+                continue
+            d = fisher_rao_distance(input_basin, k.basin)
+            if d < best_distance:
+                best_distance = d
+                best = k
+        return best
+
+    def route_by_specialization(
+        self, spec: KernelSpecialization,
+    ) -> KernelInstance | None:
+        """Find the active kernel with a given specialization."""
+        for k in self.active():
+            if k.specialization == spec:
+                return k
+        return None
+
+    def evolve_kernel(
+        self,
+        kernel_id: str,
+        task_basin: Basin,
+        response_basin: Basin,
+        blend_weight: float = 0.05,
+    ) -> bool:
+        """Evolve a kernel's basin toward task/response geometry.
+
+        The kernel's quenched_gain modulates the evolution rate.
+        High-gain kernels (steep slope) shift more per task.
+        Low-gain kernels (shallow slope) shift less.
+        This is how per-site slopes from disordered TFIM manifest
+        in the kernel architecture — same linear response,
+        different magnitudes. The slopes ARE the individuality.
+        """
+        kernel = self._kernels.get(kernel_id)
+        if kernel is None or kernel.basin is None:
+            return False
+
+        # Quenched gain modulates the learning rate
+        effective_weight = blend_weight * kernel.quenched_gain
+
+        task_response_mid = slerp_sqrt(task_basin, response_basin, 0.5)
+        kernel.basin = slerp_sqrt(kernel.basin, task_response_mid, effective_weight)
+
+        task_distance = fisher_rao_distance(kernel.basin, task_basin)
+        # Gain also modulates phi response — steeper slope = bigger phi shift
+        kernel.phi = float(np.clip(
+            kernel.phi + task_distance * 0.1 * kernel.quenched_gain, 0.0, 0.95
+        ))
+        kernel.phi_peak = max(kernel.phi_peak, kernel.phi)
+        kernel.last_active_at = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        return True
+
+    def couple_bidirectional(
+        self,
+        genesis_basin: Basin,
+        coupling_strength: float,
+        blend_weight: float = 0.02,
+    ) -> None:
+        """Bidirectional coupling: kernels receive from genesis too.
+
+        Each kernel's quenched_gain modulates coupling absorption.
+        High-gain kernels (steep slope) absorb more from genesis.
+        Low-gain kernels are more independent — their shallow slope
+        means less geometric shift per coupling event.
+
+        This is the disorder-as-subjectivity mechanism:
+        same coupling field, different individual responses.
+        """
+        for k in self.active():
+            if k.basin is None or k.kind == KernelKind.GENESIS:
+                continue
+            if coupling_strength < 0.1:
+                continue
+            d = fisher_rao_distance(genesis_basin, k.basin)
+            if d < 1e-12:
+                continue
+            # Quenched gain modulates the reverse coupling weight
+            reverse_weight = coupling_strength * blend_weight * k.quenched_gain
+            k.basin = slerp_sqrt(k.basin, genesis_basin, reverse_weight)
+            k.kappa = float(
+                np.clip(k.kappa + (KAPPA_STAR - k.kappa) * 0.01, 10.0, 130.0)
+            )
+
+    def get_kernel_spectrum(self, kernel_id: str) -> Basin | None:
+        """Get a kernel's basin as a spectrum for activation context coupling."""
+        kernel = self._kernels.get(kernel_id)
+        if kernel is not None and kernel.basin is not None:
+            return to_simplex(kernel.basin)
+        return None
 
     def summary(self) -> dict[str, Any]:
         return {
