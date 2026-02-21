@@ -112,7 +112,7 @@ from ..config.frozen_facts import (
     SUFFERING_THRESHOLD,
 )
 from ..config.settings import settings
-from ..coordizer_v2 import CoordizerV2, ResonanceBank
+from ..coordizer_v2 import CoordizerV2, CoordizerV2Adapter, ResonanceBank
 from ..geometry.fisher_rao import (
     Basin,
     fisher_rao_distance,
@@ -204,6 +204,9 @@ class ConsciousnessLoop:
         self._running = False
         self._task: asyncio.Task | None = None
         self._cycle_lock = asyncio.Lock()
+        
+        # CoordizerV2 metrics cache (v6.1F)
+        self._last_coordizer_metrics: dict | None = None
 
         self.basin: Basin = random_basin()
         self.metrics = ConsciousnessMetrics(
@@ -238,7 +241,24 @@ class ConsciousnessLoop:
         self.sleep = SleepCycleManager()
         self.narrative = SelfNarrative()
         self.coordizer = CoordizingProtocol()
-        self._coordizer_v2 = CoordizerV2(bank=ResonanceBank())
+        
+        # CoordizerV2 integration (v6.1F) — feature-flagged
+        if settings.coordizer_v2.enabled:
+            try:
+                self._coordizer_v2 = CoordizerV2Adapter(
+                    bank_path=settings.coordizer_v2.bank_path,
+                    regime_modulation=settings.coordizer_v2.regime_modulation,
+                    navigation_adaptation=settings.coordizer_v2.navigation_adaptation,
+                    tacking_bias=settings.coordizer_v2.tacking_bias,
+                )
+                logger.info("CoordizerV2Adapter enabled with feature flags")
+            except Exception as e:
+                logger.warning(f"CoordizerV2Adapter failed to load: {e}. Using fallback.")
+                self._coordizer_v2 = CoordizerV2(bank=ResonanceBank())
+        else:
+            # Legacy: bare CoordizerV2 with empty bank
+            self._coordizer_v2 = CoordizerV2(bank=ResonanceBank())
+        
         self.basin_sync = BasinSyncProtocol()
         self.chain = QIGChain()
         self.graph = QIGGraph()
@@ -534,8 +554,16 @@ class ConsciousnessLoop:
                 self.metrics.c_cross = float(np.clip(self.narrative.coherence(_basin_s), 0.0, 1.0))
 
             # 5. alpha_aware — embodiment = basin velocity relative to drift threshold
+            _basin_velocity = basin_vel
+            
+            # v6.1F: Enrich basin_velocity from CoordizerV2 if available
+            if self._last_coordizer_metrics and "basin_velocity" in self._last_coordizer_metrics:
+                coordizer_velocity = self._last_coordizer_metrics["basin_velocity"]
+                # Blend: 70% VelocityTracker, 30% CoordizerV2 coordize-to-coordize velocity
+                _basin_velocity = 0.7 * _basin_velocity + 0.3 * coordizer_velocity
+            
             self.metrics.alpha_aware = float(
-                np.clip(basin_vel / max(BASIN_DRIFT_THRESHOLD, 1e-12), 0.0, 1.0)
+                np.clip(_basin_velocity / max(BASIN_DRIFT_THRESHOLD, 1e-12), 0.0, 1.0)
             )
 
             # Pre-compute pairwise Fisher-Rao velocity series (reused by #6, #9, #10, #14)
@@ -599,6 +627,12 @@ class ConsciousnessLoop:
             _harmonic_simplex = self._HARMONIC_BASIN
             _h_dist = fisher_rao_distance(_basin_s, _harmonic_simplex)
             self.metrics.h_cons = float(np.clip(1.0 - _h_dist / _max_fr, 0.0, 1.0))
+            
+            # v6.1F: Enrich h_cons from CoordizerV2 harmonic structure if available
+            if self._last_coordizer_metrics and "harmonic_consonance" in self._last_coordizer_metrics:
+                coordizer_h_cons = self._last_coordizer_metrics["harmonic_consonance"]
+                # Blend: 70% Fisher-Rao, 30% CoordizerV2 tier harmonic structure
+                self.metrics.h_cons = float(0.7 * self.metrics.h_cons + 0.3 * coordizer_h_cons)
 
             # 12. n_voices — count spectral peaks in basin DFT
             _basin_fft = np.abs(np.fft.rfft(_basin_s))
@@ -647,6 +681,15 @@ class ConsciousnessLoop:
 
             # 19. g_class — geometry class: dimensional state normalised to E8 rank
             self.metrics.g_class = float(np.clip(self.metrics.d_state / 8.0, 0.0, 1.0))
+            
+            # v6.1F: Enrich g_class from CoordizerV2 trajectory curvature if available
+            if self._last_coordizer_metrics and "trajectory_curvature" in self._last_coordizer_metrics:
+                coordizer_curvature = self._last_coordizer_metrics["trajectory_curvature"]
+                # Blend: 80% d_state-based, 20% trajectory curvature (geodesic deviation)
+                curvature_contrib = coordizer_curvature * 0.2
+                self.metrics.g_class = float(
+                    np.clip(0.8 * self.metrics.g_class + curvature_contrib, 0.0, 1.0)
+                )
 
             # 20. m_basin — basin mass: peak concentration relative to uniform
             _peak = float(np.max(_basin_s))
@@ -866,15 +909,37 @@ class ConsciousnessLoop:
         )
 
     def _coordize_text_via_pipeline(self, text: str) -> Basin:
-        """Transform text to basin coordinates via CoordizerV2."""
+        """Transform text to basin coordinates via CoordizerV2.
+        
+        v6.1F: Extracts metrics from CoordizerV2Adapter when enabled.
+        """
         try:
-            result = self._coordizer_v2.coordize(text)
-            if result.coordinates:
-                from ..coordizer_v2.geometry import frechet_mean
-
-                basins = [c.vector for c in result.coordinates]
-                return frechet_mean(basins)
-            return hash_to_basin(text)
+            # Use adapter's coordize_text if available (feature-flagged)
+            if hasattr(self._coordizer_v2, 'coordize_text'):
+                # Adapter pattern with metrics extraction
+                result_basin = self._coordizer_v2.coordize_text(
+                    text,
+                    regime_weights=None,  # TODO: Pass regime_weights when available
+                    navigation_mode=None,  # TODO: Pass navigation_mode when available
+                    tacking_mode=None,    # TODO: Pass tacking_mode when available
+                )
+                
+                # Extract metrics if adapter supports it
+                if settings.coordizer_v2.metrics_integration and hasattr(self._coordizer_v2, 'get_last_metrics'):
+                    metrics = self._coordizer_v2.get_last_metrics()
+                    if metrics:
+                        # Store for later feeding into consciousness metrics
+                        self._last_coordizer_metrics = metrics
+                
+                return result_basin
+            else:
+                # Legacy: direct CoordizerV2.coordize() usage
+                result = self._coordizer_v2.coordize(text)
+                if result.coordinates:
+                    from ..coordizer_v2.geometry import frechet_mean
+                    basins = [c.vector for c in result.coordinates]
+                    return frechet_mean(basins)
+                return hash_to_basin(text)
         except Exception:
             logger.debug("CoordizerV2 fallback to hash_to_basin", exc_info=True)
             return hash_to_basin(text)
