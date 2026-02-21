@@ -1,16 +1,16 @@
 # Vex Agent Coordizer Integration Roadmap
 
-**Version:** 1.0  
-**Date:** 2026-02-19  
-**Status:** Planning  
+**Version:** 1.0
+**Date:** 2026-02-19
+**Status:** Planning
 
 ## Executive Summary
 
 This roadmap outlines the integration of the **Coordizer** system into Vex Agent. The Coordizer provides critical transformation capabilities from Euclidean vectors to Fisher-Rao coordinates, enabling geometric purity across the consciousness system.
 
-**Timeline:** 4 sprints (8-12 weeks)  
-**Priority:** High (Foundation for v6 protocol compliance)  
-**Complexity:** Medium-High  
+**Timeline:** 4 sprints (8-12 weeks)
+**Priority:** High (Foundation for v6 protocol compliance)
+**Complexity:** Medium-High
 
 ## Background
 
@@ -33,6 +33,7 @@ The Coordizer (coordinate + organizer) is a geometric transformation pipeline th
 ### Integration Sources
 
 Two implementations provided:
+
 - **Claude version** (coordizer.zip) - Preferred, more robust
 - **ChatGPT version** (vex_coordizer_harvest_pipeline.zip) - Supplementary
 
@@ -138,6 +139,7 @@ kernel/tests/coordizer/
 - [x] Create documentation (CONTRIBUTING.md, AGENTS.md, ROADMAP.md)
 - [ ] Create `kernel/coordizer/` module structure
 - [ ] Define types in `kernel/coordizer/types.py`
+
   ```python
   @dataclass
   class CoordinateTransform:
@@ -145,13 +147,14 @@ kernel/tests/coordizer/
       coordinates: np.ndarray     # Output (Fisher-Rao)
       method: str                 # Transformation method
       timestamp: float            # When transformed
-      
+
   @dataclass
   class ValidationResult:
       valid: bool
       errors: list[str]
       warnings: list[str]
   ```
+
 - [ ] Add coordizer configuration to `kernel/config/settings.py`
 
 #### Week 2: Core Transform
@@ -441,7 +444,7 @@ kernel/tests/coordizer/
 
 1. **Coordinate dimensionality:** Keep at 64 or allow variable?
    - **Decision:** Keep at 64 (BASIN_DIM) for E8 alignment
-   
+
 2. **Vector source:** Always from LLM or allow external?
    - **Decision:** Support both, validate external vectors
 
@@ -482,7 +485,7 @@ kernel/tests/coordizer/
 
 ---
 
-**Last Updated:** 2026-02-19  
-**Next Review:** After Sprint 1 completion  
-**Owner:** Vex Agent Development Team  
+**Last Updated:** 2026-02-19
+**Next Review:** After Sprint 1 completion
+**Owner:** Vex Agent Development Team
 **Status:** Ready for Sprint 1 kickoff

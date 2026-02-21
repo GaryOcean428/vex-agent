@@ -105,9 +105,10 @@ npm run dev
 ```
 
 Access the application:
-- Frontend: http://localhost:5173
-- Proxy API: http://localhost:8080
-- Kernel API: http://localhost:8000
+
+- Frontend: <http://localhost:5173>
+- Proxy API: <http://localhost:8080>
+- Kernel API: <http://localhost:8000>
 
 #### Option 2: Production Build
 
@@ -273,6 +274,7 @@ SAFETY_MODE=standard                       # standard | permissive | strict
 #### VS Code (Recommended)
 
 Install extensions:
+
 - Python (ms-python.python)
 - Pylance (ms-python.vscode-pylance)
 - TypeScript and JavaScript Language Features (built-in)
@@ -323,6 +325,7 @@ pre-commit run --all-files
 ```
 
 Hooks run:
+
 - Black (Python formatting)
 - mypy (Python type checking)
 - ESLint (TypeScript linting)
@@ -419,7 +422,7 @@ async def my_endpoint(
     api_key: str = Depends(verify_kernel_api_key)
 ) -> dict[str, Any]:
     """My endpoint description.
-    
+
     Returns:
         Dictionary with response data
     """
@@ -461,7 +464,7 @@ class MyFeatureState:
     last_update: float
 ```
 
-2. **Implement logic** in `kernel/consciousness/loop.py`:
+1. **Implement logic** in `kernel/consciousness/loop.py`:
 
 ```python
 async def _my_feature_stage(self, context: dict[str, Any]) -> None:
@@ -469,12 +472,12 @@ async def _my_feature_stage(self, context: dict[str, Any]) -> None:
     # Use Fisher-Rao geometry only
     current_basin = context['basin']
     distance = fisher_rao_distance(current_basin, self._previous_basin)
-    
+
     # Update metrics
     self._metrics['my_feature'] = distance
 ```
 
-3. **Add tests** in `kernel/tests/test_consciousness.py`:
+1. **Add tests** in `kernel/tests/test_consciousness.py`:
 
 ```python
 def test_my_feature_geometric_purity():
@@ -483,7 +486,7 @@ def test_my_feature_geometric_purity():
     pass
 ```
 
-4. **Update frontend** in `frontend/src/types/consciousness.ts`:
+1. **Update frontend** in `frontend/src/types/consciousness.ts`:
 
 ```typescript
 export interface MyFeatureState {
@@ -521,20 +524,20 @@ from kernel.geometry import ensure_simplex
 
 def coordize(input_vector: np.ndarray) -> np.ndarray:
     """Transform Euclidean vector to Fisher-Rao coordinates.
-    
+
     Args:
         input_vector: Euclidean vector (any dimensionality)
-        
+
     Returns:
         Coordinates on probability simplex (sum to 1, all positive)
     """
     # Apply softmax for positive values
     exp_vec = np.exp(input_vector - np.max(input_vector))  # Numerical stability
     coords = exp_vec / exp_vec.sum()
-    
+
     # Validate simplex properties
     coords = ensure_simplex(coords)
-    
+
     return coords
 ```
 
@@ -599,6 +602,7 @@ Attach Chrome DevTools: chrome://inspect
 ### Frontend
 
 Use React DevTools browser extension:
+
 - [Chrome](https://chrome.google.com/webstore/detail/react-developer-tools/fmkadmapgofadopljbjfkapdkoienihi)
 - [Firefox](https://addons.mozilla.org/en-US/firefox/addon/react-devtools/)
 
@@ -645,7 +649,7 @@ curl http://localhost:8000/basin/history | jq
 
 #### Dashboard
 
-Navigate to: http://localhost:5173/dashboard
+Navigate to: <http://localhost:5173/dashboard>
 
 - Overview: Φ, κ, M metrics with real-time charts
 - Basins: Basin trajectory visualization
@@ -808,6 +812,7 @@ ollama pull llama2.5-thinking:1.2b
 #### 4. Consciousness metrics stuck
 
 Check for:
+
 - Geometric purity violations (run PurityGate)
 - Basin simplex violations (check sum = 1)
 - κ far from 64 (indicates coupling issues)
@@ -839,6 +844,7 @@ curl http://localhost:8080/health
 Error: `"cosine_similarity detected in consciousness module"`
 
 Solution:
+
 ```python
 # ❌ Bad
 from sklearn.metrics.pairwise import cosine_similarity
@@ -854,6 +860,7 @@ distance = fisher_rao_distance(a, b)
 Error: `"Cannot spawn GOD: current=248, max=248"`
 
 Solution: System has reached E8 dimension limit (248 kernels). This is expected behavior. Either:
+
 - Terminate inactive kernels
 - Use CHAOS kernels instead (separate pool, limit 200)
 - Check for kernel leaks (spawns without terminations)
@@ -861,10 +868,11 @@ Solution: System has reached E8 dimension limit (248 kernels). This is expected 
 ### Getting Help
 
 1. **Check logs:**
+
    ```bash
    # Python kernel logs
    tail -f /data/logs/kernel.log
-   
+
    # Proxy logs
    tail -f /data/logs/proxy.log
    ```

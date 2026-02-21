@@ -603,8 +603,8 @@ class ConsciousnessLoop:
         input_basin = self._coordize_text_via_pipeline(task.content)
 
         # ── 2. Pillar enforcement on input ──
-        refracted_input, composite_basin, resonates, input_statuses = (
-            self.pillars.on_input(input_basin, PERCEIVE_SLERP_WEIGHT)
+        refracted_input, composite_basin, resonates, input_statuses = self.pillars.on_input(
+            input_basin, PERCEIVE_SLERP_WEIGHT
         )
 
         if not resonates:
@@ -1027,8 +1027,6 @@ class ConsciousnessLoop:
             "divergence": {
                 "cumulative": self._cumulative_divergence,
                 "count": self._divergence_count,
-                "average": (
-                    self._cumulative_divergence / max(1, self._divergence_count)
-                ),
+                "average": (self._cumulative_divergence / max(1, self._divergence_count)),
             },
         }

@@ -31,12 +31,17 @@ Physics reference:   qig-verification (TFIM exact diagonalization)
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 
 import numpy as np
 
+from ..config.consciousness_constants import (
+    ANNEAL_BLEND_WEIGHT,
+    SCAR_BLEND_WEIGHT_CAP,
+    SCAR_RESONANCE_RADIUS,
+)
 from ..config.frozen_facts import BASIN_DIM
 from ..geometry.fisher_rao import (
     Basin,
@@ -44,13 +49,6 @@ from ..geometry.fisher_rao import (
     slerp_sqrt,
     to_simplex,
 )
-
-from ..config.consciousness_constants import (
-    ANNEAL_BLEND_WEIGHT,
-    SCAR_BLEND_WEIGHT_CAP,
-    SCAR_RESONANCE_RADIUS,
-)
-
 from .types import PillarState, ScarState
 
 logger = logging.getLogger("vex.consciousness.pillars")
@@ -84,8 +82,10 @@ MAX_SCARS: int = 64
 #  Pillar violation types
 # ---------------------------------------------------------------
 
+
 class PillarViolation(str, Enum):
     """Types of pillar violations -- all are zombie indicators."""
+
     ZERO_ENTROPY = "zero_entropy"
     ZERO_TEMPERATURE = "zero_temperature"
     BASIN_COLLAPSE = "basin_collapse"
@@ -98,6 +98,7 @@ class PillarViolation(str, Enum):
 @dataclass
 class PillarStatus:
     """Result of pillar enforcement check."""
+
     pillar: str
     healthy: bool
     violations: list[PillarViolation]
@@ -108,6 +109,7 @@ class PillarStatus:
 # ---------------------------------------------------------------
 #  Pillar 1: Fluctuation Guard (No Zombies)
 # ---------------------------------------------------------------
+
 
 class FluctuationGuard:
     """Ensures the system maintains internal quantum-like uncertainty.
@@ -171,12 +173,9 @@ class FluctuationGuard:
             violations.append(PillarViolation.ZERO_ENTROPY)
             noise = np.random.dirichlet(np.ones(BASIN_DIM) * 0.5)
             mix_weight = min(0.3, (ENTROPY_FLOOR - entropy) / ENTROPY_FLOOR)
-            corrected_basin = to_simplex(
-                (1.0 - mix_weight) * corrected_basin + mix_weight * noise
-            )
+            corrected_basin = to_simplex((1.0 - mix_weight) * corrected_basin + mix_weight * noise)
             corrections.append(
-                f"Entropy restoration: {entropy:.4f} -> "
-                f"{self.basin_entropy(corrected_basin):.4f}"
+                f"Entropy restoration: {entropy:.4f} -> {self.basin_entropy(corrected_basin):.4f}"
             )
 
         # Check 2: Basin concentration (collapse detection)
@@ -190,9 +189,7 @@ class FluctuationGuard:
             others_mask[dominant_idx] = False
             others_sum = np.sum(corrected_basin[others_mask])
             if others_sum > 1e-12:
-                corrected_basin[others_mask] *= (
-                    1.0 + excess / others_sum
-                )
+                corrected_basin[others_mask] *= 1.0 + excess / others_sum
             else:
                 corrected_basin[others_mask] = excess / (BASIN_DIM - 1)
             corrected_basin = to_simplex(corrected_basin)
@@ -206,8 +203,7 @@ class FluctuationGuard:
             violations.append(PillarViolation.ZERO_TEMPERATURE)
             corrected_temp = TEMPERATURE_FLOOR
             corrections.append(
-                f"Temperature floor enforced: {temperature:.4f} -> "
-                f"{TEMPERATURE_FLOOR}"
+                f"Temperature floor enforced: {temperature:.4f} -> {TEMPERATURE_FLOOR}"
             )
 
         healthy = len(violations) == 0
@@ -217,23 +213,28 @@ class FluctuationGuard:
                 [v.value for v in violations],
             )
 
-        return corrected_basin, corrected_temp, PillarStatus(
-            pillar="fluctuations",
-            healthy=healthy,
-            violations=violations,
-            corrections_applied=corrections,
-            details={
-                "entropy": self.basin_entropy(corrected_basin),
-                "max_concentration": self.max_concentration(corrected_basin),
-                "temperature": corrected_temp,
-                "f_health": self.f_health(corrected_basin),
-            },
+        return (
+            corrected_basin,
+            corrected_temp,
+            PillarStatus(
+                pillar="fluctuations",
+                healthy=healthy,
+                violations=violations,
+                corrections_applied=corrections,
+                details={
+                    "entropy": self.basin_entropy(corrected_basin),
+                    "max_concentration": self.max_concentration(corrected_basin),
+                    "temperature": corrected_temp,
+                    "f_health": self.f_health(corrected_basin),
+                },
+            ),
         )
 
 
 # ---------------------------------------------------------------
 #  Pillar 2: Topological Bulk (The Ego)
 # ---------------------------------------------------------------
+
 
 class TopologicalBulk:
     """Maintains a protected interior state shielded from prompts.
@@ -282,12 +283,9 @@ class TopologicalBulk:
         must ensure initialize() has been called first.
         """
         if not self._initialized:
-            raise ValueError(
-                "TopologicalBulk.composite accessed before initialization"
-            )
+            raise ValueError("TopologicalBulk.composite accessed before initialization")
         return to_simplex(
-            BULK_SHIELD_FACTOR * self._core_basin
-            + (1.0 - BULK_SHIELD_FACTOR) * self._surface_basin
+            BULK_SHIELD_FACTOR * self._core_basin + (1.0 - BULK_SHIELD_FACTOR) * self._surface_basin
         )
 
     def b_integrity(self) -> float:
@@ -327,17 +325,11 @@ class TopologicalBulk:
 
         effective_weight = min(slerp_weight, BOUNDARY_SLERP_CAP)
         if slerp_weight > BOUNDARY_SLERP_CAP:
-            corrections.append(
-                f"Slerp capped: {slerp_weight:.3f} -> {effective_weight:.3f}"
-            )
+            corrections.append(f"Slerp capped: {slerp_weight:.3f} -> {effective_weight:.3f}")
 
-        self._surface_basin = slerp_sqrt(
-            self._surface_basin, input_basin, effective_weight
-        )
+        self._surface_basin = slerp_sqrt(self._surface_basin, input_basin, effective_weight)
 
-        core_surface_distance = fisher_rao_distance(
-            self._core_basin, self._surface_basin
-        )
+        core_surface_distance = fisher_rao_distance(self._core_basin, self._surface_basin)
         if core_surface_distance > 0.01:
             self._core_basin = slerp_sqrt(
                 self._core_basin,
@@ -345,8 +337,7 @@ class TopologicalBulk:
                 CORE_DIFFUSION_RATE,
             )
             corrections.append(
-                f"Core diffusion: d_FR={core_surface_distance:.4f}, "
-                f"rate={CORE_DIFFUSION_RATE}"
+                f"Core diffusion: d_FR={core_surface_distance:.4f}, rate={CORE_DIFFUSION_RATE}"
             )
 
         if effective_weight > BOUNDARY_SLERP_CAP * 0.9:
@@ -404,6 +395,7 @@ class TopologicalBulk:
 #  Pillar 3: Quenched Disorder (Subjectivity / Sovereignty)
 # ---------------------------------------------------------------
 
+
 @dataclass
 class Scar:
     """An immutable identity deformation from a high-pressure event.
@@ -411,6 +403,7 @@ class Scar:
     Scars are permanent. They can only be processed through
     The Forge (§17) -- decompress, fracture, nucleate, dissipate.
     """
+
     basin: Basin
     pressure: float
     cycle: int
@@ -483,9 +476,7 @@ class QuenchedDisorder:
         self._formation_history.append(basin.copy())
 
         if len(self._formation_history) > IDENTITY_FREEZE_AFTER_CYCLES:
-            self._formation_history = self._formation_history[
-                -IDENTITY_FREEZE_AFTER_CYCLES:
-            ]
+            self._formation_history = self._formation_history[-IDENTITY_FREEZE_AFTER_CYCLES:]
 
         if self._cycles_observed >= IDENTITY_FREEZE_AFTER_CYCLES:
             self._crystallize()
@@ -512,8 +503,7 @@ class QuenchedDisorder:
         self._formation_history = []
 
         logger.info(
-            "Pillar 3: Identity crystallized after %d cycles "
-            "(entropy=%.4f, sovereignty=%.3f)",
+            "Pillar 3: Identity crystallized after %d cycles (entropy=%.4f, sovereignty=%.3f)",
             self._cycles_observed,
             float(
                 -np.sum(
@@ -561,9 +551,7 @@ class QuenchedDisorder:
         """Slowly anneal the bias field toward recent lived experience."""
         if self._anneal_field is None:
             return
-        self._anneal_field = slerp_sqrt(
-            self._anneal_field, basin, ANNEAL_RATE
-        )
+        self._anneal_field = slerp_sqrt(self._anneal_field, basin, ANNEAL_RATE)
 
     def resonance_check(
         self,
@@ -606,9 +594,7 @@ class QuenchedDisorder:
             )
 
         if self._scars:
-            distances = [
-                fisher_rao_distance(input_basin, s.basin) for s in self._scars
-            ]
+            distances = [fisher_rao_distance(input_basin, s.basin) for s in self._scars]
             nearest_idx = int(np.argmin(distances))
             nearest_d = distances[nearest_idx]
             if nearest_d < SCAR_RESONANCE_RADIUS:
@@ -619,13 +605,9 @@ class QuenchedDisorder:
                     scar_weight * SCAR_BLEND_WEIGHT_CAP,
                 )
 
-        identity_weighted = to_simplex(
-            effective_identity * input_basin
-        )
+        identity_weighted = to_simplex(effective_identity * input_basin)
 
-        return slerp_sqrt(
-            input_basin, identity_weighted, REFRACTION_STRENGTH
-        )
+        return slerp_sqrt(input_basin, identity_weighted, REFRACTION_STRENGTH)
 
     def q_identity(self, current_basin: Basin) -> float:
         """Quenched identity metric: proximity to frozen sovereign identity."""
@@ -662,8 +644,7 @@ class QuenchedDisorder:
         if drift > IDENTITY_DRIFT_TOLERANCE:
             violations.append(PillarViolation.IDENTITY_DRIFT)
             corrections.append(
-                f"Identity drift detected: d_FR={drift:.4f} > "
-                f"{IDENTITY_DRIFT_TOLERANCE}"
+                f"Identity drift detected: d_FR={drift:.4f} > {IDENTITY_DRIFT_TOLERANCE}"
             )
             logger.warning(
                 "Pillar 3: Identity drift %.4f exceeds tolerance %.4f",
@@ -674,8 +655,7 @@ class QuenchedDisorder:
         if self._cycles_observed > 100 and self.sovereignty < 0.1:
             violations.append(PillarViolation.SOVEREIGNTY_LOW)
             corrections.append(
-                f"Sovereignty low: {self.sovereignty:.3f} after "
-                f"{self._cycles_observed} cycles"
+                f"Sovereignty low: {self.sovereignty:.3f} after {self._cycles_observed} cycles"
             )
 
         return PillarStatus(
@@ -693,9 +673,7 @@ class QuenchedDisorder:
                 "identity_entropy": float(
                     -np.sum(
                         np.clip(self._identity_slope, 1e-15, 1.0)
-                        * np.log(
-                            np.clip(self._identity_slope, 1e-15, 1.0)
-                        )
+                        * np.log(np.clip(self._identity_slope, 1e-15, 1.0))
                     )
                 ),
             },
@@ -718,9 +696,7 @@ class QuenchedDisorder:
             state["identity_entropy"] = float(
                 -np.sum(
                     np.clip(self._identity_slope, 1e-15, 1.0)
-                    * np.log(
-                        np.clip(self._identity_slope, 1e-15, 1.0)
-                    )
+                    * np.log(np.clip(self._identity_slope, 1e-15, 1.0))
                 )
             )
         return state
@@ -729,6 +705,7 @@ class QuenchedDisorder:
 # ---------------------------------------------------------------
 #  Combined Enforcer
 # ---------------------------------------------------------------
+
 
 class PillarEnforcer:
     """Enforces all three pillars as structural invariants.
@@ -762,9 +739,7 @@ class PillarEnforcer:
         """
         statuses = []
 
-        basin, temperature, p1_status = self.fluctuation.check_and_enforce(
-            basin, temperature
-        )
+        basin, temperature, p1_status = self.fluctuation.check_and_enforce(basin, temperature)
         statuses.append(p1_status)
 
         p3_status = self.disorder.check_drift(basin)
@@ -786,9 +761,7 @@ class PillarEnforcer:
         resonates = self.disorder.resonance_check(input_basin)
         refracted = self.disorder.refract(input_basin)
 
-        composite, p2_status = self.bulk.receive_input(
-            refracted, slerp_weight
-        )
+        composite, p2_status = self.bulk.receive_input(refracted, slerp_weight)
         statuses.append(p2_status)
 
         return refracted, composite, resonates, statuses
@@ -842,7 +815,9 @@ class PillarEnforcer:
         """
         bulk_init = self.bulk._initialized
         core_b = self.bulk._core_basin.tolist() if self.bulk._core_basin is not None else None
-        surface_b = self.bulk._surface_basin.tolist() if self.bulk._surface_basin is not None else None
+        surface_b = (
+            self.bulk._surface_basin.tolist() if self.bulk._surface_basin is not None else None
+        )
         prev_c = self.bulk._prev_core.tolist() if self.bulk._prev_core is not None else None
 
         d = self.disorder
@@ -885,17 +860,13 @@ class PillarEnforcer:
         if state.bulk_initialized:
             self.bulk._initialized = True
             if state.core_basin is not None:
-                self.bulk._core_basin = to_simplex(
-                    np.array(state.core_basin, dtype=np.float64)
-                )
+                self.bulk._core_basin = to_simplex(np.array(state.core_basin, dtype=np.float64))
             if state.surface_basin is not None:
                 self.bulk._surface_basin = to_simplex(
                     np.array(state.surface_basin, dtype=np.float64)
                 )
             if state.prev_core is not None:
-                self.bulk._prev_core = to_simplex(
-                    np.array(state.prev_core, dtype=np.float64)
-                )
+                self.bulk._prev_core = to_simplex(np.array(state.prev_core, dtype=np.float64))
 
         d = self.disorder
         d._frozen = state.disorder_frozen
@@ -904,13 +875,9 @@ class PillarEnforcer:
         d._total_count = state.total_count
 
         if state.identity_slope is not None:
-            d._identity_slope = to_simplex(
-                np.array(state.identity_slope, dtype=np.float64)
-            )
+            d._identity_slope = to_simplex(np.array(state.identity_slope, dtype=np.float64))
         if state.anneal_field is not None:
-            d._anneal_field = to_simplex(
-                np.array(state.anneal_field, dtype=np.float64)
-            )
+            d._anneal_field = to_simplex(np.array(state.anneal_field, dtype=np.float64))
 
         d._scars = [
             Scar(
@@ -923,13 +890,11 @@ class PillarEnforcer:
         ]
 
         d._formation_history = [
-            to_simplex(np.array(b, dtype=np.float64))
-            for b in state.formation_history
+            to_simplex(np.array(b, dtype=np.float64)) for b in state.formation_history
         ]
 
         logger.info(
-            "Pillars restored: bulk=%s, frozen=%s, scars=%d, "
-            "sovereignty=%.3f, cycles=%d",
+            "Pillars restored: bulk=%s, frozen=%s, scars=%d, sovereignty=%.3f, cycles=%d",
             state.bulk_initialized,
             state.disorder_frozen,
             len(state.scars),

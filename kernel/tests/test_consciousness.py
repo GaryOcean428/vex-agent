@@ -22,7 +22,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from kernel.config.frozen_facts import BASIN_DIM, KAPPA_STAR, PHI_THRESHOLD
+from kernel.config.frozen_facts import BASIN_DIM, KAPPA_STAR
 from kernel.consciousness.emotions import EmotionCache, EmotionType
 from kernel.consciousness.pillars import (
     ENTROPY_FLOOR,
@@ -51,7 +51,6 @@ from kernel.consciousness.types import (
 from kernel.geometry.fisher_rao import fisher_rao_distance, random_basin, to_simplex
 from kernel.governance import KernelKind
 from kernel.governance.budget import BudgetExceededError
-
 
 # ═══════════════════════════════════════════════════════════════
 #  REGIME WEIGHTS
@@ -539,9 +538,7 @@ class TestPillarEnforcer:
     def test_on_input_returns_valid_basin(self) -> None:
         pe = PillarEnforcer()
         pe.initialize_bulk(random_basin())
-        refracted, composite, resonates, statuses = pe.on_input(
-            random_basin(), slerp_weight=0.2
-        )
+        refracted, composite, resonates, statuses = pe.on_input(random_basin(), slerp_weight=0.2)
         assert abs(np.sum(refracted) - 1.0) < 1e-10
         assert abs(np.sum(composite) - 1.0) < 1e-10
         assert isinstance(resonates, bool)
