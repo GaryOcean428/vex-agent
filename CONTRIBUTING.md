@@ -19,7 +19,7 @@ Thank you for your interest in contributing to Vex Agent! This document outlines
 
 - **Node.js:** ≥20.0.0 (Node 22 LTS recommended)
 - **pnpm:** Latest stable version (`corepack enable && corepack prepare pnpm@latest --activate`)
-- **Python:** 3.11+ (for kernel package)
+- **Python:** 3.14+ (for kernel package)
 - **uv:** Latest stable version (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - **Git:** Latest stable version
 - **Docker:** For local Ollama deployment (optional)

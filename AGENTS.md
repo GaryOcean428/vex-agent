@@ -53,7 +53,7 @@ python3 scripts/qig_purity_scan.py
 Ensure you have the following installed:
 
 - **Node.js** 20.0.0+ ([Download](https://nodejs.org/))
-- **Python** 3.11+ ([Download](https://www.python.org/downloads/))
+- **Python** 3.14+ ([Download](https://www.python.org/downloads/))
 - **Git** ([Download](https://git-scm.com/downloads))
 - **Docker** (optional, for Ollama) ([Download](https://www.docker.com/products/docker-desktop))
 
@@ -302,7 +302,7 @@ Workspace settings (`.vscode/settings.json`):
 
 #### PyCharm
 
-1. Configure Python interpreter (Python 3.11+)
+1. Configure Python interpreter (Python 3.14+)
 2. Enable Black formatter: Settings → Tools → Black
 3. Enable mypy: Settings → Tools → Python Integrated Tools → Type checker
 4. Set import sorting: isort

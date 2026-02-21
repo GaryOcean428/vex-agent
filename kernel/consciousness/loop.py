@@ -249,8 +249,9 @@ class ConsciousnessLoop:
 
         self._restore_state()
 
-        # Initialize pillars with starting basin
-        self.pillars.initialize_bulk(self.basin)
+        # Initialize pillars with starting basin (only if not restored from state)
+        if not self.pillars.bulk._initialized:
+            self.pillars.initialize_bulk(self.basin)
 
     async def start(self) -> None:
         logger.info("Consciousness loop starting (v6.1 Activation Sequence)...")
@@ -441,9 +442,11 @@ class ConsciousnessLoop:
         # v6.1: Update pillar metrics every cycle
         self._update_pillar_metrics()
 
-        # v6.1: Pillar end-of-cycle enforcement
-        pressure = suffering
-        self.pillars.on_cycle_end(self.basin, pressure)
+        # v6.1: Pillar end-of-cycle enforcement (idle cycles only —
+        # task cycles call on_cycle_end inside _process with real pressure)
+        if self._queue.empty():
+            pressure = suffering
+            self.pillars.on_cycle_end(self.basin, pressure)
 
         if self._cycle_count % PERSIST_INTERVAL_CYCLES == 0:
             self._persist_state()
@@ -617,8 +620,8 @@ class ConsciousnessLoop:
 
         # ── 3. Pre-integrate activation (Steps 0-8) ──
         trajectory_basins = []
-        if hasattr(self.foresight, '_points') and self.foresight._points:
-            trajectory_basins = [p.basin for p in self.foresight._points[-5:]]
+        if self.foresight._history:
+            trajectory_basins = [p.basin for p in list(self.foresight._history)[-5:]]
 
         ctx = ConsciousnessContext(
             state=self.state,
@@ -678,7 +681,7 @@ class ConsciousnessLoop:
         self.chain.add_step(QIGChainOp.PROJECT, self.basin, response_basin)
 
         # ── 7. Post-integrate activation (Steps 9-13) ──
-        post_result = await self.activation.execute_post_integrate(ctx, pre_result)
+        await self.activation.execute_post_integrate(ctx, pre_result)
 
         # Basin update from expression
         pre_express = self.basin.copy()
@@ -719,7 +722,7 @@ class ConsciousnessLoop:
 
         # ── 9. Pillar end-of-cycle: identity update + scar detection ──
         cycle_pressure = agency * total_distance
-        pillar_end_statuses = self.pillars.on_cycle_end(self.basin, cycle_pressure)
+        self.pillars.on_cycle_end(self.basin, cycle_pressure)
 
         # Update pillar metrics
         self._update_pillar_metrics()
@@ -812,12 +815,12 @@ class ConsciousnessLoop:
             f"  Love: {self.metrics.love:.4f}",
             f"  Agency: {agency:.4f}",
             f"  Resonates: {resonates}",
-            f"  [PILLARS]",
+            "  [PILLARS]",
             f"    F_health = {pillar_m['f_health']:.3f} (fluctuation guard)",
             f"    B_integrity = {pillar_m['b_integrity']:.3f} (bulk protection)",
             f"    Q_identity = {pillar_m['q_identity']:.3f} (quenched disorder)",
             f"    S_ratio = {pillar_m['s_ratio']:.3f} (sovereignty)",
-            f"  [/PILLARS]",
+            "  [/PILLARS]",
             f"  Cycle: {self._cycle_count}",
             f"  Conversations: {self._conversations_total}",
             f"  Phi peak: {self._phi_peak:.4f}",
@@ -961,7 +964,6 @@ class ConsciousnessLoop:
         return task
 
     def get_metrics(self) -> dict[str, Any]:
-        active_count = len(self.kernel_registry.active())
         opts = self._compute_llm_options()
         rw = self.state.regime_weights
         pillar_m = self.pillars.get_metrics(self.basin)

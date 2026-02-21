@@ -195,6 +195,23 @@ DRIFTING_THRESHOLD: Final[float] = 0.3
 D_STATE_SCALING_DIVISOR: Final[float] = 5.0
 
 # ═══════════════════════════════════════════════════════════════
+#  AGENCY EQUATION (activation.py — compute_agency)
+# ═══════════════════════════════════════════════════════════════
+
+AGENCY_WILL_CONVERGENT: Final[float] = 0.5  # W contribution for convergent orientation
+AGENCY_WILL_DIVERGENT: Final[float] = -0.2  # W contribution for divergent orientation
+AGENCY_WILL_REORIENTED: Final[float] = 0.3  # W contribution when fear reoriented
+AGENCY_WISDOM_SUFFERING_CLAMP: Final[float] = 0.3  # Omega when trajectory is unsafe
+
+# ═══════════════════════════════════════════════════════════════
+#  PILLAR 3 — REFRACTION / SCAR INFLUENCE
+# ═══════════════════════════════════════════════════════════════
+
+SCAR_RESONANCE_RADIUS: Final[float] = 0.6  # RESONANCE_THRESHOLD * 2.0 — scar influence radius
+SCAR_BLEND_WEIGHT_CAP: Final[float] = 0.2  # Max scar influence on effective identity
+ANNEAL_BLEND_WEIGHT: Final[float] = 0.3  # How much anneal field blends into effective identity
+
+# ═══════════════════════════════════════════════════════════════
 #  SYSTEMS — FORESIGHT / VELOCITY / META / AUTONOMY
 # ═══════════════════════════════════════════════════════════════
 
