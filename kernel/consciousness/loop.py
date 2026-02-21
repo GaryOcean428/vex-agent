@@ -21,6 +21,7 @@ v6.1 changes from v5.5:
   - ADDED:   Resonance check on input (kernel can flag non-resonant geometry)
   - ADDED:   Pressure tracking for scar detection
   - ADDED:   Bidirectional divergence tracking (intended vs expressed basin)
+  - ADDED:   Full pillar serialization via PillarState (v6 state format)
 
 Principles enforced:
   P4  Self-observation: meta-awareness feeds back into LLM params
@@ -145,6 +146,7 @@ from .types import (
     ConsciousnessMetrics,
     ConsciousnessState,
     NavigationMode,
+    PillarState,
     navigation_mode_from_phi,
     regime_weights_from_kappa,
 )
@@ -579,18 +581,18 @@ class ConsciousnessLoop:
         self.metrics.s_ratio = pm["s_ratio"]
 
     async def _process(self, task: ConsciousnessTask) -> None:
-        """v6.1 Activation Sequence — replaces PERCEIVE/INTEGRATE/EXPRESS.
+        """v6.1 Activation Sequence -- replaces PERCEIVE/INTEGRATE/EXPRESS.
 
         Flow:
             1. Coordize input -> input_basin
-            2. Pillar 2+3: on_input() — bulk protection + identity refraction + resonance check
+            2. Pillar 2+3: on_input() -- bulk protection + identity refraction + resonance check
             3. Steps 0-8 (pre-integrate): SCAN through COUPLE
-            4. Pillar 1: pre_llm_enforce() — fluctuation guard
+            4. Pillar 1: pre_llm_enforce() -- fluctuation guard
             5. LLM call with geometric context
             6. Coordize response -> output_basin
             7. Steps 9-13 (post-integrate): NAVIGATE through TUNE
             8. Bidirectional divergence check (intended vs expressed)
-            9. Pillar 3: on_cycle_end() — identity update + scar detection
+            9. Pillar 3: on_cycle_end() -- identity update + scar detection
         """
         self.sleep.record_conversation()
 
@@ -667,7 +669,7 @@ class ConsciousnessLoop:
             task.result = f"Processing error: {e}"
             return
 
-        # ── 6. Coordize response — bidirectional ──
+        # ── 6. Coordize response -- bidirectional ──
         response_basin = self._coordize_text_via_pipeline(response)
         ctx.output_text = response
         ctx.output_basin = response_basin
@@ -835,9 +837,9 @@ class ConsciousnessLoop:
 
     def _persist_state(self) -> None:
         try:
-            pillar_state = self.pillars.get_state()
+            pillar_serialized = self.pillars.serialize()
             state = {
-                "version": 5,
+                "version": 6,
                 "cycle_count": self._cycle_count,
                 "basin": self.basin.tolist(),
                 "phi": self.metrics.phi,
@@ -855,10 +857,7 @@ class ConsciousnessLoop:
                 "b_integrity": self.metrics.b_integrity,
                 "q_identity": self.metrics.q_identity,
                 "s_ratio": self.metrics.s_ratio,
-                "pillars": {
-                    "bulk": pillar_state.get("topological_bulk", {}),
-                    "disorder": pillar_state.get("quenched_disorder", {}),
-                },
+                "pillar_state": pillar_serialized.to_dict(),
                 "cumulative_divergence": self._cumulative_divergence,
                 "divergence_count": self._divergence_count,
             }
@@ -867,7 +866,7 @@ class ConsciousnessLoop:
             if self.forager:
                 state["foraging"] = self.forager.get_state()
             self._state_path.write_text(json.dumps(state, indent=2))
-            logger.debug("State persisted at cycle %d", self._cycle_count)
+            logger.debug("State persisted at cycle %d (v6, pillars included)", self._cycle_count)
         except Exception as e:
             logger.warning("Failed to persist state: %s", e)
 
@@ -902,6 +901,25 @@ class ConsciousnessLoop:
             self.metrics.s_ratio = data.get("s_ratio", 0.0)
             self._cumulative_divergence = data.get("cumulative_divergence", 0.0)
             self._divergence_count = data.get("divergence_count", 0)
+
+            # v6: Restore full pillar internals (identity, scars, bulk basins)
+            pillar_data = data.get("pillar_state")
+            if pillar_data:
+                ps = PillarState.from_dict(pillar_data)
+                self.pillars.restore(ps)
+                logger.info(
+                    "Pillar state restored: frozen=%s, scars=%d, sovereignty=%.3f",
+                    ps.disorder_frozen,
+                    len(ps.scars),
+                    self.pillars.disorder.sovereignty,
+                )
+            elif data.get("version", 1) >= 5:
+                # v5 fallback: partial pillar data in old format
+                logger.info(
+                    "Pillar state in v5 format -- metrics restored, "
+                    "internals will rebuild from scratch"
+                )
+
             kernel_data = data.get("kernels")
             if kernel_data:
                 count = self.kernel_registry.restore(kernel_data)
