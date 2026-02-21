@@ -62,6 +62,7 @@ ROUTES: dict[str, str] = {
     "governor": "/governor",
     "governor_kill_switch": "/governor/kill-switch",
     "governor_budget": "/governor/budget",
+    "governor_autonomous_search": "/governor/autonomous-search",
     # ─── Training ──────────────────────────────────────────────
     "training_stats": "/training/stats",
     "training_export": "/training/export",
@@ -114,6 +115,7 @@ ROUTE_GROUPS: dict[str, list[str]] = {
         "governor",
         "governor_kill_switch",
         "governor_budget",
+        "governor_autonomous_search",
     ],
     "coordizer": [
         "coordizer_coordize",
