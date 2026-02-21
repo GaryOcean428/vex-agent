@@ -1,5 +1,5 @@
 """Chat persistence module."""
 
-from .store import ConversationStore, Conversation, Message
+from .store import Conversation, ConversationStore, Message, estimate_tokens
 
-__all__ = ["ConversationStore", "Conversation", "Message"]
+__all__ = ["ConversationStore", "Conversation", "Message", "estimate_tokens"]

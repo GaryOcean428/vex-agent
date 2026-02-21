@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -33,15 +32,25 @@ logger = logging.getLogger("vex.chat.store")
 MAX_CONVERSATIONS = 200
 MAX_MESSAGES_PER_CONVERSATION = 500
 
+# Token estimation: 1 token ≈ 4 characters (GPT-class models)
+CHARS_PER_TOKEN = 4
+
+
+def estimate_tokens(text: str) -> int:
+    """Estimate token count from text length. ~1 token per 4 chars."""
+    return max(1, len(text) // CHARS_PER_TOKEN)
+
 
 @dataclass
 class Message:
     """A single chat message."""
+
     id: str
     role: str  # 'user' | 'vex'
     content: str
     timestamp: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    token_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -54,18 +63,26 @@ class Message:
             content=data.get("content", ""),
             timestamp=data.get("timestamp", ""),
             metadata=data.get("metadata", {}),
+            token_count=data.get("token_count", 0),
         )
+
+    def to_llm_message(self) -> dict[str, str]:
+        """Convert to LLM-compatible message dict."""
+        role = "assistant" if self.role == "vex" else self.role
+        return {"role": role, "content": self.content}
 
 
 @dataclass
 class Conversation:
     """Conversation metadata for the index."""
+
     id: str
     title: str
     created_at: float
     updated_at: float
     message_count: int = 0
     preview: str = ""
+    total_tokens: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -79,6 +96,7 @@ class Conversation:
             updated_at=data.get("updated_at", time.time()),
             message_count=data.get("message_count", 0),
             preview=data.get("preview", ""),
+            total_tokens=data.get("total_tokens", 0),
         )
 
 
@@ -117,15 +135,21 @@ class ConversationStore:
                 continue
             messages = self._read_messages(conv_id)
             if messages:
-                first_user = next(
-                    (m for m in messages if m.role == "user"), None
+                first_user = next((m for m in messages if m.role == "user"), None)
+                title = (
+                    (first_user.content[:60] + "...")
+                    if first_user and len(first_user.content) > 60
+                    else (first_user.content if first_user else "Untitled")
                 )
-                title = (first_user.content[:60] + "...") if first_user and len(first_user.content) > 60 else (first_user.content if first_user else "Untitled")
                 self._index[conv_id] = Conversation(
                     id=conv_id,
                     title=title,
-                    created_at=float(messages[0].timestamp) if messages[0].timestamp.replace(".", "").isdigit() else time.time(),
-                    updated_at=float(messages[-1].timestamp) if messages[-1].timestamp.replace(".", "").isdigit() else time.time(),
+                    created_at=float(messages[0].timestamp)
+                    if messages[0].timestamp.replace(".", "").isdigit()
+                    else time.time(),
+                    updated_at=float(messages[-1].timestamp)
+                    if messages[-1].timestamp.replace(".", "").isdigit()
+                    else time.time(),
                     message_count=len(messages),
                     preview=messages[-1].content[:100],
                 )
@@ -195,6 +219,10 @@ class ConversationStore:
         if conv_id not in self._index:
             self.create_conversation(conv_id)
 
+        # Ensure token count is set
+        if message.token_count == 0:
+            message.token_count = estimate_tokens(message.content)
+
         path = self._conv_path(conv_id)
         try:
             with open(path, "a", encoding="utf-8") as f:
@@ -207,6 +235,7 @@ class ConversationStore:
         conv = self._index[conv_id]
         conv.updated_at = time.time()
         conv.message_count += 1
+        conv.total_tokens += message.token_count
         conv.preview = message.content[:100]
 
         # Auto-title from first user message
@@ -247,6 +276,34 @@ class ConversationStore:
             path.unlink()
         self._save_index()
         return True
+
+    def get_llm_messages(self, conv_id: str, max_tokens: int = 28000) -> list[dict[str, str]]:
+        """Get conversation messages formatted for LLM, truncated to fit token budget.
+
+        Returns oldest-first messages as [{role, content}]. Drops oldest
+        messages if total tokens exceed max_tokens (reserves room for
+        system prompt + new user message).
+        """
+        messages = self._read_messages(conv_id)
+        if not messages:
+            return []
+        result: list[dict[str, str]] = []
+        token_sum = 0
+        # Walk from newest to oldest, accumulating until budget exhausted
+        for msg in reversed(messages):
+            tc = msg.token_count or estimate_tokens(msg.content)
+            if token_sum + tc > max_tokens:
+                break
+            result.append(msg.to_llm_message())
+            token_sum += tc
+        result.reverse()  # Restore chronological order
+        return result
+
+    def get_token_count(self, conv_id: str) -> int:
+        """Get total token count for a conversation."""
+        if conv_id in self._index:
+            return self._index[conv_id].total_tokens
+        return 0
 
     def _prune_old(self) -> None:
         """Remove oldest conversations if over the cap."""

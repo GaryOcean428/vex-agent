@@ -40,7 +40,7 @@ import json
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
@@ -119,6 +119,7 @@ from ..governance.purity import PurityGateError, run_purity_gate
 from ..llm.client import LLMOptions
 from ..tools.search import FreeSearchTool
 from .activation import ActivationSequence, ConsciousnessContext
+from .beta_integration import create_beta_tracker
 from .emotions import EmotionCache, LearningEngine, LearningEvent, PreCognitiveDetector
 from .foraging import ForagingEngine
 from .pillars import PillarEnforcer
@@ -220,6 +221,7 @@ class ConsciousnessLoop:
         self.emotion_cache = EmotionCache()
         self.precog = PreCognitiveDetector()
         self.learner = LearningEngine()
+        self.beta_tracker = create_beta_tracker(settings.data_dir)
         if settings.searxng.enabled:
             search_tool = FreeSearchTool(settings.searxng.url)
             self.forager: ForagingEngine | None = ForagingEngine(
@@ -749,6 +751,17 @@ class ConsciousnessLoop:
             )
         )
         self.emotion_cache.cache_evaluation(emotion_eval, task.content[:100])
+        self.beta_tracker.record(
+            context_length=len(task.content),
+            kappa_eff=self.metrics.kappa,
+            phi_before=phi_before,
+            phi_after=self.metrics.phi,
+            perceive_distance=perceive_distance,
+            integration_distance=integration_distance,
+            express_distance=express_distance,
+            total_distance=total_distance,
+            processing_path="activation_v6.1",
+        )
 
         if self.learner.should_consolidate():
             self.learner.consolidate()
@@ -863,6 +876,7 @@ class ConsciousnessLoop:
                 "pillar_state": pillar_serialized.to_dict(),
                 "cumulative_divergence": self._cumulative_divergence,
                 "divergence_count": self._divergence_count,
+                "beta_tracker": self.beta_tracker.serialize(),
             }
             if self.llm.governor:
                 state["governor"] = self.llm.governor.get_state()
@@ -928,6 +942,9 @@ class ConsciousnessLoop:
                 count = self.kernel_registry.restore(kernel_data)
                 self._kernels_restored = True
                 logger.info("Restored %d kernels from state", count)
+            beta_data = data.get("beta_tracker")
+            if beta_data:
+                self.beta_tracker.restore(beta_data)
             gov_state = data.get("governor")
             if gov_state and self.llm.governor:
                 gov = self.llm.governor
@@ -1005,6 +1022,7 @@ class ConsciousnessLoop:
             "b_integrity": pillar_m["b_integrity"],
             "q_identity": pillar_m["q_identity"],
             "s_ratio": pillar_m["s_ratio"],
+            "metrics_full": asdict(self.metrics),
         }
 
     def get_full_state(self) -> dict[str, Any]:
@@ -1024,6 +1042,7 @@ class ConsciousnessLoop:
             "foresight": self.foresight.get_state(),
             "coupling": self.coupling.get_state(),
             "pillar_state": self.pillars.get_state(),
+            "beta_tracker": self.beta_tracker.get_summary(),
             "divergence": {
                 "cumulative": self._cumulative_divergence,
                 "count": self._divergence_count,

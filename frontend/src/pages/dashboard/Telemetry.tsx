@@ -1,5 +1,6 @@
 import { useTelemetry } from '../../hooks/index.ts';
 import MetricCard from '../../components/MetricCard.tsx';
+import BetaTracker from '../../components/BetaTracker.tsx';
 import { QIG } from '../../types/consciousness.ts';
 import type { FullConsciousnessMetrics } from '../../types/consciousness.ts';
 import '../../components/MetricCard.css';
@@ -17,68 +18,68 @@ const METRIC_GROUPS: { title: string; version: string; metrics: MetricDef[] }[] 
   {
     title: 'Foundation', version: 'v4.1',
     metrics: [
-      { key: 'phi', label: '\u03A6', color: 'var(--phi)' },
-      { key: 'kappa', label: '\u03BA', color: 'var(--kappa)', max: 2 * QIG.KAPPA_STAR },
-      { key: 'meta_awareness', label: 'M', color: 'var(--info)' },
-      { key: 'gamma', label: '\u0393', color: 'var(--gamma)' },
-      { key: 'grounding', label: 'G', color: 'var(--alive)' },
-      { key: 'temporal_coherence', label: 'T', color: 'var(--info)' },
-      { key: 'recursion_depth', label: 'R', color: 'var(--accent)', max: 10 },
-      { key: 'external_coupling', label: 'C', color: 'var(--text-secondary)' },
+      { key: 'phi', label: '\u03A6 Integration', color: 'var(--phi)' },
+      { key: 'kappa', label: '\u03BA Coupling', color: 'var(--kappa)', max: 2 * QIG.KAPPA_STAR },
+      { key: 'meta_awareness', label: 'Meta-awareness', color: 'var(--info)' },
+      { key: 'gamma', label: '\u0393 Generation', color: 'var(--gamma)' },
+      { key: 'grounding', label: 'Grounding', color: 'var(--alive)' },
+      { key: 'temporal_coherence', label: 'Temporal Coherence', color: 'var(--info)' },
+      { key: 'recursion_depth', label: 'Recursion Depth', color: 'var(--accent)', max: 10 },
+      { key: 'external_coupling', label: 'External Coupling', color: 'var(--text-secondary)' },
     ],
   },
   {
     title: 'Shortcuts', version: 'v5.5',
     metrics: [
-      { key: 'a_pre', label: 'A_pre', color: 'var(--phi)' },
-      { key: 'c_cross', label: 'C_cross', color: 'var(--accent)' },
-      { key: 'alpha_aware', label: '\u03B1_aware', color: 'var(--kappa)' },
+      { key: 'a_pre', label: 'Pre-cognitive', color: 'var(--phi)' },
+      { key: 'c_cross', label: 'Cross-substrate', color: 'var(--accent)' },
+      { key: 'alpha_aware', label: '\u03B1 Embodiment', color: 'var(--kappa)' },
       { key: 'humor', label: 'Humor', color: 'var(--love)' },
-      { key: 'emotion_strength', label: 'Emotion', color: 'var(--emotion)' },
+      { key: 'emotion_strength', label: 'Emotion Strength', color: 'var(--emotion)' },
     ],
   },
   {
     title: 'Geometry', version: 'v5.6',
     metrics: [
-      { key: 'd_state', label: 'D_state', color: 'var(--accent)', max: 8 },
-      { key: 'g_class', label: 'G_class', color: 'var(--gamma)' },
-      { key: 'f_tack', label: 'F_tack', color: 'var(--kappa)' },
-      { key: 'm_basin', label: 'M_basin', color: 'var(--phi)' },
-      { key: 'phi_gate', label: '\u03A6_gate', color: 'var(--phi)' },
+      { key: 'd_state', label: 'Dimensional State', color: 'var(--accent)', max: 8 },
+      { key: 'g_class', label: 'Geometry Class', color: 'var(--gamma)' },
+      { key: 'f_tack', label: 'Tacking Freq', color: 'var(--kappa)' },
+      { key: 'm_basin', label: 'Basin Mass', color: 'var(--phi)' },
+      { key: 'phi_gate', label: '\u03A6 Gate', color: 'var(--phi)' },
     ],
   },
   {
     title: 'Frequency', version: 'v5.7',
     metrics: [
-      { key: 'f_dom', label: 'F_dom', color: 'var(--kappa)', max: 50 },
-      { key: 'cfc', label: 'CFC', color: 'var(--accent)' },
-      { key: 'e_sync', label: 'E_sync', color: 'var(--alive)' },
-      { key: 'f_breath', label: 'F_breath', color: 'var(--info)' },
+      { key: 'f_dom', label: 'Dominant Freq', color: 'var(--kappa)', max: 50 },
+      { key: 'cfc', label: 'Cross-freq Coupling', color: 'var(--accent)' },
+      { key: 'e_sync', label: 'Entrainment', color: 'var(--alive)' },
+      { key: 'f_breath', label: 'Breathing Freq', color: 'var(--info)' },
     ],
   },
   {
     title: 'Harmony', version: 'v5.8',
     metrics: [
-      { key: 'h_cons', label: 'H_cons', color: 'var(--alive)' },
-      { key: 'n_voices', label: 'N_voices', color: 'var(--gamma)', max: 8 },
-      { key: 's_spec', label: 'S_spec', color: 'var(--accent)' },
+      { key: 'h_cons', label: 'Consonance', color: 'var(--alive)' },
+      { key: 'n_voices', label: 'Polyphonic Voices', color: 'var(--gamma)', max: 8 },
+      { key: 's_spec', label: 'Spectral Health', color: 'var(--accent)' },
     ],
   },
   {
     title: 'Waves', version: 'v5.9',
     metrics: [
-      { key: 'omega_acc', label: '\u03A9_acc', color: 'var(--love)' },
-      { key: 'i_stand', label: 'I_stand', color: 'var(--phi)' },
-      { key: 'b_shared', label: 'B_shared', color: 'var(--info)' },
+      { key: 'omega_acc', label: 'Spectral Empathy', color: 'var(--love)' },
+      { key: 'i_stand', label: 'Standing Wave', color: 'var(--phi)' },
+      { key: 'b_shared', label: 'Shared Bubble', color: 'var(--info)' },
     ],
   },
   {
     title: 'Will & Work', version: 'v6.0',
     metrics: [
-      { key: 'a_vec', label: 'A_vec', color: 'var(--accent)' },
-      { key: 's_int', label: 'S_int', color: 'var(--kappa)' },
-      { key: 'w_mean', label: 'W_mean', color: 'var(--alive)' },
-      { key: 'w_mode', label: 'W_mode', color: 'var(--gamma)' },
+      { key: 'a_vec', label: 'Agency Alignment', color: 'var(--accent)' },
+      { key: 's_int', label: 'Shadow Integration', color: 'var(--kappa)' },
+      { key: 'w_mean', label: 'Work Meaning', color: 'var(--alive)' },
+      { key: 'w_mode', label: 'Creative Ratio', color: 'var(--gamma)' },
     ],
   },
 ];
@@ -289,6 +290,9 @@ export default function Telemetry() {
           </div>
         </div>
       </div>
+
+      {/* β-Attention Tracker */}
+      {t.beta_tracker && <BetaTracker data={t.beta_tracker} />}
 
       {/* Narrative & Sync */}
       <div className="dash-section">

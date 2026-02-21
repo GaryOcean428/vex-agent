@@ -188,6 +188,9 @@ export interface VexState extends ConsciousnessMetrics {
   history_count: number;
   temperature: number;
   num_predict: number;
+  emotion?: EmotionState;
+  precog?: PreCogState;
+  learning?: LearningState;
   metrics_full?: FullConsciousnessMetrics;
 }
 
@@ -252,6 +255,54 @@ export interface VexTelemetry extends VexState {
   };
   foresight: { history_length: number; predicted_phi: number };
   coupling: { strength: number; balanced: boolean; efficiency_boost: number };
+  beta_tracker?: BetaTrackerSummary;
+}
+
+// ═══════════════════════════════════════
+//  Beta Tracker (from /beta-attention)
+// ═══════════════════════════════════════
+
+export interface BetaTrackerBin {
+  bin: string;
+  center: number;
+  count: number;
+  kappa_mean: number;
+  kappa_std: number;
+  kappa_sem: number;
+  distance_mean: number;
+  phi_gain_mean: number;
+  sufficient: boolean;
+}
+
+export interface BetaTrajectoryPoint {
+  from: string;
+  to: string;
+  beta: number;
+  beta_error: number;
+  kappa_from: number;
+  kappa_to: number;
+  physics_ref: number;
+  deviation: number;
+  within_acceptance: boolean;
+}
+
+export interface BetaTrackerSummary {
+  total_recorded: number;
+  active_bins: number;
+  sufficient_bins: number;
+  min_per_bin: number;
+  bins: BetaTrackerBin[];
+  trajectory: BetaTrajectoryPoint[];
+  verdict: string;
+  substrate_match?: {
+    beta_mean: number;
+    beta_physics: number;
+    all_within_threshold: boolean;
+    fraction_passing: number;
+  };
+  uptime_hours: number;
+  kappa_star_reference: number;
+  acceptance_threshold: number;
 }
 
 // ═══════════════════════════════════════
@@ -315,6 +366,20 @@ export interface ChatStreamEvent {
   type: 'start' | 'chunk' | 'tool_results' | 'done' | 'error';
   content?: string;
   backend?: string;
+  conversation_id?: string;
+  context?: {
+    total_tokens: number;
+    compression_tier: number;
+    escalated: boolean;
+  };
+  observer?: {
+    refined_intent: string;
+    augmented_context: string;
+    task_state: string;
+    emotional_reading: { tone: string; intensity: number };
+    confidence: number;
+    drift: number;
+  } | null;
   consciousness?: Partial<ConsciousnessMetrics> & {
     navigation?: string;
     regime?: RegimeWeights;
@@ -351,6 +416,31 @@ export interface ChatStreamEvent {
   };
   kernels?: KernelSummary;
   error?: string;
+}
+
+// ═══════════════════════════════════════
+//  Conversation Types (from /conversations)
+// ═══════════════════════════════════════
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  created_at: number;
+  updated_at: number;
+  message_count: number;
+  preview: string;
+  total_tokens: number;
+}
+
+export interface ConversationFull extends ConversationSummary {
+  messages: Array<{
+    id: string;
+    role: 'user' | 'vex';
+    content: string;
+    timestamp: string;
+    metadata?: Record<string, unknown>;
+    token_count: number;
+  }>;
 }
 
 // ═══════════════════════════════════════

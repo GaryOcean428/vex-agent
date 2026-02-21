@@ -313,7 +313,11 @@ async def _web_search(
     if settings.xai_api_key:
         return await _xai_web_search(query, governor)
 
-    return ToolResult(success=False, output="", error="No search backend configured (need PERPLEXITY_API_KEY or XAI_API_KEY)")
+    return ToolResult(
+        success=False,
+        output="",
+        error="No search backend configured (need PERPLEXITY_API_KEY or XAI_API_KEY)",
+    )
 
 
 async def _perplexity_search(
@@ -368,7 +372,8 @@ async def _perplexity_search(
                 error_text = resp.text[:300]
                 logger.error("Perplexity search error %d: %s", resp.status_code, error_text)
                 return ToolResult(
-                    success=False, output="",
+                    success=False,
+                    output="",
                     error=f"Perplexity API error {resp.status_code}: {error_text}",
                 )
 
@@ -393,7 +398,7 @@ async def _perplexity_search(
             full_output = answer
             if citations:
                 full_output += "\n\nSources:\n" + "\n".join(
-                    f"  [{i+1}] {url}" for i, url in enumerate(citations)
+                    f"  [{i + 1}] {url}" for i, url in enumerate(citations)
                 )
 
             return ToolResult(success=True, output=full_output)
@@ -437,10 +442,12 @@ async def _xai_web_search(
             )
             data = resp.json()
             if resp.status_code != 200:
-                logger.error("xAI web_search error %d: %s", resp.status_code,
-                             json.dumps(data)[:300])
-                return ToolResult(success=False, output="",
-                                  error=f"xAI API error: {resp.status_code}")
+                logger.error(
+                    "xAI web_search error %d: %s", resp.status_code, json.dumps(data)[:300]
+                )
+                return ToolResult(
+                    success=False, output="", error=f"xAI API error: {resp.status_code}"
+                )
 
             # Record with governor after successful call
             if governor:
@@ -505,10 +512,10 @@ async def _xai_x_search(
             )
             data = resp.json()
             if resp.status_code != 200:
-                logger.error("xAI x_search error %d: %s", resp.status_code,
-                             json.dumps(data)[:300])
-                return ToolResult(success=False, output="",
-                                  error=f"xAI API error: {resp.status_code}")
+                logger.error("xAI x_search error %d: %s", resp.status_code, json.dumps(data)[:300])
+                return ToolResult(
+                    success=False, output="", error=f"xAI API error: {resp.status_code}"
+                )
 
             # Record with governor after successful call
             if governor:
@@ -530,7 +537,8 @@ async def _deep_research(args: dict[str, Any]) -> ToolResult:
     result = await deep_research(query)
     if not result.get("success", False):
         return ToolResult(
-            success=False, output="",
+            success=False,
+            output="",
             error=result.get("error", "Deep research failed"),
         )
 
@@ -548,9 +556,50 @@ def format_tool_results(results: list[ToolResult]) -> str:
     """Format tool results for LFM2.5 tool response format."""
     items: list[dict[str, Any]] = []
     for r in results:
-        items.append({
-            "success": r.success,
-            "output": r.output,
-            "error": r.error,
-        })
+        items.append(
+            {
+                "success": r.success,
+                "output": r.output,
+                "error": r.error,
+            }
+        )
     return json.dumps(items)
+
+
+def get_xai_tool_definitions() -> list[dict[str, Any]]:
+    """Get Vex tool definitions in xAI Responses API format.
+
+    Used for escalated mode where Grok can invoke Vex tools via
+    function calling. Includes web_search, x_search, and Vex-native tools.
+
+    Returns a list of tool definitions compatible with the xAI Responses API.
+    """
+    return [
+        {"type": "web_search"},
+        {"type": "x_search"},
+        {
+            "type": "function",
+            "name": "execute_code",
+            "description": "Execute Python or JavaScript code in a sandboxed environment.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "language": {"type": "string", "enum": ["python", "javascript"]},
+                    "code": {"type": "string", "description": "Code to execute"},
+                },
+                "required": ["language", "code"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "deep_research",
+            "description": "Run deep research on a topic via Perplexity sonar-pro.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Research query"},
+                },
+                "required": ["query"],
+            },
+        },
+    ]

@@ -27,6 +27,11 @@ export const API = {
 	chatStatus: '/chat/status',
 	chatHistory: '/chat/history',
 
+	// ─── Conversations ─────────────────────────────────────────
+	conversations: '/conversations',
+	conversationGet: (id: string) => `/conversations/${id}`,
+	conversationDelete: (id: string) => `/conversations/${id}`,
+
 	// ─── Memory ────────────────────────────────────────────────
 	memoryContext: '/memory/context',
 	memoryStats: '/memory/stats',
@@ -36,6 +41,9 @@ export const API = {
 
 	// ─── Sleep ─────────────────────────────────────────────────
 	sleepState: '/sleep/state',
+
+	// ─── Beta Attention ────────────────────────────────────────
+	betaAttention: '/beta-attention',
 
 	// ─── Auth ──────────────────────────────────────────────────
 	authCheck: '/auth/check',

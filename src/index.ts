@@ -137,7 +137,33 @@ async function main(): Promise<void> {
   proxyGet(ROUTES.graph_nodes);
   proxyGet(ROUTES.memory_stats);
   proxyGet(ROUTES.sleep_state);
+  proxyGet(ROUTES.beta_attention);
   proxyPost(ROUTES.admin_fresh_start);
+
+  // Conversation management
+  proxyGet(ROUTES.conversations_list);
+
+  app.get(ROUTES.conversations_get, async (req, res) => {
+    try {
+      const resp = await fetch(`${KERNEL_URL}/conversations/${req.params.conversation_id}`);
+      const data = await resp.json();
+      res.status(resp.status).json(data);
+    } catch (err) {
+      res.status(502).json({ error: `Kernel unreachable: ${(err as Error).message}` });
+    }
+  });
+
+  app.delete(ROUTES.conversations_delete, async (req, res) => {
+    try {
+      const resp = await fetch(`${KERNEL_URL}/conversations/${req.params.conversation_id}`, {
+        method: 'DELETE',
+      });
+      const data = await resp.json();
+      res.status(resp.status).json(data);
+    } catch (err) {
+      res.status(502).json({ error: `Kernel unreachable: ${(err as Error).message}` });
+    }
+  });
 
   // Governor endpoints (PR #13)
   proxyGet(ROUTES.governor);

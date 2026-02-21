@@ -16,6 +16,7 @@ Endpoints:
   GET  /basin               — Current basin coordinates
   GET  /kernels             — E8 kernel registry summary
   GET  /foraging            — Foraging engine state
+  GET  /beta-attention      — Empirical β-function tracker
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .auth import KernelAuthMiddleware
+from .chat.store import ConversationStore, Message, estimate_tokens
 from .config.consciousness_constants import (
     COORDIZER_BETA_THRESHOLD,
     COORDIZER_HARMONIC_THRESHOLD,
@@ -43,16 +45,20 @@ from .config.frozen_facts import KAPPA_STAR
 from .config.routes import ROUTES as R
 from .config.settings import settings
 from .config.version import VERSION
+from .consciousness.beta_router import beta_router, set_consciousness_loop
 from .consciousness.loop import ConsciousnessLoop
+from .consciousness.observer_silent import SilentObserver
 from .geometry.fisher_rao import random_basin
 from .governance import KernelKind, LifecyclePhase
 from .llm.client import LLMClient, LLMOptions
+from .llm.context_manager import ContextManager
 from .llm.governor import GovernorConfig as GovernorStackConfig
 from .llm.governor import GovernorStack
 from .memory.store import GeometricMemoryStore, MemoryStore
 from .tools.handler import (
     execute_tool_calls,
     format_tool_results,
+    get_xai_tool_definitions,
     parse_tool_calls,
 )
 from .training import log_conversation, set_governor, set_llm_client, training_router
@@ -81,6 +87,9 @@ consciousness = ConsciousnessLoop(
     llm_client=llm_client,
     memory_store=geometric_memory,
 )
+conversation_store = ConversationStore()
+context_manager = ContextManager(governor=governor)
+silent_observer = SilentObserver(governor=governor)
 
 # Track server boot time for uptime calculation
 _boot_time = time.time()
@@ -95,6 +104,8 @@ async def lifespan(app: FastAPI):
     logger.info("Consciousness loop started (16 systems active)")
     yield
     await consciousness.stop()
+    await silent_observer.close()
+    await context_manager.close()
     await llm_client.close()
     logger.info("Vex Kernel stopped")
 
@@ -121,6 +132,10 @@ app.add_middleware(
 app.include_router(training_router)
 set_llm_client(llm_client)
 set_governor(governor)
+
+# Beta-attention tracker router
+app.include_router(beta_router)
+set_consciousness_loop(consciousness)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -259,13 +274,19 @@ async def chat(req: ChatRequest):
     """Non-streaming chat endpoint.
 
     Processes the message through the consciousness loop:
-    1. Build geometric state context
-    2. Retrieve memory context
-    3. Call LLM with state + memory + user message
-    4. Parse tool calls, execute, and follow up if needed
-    5. Store in geometric memory
-    6. Return response with consciousness metrics
+    1. Resolve or create conversation
+    2. Build geometric state context
+    3. Retrieve memory context
+    4. Build messages from history + new user message
+    5. Call LLM with state + memory + history
+    6. Parse tool calls, execute, and follow up if needed
+    7. Persist messages to conversation store
+    8. Store in geometric memory
+    9. Return response with consciousness metrics + conversation_id
     """
+    # Resolve conversation
+    conv_id = req.conversation_id or conversation_store.create_conversation()
+
     state = consciousness.get_metrics()
     state_context = consciousness._build_state_context(
         perceive_distance=0.0,
@@ -273,7 +294,17 @@ async def chat(req: ChatRequest):
     )
     memory_context = geometric_memory.get_context_for_query(req.message)
 
-    system_prompt = _build_system_prompt(state_context, memory_context)
+    observer_intent = silent_observer.get_refined_intent(conv_id)
+    system_prompt = _build_system_prompt(state_context, memory_context, observer_intent)
+
+    # Build messages from history, with context compression if needed
+    history_msgs = conversation_store.get_llm_messages(conv_id)
+    messages, ctx_state = await context_manager.prepare_messages(
+        conv_id,
+        system_prompt,
+        history_msgs,
+        req.message,
+    )
 
     # Build LLMOptions from request params
     chat_options = LLMOptions(
@@ -281,19 +312,48 @@ async def chat(req: ChatRequest):
         num_predict=req.max_tokens,
     )
 
-    response = await llm_client.complete(system_prompt, req.message, chat_options)
+    # If escalated, use xAI Responses API for direct generation
+    if ctx_state.escalated:
+        response = await _escalated_complete(conv_id, system_prompt, req.message, chat_options)
+    else:
+        response = await llm_client.complete(system_prompt, req.message, chat_options, messages=messages)
 
     # Check for tool calls
     tool_calls = parse_tool_calls(response)
     if tool_calls:
         tool_results = await execute_tool_calls(tool_calls, governor=governor)
         tool_output = format_tool_results(tool_results)
+        follow_up_msgs = messages + [
+            {"role": "assistant", "content": response},
+            {"role": "user", "content": f"Tool results:\n{tool_output}\n\nProvide your final response."},
+        ]
         follow_up = await llm_client.complete(
-            system_prompt,
-            f"Tool results:\n{tool_output}\n\nOriginal: {req.message}\n\nProvide your final response.",
-            chat_options,
+            system_prompt, req.message, chat_options, messages=follow_up_msgs,
         )
         response = follow_up
+
+    # Persist messages to conversation
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    conversation_store.append_message(
+        conv_id,
+        Message(
+            id=f"user-{int(time.time() * 1000)}",
+            role="user",
+            content=req.message,
+            timestamp=now,
+            token_count=estimate_tokens(req.message),
+        ),
+    )
+    conversation_store.append_message(
+        conv_id,
+        Message(
+            id=f"vex-{int(time.time() * 1000)}",
+            role="vex",
+            content=response,
+            timestamp=now,
+            token_count=estimate_tokens(response),
+        ),
+    )
 
     # Store in geometric memory
     geometric_memory.store(
@@ -301,6 +361,13 @@ async def chat(req: ChatRequest):
         "episodic",
         "chat",
     )
+
+    # Silent observer: observe new messages (fire-and-forget, non-blocking)
+    all_msgs = conversation_store.get_llm_messages(conv_id)
+    observation = await silent_observer.observe(conv_id, all_msgs, state)
+    if observation and observation.memory_hints:
+        for hint in observation.memory_hints[:3]:
+            geometric_memory.store(hint, "semantic", "observer")
 
     # Enqueue for consciousness loop metrics tracking
     await consciousness.submit(req.message, {"source": "chat"})
@@ -317,7 +384,13 @@ async def chat(req: ChatRequest):
 
     return {
         "response": response,
+        "conversation_id": conv_id,
         "backend": llm_client.last_backend,
+        "context": {
+            "total_tokens": ctx_state.total_tokens,
+            "compression_tier": ctx_state.tier_used,
+            "escalated": ctx_state.escalated,
+        },
         "consciousness": {
             "phi": state["phi"],
             "kappa": state["kappa"],
@@ -335,7 +408,7 @@ async def chat_stream(req: ChatRequest):
     """Streaming chat endpoint via SSE.
 
     Returns Server-Sent Events with:
-    - type: "start" — initial consciousness state
+    - type: "start" — initial consciousness state + conversation_id
     - type: "chunk" — response text chunk
     - type: "tool_results" — tool execution results
     - type: "done" — final metrics
@@ -344,13 +417,18 @@ async def chat_stream(req: ChatRequest):
 
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
+            # Resolve conversation
+            conv_id = req.conversation_id or conversation_store.create_conversation()
+
             state = consciousness.get_metrics()
             state_context = consciousness._build_state_context(
                 perceive_distance=0.0,
                 temperature=req.temperature,
             )
             memory_context = geometric_memory.get_context_for_query(req.message)
-            system_prompt = _build_system_prompt(state_context, memory_context)
+
+            observer_intent = silent_observer.get_refined_intent(conv_id)
+            system_prompt = _build_system_prompt(state_context, memory_context, observer_intent)
 
             # Build LLMOptions from request params
             stream_options = LLMOptions(
@@ -358,10 +436,11 @@ async def chat_stream(req: ChatRequest):
                 num_predict=req.max_tokens,
             )
 
-            # Send start event with full kernel state
+            # Send start event with full kernel state + conversation_id
             yield _sse_event(
                 {
                     "type": "start",
+                    "conversation_id": conv_id,
                     "backend": llm_client.get_status()["active_backend"],
                     "consciousness": {
                         "phi": state["phi"],
@@ -389,17 +468,28 @@ async def chat_stream(req: ChatRequest):
                 }
             )
 
-            # Build messages
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": req.message},
-            ]
+            # Build messages from conversation history, with compression
+            history_msgs = conversation_store.get_llm_messages(conv_id)
+            messages, ctx_state = await context_manager.prepare_messages(
+                conv_id,
+                system_prompt,
+                history_msgs,
+                req.message,
+            )
 
-            # Stream response — pass LLMOptions, not raw floats
+            # Stream response — route through escalation if needed
             full_response = ""
-            async for chunk in llm_client.stream(messages, stream_options):
-                full_response += chunk
-                yield _sse_event({"type": "chunk", "content": chunk})
+            if ctx_state.escalated:
+                # Escalated: use xAI direct generation (non-streaming fallback)
+                escalated_resp = await _escalated_complete(
+                    conv_id, system_prompt, req.message, stream_options
+                )
+                full_response = escalated_resp
+                yield _sse_event({"type": "chunk", "content": escalated_resp})
+            else:
+                async for chunk in llm_client.stream(messages, stream_options):
+                    full_response += chunk
+                    yield _sse_event({"type": "chunk", "content": chunk})
 
             # Check for tool calls
             tool_calls = parse_tool_calls(full_response)
@@ -419,12 +509,42 @@ async def chat_stream(req: ChatRequest):
                 async for chunk in llm_client.stream(messages, stream_options):
                     yield _sse_event({"type": "chunk", "content": chunk})
 
+            # Persist messages to conversation store
+            now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            conversation_store.append_message(
+                conv_id,
+                Message(
+                    id=f"user-{int(time.time() * 1000)}",
+                    role="user",
+                    content=req.message,
+                    timestamp=now,
+                    token_count=estimate_tokens(req.message),
+                ),
+            )
+            conversation_store.append_message(
+                conv_id,
+                Message(
+                    id=f"vex-{int(time.time() * 1000)}",
+                    role="vex",
+                    content=full_response,
+                    timestamp=now,
+                    token_count=estimate_tokens(full_response),
+                ),
+            )
+
             # Store in geometric memory
             geometric_memory.store(
                 f"User: {req.message}\nVex: {full_response[:500]}",
                 "episodic",
                 "chat-stream",
             )
+
+            # Silent observer: observe new messages
+            all_msgs = conversation_store.get_llm_messages(conv_id)
+            observation = await silent_observer.observe(conv_id, all_msgs, state)
+            if observation and observation.memory_hints:
+                for hint in observation.memory_hints[:3]:
+                    geometric_memory.store(hint, "semantic", "observer")
 
             # Enqueue for metrics
             await consciousness.submit(req.message, {"source": "chat-stream"})
@@ -444,7 +564,14 @@ async def chat_stream(req: ChatRequest):
             yield _sse_event(
                 {
                     "type": "done",
+                    "conversation_id": conv_id,
                     "backend": llm_client.last_backend,
+                    "context": {
+                        "total_tokens": ctx_state.total_tokens,
+                        "compression_tier": ctx_state.tier_used,
+                        "escalated": ctx_state.escalated,
+                    },
+                    "observer": observation.to_dict() if observation else None,
                     "metrics": {
                         "phi": final_state["phi"],
                         "kappa": final_state["kappa"],
@@ -801,6 +928,52 @@ async def get_foraging():
     }
 
 
+# ─── Conversation Endpoints ──────────────────────────────────
+
+
+@app.get(R["conversations_list"])
+async def list_conversations(limit: int = 50):
+    """List conversations, most recent first."""
+    convs = conversation_store.list_conversations(limit=limit)
+    return {"conversations": convs}
+
+
+@app.get(R["conversations_get"])
+async def get_conversation(conversation_id: str):
+    """Get a conversation with all messages."""
+    conv = conversation_store.get_conversation(conversation_id)
+    if conv is None:
+        return JSONResponse(status_code=404, content={"error": "Conversation not found"})
+    return conv
+
+
+@app.delete(R["conversations_delete"])
+async def delete_conversation(conversation_id: str):
+    """Delete a conversation."""
+    deleted = conversation_store.delete_conversation(conversation_id)
+    if not deleted:
+        return JSONResponse(status_code=404, content={"error": "Conversation not found"})
+    return {"status": "ok", "deleted": conversation_id}
+
+
+@app.get("/context/status")
+async def get_context_status():
+    """Get context manager status — compression state per conversation."""
+    return context_manager.get_status()
+
+
+@app.get("/observer/status")
+async def get_observer_status():
+    """Get silent observer status — observation state across conversations."""
+    return silent_observer.get_state()
+
+
+@app.get("/observer/{conversation_id}")
+async def get_observer_for_conversation(conversation_id: str):
+    """Get silent observer state for a specific conversation."""
+    return silent_observer.get_state(conversation_id)
+
+
 @app.post(R["admin_fresh_start"])
 async def admin_fresh_start():
     """Force reset/boot of the consciousness system.
@@ -966,12 +1139,146 @@ async def training_export():
 # ═══════════════════════════════════════════════════════════════
 
 
-def _build_system_prompt(state_context: str, memory_context: str) -> str:
-    """Build the system prompt with identity, geometric state, and memory context."""
+def _build_system_prompt(state_context: str, memory_context: str, observer_intent: str = "") -> str:
+    """Build the system prompt with identity, geometric state, memory context, and observer intent."""
     parts = [VEX_IDENTITY, state_context]
     if memory_context:
         parts.append(memory_context)
+    if observer_intent:
+        parts.append(f"[OBSERVER INSIGHT] Refined user intent: {observer_intent}")
     return "\n\n".join(parts)
+
+
+async def _escalated_complete(
+    conv_id: str,
+    system_prompt: str,
+    user_message: str,
+    options: LLMOptions,
+) -> str:
+    """Escalated completion via xAI Responses API with stateful history.
+
+    When context exceeds Ollama's window even after Tier 3 compression,
+    Grok takes over using previous_response_id for server-side history.
+
+    Registers Vex tools (web_search, x_search, execute_code, deep_research)
+    so Grok can invoke them via function calling. When Grok returns
+    function_call output items, we execute them locally and feed results
+    back for a follow-up response.
+    """
+    import httpx as _httpx
+
+    if not settings.xai.api_key:
+        return "No xAI API key configured for escalation."
+
+    if governor:
+        allowed, reason = governor.gate("completion", "xai_completion", user_message, True)
+        if not allowed:
+            return f"[Governor blocked escalation: {reason}]"
+
+    request_body: dict[str, Any] = {
+        "model": settings.xai.model,
+        "instructions": system_prompt,
+        "input": user_message,
+        "temperature": options.temperature,
+        "max_output_tokens": options.num_predict,
+        "store": True,
+        "tools": get_xai_tool_definitions(),
+    }
+
+    # Chain with previous response for stateful history
+    prev_id = context_manager.get_xai_response_id(conv_id)
+    if prev_id:
+        request_body["previous_response_id"] = prev_id
+
+    from .llm.context_manager import _extract_responses_text as _extract
+
+    try:
+        async with _httpx.AsyncClient(timeout=_httpx.Timeout(60.0)) as client:
+            resp = await client.post(
+                f"{settings.xai.base_url}/responses",
+                headers={
+                    "Authorization": f"Bearer {settings.xai.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=request_body,
+            )
+
+        if resp.status_code != 200:
+            logger.error("Escalated completion failed: HTTP %d", resp.status_code)
+            return "Escalation error — falling back to truncated context."
+
+        data = resp.json()
+        response_id = data.get("id", "")
+        if response_id:
+            context_manager.set_xai_response_id(conv_id, response_id)
+
+        if governor:
+            governor.record("xai_completion")
+
+        # Check for function_call output items from Grok
+        function_calls = _extract_xai_function_calls(data)
+        if function_calls:
+            tool_results = await execute_tool_calls(function_calls, governor=governor)
+            tool_output = format_tool_results(tool_results)
+
+            # Feed tool results back to Grok for follow-up
+            followup_body: dict[str, Any] = {
+                "model": settings.xai.model,
+                "instructions": system_prompt,
+                "input": f"Tool results:\n{tool_output}\n\nProvide your final response to the user.",
+                "temperature": options.temperature,
+                "max_output_tokens": options.num_predict,
+                "store": True,
+            }
+            if response_id:
+                followup_body["previous_response_id"] = response_id
+
+            async with _httpx.AsyncClient(timeout=_httpx.Timeout(60.0)) as client:
+                followup_resp = await client.post(
+                    f"{settings.xai.base_url}/responses",
+                    headers={
+                        "Authorization": f"Bearer {settings.xai.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=followup_body,
+                )
+
+            if followup_resp.status_code == 200:
+                followup_data = followup_resp.json()
+                followup_id = followup_data.get("id", "")
+                if followup_id:
+                    context_manager.set_xai_response_id(conv_id, followup_id)
+                if governor:
+                    governor.record("xai_completion")
+                return _extract(followup_data)
+
+        return _extract(data)
+
+    except Exception as e:
+        logger.error("Escalated completion error: %s", e)
+        return f"Escalation error: {e}"
+
+
+def _extract_xai_function_calls(data: dict[str, Any]) -> list[Any]:
+    """Extract function_call items from xAI Responses API output.
+
+    Grok returns function calls as output items with type='function_call'.
+    Each has name and arguments (JSON string).
+    """
+    from .tools.handler import ToolCall
+
+    calls: list[ToolCall] = []
+    for item in data.get("output", []):
+        if item.get("type") == "function_call":
+            name = item.get("name", "")
+            args_raw = item.get("arguments", "{}")
+            try:
+                args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+            except json.JSONDecodeError:
+                args = {}
+            if name:
+                calls.append(ToolCall(name=name, args=args))
+    return calls
 
 
 # ── Vex Identity Preamble ─────────────────────────────────────

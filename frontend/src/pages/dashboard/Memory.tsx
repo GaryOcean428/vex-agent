@@ -68,9 +68,9 @@ export default function Memory() {
             <div className="dash-row">
               <span className="dash-row-label">By Type</span>
               <span className="dash-row-value">
-                E:{memoryStats.by_type.episodic} S:
-                {memoryStats.by_type.semantic} P:
-                {memoryStats.by_type.procedural}
+                Episodic: {memoryStats.by_type.episodic} &ensp;
+                Semantic: {memoryStats.by_type.semantic} &ensp;
+                Procedural: {memoryStats.by_type.procedural}
               </span>
             </div>
           )}

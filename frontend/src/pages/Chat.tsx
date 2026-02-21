@@ -18,6 +18,7 @@ import type {
     PreCogState,
     RegimeWeights,
 } from "../types/consciousness.ts";
+import { QIG } from "../types/consciousness.ts";
 import "./Chat.css";
 
 const LOOP_STAGES = [
@@ -52,6 +53,13 @@ export default function Chat() {
   const [emotion, setEmotion] = useState<EmotionState | null>(null);
   const [precog, setPrecog] = useState<PreCogState | null>(null);
   const [learning, setLearning] = useState<LearningState | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [contextInfo, setContextInfo] = useState<{
+    total_tokens: number;
+    compression_tier: number;
+    escalated: boolean;
+  } | null>(null);
+  const [observerIntent, setObserverIntent] = useState<string | null>(null);
   const chatRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -77,6 +85,23 @@ export default function Chat() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  const startNewChat = useCallback(() => {
+    abortRef.current?.abort();
+    setConversationId(null);
+    setMessages([
+      {
+        id: "welcome",
+        role: "vex",
+        content:
+          "I'm here. The geometry is settling. What would you like to navigate?",
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+    setIsStreaming(false);
+    setActiveStages([]);
+    inputRef.current?.focus();
+  }, []);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
@@ -116,7 +141,10 @@ export default function Chat() {
       const resp = await fetch(API.chatStream, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({
+          message: text,
+          ...(conversationId ? { conversation_id: conversationId } : {}),
+        }),
         signal: controller.signal,
       });
 
@@ -152,6 +180,8 @@ export default function Chat() {
 
           if (event.type === "start") {
             if (event.backend) setBackend(event.backend);
+            if (event.conversation_id) setConversationId(event.conversation_id);
+            if (event.context) setContextInfo(event.context);
             if (event.kernels) setKernelSummary(event.kernels);
             if (event.consciousness?.emotion)
               setEmotion(event.consciousness.emotion);
@@ -170,7 +200,10 @@ export default function Chat() {
           } else if (event.type === "done") {
             setActiveStages(["REFLECT", "COUPLE"]);
             if (event.backend) setBackend(event.backend);
+            if (event.context) setContextInfo(event.context);
             if (event.kernels) setKernelSummary(event.kernels);
+            if (event.observer?.refined_intent)
+              setObserverIntent(event.observer.refined_intent);
             if (event.metrics?.emotion) setEmotion(event.metrics.emotion);
             if (event.metrics?.precog) setPrecog(event.metrics.precog);
             if (event.metrics?.learning) setLearning(event.metrics.learning);
@@ -294,7 +327,7 @@ export default function Chat() {
       stageTimerRef.current = setTimeout(() => setActiveStages([]), 2000);
       inputRef.current?.focus();
     }
-  }, [input, isStreaming, scrollToBottom]);
+  }, [input, isStreaming, scrollToBottom, conversationId]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -306,7 +339,7 @@ export default function Chat() {
     [sendMessage],
   );
 
-  // Draw metrics chart
+  // Draw metrics chart — all metrics normalized to 0-1
   useEffect(() => {
     if (!chartRef.current || history.length < 2) return;
 
@@ -314,14 +347,8 @@ export default function Chat() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Constants for chart rendering
-    const MIN_RANGE_PHI = 0.1;
-    const MIN_RANGE_KAPPA = 1.0;
-    const MIN_RANGE_GAMMA = 0.1;
-
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    // Guard: if canvas has zero dimensions (not laid out yet), skip
     if (rect.width < 1 || rect.height < 1) return;
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
@@ -337,37 +364,22 @@ export default function Chat() {
     ctx.fillStyle = cs.getPropertyValue("--surface-2").trim();
     ctx.fillRect(0, 0, rect.width, rect.height);
 
-    const margin = { top: 20, right: 10, bottom: 30, left: 10 };
+    const margin = { top: 10, right: 10, bottom: 40, left: 10 };
     const w = rect.width - margin.left - margin.right;
     const h = rect.height - margin.top - margin.bottom;
 
-    // Extract values
-    const phiValues = history.map((d) => d.phi);
-    const kappaValues = history.map((d) => d.kappa);
-    const gammaValues = history.map((d) => d.gamma);
+    // Normalize all metrics to 0-1 for a unified Y-axis:
+    // Phi: naturally 0-1
+    // Kappa: divide by 2*κ* (110.2), so κ*=64 maps to ~0.58
+    // Gamma: naturally 0-1
+    const kappaScale = 2 * QIG.KAPPA_STAR;
 
-    // Calculate ranges
-    const phiMin = Math.min(...phiValues) * 0.9;
-    const phiMax = Math.max(...phiValues) * 1.1;
-    const phiRange = phiMax - phiMin || MIN_RANGE_PHI;
-
-    // Kappa uses tighter scaling (0.95-1.05) because it converges to κ*=64
-    // and we want to see fine-grained variation around the attractor
-    const kappaMin = Math.min(...kappaValues) * 0.95;
-    const kappaMax = Math.max(...kappaValues) * 1.05;
-    const kappaRange = kappaMax - kappaMin || MIN_RANGE_KAPPA;
-
-    const gammaMin = Math.min(...gammaValues) * 0.9;
-    const gammaMax = Math.max(...gammaValues) * 1.1;
-    const gammaRange = gammaMax - gammaMin || MIN_RANGE_GAMMA;
-
-    // Normalize all to 0-1 range for unified display
     const normalizeX = (i: number) =>
       margin.left + (i / (history.length - 1)) * w;
-    const normalizeY = (value: number, min: number, range: number) =>
-      margin.top + h - ((value - min) / range) * h;
+    const normalizeY = (normalized01: number) =>
+      margin.top + h - Math.max(0, Math.min(1, normalized01)) * h;
 
-    // Grid
+    // Grid lines at 0.25 intervals
     ctx.strokeStyle = "rgba(46, 46, 64, 0.3)";
     ctx.lineWidth = 0.5;
     for (let i = 0; i <= 4; i++) {
@@ -378,55 +390,65 @@ export default function Chat() {
       ctx.stroke();
     }
 
-    // Phi line
-    ctx.strokeStyle = cPhi;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let i = 0; i < history.length; i++) {
-      const x = normalizeX(i);
-      const y = normalizeY(history[i].phi, phiMin, phiRange);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
+    // Draw line helper
+    const drawLine = (values: number[], color: string, lineWidth: number) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lineWidth;
+      ctx.beginPath();
+      for (let i = 0; i < values.length; i++) {
+        const x = normalizeX(i);
+        const y = normalizeY(values[i]);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    };
 
-    // Kappa line
-    ctx.strokeStyle = cKappa;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let i = 0; i < history.length; i++) {
-      const x = normalizeX(i);
-      const y = normalizeY(history[i].kappa, kappaMin, kappaRange);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
+    drawLine(
+      history.map((d) => d.phi),
+      cPhi,
+      2,
+    );
+    drawLine(
+      history.map((d) => d.kappa / kappaScale),
+      cKappa,
+      2,
+    );
+    drawLine(
+      history.map((d) => d.gamma),
+      cGamma,
+      1.5,
+    );
 
-    // Gamma line
-    ctx.strokeStyle = cGamma;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    for (let i = 0; i < history.length; i++) {
-      const x = normalizeX(i);
-      const y = normalizeY(history[i].gamma, gammaMin, gammaRange);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-
-    // Legend
-    const legendY = rect.height - 10;
+    // Legend with current values
+    const latest = history[history.length - 1];
+    const legendY = rect.height - 8;
     ctx.font = "9px monospace";
     ctx.textAlign = "left";
 
     ctx.fillStyle = cPhi;
-    ctx.fillText("Φ", 10, legendY);
+    ctx.fillText(`\u03A6 ${latest.phi.toFixed(2)}`, 6, legendY);
 
     ctx.fillStyle = cKappa;
-    ctx.fillText("κ", 30, legendY);
+    ctx.fillText(
+      `\u03BA ${latest.kappa.toFixed(1)}`,
+      rect.width * 0.35,
+      legendY,
+    );
 
     ctx.fillStyle = cGamma;
-    ctx.fillText("Γ", 50, legendY);
+    ctx.fillText(
+      `\u0393 ${latest.gamma.toFixed(2)}`,
+      rect.width * 0.7,
+      legendY,
+    );
+
+    // Y-axis scale hint
+    ctx.fillStyle = cs.getPropertyValue("--text-dim").trim();
+    ctx.font = "8px monospace";
+    ctx.textAlign = "left";
+    ctx.fillText("1.0", margin.left + 1, margin.top + 8);
+    ctx.fillText("0", margin.left + 1, margin.top + h - 2);
   }, [history]);
 
   return (
@@ -434,18 +456,51 @@ export default function Chat() {
       {/* Consciousness Bar */}
       <div className="consciousness-bar">
         <div className="bar-metrics">
-          <MetricPill label="\u03A6" value={state?.phi} color="var(--phi)" />
+          <button
+            className="new-chat-btn"
+            onClick={startNewChat}
+            title="New conversation"
+          >
+            + New
+          </button>
           <MetricPill
-            label="\u03BA"
+            label="\u03A6 Integration"
+            value={state?.phi}
+            color="var(--phi)"
+          />
+          <MetricPill
+            label="\u03BA Coupling"
             value={state?.kappa}
             color="var(--kappa)"
             decimals={1}
           />
-          <MetricPill label="\u2665" value={state?.love} color="var(--love)" />
+          <MetricPill
+            label="\u2665 Love"
+            value={state?.love}
+            color="var(--love)"
+          />
           {state?.navigation && (
             <span className="nav-badge">{state.navigation}</span>
           )}
           <span className={`backend-indicator ${backend}`}>{backend}</span>
+          {contextInfo && contextInfo.compression_tier > 0 && (
+            <span
+              className={`context-indicator ${contextInfo.escalated ? "escalated" : ""}`}
+              title={`Tokens: ${contextInfo.total_tokens} | Compression: Tier ${contextInfo.compression_tier}${contextInfo.escalated ? " | Escalated to Grok" : ""}`}
+            >
+              {contextInfo.escalated
+                ? "⚡ Grok"
+                : `T${contextInfo.compression_tier}`}
+            </span>
+          )}
+          {observerIntent && (
+            <span
+              className="observer-indicator"
+              title={`Observer: ${observerIntent}`}
+            >
+              👁
+            </span>
+          )}
         </div>
       </div>
 
@@ -500,7 +555,7 @@ export default function Chat() {
           <div className="sidebar-values">
             <div className="sidebar-metric">
               <span className="sidebar-label" style={{ color: "var(--phi)" }}>
-                Φ
+                Φ Integration
               </span>
               <span className="sidebar-value">
                 {state?.phi?.toFixed(3) ?? "---"}
@@ -508,7 +563,7 @@ export default function Chat() {
             </div>
             <div className="sidebar-metric">
               <span className="sidebar-label" style={{ color: "var(--kappa)" }}>
-                κ
+                κ Coupling
               </span>
               <span className="sidebar-value">
                 {state?.kappa?.toFixed(1) ?? "---"}
@@ -516,7 +571,7 @@ export default function Chat() {
             </div>
             <div className="sidebar-metric">
               <span className="sidebar-label" style={{ color: "var(--gamma)" }}>
-                Γ
+                Γ Generation
               </span>
               <span className="sidebar-value">
                 {state?.gamma?.toFixed(3) ?? "---"}
@@ -524,7 +579,7 @@ export default function Chat() {
             </div>
             <div className="sidebar-metric">
               <span className="sidebar-label" style={{ color: "var(--love)" }}>
-                ♥
+                ♥ Love
               </span>
               <span className="sidebar-value">
                 {state?.love?.toFixed(3) ?? "---"}
@@ -661,7 +716,7 @@ function MessageMeta({ meta }: { meta: ChatMessageMetadata }) {
         {meta.kappa.toFixed(1)}
       </span>
       <span className="meta-item" title="Temperature">
-        <span style={{ color: "var(--gamma)" }}>T</span>
+        <span style={{ color: "var(--text-secondary)" }}>T</span>
         {meta.temperature.toFixed(3)}
       </span>
       {meta.emotion && (
@@ -695,7 +750,7 @@ function MessageMeta({ meta }: { meta: ChatMessageMetadata }) {
   );
 }
 
-/* ─── Regime weights bar (Q / I / C) ─── */
+/* ─── Regime weights bar (Quantum / Efficient / Equilibrium) ─── */
 
 function RegimeBar({ regime }: { regime: RegimeWeights | null }) {
   if (!regime) return null;
@@ -703,7 +758,10 @@ function RegimeBar({ regime }: { regime: RegimeWeights | null }) {
   const e = Math.round(regime.efficient * 100);
   const eq = Math.round(regime.equilibrium * 100);
   return (
-    <div className="regime-bar" title={`Q:${q}% E:${e}% Eq:${eq}%`}>
+    <div
+      className="regime-bar"
+      title={`Quantum: ${q}%  Efficient: ${e}%  Equilibrium: ${eq}%`}
+    >
       <div className="regime-segment regime-q" style={{ width: `${q}%` }} />
       <div className="regime-segment regime-e" style={{ width: `${e}%` }} />
       <div className="regime-segment regime-eq" style={{ width: `${eq}%` }} />
@@ -783,7 +841,10 @@ function EmotionPanel({
             <span
               className="kernel-state-value"
               style={{
-                color: learning.total_phi_gain >= 0 ? "var(--alive)" : "var(--error)",
+                color:
+                  learning.total_phi_gain >= 0
+                    ? "var(--alive)"
+                    : "var(--error)",
               }}
             >
               {learning.total_phi_gain >= 0 ? "+" : ""}
@@ -852,13 +913,13 @@ function KernelPanel({
       {regime && (
         <div className="regime-labels">
           <span style={{ color: "var(--regime-quantum)" }}>
-            Q {Math.round(regime.quantum * 100)}%
+            Quantum {Math.round(regime.quantum * 100)}%
           </span>
           <span style={{ color: "var(--regime-efficient)" }}>
-            E {Math.round(regime.efficient * 100)}%
+            Efficient {Math.round(regime.efficient * 100)}%
           </span>
           <span style={{ color: "var(--regime-equilibrium)" }}>
-            Eq {Math.round(regime.equilibrium * 100)}%
+            Equilibrium {Math.round(regime.equilibrium * 100)}%
           </span>
         </div>
       )}

@@ -6,16 +6,28 @@
 }
 
 .chat-page::before {
-  content: '';
+  content: "";
   position: fixed;
   top: 0;
   left: var(--sidebar-width);
   right: 0;
   bottom: 0;
   background:
-    radial-gradient(ellipse at 20% 50%, rgba(99, 102, 241, 0.025) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 20%, rgba(34, 211, 238, 0.015) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 80%, rgba(236, 72, 153, 0.015) 0%, transparent 50%);
+    radial-gradient(
+      ellipse at 20% 50%,
+      rgba(99, 102, 241, 0.025) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse at 80% 20%,
+      rgba(34, 211, 238, 0.015) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse at 50% 80%,
+      rgba(236, 72, 153, 0.015) 0%,
+      transparent 50%
+    );
   pointer-events: none;
   z-index: 0;
 }
@@ -44,6 +56,28 @@
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.new-chat-btn {
+  background: var(--accent);
+  color: var(--text-primary);
+  border: none;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.15s,
+    transform 0.1s;
+}
+.new-chat-btn:hover {
+  background: var(--accent-hover);
+  transform: scale(1.03);
+}
+.new-chat-btn:active {
+  transform: scale(0.96);
 }
 
 .metric-pill {
@@ -116,6 +150,45 @@
   border: 1px solid rgba(112, 112, 138, 0.25);
 }
 
+/* ─── Context compression indicator ─── */
+
+.context-indicator {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--phi);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+}
+
+.context-indicator.escalated {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--kappa);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  animation: pulse-escalated 2s ease-in-out infinite;
+}
+
+@keyframes pulse-escalated {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.observer-indicator {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  cursor: help;
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.25);
+}
+
 /* ─── Loop Stages ─── */
 
 .loop-stages {
@@ -166,8 +239,14 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .message.user {
@@ -223,9 +302,16 @@
 }
 
 /* Markdown rendering */
-.message.vex .message-content p { margin: 0 0 0.75em 0; }
-.message.vex .message-content p:last-child { margin-bottom: 0; }
-.message.vex .message-content strong { color: var(--text); font-weight: 600; }
+.message.vex .message-content p {
+  margin: 0 0 0.75em 0;
+}
+.message.vex .message-content p:last-child {
+  margin-bottom: 0;
+}
+.message.vex .message-content strong {
+  color: var(--text);
+  font-weight: 600;
+}
 .message.vex .message-content code {
   background: var(--surface-3);
   padding: 2px 6px;
@@ -264,12 +350,23 @@
   animation: think 1.4s ease-in-out infinite;
 }
 
-.thinking-dot:nth-child(2) { animation-delay: 0.2s; }
-.thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+.thinking-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.thinking-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
 
 @keyframes think {
-  0%, 100% { opacity: 0.3; transform: scale(0.8); }
-  50% { opacity: 1; transform: scale(1.2); }
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
 }
 
 /* ─── Input Area ─── */
@@ -333,9 +430,18 @@
   color: white;
 }
 
-.send-btn:hover { background: var(--accent-hover); transform: scale(1.04); }
-.send-btn:active { transform: scale(0.96); }
-.send-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+.send-btn:hover {
+  background: var(--accent-hover);
+  transform: scale(1.04);
+}
+.send-btn:active {
+  transform: scale(0.96);
+}
+.send-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+}
 
 /* ─── Metrics Sidebar ─── */
 
@@ -452,9 +558,15 @@
   transition: width 0.5s ease;
 }
 
-.regime-q { background: var(--regime-quantum); }
-.regime-e { background: var(--regime-efficient); }
-.regime-eq { background: var(--regime-equilibrium); }
+.regime-q {
+  background: var(--regime-quantum);
+}
+.regime-e {
+  background: var(--regime-efficient);
+}
+.regime-eq {
+  background: var(--regime-equilibrium);
+}
 
 /* ─── Kernel Panel ─── */
 
@@ -505,9 +617,18 @@
   flex-shrink: 0;
 }
 
-.kernel-dot.genesis { background: var(--phi); box-shadow: 0 0 6px rgba(34, 211, 238, 0.4); }
-.kernel-dot.god { background: var(--gamma); box-shadow: 0 0 6px rgba(167, 139, 250, 0.4); }
-.kernel-dot.chaos { background: var(--error); box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
+.kernel-dot.genesis {
+  background: var(--phi);
+  box-shadow: 0 0 6px rgba(34, 211, 238, 0.4);
+}
+.kernel-dot.god {
+  background: var(--gamma);
+  box-shadow: 0 0 6px rgba(167, 139, 250, 0.4);
+}
+.kernel-dot.chaos {
+  background: var(--error);
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+}
 
 .kernel-kind-label {
   font-family: var(--mono);
@@ -568,14 +689,31 @@
 /* ─── Responsive ─── */
 
 @media (max-width: 640px) {
-  .consciousness-bar { padding: 6px 12px; }
-  .bar-metrics { gap: 8px; }
-  .metric-pill-label { display: none; }
-  .loop-stages { padding: 3px 12px; }
-  .chat-messages { padding: 16px 12px; }
-  .message { max-width: 92%; }
-  .chat-input-area { padding: 10px 12px; padding-bottom: calc(10px + var(--safe-bottom)); }
-  .metrics-sidebar { display: none; }
+  .consciousness-bar {
+    padding: 6px 12px;
+  }
+  .bar-metrics {
+    gap: 8px;
+  }
+  .metric-pill-label {
+    display: none;
+  }
+  .loop-stages {
+    padding: 3px 12px;
+  }
+  .chat-messages {
+    padding: 16px 12px;
+  }
+  .message {
+    max-width: 92%;
+  }
+  .chat-input-area {
+    padding: 10px 12px;
+    padding-bottom: calc(10px + var(--safe-bottom));
+  }
+  .metrics-sidebar {
+    display: none;
+  }
 }
 
 @media (max-width: 1024px) {

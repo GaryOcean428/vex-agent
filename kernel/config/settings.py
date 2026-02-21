@@ -185,6 +185,11 @@ class Settings:
     # Safety
     safety_mode: str = os.environ.get("SAFETY_MODE", "standard")
 
+    # Silent Observer — background Grok observation of conversations
+    silent_observer_enabled: bool = (
+        os.environ.get("SILENT_OBSERVER_ENABLED", "false").lower() == "true"
+    )
+
     # Logging
     log_level: str = os.environ.get("LOG_LEVEL", "info")
 

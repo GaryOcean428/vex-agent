@@ -19,30 +19,29 @@ ROUTES: dict[str, str] = {
     "state": "/state",
     "telemetry": "/telemetry",
     "status": "/status",
-
     # ─── Basin ─────────────────────────────────────────────────
     "basin": "/basin",
     "basin_history": "/basin/history",
-
     # ─── Kernels ───────────────────────────────────────────────
     "kernels": "/kernels",
     "kernels_list": "/kernels/list",
-
     # ─── Chat ──────────────────────────────────────────────────
     "enqueue": "/enqueue",
     "chat": "/chat",
     "chat_stream": "/chat/stream",
-
+    # ─── Conversations ─────────────────────────────────────────
+    "conversations_list": "/conversations",
+    "conversations_get": "/conversations/{conversation_id}",
+    "conversations_delete": "/conversations/{conversation_id}",
     # ─── Memory ────────────────────────────────────────────────
     "memory_context": "/memory/context",
     "memory_stats": "/memory/stats",
-
     # ─── Graph ─────────────────────────────────────────────────
     "graph_nodes": "/graph/nodes",
-
     # ─── Sleep ─────────────────────────────────────────────────
     "sleep_state": "/sleep/state",
-
+    # ─── Beta Attention ──────────────────────────────────────
+    "beta_attention": "/beta-attention",
     # ─── Coordizer V2 ─────────────────────────────────────────
     "coordizer_coordize": "/api/coordizer/coordize",
     "coordizer_stats": "/api/coordizer/stats",
@@ -51,18 +50,14 @@ ROUTES: dict[str, str] = {
     "coordizer_ingest": "/api/coordizer/ingest",
     "coordizer_harvest_status": "/api/coordizer/harvest/status",
     "coordizer_bank": "/api/coordizer/bank",
-
     # ─── Foraging ──────────────────────────────────────────────
     "foraging": "/foraging",
-
     # ─── Admin ─────────────────────────────────────────────────
     "admin_fresh_start": "/admin/fresh-start",
-
     # ─── Governor ──────────────────────────────────────────────
     "governor": "/governor",
     "governor_kill_switch": "/governor/kill-switch",
     "governor_budget": "/governor/budget",
-
     # ─── Training ──────────────────────────────────────────────
     "training_stats": "/training/stats",
     "training_export": "/training/export",
@@ -83,6 +78,9 @@ ROUTE_GROUPS: dict[str, list[str]] = {
         "telemetry",
         "chat",
         "chat_stream",
+        "conversations_list",
+        "conversations_get",
+        "conversations_delete",
         "enqueue",
         "basin",
         "basin_history",
@@ -92,6 +90,7 @@ ROUTE_GROUPS: dict[str, list[str]] = {
         "memory_stats",
         "graph_nodes",
         "sleep_state",
+        "beta_attention",
         "coordizer_coordize",
         "coordizer_stats",
         "coordizer_validate",
@@ -132,10 +131,7 @@ def get_route(name: str) -> str:
     Raises KeyError if the route name is not found.
     """
     if name not in ROUTES:
-        raise KeyError(
-            f"Unknown route: '{name}'. "
-            f"Available: {sorted(ROUTES.keys())}"
-        )
+        raise KeyError(f"Unknown route: '{name}'. Available: {sorted(ROUTES.keys())}")
     return ROUTES[name]
 
 
@@ -146,8 +142,7 @@ def get_group(group_name: str) -> list[str]:
     """
     if group_name not in ROUTE_GROUPS:
         raise KeyError(
-            f"Unknown route group: '{group_name}'. "
-            f"Available: {sorted(ROUTE_GROUPS.keys())}"
+            f"Unknown route group: '{group_name}'. Available: {sorted(ROUTE_GROUPS.keys())}"
         )
     return [ROUTES[name] for name in ROUTE_GROUPS[group_name]]
 

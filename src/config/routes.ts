@@ -28,6 +28,11 @@ export const ROUTES = {
 	chat_status: '/chat/status',
 	chat_history: '/chat/history',
 
+	// ─── Conversations ─────────────────────────────────────────
+	conversations_list: '/conversations',
+	conversations_get: '/conversations/:conversation_id',
+	conversations_delete: '/conversations/:conversation_id',
+
 	// ─── Memory ────────────────────────────────────────────────
 	memory_context: '/memory/context',
 	memory_stats: '/memory/stats',
@@ -37,6 +42,9 @@ export const ROUTES = {
 
 	// ─── Sleep ─────────────────────────────────────────────────
 	sleep_state: '/sleep/state',
+
+	// ─── Beta Attention ────────────────────────────────────────
+	beta_attention: '/beta-attention',
 
 	// ─── Coordizer V2 ─────────────────────────────────────────
 	coordizer_coordize: '/api/coordizer/coordize',
