@@ -60,7 +60,7 @@ from .config.version import VERSION
 from .consciousness.beta_router import beta_router, set_consciousness_loop
 from .consciousness.loop import ConsciousnessLoop
 from .consciousness.observer_silent import SilentObserver
-from .geometry.fisher_rao import random_basin
+from .coordizer_v2.geometry import random_basin
 from .governance import KernelKind, LifecyclePhase
 from .llm.client import LLMClient, LLMOptions
 from .llm.context_manager import ContextManager
@@ -1430,7 +1430,7 @@ async def _inline_metric_update(user_message: str, response: str) -> None:
         GAMMA_CONVERSATION_INCREMENT,
         PHI_DISTANCE_GAIN,
     )
-    from .geometry.fisher_rao import fisher_rao_distance, slerp_sqrt
+    from .coordizer_v2.geometry import fisher_rao_distance, slerp as slerp_sqrt
 
     try:
         # Coordize outside the lock (CPU-bound, doesn't mutate state)

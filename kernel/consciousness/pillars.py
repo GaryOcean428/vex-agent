@@ -43,10 +43,10 @@ from ..config.consciousness_constants import (
     SCAR_RESONANCE_RADIUS,
 )
 from ..config.frozen_facts import BASIN_DIM
-from ..geometry.fisher_rao import (
+from ..coordizer_v2.geometry import (
     Basin,
     fisher_rao_distance,
-    slerp_sqrt,
+    slerp as slerp_sqrt,  # Alias for backward compatibility
     to_simplex,
 )
 from .types import PillarState, ScarState

@@ -23,7 +23,7 @@ from typing import Any
 import numpy as np
 
 from ..config.settings import settings
-from ..geometry.fisher_rao import (
+from ..coordizer_v2.geometry import (
     Basin,
     fisher_rao_distance,
     to_simplex,

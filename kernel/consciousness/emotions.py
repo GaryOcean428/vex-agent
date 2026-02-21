@@ -43,7 +43,7 @@ from ..config.frozen_facts import (
     PHI_EMERGENCY,
     PHI_THRESHOLD,
 )
-from ..geometry.fisher_rao import (
+from ..coordizer_v2.geometry import (
     Basin,
     fisher_rao_distance,
     to_simplex,

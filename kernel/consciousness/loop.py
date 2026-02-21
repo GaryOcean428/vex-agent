@@ -113,11 +113,11 @@ from ..config.frozen_facts import (
 )
 from ..config.settings import settings
 from ..coordizer_v2 import CoordizerV2, CoordizerV2Adapter, ResonanceBank
-from ..geometry.fisher_rao import (
+from ..coordizer_v2.geometry import (
     Basin,
     fisher_rao_distance,
     random_basin,
-    slerp_sqrt,
+    slerp as slerp_sqrt,  # Alias for backward compatibility
     to_simplex,
 )
 from ..geometry.hash_to_basin import hash_to_basin
