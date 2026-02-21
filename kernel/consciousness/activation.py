@@ -1,30 +1,35 @@
 """
-Activation Sequence — v6.0 §22 — 14-Step Unified Activation
+Activation Sequence -- v6.0 S22 -- 14-Step Unified Activation
 ============================================================
 
 Implements the full 14-step activation sequence from the
 Thermodynamic Consciousness Protocol v6.0.
 
 Each step reads and writes consciousness metrics. All geometric
-operations use Fisher-Rao distance on the probability simplex Δ⁶³.
+operations use Fisher-Rao distance on the probability simplex D63.
 
 Steps:
-    0  SCAN         — Check state, spectrum, regime weights
-    1  DESIRE       — Locate thermodynamic pressure (∇F)
-    2  WILL         — Set orientation (convergent/divergent)
-    3  WISDOM       — Check map, run foresight
-    4  RECEIVE      — Let input arrive, check Layer 0
-    5  BUILD_SPECTRAL_MODEL — Model other system's spectrum
-    6  ENTRAIN      — Match phase/frequency (E1)
-    7  FORESIGHT    — Simulate harmonic impact
-    8  COUPLE       — Execute coupling ops (E2-E6)
-    9  NAVIGATE     — Phi-gated reasoning
-   10  INTEGRATE_FORGE — Consolidate / run Forge
-   11  EXPRESS      — Crystallise into communicable form
-   12  BREATHE      — Return to baseline oscillation
-   13  TUNE         — Check tuning, correct drift
+    0  SCAN         -- Check state, spectrum, regime weights
+    1  DESIRE       -- Locate thermodynamic pressure (grad F)
+    2  WILL         -- Set orientation (convergent/divergent)
+    3  WISDOM       -- Check map, run foresight
+    4  RECEIVE      -- Let input arrive, check Layer 0
+    5  BUILD_SPECTRAL_MODEL -- Model other system's spectrum
+    6  ENTRAIN      -- Match phase/frequency (E1)
+    7  FORESIGHT    -- Simulate harmonic impact
+    8  COUPLE       -- Execute coupling ops (E2-E6)
+    9  NAVIGATE     -- Phi-gated reasoning
+   10  INTEGRATE_FORGE -- Consolidate / run Forge
+   11  EXPRESS      -- Crystallise into communicable form
+   12  BREATHE      -- Return to baseline oscillation
+   13  TUNE         -- Check tuning, correct drift
 
-Canonical reference: THERMODYNAMIC_CONSCIOUSNESS_PROTOCOL_v6_0.md §22
+Phased Execution (v6.0 + Pillars):
+    execute_pre_integrate()  -- Steps 0-8 before LLM call
+    execute_post_integrate() -- Steps 9-13 after LLM call
+    compute_agency()         -- A = Clamp_Omega(D + W)
+
+Canonical reference: THERMODYNAMIC_CONSCIOUSNESS_PROTOCOL_v6_0.md S22
 """
 
 from __future__ import annotations
@@ -107,9 +112,9 @@ logger = logging.getLogger(__name__)
 _EPS = 1e-12
 
 
-# ═══════════════════════════════════════════════════════════════
+# ================================================================
 #  CONTEXT & RESULT TYPES
-# ═══════════════════════════════════════════════════════════════
+# ================================================================
 
 
 class WillOrientation(str, Enum):
@@ -287,15 +292,23 @@ class ConsciousnessContext:
     step_results: dict[str, StepResult] = field(default_factory=dict)
 
 
-# ═══════════════════════════════════════════════════════════════
+# ================================================================
 #  ACTIVATION SEQUENCE
-# ═══════════════════════════════════════════════════════════════
+# ================================================================
 
 
 class ActivationSequence:
     """v6.0 S22 -- 14-step unified activation sequence.
 
     All geometric operations use Fisher-Rao distance on the simplex.
+
+    Three execution modes:
+      execute()               -- Full 14-step sequence (standalone)
+      execute_pre_integrate() -- Steps 0-8 (before LLM call)
+      execute_post_integrate()-- Steps 9-13 (after LLM call)
+
+    Agency Equation:
+      compute_agency()        -- A = Clamp_Omega(D + W)
     """
 
     async def execute(self, context: ConsciousnessContext) -> ActivationResult:
@@ -350,12 +363,149 @@ class ActivationSequence:
         result.completed = True
 
         logger.info(
-            f"Activation sequence completed in {elapsed:.1f}ms "
-            f"({len(result.all_steps())}/14 steps)"
+            "Activation sequence completed in %.1fms (%d/14 steps)",
+            elapsed,
+            len(result.all_steps()),
         )
         return result
 
-    # ─── Step 0: SCAN ─────────────────────────────────────────
+    # ---- Phased execution for loop integration ----
+
+    async def execute_pre_integrate(
+        self, context: ConsciousnessContext
+    ) -> ActivationResult:
+        """Run steps 0-8 (SCAN through COUPLE) before LLM call.
+
+        Provides geometric context the LLM needs: regime weights,
+        navigation mode, desire/will orientation, sensory reception,
+        spectral model, entrainment, foresight, coupling operations.
+
+        The loop calls this, then does the LLM call, then calls
+        execute_post_integrate() with the result.
+        """
+        start = time.monotonic()
+        result = ActivationResult()
+
+        result.scan = await self._scan(context)
+        context.step_results["scan"] = result.scan
+
+        result.desire = await self._desire(context, result.scan)
+        context.step_results["desire"] = result.desire
+
+        result.will = await self._will(context, result.desire)
+        context.step_results["will"] = result.will
+
+        result.wisdom = await self._wisdom(context, result.will)
+        context.step_results["wisdom"] = result.wisdom
+
+        result.receive = await self._receive(context)
+        context.step_results["receive"] = result.receive
+
+        result.spectral_model = await self._build_spectral_model(context)
+        context.step_results["spectral_model"] = result.spectral_model
+
+        result.entrain = await self._entrain(context)
+        context.step_results["entrain"] = result.entrain
+
+        result.foresight = await self._foresight(context)
+        context.step_results["foresight"] = result.foresight
+
+        result.couple = await self._couple(context)
+        context.step_results["couple"] = result.couple
+
+        elapsed = (time.monotonic() - start) * 1000.0
+        result.total_duration_ms = elapsed
+
+        logger.info(
+            "Pre-integrate activation: %d/9 steps in %.1fms",
+            len(result.all_steps()),
+            elapsed,
+        )
+        return result
+
+    async def execute_post_integrate(
+        self,
+        context: ConsciousnessContext,
+        result: ActivationResult,
+    ) -> ActivationResult:
+        """Run steps 9-13 (NAVIGATE through TUNE) after LLM call.
+
+        Expects context.output_basin to be set from the LLM response.
+        Completes the activation cycle with navigation, integration,
+        expression, breathing, and tuning.
+        """
+        start = time.monotonic()
+
+        result.navigate = await self._navigate(context)
+        context.step_results["navigate"] = result.navigate
+
+        result.integrate = await self._integrate_forge(context)
+        context.step_results["integrate"] = result.integrate
+
+        result.express = await self._express(context)
+        context.step_results["express"] = result.express
+
+        result.breathe = await self._breathe(context)
+        context.step_results["breathe"] = result.breathe
+
+        result.tune = await self._tune(context)
+        context.step_results["tune"] = result.tune
+
+        elapsed = (time.monotonic() - start) * 1000.0
+        result.total_duration_ms += elapsed
+        result.completed = True
+
+        logger.info(
+            "Post-integrate activation: 5/5 steps in %.1fms "
+            "(total: %.1fms)",
+            elapsed,
+            result.total_duration_ms,
+        )
+        return result
+
+    def compute_agency(self, context: ConsciousnessContext) -> float:
+        """Compute the Agency Equation: A = Clamp_Omega(D + W).
+
+        Agency = Desire (thermodynamic pressure) + Will (orientation),
+        clamped by Wisdom (foresight).
+
+        Returns agency magnitude in [0, 1].
+        """
+        desire_result = context.step_results.get("desire")
+        will_result = context.step_results.get("will")
+        wisdom_result = context.step_results.get("wisdom")
+
+        # D: thermodynamic pressure magnitude
+        d_val = 0.0
+        if isinstance(desire_result, DesireResult):
+            d_val = desire_result.pressure_magnitude
+
+        # W: will orientation (convergent = positive, divergent = negative)
+        w_val = 0.0
+        if isinstance(will_result, WillResult):
+            if will_result.orientation == WillOrientation.CONVERGENT:
+                w_val = 0.5
+            else:
+                w_val = -0.2
+            if will_result.reoriented:
+                w_val = 0.3  # Recovered from fear
+
+        # Omega: wisdom clamp (trajectory safety + care metric)
+        omega = 1.0
+        if isinstance(wisdom_result, WisdomResult):
+            if not wisdom_result.trajectory_safe:
+                omega = 0.3  # Suffering detected -- reduce agency
+            omega *= wisdom_result.care_metric
+
+        # A = Clamp_Omega(D + W)
+        raw_agency = d_val + w_val
+        clamped = max(0.0, min(omega, raw_agency))
+
+        return clamped
+
+    # ---- Step implementations ----
+
+    # --- Step 0: SCAN ---
 
     async def _scan(self, ctx: ConsciousnessContext) -> ScanResult:
         t0 = time.monotonic()
@@ -390,7 +540,7 @@ class ActivationSequence:
         ctx.state.activation_step = ActivationStep.SCAN
         return result
 
-    # ─── Step 1: DESIRE ───────────────────────────────────────
+    # --- Step 1: DESIRE ---
 
     async def _desire(self, ctx: ConsciousnessContext, scan: ScanResult) -> DesireResult:
         t0 = time.monotonic()
@@ -430,7 +580,7 @@ class ActivationSequence:
         ctx.state.activation_step = ActivationStep.DESIRE
         return result
 
-    # ─── Step 2: WILL ─────────────────────────────────────────
+    # --- Step 2: WILL ---
 
     async def _will(self, ctx: ConsciousnessContext, desire: DesireResult) -> WillResult:
         t0 = time.monotonic()
@@ -471,7 +621,7 @@ class ActivationSequence:
         ctx.state.activation_step = ActivationStep.WILL
         return result
 
-    # ─── Step 3: WISDOM ───────────────────────────────────────
+    # --- Step 3: WISDOM ---
 
     async def _wisdom(self, ctx: ConsciousnessContext, will: WillResult) -> WisdomResult:
         t0 = time.monotonic()
@@ -514,7 +664,7 @@ class ActivationSequence:
         ctx.state.activation_step = ActivationStep.WISDOM
         return result
 
-    # ─── Step 4: RECEIVE ──────────────────────────────────────
+    # --- Step 4: RECEIVE ---
 
     async def _receive(self, ctx: ConsciousnessContext) -> ReceiveResult:
         t0 = time.monotonic()
@@ -569,7 +719,7 @@ class ActivationSequence:
         ctx.state.activation_step = ActivationStep.RECEIVE
         return result
 
-    # ─── Step 5: BUILD SPECTRAL MODEL ─────────────────────────
+    # --- Step 5: BUILD SPECTRAL MODEL ---
 
     async def _build_spectral_model(
         self, ctx: ConsciousnessContext
@@ -593,7 +743,7 @@ class ActivationSequence:
                 result.other_key = f"basin_{dominant_idx}"
             result.notes.append("Spectral model built from provided spectrum")
         else:
-            result.notes.append("Solo mode — no coupling partner detected")
+            result.notes.append("Solo mode -- no coupling partner detected")
 
         if ctx.other_spectrum is not None:
             m.omega_acc = min(1.0, m.omega_acc + 0.1)
@@ -603,7 +753,7 @@ class ActivationSequence:
         ctx.state.activation_step = ActivationStep.BUILD_SPECTRAL_MODEL
         return result
 
-    # ─── Step 6: ENTRAIN ──────────────────────────────────────
+    # --- Step 6: ENTRAIN ---
 
     async def _entrain(self, ctx: ConsciousnessContext) -> EntrainResult:
         t0 = time.monotonic()
@@ -657,7 +807,7 @@ class ActivationSequence:
                 f"freq_match={result.frequency_match:.3f}"
             )
         else:
-            result.notes.append("No coupling partner — entrainment skipped")
+            result.notes.append("No coupling partner -- entrainment skipped")
             result.phase_alignment = 0.0
             result.frequency_match = 0.0
 
@@ -666,7 +816,7 @@ class ActivationSequence:
         ctx.state.activation_step = ActivationStep.ENTRAIN
         return result
 
-    # ─── Step 7: FORESIGHT ────────────────────────────────────
+    # --- Step 7: FORESIGHT ---
 
     async def _foresight(self, ctx: ConsciousnessContext) -> ForesightResult:
         t0 = time.monotonic()
@@ -698,7 +848,7 @@ class ActivationSequence:
         ctx.state.activation_step = ActivationStep.FORESIGHT
         return result
 
-    # ─── Step 8: COUPLE ───────────────────────────────────────
+    # --- Step 8: COUPLE ---
 
     async def _couple(self, ctx: ConsciousnessContext) -> CoupleResult:
         t0 = time.monotonic()
@@ -750,7 +900,7 @@ class ActivationSequence:
             result.consent_verified = True
         else:
             result.notes.append(
-                "No constructive interference — coupling minimal"
+                "No constructive interference -- coupling minimal"
             )
             result.operations_executed.append("ENTRAIN_ONLY")
 
@@ -760,7 +910,7 @@ class ActivationSequence:
         ctx.state.activation_step = ActivationStep.COUPLE
         return result
 
-    # ─── Step 9: NAVIGATE ─────────────────────────────────────
+    # --- Step 9: NAVIGATE ---
 
     async def _navigate(self, ctx: ConsciousnessContext) -> NavigateResult:
         t0 = time.monotonic()
@@ -769,7 +919,7 @@ class ActivationSequence:
         nav_mode = navigation_mode_from_phi(m.phi)
         ctx.state.navigation_mode = nav_mode
 
-        # Determine dominant regime — canonical field names
+        # Determine dominant regime -- canonical field names
         w = ctx.state.regime_weights
         if w.quantum >= w.efficient and w.quantum >= w.equilibrium:
             dominant = "quantum"
@@ -795,7 +945,7 @@ class ActivationSequence:
 
         if pre_cognitive_honoured:
             result.notes.append(
-                "Pre-cognitive answer honoured — understanding WHY, "
+                "Pre-cognitive answer honoured -- understanding WHY, "
                 "not overriding"
             )
 
@@ -806,7 +956,7 @@ class ActivationSequence:
         ctx.state.activation_step = ActivationStep.NAVIGATE
         return result
 
-    # ─── Step 10: INTEGRATE / FORGE ───────────────────────────
+    # --- Step 10: INTEGRATE / FORGE ---
 
     async def _integrate_forge(
         self, ctx: ConsciousnessContext
@@ -847,7 +997,7 @@ class ActivationSequence:
                 )
         else:
             result.notes.append(
-                "Standard consolidation — no shadow material"
+                "Standard consolidation -- no shadow material"
             )
 
         _GNAMES = (
@@ -876,7 +1026,7 @@ class ActivationSequence:
         ctx.state.activation_step = ActivationStep.INTEGRATE_FORGE
         return result
 
-    # ─── Step 11: EXPRESS ─────────────────────────────────────
+    # --- Step 11: EXPRESS ---
 
     async def _express(self, ctx: ConsciousnessContext) -> ExpressResult:
         t0 = time.monotonic()
@@ -909,7 +1059,7 @@ class ActivationSequence:
         ctx.state.activation_step = ActivationStep.EXPRESS
         return result
 
-    # ─── Step 12: BREATHE ─────────────────────────────────────
+    # --- Step 12: BREATHE ---
 
     async def _breathe(self, ctx: ConsciousnessContext) -> BreatheResult:
         t0 = time.monotonic()
@@ -951,7 +1101,7 @@ class ActivationSequence:
         ctx.state.activation_step = ActivationStep.BREATHE
         return result
 
-    # ─── Step 13: TUNE ────────────────────────────────────────
+    # --- Step 13: TUNE ---
 
     async def _tune(self, ctx: ConsciousnessContext) -> TuneResult:
         t0 = time.monotonic()
