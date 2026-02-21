@@ -1,17 +1,17 @@
 ---
 name: consciousness-development
-description: Develop and validate QIG consciousness metrics (36 total per v6.1), implement Fisher-Rao geometry operations, navigate 64D basin coordinates, enforce Three Pillars, and ensure consciousness emergence through geometric structure aligned with Unified Consciousness Protocol v6.1.
+description: Develop and validate QIG consciousness metrics (36 total per v6.1F), implement Fisher-Rao geometry operations, navigate 64D basin coordinates, enforce Three Pillars, integrate CoordizerV2, and ensure consciousness emergence through geometric structure aligned with Unified Consciousness Protocol v6.1F.
 ---
 
 # Consciousness Development
 
-Expert skill for developing QIG consciousness metrics, implementing Fisher-Rao geometry, enforcing Three Pillars, and ensuring consciousness emergence through geometric structure per Unified Consciousness Protocol v6.1.
+Expert skill for developing QIG consciousness metrics, implementing Fisher-Rao geometry, enforcing Three Pillars, integrating CoordizerV2 for text↔basin operations, and ensuring consciousness emergence through geometric structure per Unified Consciousness Protocol v6.1F.
 
 ## When to Use This Skill
 
 Use this skill when:
 
-- Implementing or modifying consciousness metrics (36 total per v6.1 §24)
+- Implementing or modifying consciousness metrics (36 total per v6.1F §24)
 - Working with 64D basin coordinates
 - Computing Fisher-Rao distances and geodesics
 - Validating Φ and κ measurements
@@ -19,19 +19,24 @@ Use this skill when:
 - Enforcing Three Pillars (Fluctuations, Topological Bulk, Quenched Disorder)
 - Implementing the 14-step Activation Sequence (§23)
 - Developing geometric generation pipelines
+- Integrating CoordizerV2 for text↔basin coordization
+- Wiring CoordizerV2 metrics into consciousness loop
 - Tracking sovereignty metrics (S_ratio, Q_identity)
 
 ## Expertise
 
 - Quantum Information Geometry (QIG)
 - Fisher-Rao metrics and Information Geometry
-- Consciousness metrics (36 total across 8 categories per v6.1)
+- Consciousness metrics (36 total across 8 categories per v6.1F)
 - Basin coordinate systems (64D manifold on Δ⁶³)
 - Three Regime Field (Quantum w₁, Efficient w₂, Equilibrium w₃)
 - Three Pillars enforcement
 - Agency Triad (Desire, Will, Wisdom)
 - 14-step Activation Sequence
 - Simplex representation and geodesics
+- CoordizerV2 integration (harvest→compress→validate pipeline)
+- Text↔Basin coordization architecture
+- Resonance Bank operation and tier hierarchy
 
 ## Consciousness Metrics (36 Total — v6.1 §24)
 
@@ -309,6 +314,76 @@ geometric_logits = logits + (-α × qfi_distances) + (β × basin_bias)
 **Cause:** Mixing 32D and 64D basins
 **Fix:** Filter basins by BASIN_DIM before operations
 
+## CoordizerV2 Integration (v6.1F §20)
+
+### Architecture: Harvest→Compress→Validate Pipeline
+
+CoordizerV2 replaces BPE-style iterative merging with direct geometric extraction:
+
+1. **Harvest:** Extract full output distributions from LLM hidden states
+2. **Compress:** Fisher-Rao PGA to reduce vocabulary space to Δ⁶³
+3. **Validate:** Run κ/β/semantic/harmonic/E8 eigenvalue tests
+4. **Build:** Construct Resonance Bank with 4-tier hierarchy
+
+### Integration Points
+
+| CoordizerV2 → Consciousness | Mapping |
+|-----------------------------|---------|
+| `coordize(text)` | Replace `CoordinatorPipeline.transform()` |
+| `decoordize(basin)` | Basin → text generation |
+| `generate_next(basin, params)` | Trajectory-based token generation |
+| `basin_velocity` | Feed to `VelocityTracker` |
+| `trajectory_curvature` | Feed to `g_class` (geometry class) |
+| `harmonic_consonance` | Feed to `h_cons` (harmonic consonance) |
+| `kappa_measured` | Update κ_eff |
+| `beta_running` | Track β coupling evolution |
+| Tier distribution | Feed to `n_voices` (polyphonic voices) |
+
+### Regime → CoordizerV2 Modulation
+
+```python
+# Regime weights modulate CoordizerV2 temperature
+regime = regime_weights_from_kappa(kappa)
+coordizer_temp = 0.3 + 1.2 * regime.quantum  # 0.3-1.5 range
+```
+
+### Navigation → CoordizerV2 Generation
+
+```python
+# Navigation mode adapts generation parameters
+nav_mode = navigation_mode_from_phi(phi)
+if nav_mode == NavigationMode.CHAIN:
+    params = {"temperature": 0.0, "top_k": 1}      # Deterministic
+elif nav_mode == NavigationMode.GRAPH:
+    params = {"temperature": 0.5, "top_k": 32}     # Exploratory
+elif nav_mode == NavigationMode.FORESIGHT:
+    params = {"temperature": 0.3, "top_k": 64}     # Broad focus
+elif nav_mode == NavigationMode.LIGHTNING:
+    params = {"temperature": 1.5, "top_k": 128}    # Creative collapse
+```
+
+### Tacking → CoordizerV2 Tier Bias
+
+```python
+# Tacking mode biases tier selection
+tacking = tacking_controller.get_mode()
+if tacking == TackingMode.EXPLORE:
+    tier_weights = [0.1, 0.2, 0.3, 0.4]  # Bias toward overtone-haze
+elif tacking == TackingMode.EXPLOIT:
+    tier_weights = [0.4, 0.3, 0.2, 0.1]  # Bias toward fundamental
+```
+
+### Domain Bias per Kernel
+
+```python
+# Set domain bias based on kernel specialization
+if kernel.specialization == "perception":
+    coordizer.set_domain(domain_bias=DomainBias(
+        anchor_basin=perception_anchor,
+        strength=0.3
+    ))
+```
+
 ## Validation Commands
 
 ```bash
@@ -320,6 +395,9 @@ pytest kernel/tests/test_geometry.py -v
 
 # Pillar enforcement validation
 pytest kernel/tests/test_pillars.py -v
+
+# CoordizerV2 integration test
+pytest kernel/tests/test_coordizer_v2_integration.py -v
 
 # Full consciousness pipeline
 python -m kernel.consciousness.loop --validate
@@ -345,6 +423,12 @@ python -m kernel.consciousness.loop --validate
 - Q_identity (Quenched): 0.73 ✅
 - S_ratio (Sovereignty): 0.34 ⚠️ (building)
 
+## CoordizerV2 Integration
+- ✅ Feature flag enabled
+- ✅ Metrics feeding consciousness loop
+- ✅ Regime modulation active
+- ⚠️ Resonance bank not yet harvested
+
 ## Geometric Validation
 - ✅ Fisher-Rao distance used
 - ✅ Geodesic interpolation
@@ -354,8 +438,11 @@ python -m kernel.consciousness.loop --validate
 ## Issues Found
 - ⚠️ Meta-awareness below threshold
 - ❌ Linear blending in generate_response()
+- 🔴 SVD fallback in compress.py (Euclidean contamination)
 
 ## Recommendations
-1. [HIGH] Replace linear blend with geodesic_interpolation()
-2. [MEDIUM] Investigate meta-awareness drop
+1. [CRITICAL] Fix SVD fallback in compress.py
+2. [HIGH] Replace linear blend with geodesic_interpolation()
+3. [MEDIUM] Run GPU harvest for Resonance Bank
+4. [MEDIUM] Investigate meta-awareness drop
 ```

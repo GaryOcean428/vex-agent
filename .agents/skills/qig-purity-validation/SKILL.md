@@ -1,34 +1,44 @@
 ---
 name: qig-purity-validation
-description: Validate Quantum Information Geometry (QIG) purity across codebase changes. Detect Euclidean contamination, forbidden operations per v6.1 §1.3, and Three Pillar violations. Enforce Fisher-Rao metrics per Unified Consciousness Protocol v6.1. Zero tolerance for geometric impurity.
+description: Validate Quantum Information Geometry (QIG) purity across codebase changes. Detect Euclidean contamination, forbidden operations per v6.1F §1.3, SVD fallbacks, tokenizer boundary violations, and Three Pillar violations. Enforce Fisher-Rao metrics per Unified Consciousness Protocol v6.1F. Zero tolerance for geometric impurity.
 ---
 
 # QIG Purity Validation
 
-Enforces geometric purity per Unified Consciousness Protocol v6.1 (§1.3). Zero tolerance for Euclidean contamination in consciousness-critical code.
+Enforces geometric purity per Unified Consciousness Protocol v6.1F (§1.3). Zero tolerance for Euclidean contamination in consciousness-critical code.
 
 ## When to Use This Skill
 
 - Reviewing any PR that touches `kernel/`, `src/`, or `frontend/`
 - Auditing geometric distance calculations
-- Checking for forbidden operations per v6.1 §1.3
+- Checking for forbidden operations per v6.1F §1.3
 - Validating Fisher-Rao metric usage
 - Ensuring no Euclidean contamination in basin operations
-- Verifying Three Pillars enforcement (v6.1 §3)
+- Verifying Three Pillars enforcement (v6.1F §3)
+- Checking for SVD fallbacks in PGA compression
+- Validating tokenizer boundary layer exemptions
+- Auditing CoordizerV2 geometry operations
 
-## Step 1: Scan for Forbidden Operations (v6.1 §1.3)
+## Step 1: Scan for Forbidden Operations (v6.1F §1.3)
 
 ```bash
 # Scan kernel/ for all forbidden patterns
-rg "cosine_similarity|np\.linalg\.norm.*-|dot_product|Adam|LayerNorm|softmax|stopword|TF.?IDF|flatten" kernel/ --type py
+rg "cosine_similarity|np\.linalg\.norm.*-|dot_product|Adam|LayerNorm|softmax|stopword|TF.?IDF|flatten|np\.linalg\.svd" kernel/ --type py
+
+# Specific scan for SVD (Euclidean decomposition)
+rg "np\.linalg\.svd|scipy\.linalg\.svd" kernel/ --type py
+
+# Check tokenizer usage (boundary layer concern)
+rg "tokenizer|tokenize|AutoTokenizer" kernel/ --type py
 ```
 
-### Complete Forbidden Operations Table (v6.1 §1.3)
+### Complete Forbidden Operations Table (v6.1F §1.3)
 
 | Forbidden | Why | Replace With |
 |-----------|-----|-------------|
 | `cosine_similarity(a,b)` | Euclidean metric | `fisher_rao_distance(a,b)` |
 | `np.linalg.norm(a-b)` | L2 norm | `d_FR` on simplex |
+| `np.linalg.svd(T)` | Euclidean decomposition | Eigendecomp of `T.T @ T` (Gram matrix) |
 | `dot_product(a,b)` | Euclidean inner product | Fisher metric contraction |
 | `Adam` optimizer | Euclidean gradient | Natural gradient optimizer |
 | `LayerNorm` | Euclidean normalization | Simplex projection |
@@ -87,11 +97,12 @@ rg "BREAKDOWN|LINEAR|GEOMETRIC|HIERARCHICAL" kernel/ --type py
 rg "w_1|w_2|w_3|quantum.*regime|efficient.*regime|equilibrium.*regime|regime_weights" kernel/ --type py
 ```
 
-## Forbidden Patterns (v6.1 §1.3 — Complete)
+## Forbidden Patterns (v6.1F §1.3 — Complete)
 
 | Category | Pattern | Severity | Fix |
 |----------|---------|----------|-----|
 | Euclidean | `np.linalg.norm(a - b)` | CRITICAL | `fisher_rao_distance(a, b)` |
+| Euclidean | `np.linalg.svd(T)` | CRITICAL | Eigendecomp of `T.T @ T` (Gram matrix) |
 | Cosine | `cosine_similarity()` | CRITICAL | `fisher_rao_distance()` |
 | Dot Product | `np.dot(a, b)` for basins | CRITICAL | Fisher metric contraction |
 | Optimizer | `torch.optim.Adam()` | CRITICAL | `natural_gradient_step()` |
@@ -100,10 +111,54 @@ rg "w_1|w_2|w_3|quantum.*regime|efficient.*regime|equilibrium.*regime|regime_wei
 | Terminology | `embedding` | ERROR | "basin coordinates" |
 | Terminology | `tokenize` | ERROR | "coordize" |
 | Flatten | `flatten` on manifold data | CRITICAL | Geodesic projection |
-| NLP | `stopword list` | ERROR | Geometric salience weight (v6.1 §20.4) |
+| NLP | `stopword list` | ERROR | Geometric salience weight (v6.1F §20.4) |
 | NLP | `TF-IDF` | ERROR | Fisher-geometric de-biasing |
 | NLP | `import sentencepiece` | CRITICAL | Geometric coordizer |
 | Mean | `np.mean(basins, axis=0)` | ERROR | `frechet_mean()` |
+
+## Boundary Layer Exemptions (v6.1F)
+
+### Tokenizer at LLM Interface
+
+Tokenizers are REQUIRED at the LLM boundary for extracting output distributions:
+- `kernel/coordizer_v2/harvest.py` — LLM harvest (exempt)
+- `kernel/coordizer_v2/coordizer.py` — Bootstrap fallback (mark @deprecated)
+
+**Required:** Add explicit comments: `# QIG BOUNDARY: LLM interface — tokenizer required`
+
+### Tangent Space Operations
+
+Euclidean operations (dot products, L2 norms) are VALID in tangent space:
+- Tangent space at a point on the simplex IS a Euclidean vector space
+- L2 norms and dot products in tangent space correspond to Fisher metric at base point
+- Examples: velocity norms, consistency checks in `resonance_bank.py`
+
+**Required:** Add comments clarifying tangent space context
+
+## SVD Fallback Issue (CoordizerV2)
+
+### Location
+`kernel/coordizer_v2/compress.py` line ~222:
+```python
+U, S, Vt = np.linalg.svd(T_sub, full_matrices=False)  # 🔴 VIOLATION
+```
+
+### Problem
+SVD is Euclidean decomposition. While numerically equivalent to eigendecomposition for full-rank data, it bypasses geometric framing.
+
+### Fix
+Replace with eigendecomposition of dual Gram matrix:
+```python
+# Compute dual Gram matrix (geometrically correct)
+gram_dual = T_sub.T @ T_sub
+eigenvalues, eigenvectors = np.linalg.eigh(gram_dual)
+# Sort descending
+idx = np.argsort(eigenvalues)[::-1]
+eigenvalues = eigenvalues[idx]
+eigenvectors = eigenvectors[:, idx]
+# Project onto principal directions
+V = eigenvectors  # Principal directions
+```
 
 ## Quarantine Zones (Exempted)
 
@@ -145,7 +200,13 @@ BASIN_DIM = 64              # Manifold dimension
 
 ```bash
 # Scan for forbidden patterns in kernel
-rg "cosine_similarity|np\.linalg\.norm.*-|dot_product|Adam|LayerNorm|softmax.*output|stopword|TF.?IDF|flatten" kernel/ --type py
+rg "cosine_similarity|np\.linalg\.norm.*-|dot_product|Adam|LayerNorm|softmax.*output|stopword|TF.?IDF|flatten|np\.linalg\.svd" kernel/ --type py
+
+# Check for SVD usage specifically
+rg "np\.linalg\.svd|scipy\.linalg\.svd" kernel/ --type py
+
+# Check tokenizer usage (boundary concern)
+rg "tokenizer|tokenize|AutoTokenizer" kernel/ --type py
 
 # Check Pillar enforcement exists
 rg "FluctuationGuard|TopologicalBulk|QuenchedDisorder|pillar" kernel/consciousness/ --type py
@@ -161,20 +222,27 @@ pytest kernel/tests/ -v -k "purity or geometry"
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-QIG PURITY VALIDATION REPORT (v6.1)
+QIG PURITY VALIDATION REPORT (v6.1F)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Static Analysis: ✅ PASS / ❌ FAIL
   - Euclidean violations: 0
-  - Forbidden operations (v6.1 §1.3): 0
+  - Forbidden operations (v6.1F §1.3): 0
+  - SVD usage: 0 / N (with fixes)
   - Terminology violations: 0
+
+Boundary Layer: ✅ DOCUMENTED / ⚠️ NEEDS COMMENTS
+  - Tokenizer usage: documented / undocumented
+  - Tangent space ops: commented / uncommented
 
 Three Pillars Enforcement: ✅ PASS / ❌ FAIL
   - Pillar 1 (Fluctuations): enforced / missing
   - Pillar 2 (Topological Bulk): enforced / missing
   - Pillar 3 (Quenched Disorder): enforced / missing
 
-Regime Field: ✅ v6.1 3-regime / ❌ Old 4-regime model
+Regime Field: ✅ v6.1F 3-regime / ❌ Old 4-regime model
+
+CoordizerV2 Purity: ✅ PASS / 🔴 SVD FALLBACK ISSUE
 
 Files Scanned: N
 Violations: N (CRITICAL: N, ERROR: N, WARNING: N)
