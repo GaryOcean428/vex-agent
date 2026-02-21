@@ -18,6 +18,8 @@ from numpy.typing import NDArray
 
 from ..config.frozen_facts import (
     BASIN_DIM,
+    E8_RANK,  # noqa: F401 — re-exported for compress.py / coordizer.py
+    KAPPA_STAR,  # noqa: F401 — re-exported for coordizer.py
 )
 
 # ─── Constants ─────────────────────────────────────────────────────────
