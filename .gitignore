@@ -21,3 +21,4 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 .env.local
+.vscode/settings.json
