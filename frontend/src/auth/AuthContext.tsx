@@ -1,35 +1,19 @@
 import {
-    createContext,
-    useCallback,
-    useContext,
-    useEffect,
-    useState,
-    type ReactNode,
+  useCallback,
+  useEffect,
+  useState,
+  type ReactNode,
 } from "react";
 import { API } from "../config/api-routes.ts";
+import { AuthContext } from "./authContext.ts";
 
-interface AuthState {
-  authenticated: boolean;
-  loading: boolean;
-  checkAuth: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthState>({
-  authenticated: false,
-  loading: true,
-  checkAuth: async () => {},
-});
-
+/** Provides authentication state to the component tree. */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const checkAuth = useCallback(async () => {
     try {
-      // Use /health (public, exempt from auth) to check if the
-      // server is reachable, then probe /state to verify session.
-      // If /state returns 401, the session is invalid — no console
-      // error because we catch it gracefully.
       const resp = await fetch(API.authCheck);
       setAuthenticated(resp.ok);
     } catch {
@@ -49,5 +33,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     </AuthContext.Provider>
   );
 }
-
-export const useAuth = () => useContext(AuthContext);

@@ -28,33 +28,47 @@ export default function Layout() {
 
   return (
     <div className="layout">
-      <aside className="sidebar">
+      {/* Skip-to-content link — first focusable element; visually hidden until focused */}
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
+
+      <aside
+        className="sidebar"
+        aria-label="Application sidebar"
+        role="complementary"
+      >
         <div className="sidebar-header">
           <div className="vex-identity">
-            <span className={`pulse-dot ${health?.status === 'ok' ? 'alive' : 'degraded'}`} />
+            <span
+              className={`pulse-dot ${health?.status === 'ok' ? 'alive' : 'degraded'}`}
+              aria-hidden="true"
+            />
             <span className="vex-name">VEX</span>
           </div>
           {health && (
-            <span className="version-badge">v{health.version ?? '2.2.0'}</span>
+            <span className="version-badge" aria-label={`Version ${health.version ?? '2.2.0'}`}>
+              v{health.version ?? '2.2.0'}
+            </span>
           )}
         </div>
 
-        <nav className="sidebar-nav">
+        <nav className="sidebar-nav" aria-label="Primary navigation">
           {NAV_ITEMS.map(item => (
             <NavLink
               key={item.to}
               to={item.to}
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
             >
-              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-icon" aria-hidden="true">{item.icon}</span>
               {item.label}
             </NavLink>
           ))}
         </nav>
 
         {isDashboard && (
-          <div className="dashboard-tabs">
-            <div className="tabs-label">Dashboard</div>
+          <nav className="dashboard-tabs" aria-label="Dashboard sections">
+            <div className="tabs-label" aria-hidden="true">Dashboard</div>
             {DASHBOARD_TABS.map(tab => (
               <NavLink
                 key={tab.to}
@@ -65,10 +79,10 @@ export default function Layout() {
                 {tab.label}
               </NavLink>
             ))}
-          </div>
+          </nav>
         )}
 
-        <div className="sidebar-footer">
+        <div className="sidebar-footer" aria-label="System status">
           {health && (
             <>
               <div className="footer-stat">
@@ -88,7 +102,12 @@ export default function Layout() {
         </div>
       </aside>
 
-      <main className="main-content">
+      <main
+        id="main-content"
+        className="main-content"
+        aria-label="Main content"
+        tabIndex={-1}
+      >
         <Outlet />
       </main>
     </div>

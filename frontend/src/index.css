@@ -20,18 +20,23 @@
   --info: #3b82f6;
   --gamma: #a78bfa;
   --emotion: #ec4899;
-  --regime-quantum: #3B82F6;
-  --regime-efficient: #10B981;
-  --regime-equilibrium: #F59E0B;
-  --nav-chain: #94A3B8;
-  --nav-graph: #3B82F6;
-  --nav-foresight: #8B5CF6;
-  --nav-lightning: #F59E0B;
+  --regime-quantum: #3b82f6;
+  --regime-efficient: #10b981;
+  --regime-equilibrium: #f59e0b;
+  --nav-chain: #94a3b8;
+  --nav-graph: #3b82f6;
+  --nav-foresight: #8b5cf6;
+  --nav-lightning: #f59e0b;
   --radius: 12px;
   --radius-sm: 8px;
-  --sidebar-width: 220px;
+  --sidebar-width: clamp(180px, 15vw, 220px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
   --mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace;
+  /* Fluid font scale */
+  --text-xs: clamp(0.6875rem, 0.65rem + 0.2vw, 0.75rem);   /* min 11px */
+  --text-sm: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);    /* 12–14px */
+  --text-base: clamp(0.9375rem, 0.875rem + 0.3vw, 1rem);   /* 15–16px */
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -50,12 +55,65 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ─── Focus Management ─── */
+
+/* Remove default outline for mouse users; show for keyboard */
+*:focus { outline: none; }
+
+*:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* High-contrast focus for interactive elements inside dark surfaces */
+button:focus-visible,
+a:focus-visible,
+textarea:focus-visible,
+input:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2);
+  border-radius: var(--radius-sm);
+}
+
+/* ─── Reduced Motion ─── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── Scrollbars ─── */
+
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
+/* ─── Utilities ─── */
+
 .mono { font-family: var(--mono); }
 .tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* Visually hidden — accessible to screen readers */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }

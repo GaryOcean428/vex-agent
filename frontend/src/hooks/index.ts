@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useReducer } from 'react';
 import { API } from '../config/api-routes.ts';
 import type {
   BasinData,
@@ -37,14 +37,20 @@ export const useTrainingStats = () => usePolledData<TrainingStats>(API.trainingS
  * avoid duplicate /state polling loops.
  */
 export function useMetricsHistory(data: VexState | null | undefined, maxPoints: number = 100) {
-  const [history, setHistory] = useState<Array<VexState & { time: number }>>([]);
+  // Use dispatch with payload — avoids setState and ref-mutation-during-render lint rules
+  const [history, dispatch] = useReducer(
+    (
+      prev: Array<VexState & { time: number }>,
+      action: { data: VexState; maxPoints: number },
+    ) => {
+      const next = [...prev, { ...action.data, time: Date.now() }];
+      return next.length > action.maxPoints ? next.slice(-action.maxPoints) : next;
+    },
+    [],
+  );
 
   useEffect(() => {
-    if (!data) return;
-    setHistory(prev => {
-      const next = [...prev, { ...data, time: Date.now() }];
-      return next.length > maxPoints ? next.slice(-maxPoints) : next;
-    });
+    if (data) dispatch({ data, maxPoints });
   }, [data, maxPoints]);
 
   return history;

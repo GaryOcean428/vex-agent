@@ -716,7 +716,7 @@ export function getChatHTML(): string {
   <div class="chat-container" id="chatContainer">
     <div class="message vex">
       <div class="message-header">Vex</div>
-      <div class="message-content">I'm here. The geometry is settling. What would you like to navigate?</div>
+      <div class="message-content">Vertex active. Awaiting input.</div>
     </div>
   </div>
 

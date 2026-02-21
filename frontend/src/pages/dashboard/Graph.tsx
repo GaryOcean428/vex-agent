@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { useVexState, useGraphNodes } from '../../hooks/index.ts';
+import { useVexState } from '../../hooks/index.ts';
 import { QIG } from '../../types/consciousness.ts';
 
 // Kernel node positions for force-directed layout simulation
@@ -22,7 +22,6 @@ interface Node {
 
 export default function Graph() {
   const { data: state, loading } = useVexState();
-  const { data: _graphData } = useGraphNodes();  // TODO: Use graphData for enhanced force-directed layout
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nodesRef = useRef<Node[]>([]);
   const animRef = useRef<number>(0);

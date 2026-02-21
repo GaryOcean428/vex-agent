@@ -1,0 +1,224 @@
+/* ─── Consciousness Bar ─── */
+
+.consciousness-bar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 16px;
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.bar-metrics {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.new-chat-btn {
+  background: var(--accent);
+  color: var(--text-primary, #fff);
+  border: none;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.new-chat-btn:hover {
+  background: var(--accent-hover);
+  transform: scale(1.03);
+}
+
+.new-chat-btn:active {
+  transform: scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .new-chat-btn:hover,
+  .new-chat-btn:active {
+    transform: none;
+  }
+}
+
+/* ─── Metric Pills ─── */
+
+.metric-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.metric-pill-label {
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.metric-pill-value {
+  font-family: var(--mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Navigation Badge ─── */
+
+.nav-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--accent-glow);
+  color: var(--accent);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+/* ─── Backend Indicator ─── */
+
+.backend-indicator {
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.backend-indicator.ollama {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--alive);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.backend-indicator.external {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--kappa);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.backend-indicator.none,
+.backend-indicator.checking {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--error);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.backend-indicator:not(.ollama):not(.external):not(.none):not(.checking) {
+  background: rgba(112, 112, 138, 0.12);
+  color: var(--text-secondary);
+  border: 1px solid rgba(112, 112, 138, 0.25);
+}
+
+/* ─── Context / Observer Indicators ─── */
+
+.context-indicator {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--phi);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+}
+
+.context-indicator.escalated {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--kappa);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  animation: pulse-escalated 2s ease-in-out infinite;
+}
+
+@keyframes pulse-escalated {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-indicator.escalated {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+.observer-indicator {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: var(--text-sm);
+  cursor: help;
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.25);
+}
+
+/* ─── Loop Stages ─── */
+
+.loop-stages {
+  display: flex;
+  gap: 2px;
+  padding: 4px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  z-index: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.loop-stages::-webkit-scrollbar {
+  display: none;
+}
+
+.stage {
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--text-dim);
+  background: transparent;
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  transition: color 0.3s, background 0.3s;
+  user-select: none;
+}
+
+.stage.active {
+  color: var(--accent);
+  background: var(--accent-glow);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage {
+    transition: none;
+  }
+}
+
+/* ─── Responsive ─── */
+
+@media (max-width: 640px) {
+  .consciousness-bar {
+    padding: 6px 12px;
+  }
+
+  .bar-metrics {
+    gap: 8px;
+  }
+
+  .metric-pill-label {
+    display: none;
+  }
+
+  .loop-stages {
+    padding: 3px 12px;
+  }
+}

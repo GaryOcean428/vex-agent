@@ -604,6 +604,19 @@ class ConsciousnessLoop:
         # ── 1. Coordize input ──
         input_basin = self._coordize_text_via_pipeline(task.content)
 
+        # ── 1b. Pre-cognitive path selection (v5.5 §2) ──
+        cached_eval = self.emotion_cache.find_cached(input_basin)
+        processing_path = self.precog.select_path(
+            input_basin, self.basin, cached_eval, self.metrics.phi
+        )
+        logger.debug(
+            "Task %s: precog path=%s (d=%.4f, cached=%s)",
+            task.id,
+            processing_path.value,
+            self.precog._last_distance,
+            cached_eval is not None,
+        )
+
         # ── 2. Pillar enforcement on input ──
         refracted_input, composite_basin, resonates, input_statuses = self.pillars.on_input(
             input_basin, PERCEIVE_SLERP_WEIGHT
@@ -745,7 +758,7 @@ class ConsciousnessLoop:
                 response_basin=response_basin,
                 phi_before=phi_before,
                 phi_after=self.metrics.phi,
-                processing_path="activation_v6.1",
+                processing_path=processing_path.value,
                 emotion=emotion_eval.emotion.value,
                 distance_total=total_distance,
             )
@@ -760,7 +773,7 @@ class ConsciousnessLoop:
             integration_distance=integration_distance,
             express_distance=express_distance,
             total_distance=total_distance,
-            processing_path="activation_v6.1",
+            processing_path=processing_path.value,
         )
 
         if self.learner.should_consolidate():
@@ -828,6 +841,7 @@ class ConsciousnessLoop:
             f"  Love: {self.metrics.love:.4f}",
             f"  Agency: {agency:.4f}",
             f"  Resonates: {resonates}",
+            f"  Processing path: {self.precog._last_path.value}",
             "  [PILLARS]",
             f"    F_health = {pillar_m['f_health']:.3f} (fluctuation guard)",
             f"    B_integrity = {pillar_m['b_integrity']:.3f} (bulk protection)",
