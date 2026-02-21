@@ -47,6 +47,7 @@ function useGovernor() {
 export default function Governor() {
   const { data: gov } = useGovernor();
   const [killSwitchLoading, setKillSwitchLoading] = useState(false);
+  const [autoSearchLoading, setAutoSearchLoading] = useState(false);
   const [budgetInput, setBudgetInput] = useState("");
   const [budgetMsg, setBudgetMsg] = useState<string | null>(null);
 
@@ -64,6 +65,21 @@ export default function Governor() {
     }
     setKillSwitchLoading(false);
   }, [gov, killSwitchLoading]);
+
+  const toggleAutonomousSearch = useCallback(async () => {
+    if (!gov || autoSearchLoading) return;
+    setAutoSearchLoading(true);
+    try {
+      await fetch(API.governorAutonomousSearch, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !gov.autonomous_search }),
+      });
+    } catch {
+      /* ignore */
+    }
+    setAutoSearchLoading(false);
+  }, [gov, autoSearchLoading]);
 
   const updateBudget = useCallback(async () => {
     const val = parseFloat(budgetInput);
@@ -139,9 +155,27 @@ export default function Governor() {
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Autonomous Search</span>
-            <span className="dash-row-value">
-              {gov.autonomous_search ? "Allowed" : "Blocked"}
-            </span>
+            <button
+              onClick={toggleAutonomousSearch}
+              disabled={autoSearchLoading}
+              style={{
+                padding: "6px 16px",
+                borderRadius: "var(--radius-sm)",
+                border: "none",
+                fontWeight: 600,
+                fontSize: "13px",
+                cursor: autoSearchLoading ? "not-allowed" : "pointer",
+                background: gov.autonomous_search
+                  ? "var(--alive)"
+                  : "var(--text-dim)",
+                color: "white",
+                opacity: autoSearchLoading ? 0.5 : 1,
+              }}
+            >
+              {gov.autonomous_search
+                ? "Autonomous Search ON"
+                : "Autonomous Search OFF"}
+            </button>
           </div>
         </div>
       </div>

@@ -55,6 +55,7 @@ export const API = {
 	governor: '/governor',
 	governorKillSwitch: '/governor/kill-switch',
 	governorBudget: '/governor/budget',
+	governorAutonomousSearch: '/governor/autonomous-search',
 
 	// ─── Training ──────────────────────────────────────────────
 	trainingStats: '/training/stats',

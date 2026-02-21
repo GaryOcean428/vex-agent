@@ -68,6 +68,7 @@ export const ROUTES = {
   governor: "/governor",
   governor_kill_switch: "/governor/kill-switch",
   governor_budget: "/governor/budget",
+  governor_autonomous_search: "/governor/autonomous-search",
 
   // ─── Training ──────────────────────────────────────────────
   training_stats: "/training/stats",
