@@ -357,6 +357,15 @@ class GovernorStack:
     def set_daily_budget(self, ceiling: float) -> None:
         self.budget.set_ceiling(ceiling)
 
+    def set_autonomous_search(self, enabled: bool) -> None:
+        """Toggle autonomous search — allows foraging/web_search without explicit user intent."""
+        self._autonomous_search = enabled
+        logger.warning("Autonomous search %s via API", "ENABLED" if enabled else "DISABLED")
+
+    @property
+    def autonomous_search(self) -> bool:
+        return self._autonomous_search
+
     @property
     def kill_switch(self) -> bool:
         return self._kill_switch
