@@ -16,15 +16,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from .config.frozen_facts import BETA_3_TO_4, KAPPA_STAR, KAPPA_STAR_PRECISE
-from .config.routes import ROUTES as R
+from ..config.frozen_facts import BETA_3_TO_4, KAPPA_STAR, KAPPA_STAR_PRECISE
+from ..config.routes import ROUTES as R
 
 beta_router = APIRouter(tags=["beta-attention"])
 
 
 def _get_consciousness():
     """Late import to avoid circular dependency."""
-    from .server import consciousness
+    from ..server import consciousness
     return consciousness
 
 
