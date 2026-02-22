@@ -73,7 +73,7 @@ from .tools.handler import (
     get_xai_tool_definitions,
     parse_tool_calls,
 )
-from .training import log_conversation, set_governor, set_llm_client, training_router
+from .training import log_conversation, set_coordizer, set_governor, set_llm_client, training_router
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -151,6 +151,17 @@ app.add_middleware(
 app.include_router(training_router)
 set_llm_client(llm_client)
 set_governor(governor)
+
+# Wire CoordizerV2 into training pipeline for 64D basin coordization
+# Uses consciousness loop's coordizer via adapter wrapper
+try:
+    from .coordizer_v2.adapter import CoordizerV2Adapter
+
+    _training_coordizer = CoordizerV2Adapter(consciousness._coordizer_v2)
+    set_coordizer(_training_coordizer)
+    logger.info("Training pipeline: CoordizerV2Adapter wired for 64D coordization")
+except Exception as e:
+    logger.warning("CoordizerV2 unavailable for training pipeline: %s", e)
 
 # Beta-attention tracker router
 app.include_router(beta_router)
@@ -816,7 +827,7 @@ async def coordizer_stats():
 async def coordizer_validate(request: Request):
     """Run full geometric validation on the resonance bank.
 
-    Returns CoordizerV2 validation result including \u03ba, \u03b2,
+    Returns CoordizerV2 validation result including κ, β,
     semantic, and harmonic checks.
     """
     try:
