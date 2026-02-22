@@ -61,6 +61,5 @@ export const API = {
 	trainingStats: '/training/stats',
 	trainingExport: '/training/export',
 	trainingUpload: '/training/upload',
+	trainingUploadStatus: (jobId: string) => `/training/upload/status/${jobId}`,
 } as const;
-
-export type ApiRoute = (typeof API)[keyof typeof API];

@@ -553,9 +553,12 @@ export interface TrainingStats {
 /**
  * Response from POST /training/upload.
  * Fields match the backend ingest.py upload endpoint response.
+ * Upload returns {status: "processing", job_id} immediately;
+ * poll GET /training/upload/status/{job_id} for the final result.
  */
 export interface TrainingUploadResponse {
-  status: 'ingested' | 'empty' | 'error';
+  status: 'processing' | 'ingested' | 'empty' | 'error' | 'not_found';
+  job_id?: string;
   filename: string;
   chunks_written: number;
   enriched: number;

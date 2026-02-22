@@ -27,6 +27,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+import uuid
+
 import httpx
 from fastapi import APIRouter, File, Form, UploadFile
 from pydantic import BaseModel
@@ -636,6 +638,60 @@ def set_governor(gov: GovernorStack) -> None:
     _governor = gov
 
 
+# In-memory job store for background upload processing.
+# Jobs are pruned after 1 hour to prevent unbounded growth.
+_jobs: dict[str, dict[str, Any]] = {}
+_JOB_TTL = 3600  # seconds
+
+
+def _prune_jobs() -> None:
+    """Remove completed jobs older than TTL."""
+    cutoff = time.time() - _JOB_TTL
+    expired = [jid for jid, j in _jobs.items() if j.get("finished_at", 0) and j["finished_at"] < cutoff]
+    for jid in expired:
+        del _jobs[jid]
+
+
+async def _run_ingestion_job(
+    job_id: str,
+    content: bytes,
+    filename: str,
+    category: str,
+    proc_mode: ProcessingMode,
+    e8: str | None,
+) -> None:
+    """Background task: run ingestion and update job store on completion."""
+    try:
+        result = await ingest_document(
+            content=content,
+            filename=filename,
+            category=category,
+            mode=proc_mode,
+            e8_override=e8,
+            llm=_llm_client,
+            governor=_governor,
+        )
+        _jobs[job_id].update({
+            "status": result.status,
+            "filename": result.source,
+            "chunks_written": result.chunks_written,
+            "enriched": result.chunks_enriched,
+            "qa_pairs": result.qa_pairs_generated,
+            "category": category,
+            "mode": proc_mode.value,
+            "processing_time_s": result.processing_time_s,
+            "errors": result.errors,
+            "finished_at": time.time(),
+        })
+    except Exception as exc:
+        logger.error("Background ingestion failed: %s", exc, exc_info=True)
+        _jobs[job_id].update({
+            "status": "error",
+            "errors": [str(exc)],
+            "finished_at": time.time(),
+        })
+
+
 training_router = APIRouter()
 
 
@@ -662,7 +718,8 @@ async def training_upload_endpoint(
     """Upload a document for training ingestion.
 
     Accepts PDF, Markdown, TXT, or JSONL files.
-    Frontend sends e8_override, backend also accepts e8_primitive.
+    Returns immediately with a job_id. Frontend polls
+    GET /training/upload/status/{job_id} for progress.
     """
     content = await file.read()
     filename = file.filename or "unknown"
@@ -690,28 +747,37 @@ async def training_upload_endpoint(
     # Accept e8 from either field name (frontend sends e8_override)
     e8 = e8_override or e8_primitive or None
 
-    result = await ingest_document(
-        content=content,
-        filename=filename,
-        category=category,
-        mode=proc_mode,
-        e8_override=e8,
-        llm=_llm_client,
-        governor=_governor,
-    )
-
-    # Response fields match TrainingUploadResponse type in frontend
-    return {
-        "status": result.status,
-        "filename": result.source,
-        "chunks_written": result.chunks_written,
-        "enriched": result.chunks_enriched,
-        "qa_pairs": result.qa_pairs_generated,
+    # Create job and process in background to avoid proxy timeout (502)
+    _prune_jobs()
+    job_id = uuid.uuid4().hex[:12]
+    _jobs[job_id] = {
+        "status": "processing",
+        "job_id": job_id,
+        "filename": filename,
+        "chunks_written": 0,
+        "enriched": 0,
+        "qa_pairs": 0,
         "category": category,
         "mode": mode,
-        "processing_time_s": result.processing_time_s,
-        "errors": result.errors,
+        "processing_time_s": 0,
+        "errors": [],
+        "finished_at": 0,
     }
+
+    asyncio.get_running_loop().create_task(
+        _run_ingestion_job(job_id, content, filename, category, proc_mode, e8)
+    )
+
+    return {"status": "processing", "job_id": job_id, "filename": filename}
+
+
+@training_router.get("/training/upload/status/{job_id}")
+async def training_upload_status(job_id: str):
+    """Poll ingestion job status. Returns full result when complete."""
+    job = _jobs.get(job_id)
+    if not job:
+        return {"status": "not_found", "job_id": job_id}
+    return job
 
 
 @training_router.post("/training/feedback")

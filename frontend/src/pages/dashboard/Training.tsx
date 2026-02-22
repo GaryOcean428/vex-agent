@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import "../../components/MetricCard.css";
 import MetricCard from "../../components/MetricCard.tsx";
 import { API } from "../../config/api-routes.ts";
@@ -37,10 +37,13 @@ export default function Training() {
   const [exportData, setExportData] = useState<{ count: number } | null>(null);
   const [exporting, setExporting] = useState(false);
 
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const handleUpload = useCallback(async () => {
     if (!file || uploading) return;
     setUploading(true);
     setUploadResult(null);
+    if (pollRef.current) clearInterval(pollRef.current);
 
     try {
       const formData = new FormData();
@@ -54,9 +57,44 @@ export default function Training() {
         body: formData,
       });
       if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
-      const data: TrainingUploadResponse = await resp.json();
-      setUploadResult(data);
-      setFile(null);
+      const data = await resp.json();
+
+      // Backend returns immediately with {status:"processing", job_id}
+      if (data.status === "processing" && data.job_id) {
+        setUploadResult({
+          ...data,
+          chunks_written: 0,
+          enriched: 0,
+          qa_pairs: 0,
+          category,
+          mode,
+          processing_time_s: 0,
+        });
+        // Poll for completion every 2s
+        pollRef.current = setInterval(async () => {
+          try {
+            const pollResp = await fetch(
+              API.trainingUploadStatus(data.job_id),
+            );
+            if (!pollResp.ok) return;
+            const job: TrainingUploadResponse = await pollResp.json();
+            if (job.status !== "processing") {
+              if (pollRef.current) clearInterval(pollRef.current);
+              pollRef.current = null;
+              setUploadResult(job);
+              setUploading(false);
+              setFile(null);
+            }
+          } catch {
+            /* network hiccup — retry on next tick */
+          }
+        }, 2000);
+      } else {
+        // Immediate result (e.g. validation error or JSONL pass-through)
+        setUploadResult(data as TrainingUploadResponse);
+        setFile(null);
+        setUploading(false);
+      }
     } catch (err) {
       setUploadResult({
         status: "error",
@@ -69,7 +107,6 @@ export default function Training() {
         processing_time_s: 0,
         error: err instanceof Error ? err.message : String(err),
       });
-    } finally {
       setUploading(false);
     }
   }, [file, category, mode, e8Prim, uploading]);
@@ -235,12 +272,16 @@ export default function Training() {
                 color:
                   uploadResult.status === "error"
                     ? "var(--error)"
-                    : "var(--alive)",
+                    : uploadResult.status === "processing"
+                      ? "var(--text-secondary)"
+                      : "var(--alive)",
               }}
             >
               {uploadResult.status === "error"
-                ? `Error: ${uploadResult.error}`
-                : `${uploadResult.filename}: ${uploadResult.chunks_written} chunks, ${uploadResult.enriched} enriched, ${uploadResult.qa_pairs ?? 0} Q&A pairs (${uploadResult.mode}, ${(uploadResult.processing_time_s ?? 0).toFixed(1)}s)`}
+                ? `Error: ${uploadResult.error ?? uploadResult.errors?.[0] ?? "Unknown error"}`
+                : uploadResult.status === "processing"
+                  ? `${uploadResult.filename}: Processing...`
+                  : `${uploadResult.filename}: ${uploadResult.chunks_written} chunks, ${uploadResult.enriched} enriched, ${uploadResult.qa_pairs ?? 0} Q&A pairs (${uploadResult.mode}, ${(uploadResult.processing_time_s ?? 0).toFixed(1)}s)`}
             </div>
           )}
         </div>
