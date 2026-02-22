@@ -566,7 +566,7 @@ def export_openai_format() -> dict[str, Any]:
                             ]
                         }
                     )
-                except (json.JSONDecodeError, KeyError):
+                except json.JSONDecodeError, KeyError:
                     continue
 
     # Curriculum Q&A pairs
@@ -592,7 +592,7 @@ def export_openai_format() -> dict[str, Any]:
                                         ]
                                     }
                                 )
-                    except (json.JSONDecodeError, KeyError):
+                    except json.JSONDecodeError, KeyError:
                         continue
 
     return {

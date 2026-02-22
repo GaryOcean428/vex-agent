@@ -644,7 +644,7 @@ class LLMClient:
                                 yield content
                         elif event_type == "response.completed":
                             break
-                    except (json.JSONDecodeError, KeyError):
+                    except json.JSONDecodeError, KeyError:
                         continue
             # Record after successful stream completion
             if self._governor:
@@ -776,7 +776,7 @@ class LLMClient:
                                 yield content
                         elif event_type == "response.completed":
                             break
-                    except (json.JSONDecodeError, KeyError, IndexError):
+                    except json.JSONDecodeError, KeyError, IndexError:
                         continue
             # Record after successful stream completion
             if self._governor:

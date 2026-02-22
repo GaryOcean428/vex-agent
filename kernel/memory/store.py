@@ -198,7 +198,7 @@ class GeometricMemoryStore:
                             )
                         )
                         count += 1
-                    except (json.JSONDecodeError, KeyError, ValueError):
+                    except json.JSONDecodeError, KeyError, ValueError:
                         continue
             logger.info("Restored %d memories from disk", count)
         except Exception as e:

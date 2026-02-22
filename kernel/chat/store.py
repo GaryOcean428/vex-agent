@@ -196,7 +196,7 @@ class ConversationStore:
                     continue
                 try:
                     messages.append(Message.from_dict(json.loads(line)))
-                except (json.JSONDecodeError, KeyError):
+                except json.JSONDecodeError, KeyError:
                     continue
         return messages
 

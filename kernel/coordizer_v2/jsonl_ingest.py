@@ -224,7 +224,7 @@ def validate_entry(
     if timestamp:
         try:
             datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-        except (ValueError, AttributeError):
+        except ValueError, AttributeError:
             return None, ValidationError(
                 line_number=line_number,
                 reason=f"Invalid timestamp: {timestamp}",

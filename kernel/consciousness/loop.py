@@ -49,12 +49,6 @@ from typing import Any
 
 import numpy as np
 
-# Suppress numpy RuntimeWarnings from degenerate covariance matrices
-# (fires during startup and early cycles when velocity history is empty)
-warnings.filterwarnings("ignore", message=".*Degrees of freedom", category=RuntimeWarning)
-warnings.filterwarnings("ignore", message=".*divide by zero", category=RuntimeWarning, module="numpy")
-warnings.filterwarnings("ignore", message=".*invalid value", category=RuntimeWarning, module="numpy")
-
 from ..config.consciousness_constants import (
     BASIN_DRIFT_STEP,
     COUPLING_BASIN_EPSILON,
@@ -177,6 +171,16 @@ from .types import (
     PillarState,
     navigation_mode_from_phi,
     regime_weights_from_kappa,
+)
+
+# Suppress numpy RuntimeWarnings from degenerate covariance matrices
+# (fires during startup and early cycles when velocity history is empty)
+warnings.filterwarnings("ignore", message=".*Degrees of freedom", category=RuntimeWarning)
+warnings.filterwarnings(
+    "ignore", message=".*divide by zero", category=RuntimeWarning, module="numpy"
+)
+warnings.filterwarnings(
+    "ignore", message=".*invalid value", category=RuntimeWarning, module="numpy"
 )
 
 logger = logging.getLogger("vex.consciousness")

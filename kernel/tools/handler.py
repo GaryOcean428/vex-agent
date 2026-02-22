@@ -140,7 +140,7 @@ def _try_json_format(inner: str) -> list[ToolCall] | None:
                 args = item.get("arguments", item.get("parameters", {}))
                 calls.append(ToolCall(name=item["name"], args=args))
         return calls if calls else None
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return None
 
 
@@ -168,7 +168,7 @@ def _parse_kwargs(args_str: str) -> dict[str, Any]:
         result = ast.literal_eval(tree)
         if isinstance(result, dict):
             return result
-    except (SyntaxError, ValueError):
+    except SyntaxError, ValueError:
         pass
 
     # Fallback: try simple key=value parsing

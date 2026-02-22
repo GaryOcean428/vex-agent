@@ -469,6 +469,7 @@ async def chat_stream(req: ChatRequest):
                     conv_id = conversation_store.create_conversation()
                 except Exception:
                     import uuid as _uuid
+
                     conv_id = str(_uuid.uuid4())
                     _store_ok = False
                     logger.warning("Conversation store unavailable — chatting without persistence")
@@ -1224,7 +1225,7 @@ async def training_export():
                         ]
                     }
                 )
-            except (json.JSONDecodeError, KeyError):
+            except json.JSONDecodeError, KeyError:
                 continue
     return {"format": "openai_jsonl", "count": len(lines), "lines": lines[:100]}
 
