@@ -48,7 +48,15 @@ class MemoryStore:
 
     def __init__(self, data_dir: str | None = None) -> None:
         self._dir = Path(data_dir or settings.data_dir)
-        self._dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self._dir.mkdir(parents=True, exist_ok=True)
+            probe = self._dir / ".write_probe"
+            probe.touch()
+            probe.unlink()
+        except OSError:
+            self._dir = Path("/tmp/vex-memory")
+            self._dir.mkdir(parents=True, exist_ok=True)
+            logger.warning("Data volume not writable — using ephemeral %s", self._dir)
 
     def read(self, filename: str) -> str:
         path = self._dir / filename
@@ -99,8 +107,18 @@ class GeometricMemoryStore:
     def __init__(self, flat_store: MemoryStore) -> None:
         self._flat = flat_store
         self._entries: list[MemoryEntry] = []
-        self._persist_path = Path(settings.data_dir) / "geometric_memory.jsonl"
-        self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+        persist_dir = Path(settings.data_dir)
+        try:
+            persist_dir.mkdir(parents=True, exist_ok=True)
+            # Probe writability — mkdir succeeds on existing read-only dirs
+            probe = persist_dir / ".write_probe"
+            probe.touch()
+            probe.unlink()
+        except OSError:
+            persist_dir = Path("/tmp/vex-memory")
+            persist_dir.mkdir(parents=True, exist_ok=True)
+            logger.warning("Data volume not writable — using ephemeral %s", persist_dir)
+        self._persist_path = persist_dir / "geometric_memory.jsonl"
         self._restore()
 
     def store(

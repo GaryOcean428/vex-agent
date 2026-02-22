@@ -39,6 +39,19 @@ logger = logging.getLogger("vex.training")
 
 TRAINING_DIR = Path(settings.training_dir)
 
+# Detect read-only volume at import time and redirect to /tmp
+try:
+    TRAINING_DIR.mkdir(parents=True, exist_ok=True)
+    _probe = TRAINING_DIR / ".write_probe"
+    _probe.touch()
+    _probe.unlink()
+except OSError:
+    TRAINING_DIR = Path("/tmp/vex-training")
+    TRAINING_DIR.mkdir(parents=True, exist_ok=True)
+    logging.getLogger("vex.training").warning(
+        "Training volume not writable — using ephemeral %s", TRAINING_DIR
+    )
+
 # Async lock for safe concurrent JSONL appends
 _write_lock = asyncio.Lock()
 

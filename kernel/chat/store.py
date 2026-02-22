@@ -107,6 +107,10 @@ class ConversationStore:
         self._base_dir = Path(data_dir or settings.data_dir) / "conversations"
         try:
             self._base_dir.mkdir(parents=True, exist_ok=True)
+            # Probe writability — mkdir succeeds on existing read-only dirs
+            probe = self._base_dir / ".write_probe"
+            probe.touch()
+            probe.unlink()
         except OSError:
             # Volume not writable — fall back to /tmp (ephemeral but functional)
             self._base_dir = Path("/tmp/vex-conversations")
