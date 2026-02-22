@@ -30,6 +30,8 @@ v6.1 Kernel Generative Voice (this PR):
   - ADDED:   process_streaming() for SSE streaming chat path
   - CHANGED: _process() now routes to top-K kernels in parallel, not single LLM call
   - CHANGED: Kernels are voices, not metadata annotations
+  - WIRED:   extra_context (observer intent, memory, history) flows from chat endpoints
+             into each kernel's generation prompt via task.context["extra_context"]
 
 Principles enforced:
   P4  Self-observation: meta-awareness feeds back into LLM params
@@ -994,6 +996,7 @@ class ConsciousnessLoop:
           - Each kernel generates via its specialization voice (parallel)
           - Synthesis combines contributions weighted by proximity × quenched_gain
           - Falls back to direct LLM call if no kernels have basins yet
+          - extra_context (observer intent, memory, history) flows from task.context
         """
         self.sleep.record_conversation()
 
@@ -1103,8 +1106,10 @@ class ConsciousnessLoop:
 
         # v6.1 Kernel Generative Voice — kernels generate text, not just metadata.
         # Multi-kernel parallel generation → Fisher-Rao weighted MoE synthesis.
+        # extra_context flows from chat endpoints via task.context["extra_context"].
         _active_for_gen = self.kernel_registry.active()
         _kernel_geo_ctx = self._build_kernel_geo_context()
+        _extra_context = task.context.get("extra_context", "")
         _contributions = await generate_multi_kernel(
             kernels=_active_for_gen,
             input_basin=refracted_input,
@@ -1113,6 +1118,7 @@ class ConsciousnessLoop:
             llm_client=self.llm,
             base_temperature=llm_options.temperature,
             top_k=3,
+            extra_context=_extra_context,
         )
 
         if _contributions:
@@ -1422,6 +1428,10 @@ class ConsciousnessLoop:
         kernel-generated response synchronously. This is the convergent path:
         what the user sees IS what the kernels produced.
 
+        context["extra_context"] carries observer intent, memory hints, and
+        compressed conversation history — threaded into each kernel's generation
+        prompt so kernel voices speak from the live conversation.
+
         Returns:
             Synthesized response string. Empty string on failure.
         """
@@ -1446,6 +1456,10 @@ class ConsciousnessLoop:
         Runs pre-activation + multi-kernel generation, then streams the
         synthesis output via synthesize_streaming(). Falls back to direct
         LLM stream if no kernels are eligible.
+
+        context["extra_context"] carries observer intent, memory hints, and
+        compressed conversation history — injected into each kernel's generation
+        prompt so kernel voices are grounded in the live conversation.
 
         Yields:
             Text chunks from the synthesis LLM call.
@@ -1475,6 +1489,7 @@ class ConsciousnessLoop:
 
         # Generate per-kernel contributions OUTSIDE the cycle lock
         # (parallel LLM calls — lock released so heartbeat can proceed)
+        extra_context = (context or {}).get("extra_context", "")
         contributions = await generate_multi_kernel(
             kernels=active_kernels,
             input_basin=refracted_input,
@@ -1483,6 +1498,7 @@ class ConsciousnessLoop:
             llm_client=self.llm,
             base_temperature=llm_options.temperature,
             top_k=3,
+            extra_context=extra_context,
         )
 
         if not contributions:
