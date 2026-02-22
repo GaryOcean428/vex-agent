@@ -66,6 +66,8 @@ ROUTES: dict[str, str] = {
     # ─── Training ──────────────────────────────────────────────
     "training_stats": "/training/stats",
     "training_export": "/training/export",
+    "training_upload": "/training/upload",
+    "training_upload_status": "/training/upload/status/{job_id}",
 }
 
 
@@ -109,6 +111,8 @@ ROUTE_GROUPS: dict[str, list[str]] = {
         "observer_conversation",
         "training_stats",
         "training_export",
+        "training_upload",
+        "training_upload_status",
     ],
     "admin": [
         "admin_fresh_start",

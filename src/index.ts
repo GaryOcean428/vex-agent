@@ -194,6 +194,21 @@ async function main(): Promise<void> {
   proxyGet(ROUTES.training_export);
   proxyPost(ROUTES.training_feedback);
 
+  // Training upload status — poll for background job completion
+  app.get(ROUTES.training_upload_status, async (req, res) => {
+    try {
+      const resp = await fetch(
+        `${KERNEL_URL}/training/upload/status/${req.params.job_id}`,
+      );
+      const data = await resp.json();
+      res.status(resp.status).json(data);
+    } catch (err) {
+      res
+        .status(502)
+        .json({ error: `Kernel unreachable: ${(err as Error).message}` });
+    }
+  });
+
   // Training upload — buffer multipart body then forward to kernel
   app.post(ROUTES.training_upload, async (req, res) => {
     try {
