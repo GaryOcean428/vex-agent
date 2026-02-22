@@ -139,6 +139,8 @@ class RateLimiter:
             "xai_x_search": (x_search_per_hour, 3600),
             "xai_completion": (completions_per_hour, 3600),
             "openai_completion": (completions_per_hour, 3600),
+            "perplexity_search": (web_search_per_hour, 3600),
+            "perplexity_deep_research": (10, 3600),
             "training_enrich": (training_per_day, 86400),
         }
         self._calls: dict[str, list[float]] = defaultdict(list)
@@ -215,6 +217,8 @@ class BudgetGovernor:
         "xai_x_search": 0.005,
         "xai_completion": 0.0003,
         "openai_completion": 0.0001,
+        "perplexity_search": 0.005,
+        "perplexity_deep_research": 0.005,
         "training_enrich": 0.0003,
     }
 
