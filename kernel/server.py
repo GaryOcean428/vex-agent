@@ -546,7 +546,7 @@ async def chat_stream(req: ChatRequest):
                 full_response = escalated_resp
                 yield _sse_event({"type": "chunk", "content": escalated_resp})
             else:
-                # Use natural fallback chain: Modal → Railway Ollama → xAI → OpenAI
+                # Use natural fallback chain: Modal Ollama → Railway Ollama → xAI → OpenAI
                 async for chunk in llm_client.stream(
                     messages,
                     stream_options,
