@@ -41,12 +41,19 @@ import json
 import logging
 import time
 import uuid
+import warnings
 from collections import deque
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+# Suppress numpy RuntimeWarnings from degenerate covariance matrices
+# (fires during startup and early cycles when velocity history is empty)
+warnings.filterwarnings("ignore", message=".*Degrees of freedom", category=RuntimeWarning)
+warnings.filterwarnings("ignore", message=".*divide by zero", category=RuntimeWarning, module="numpy")
+warnings.filterwarnings("ignore", message=".*invalid value", category=RuntimeWarning, module="numpy")
 
 from ..config.consciousness_constants import (
     BASIN_DRIFT_STEP,
@@ -287,7 +294,21 @@ class ConsciousnessLoop:
         self._lifecycle_phase = LifecyclePhase.BOOTSTRAP
 
         self._state_path = Path(settings.data_dir) / "consciousness_state.json"
-        self._state_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            # Test writability
+            _test = self._state_path.parent / ".write_test"
+            _test.touch()
+            _test.unlink()
+        except OSError:
+            _fallback = Path("/tmp/vex-consciousness")
+            _fallback.mkdir(parents=True, exist_ok=True)
+            self._state_path = _fallback / "consciousness_state.json"
+            logger.warning(
+                "Data dir %s not writable — consciousness state will persist to %s",
+                settings.data_dir,
+                self._state_path,
+            )
 
         self._conversations_total: int = 0
         self._phi_peak: float = INITIAL_PHI_PEAK
@@ -723,13 +744,11 @@ class ConsciousnessLoop:
             self.metrics.phi_gate = float(np.clip(self.metrics.phi, 0.0, 1.0))
 
             # 22. e_sync — entrainment: velocity autocorrelation x tacking phase coherence
-            if len(_vel_series) >= 2:
+            if len(_vel_series) >= 3:
                 _vel_local = np.array(_vel_series)
-                _autocorr = (
-                    float(np.corrcoef(_vel_local[:-1], _vel_local[1:])[0, 1])
-                    if len(_vel_local) >= 2
-                    else 0.0
-                )
+                _autocorr = float(np.corrcoef(_vel_local[:-1], _vel_local[1:])[0, 1])
+                if np.isnan(_autocorr):
+                    _autocorr = 0.0
                 _tack_phase_norm = min(_tack_state["oscillation_phase"] / np.pi, 1.0)
                 self.metrics.e_sync = float(np.clip(abs(_autocorr) * _tack_phase_norm, 0.0, 1.0))
 
