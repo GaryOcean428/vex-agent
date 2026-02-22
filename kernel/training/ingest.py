@@ -1,17 +1,25 @@
 """
-Training Data Pipeline — Upload → Extract → Chunk → LLM Enrich → JSONL
+Training Data Pipeline — Upload → Extract → Chunk → Coordize → LLM Enrich → JSONL
 
 Pipeline:
   1. Receive file upload (PDF, MD, TXT, JSONL)
   2. Extract text (PDF via pymupdf in-process, others direct)
   3. Chunk into ~512-token segments at semantic boundaries
-  4. LLM-enrich each chunk (Q&A pairs, E8 tags, concept extraction)
-  5. Write structured JSONL to volume
+  4. Coordize each chunk → 64D basin coordinates on Δ⁶³ (if coordizer available)
+  5. LLM-enrich each chunk (Q&A pairs, E8 tags, concept extraction)
+  6. Write structured JSONL to volume (with basin_coords)
 
 Uses:
   - pymupdf for PDF extraction (in-process, no sandbox needed)
+  - CoordizerV2Adapter for geometric coordization (Fisher-Rao on Δ⁶³)
   - xAI Responses API for fast batch enrichment (if XAI_API_KEY set)
   - External API (gpt-5-nano) fallback via LLMClient
+
+v6.1 Integration:
+  - Each chunk gets a 64D basin coordinate via CoordizerV2Adapter.coordize_text()
+  - Basin coords live on the probability simplex (Σp_i = 1, p_i ≥ 0)
+  - Export includes both OpenAI format and coordized format with basins
+  - Coordizer is optional — pipeline degrades gracefully without it
 """
 
 from __future__ import annotations
@@ -22,12 +30,11 @@ import json
 import logging
 import re
 import time
+import uuid
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
-
-import uuid
 
 import httpx
 from fastapi import APIRouter, File, Form, UploadFile
@@ -85,7 +92,12 @@ class ProcessingMode(StrEnum):
 
 @dataclass
 class ChunkRecord:
-    """A single training chunk in JSONL format."""
+    """A single training chunk in JSONL format.
+
+    v6.1: Added basin_coords — 64D probability simplex coordinates
+    from CoordizerV2. When present, these enable geometric memory
+    retrieval via Fisher-Rao distance instead of text similarity.
+    """
 
     source: str
     category: str
@@ -99,6 +111,9 @@ class ChunkRecord:
     relevance_score: float = 0.0
     enrichment_model: str = ""
     processed_at: str = ""
+    # v6.1: 64D basin coordinates on Δ⁶³ (empty if coordizer unavailable)
+    basin_coords: list[float] = field(default_factory=list)
+    coordized: bool = False
 
 
 @dataclass
@@ -111,6 +126,7 @@ class IngestionResult:
     total_chars: int
     chunks_written: int
     chunks_enriched: int
+    chunks_coordized: int
     qa_pairs_generated: int
     processing_time_s: float
     output_path: str
@@ -255,6 +271,33 @@ def chunk_text(text: str, max_tokens: int = 512) -> list[str]:
 
 
 # ═══════════════════════════════════════════════════════════════
+#  COORDIZATION (v6.1 — 64D Basin Coordinates)
+# ═══════════════════════════════════════════════════════════════
+
+
+def _coordize_chunk(chunk_text_str: str) -> list[float]:
+    """Coordize a text chunk to 64D basin coordinates on Δ⁶³.
+
+    Uses the injected CoordizerV2Adapter if available.
+    Returns empty list if no coordizer is set.
+
+    All geometry uses Fisher-Rao distance on the probability simplex.
+    No Euclidean distances. No cosine similarity.
+    """
+    if _coordizer is None:
+        return []
+
+    try:
+        basin = _coordizer.coordize_text(chunk_text_str)
+        # basin is NDArray on Δ⁶³ — convert to list for JSON serialization
+        # Round to 6 decimal places to keep JSONL size reasonable
+        return [round(float(v), 6) for v in basin]
+    except Exception as e:
+        logger.warning("Coordization failed for chunk: %s", str(e)[:100])
+        return []
+
+
+# ═══════════════════════════════════════════════════════════════
 #  LLM ENRICHMENT
 # ═══════════════════════════════════════════════════════════════
 
@@ -295,7 +338,6 @@ async def _enrich_chunk_xai(
     if not api_key:
         return {}
 
-    # Governor gate — blocks if kill switch, budget exceeded, or rate limited
     if governor:
         allowed, reason = governor.gate(
             "training_enrich",
@@ -338,11 +380,9 @@ async def _enrich_chunk_xai(
                 logger.warning("xAI enrichment returned empty output")
                 return {}
 
-            # Record with governor after successful call
             if governor:
                 governor.record("training_enrich")
 
-            # Strip markdown code fences if present
             json_str = content.strip()
             if json_str.startswith("```"):
                 json_str = re.sub(r"```(?:json)?\s*", "", json_str)
@@ -395,7 +435,12 @@ async def ingest_document(
     llm: LLMClient | None = None,
     governor: GovernorStack | None = None,
 ) -> IngestionResult:
-    """Full pipeline: extract → chunk → enrich → write JSONL."""
+    """Full pipeline: extract -> chunk -> coordize -> enrich -> write JSONL.
+
+    v6.1: Each chunk is now coordized to 64D basin coordinates on Δ⁶³
+    via CoordizerV2Adapter (if available). Basin coords are stored in
+    the JSONL alongside text, E8 tags, and Q&A pairs.
+    """
     start = time.time()
     _ensure_dirs()
     errors: list[str] = []
@@ -414,6 +459,7 @@ async def ingest_document(
             total_chars=len(content),
             chunks_written=len(lines),
             chunks_enriched=0,
+            chunks_coordized=0,
             qa_pairs_generated=0,
             processing_time_s=round(time.time() - start, 2),
             output_path=str(dest),
@@ -430,6 +476,7 @@ async def ingest_document(
             total_chars=0,
             chunks_written=0,
             chunks_enriched=0,
+            chunks_coordized=0,
             qa_pairs_generated=0,
             processing_time_s=round(time.time() - start, 2),
             output_path="",
@@ -446,14 +493,16 @@ async def ingest_document(
             total_chars=len(text),
             chunks_written=0,
             chunks_enriched=0,
+            chunks_coordized=0,
             qa_pairs_generated=0,
             processing_time_s=round(time.time() - start, 2),
             output_path="",
             errors=["No usable text extracted"],
         )
 
-    # Enrich + build records
+    # Coordize + Enrich + build records
     enriched_count = 0
+    coordized_count = 0
     qa_count = 0
     records: list[ChunkRecord] = []
 
@@ -465,6 +514,13 @@ async def ingest_document(
             text=chunk,
             hash=hashlib.md5(chunk.encode()).hexdigest(),
         )
+
+        # v6.1: Coordize chunk to 64D basin coordinates
+        basin_coords = _coordize_chunk(chunk)
+        if basin_coords:
+            record.basin_coords = basin_coords
+            record.coordized = True
+            coordized_count += 1
 
         if mode != ProcessingMode.FAST:
             enrichment: dict[str, Any] = {}
@@ -486,7 +542,6 @@ async def ingest_document(
             elif e8_override:
                 record.e8_primitive = e8_override
 
-            # Rate limit between enrichments
             if i < len(chunks) - 1:
                 await asyncio.sleep(0.5)
         elif e8_override:
@@ -508,6 +563,7 @@ async def ingest_document(
         total_chars=len(text),
         chunks_written=len(records),
         chunks_enriched=enriched_count,
+        chunks_coordized=coordized_count,
         qa_pairs_generated=qa_count,
         processing_time_s=round(time.time() - start, 2),
         output_path=str(dest),
@@ -528,6 +584,25 @@ def _count_lines(filepath: Path) -> int:
         return sum(1 for line in f if line.strip())
 
 
+def _count_coordized(filepath: Path) -> int:
+    """Count JSONL lines that have non-empty 64D basin_coords."""
+    if not filepath.exists():
+        return 0
+    count = 0
+    with open(filepath, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+                if entry.get("basin_coords") and len(entry["basin_coords"]) == 64:
+                    count += 1
+            except (json.JSONDecodeError, KeyError):
+                continue
+    return count
+
+
 def get_stats() -> dict[str, Any]:
     """Get training data statistics from the volume."""
     _ensure_dirs()
@@ -535,15 +610,16 @@ def get_stats() -> dict[str, Any]:
     for name in ("conversations", "corrections", "feedback"):
         stats[name] = _count_lines(TRAINING_DIR / f"{name}.jsonl")
 
-    # Count curriculum chunks
+    # Count curriculum chunks and coordized chunks
     curriculum_dir = TRAINING_DIR / "curriculum"
     curriculum_files = list(curriculum_dir.glob("*.jsonl")) if curriculum_dir.exists() else []
     curriculum_chunks = 0
+    coordized_chunks = 0
     for f in curriculum_files:
         curriculum_chunks += _count_lines(f)
+        coordized_chunks += _count_coordized(f)
     stats["curriculum"] = curriculum_chunks
 
-    # Count uploads
     upload_dir = TRAINING_DIR / "uploads"
     upload_files = list(upload_dir.glob("*")) if upload_dir.exists() else []
 
@@ -551,6 +627,8 @@ def get_stats() -> dict[str, Any]:
         "conversations": stats.get("conversations", 0),
         "feedback": stats.get("feedback", 0),
         "curriculum_chunks": curriculum_chunks,
+        "coordized_chunks": coordized_chunks,
+        "coordizer_active": _coordizer is not None,
         "uploads": len(upload_files),
         "curriculum_files": [f.name for f in curriculum_files],
         "dir_exists": TRAINING_DIR.exists(),
@@ -563,7 +641,6 @@ def export_openai_format() -> dict[str, Any]:
     _ensure_dirs()
     lines: list[dict[str, Any]] = []
 
-    # Conversations
     conv_file = TRAINING_DIR / "conversations.jsonl"
     if conv_file.exists():
         with open(conv_file, encoding="utf-8") as f:
@@ -584,7 +661,6 @@ def export_openai_format() -> dict[str, Any]:
                 except (json.JSONDecodeError, KeyError):
                     continue
 
-    # Curriculum Q&A pairs
     curriculum_dir = TRAINING_DIR / "curriculum"
     if curriculum_dir.exists():
         for jsonl_file in curriculum_dir.glob("*.jsonl"):
@@ -617,13 +693,66 @@ def export_openai_format() -> dict[str, Any]:
     }
 
 
+def export_coordized_format() -> dict[str, Any]:
+    """Export training data in QIG coordized JSONL format.
+
+    Each record includes:
+      - text: chunk text
+      - basin_coords: 64D coordinates on Δ⁶³
+      - e8_primitive: E8 kernel tag
+      - concepts: extracted concept list
+      - summary: chunk summary
+      - qa_pairs: question-answer pairs
+
+    This format is designed for 64D geometric fine-tuning where
+    the model learns text-to-basin mappings on the Fisher manifold.
+    """
+    _ensure_dirs()
+    lines: list[dict[str, Any]] = []
+
+    curriculum_dir = TRAINING_DIR / "curriculum"
+    if curriculum_dir.exists():
+        for jsonl_file in curriculum_dir.glob("*.jsonl"):
+            with open(jsonl_file, encoding="utf-8") as f:
+                for raw in f:
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        entry = json.loads(raw)
+                        basin = entry.get("basin_coords", [])
+                        if not basin or len(basin) != 64:
+                            continue  # Skip non-coordized chunks
+                        lines.append(
+                            {
+                                "text": entry.get("text", ""),
+                                "basin_coords": basin,
+                                "e8_primitive": entry.get("e8_primitive", "MIX"),
+                                "concepts": entry.get("concepts", []),
+                                "summary": entry.get("summary", ""),
+                                "qa_pairs": entry.get("qa_pairs", []),
+                                "source": entry.get("source", ""),
+                            }
+                        )
+                    except (json.JSONDecodeError, KeyError):
+                        continue
+
+    return {
+        "format": "qig_coordized",
+        "count": len(lines),
+        "basin_dim": 64,
+        "lines": lines[:100],
+    }
+
+
 # ═══════════════════════════════════════════════════════════════
 #  FASTAPI ROUTER
 # ═══════════════════════════════════════════════════════════════
 
-# llm_client and governor are injected by server.py after include_router
+# Injected by server.py after include_router
 _llm_client: LLMClient | None = None
 _governor: GovernorStack | None = None
+_coordizer: Any = None  # CoordizerV2Adapter — typed as Any to avoid circular import
 
 
 def set_llm_client(client: LLMClient) -> None:
@@ -636,6 +765,23 @@ def set_governor(gov: GovernorStack) -> None:
     """Called by server.py to inject the shared GovernorStack."""
     global _governor
     _governor = gov
+
+
+def set_coordizer(coordizer: Any) -> None:
+    """Called by server.py to inject the CoordizerV2Adapter.
+
+    The coordizer must implement:
+        coordize_text(text: str) -> NDArray  (64D, on Δ⁶³)
+
+    When set, all ingested chunks will be coordized to 64D basin
+    coordinates. When None, the pipeline operates without coordization.
+    """
+    global _coordizer
+    _coordizer = coordizer
+    if coordizer is not None:
+        logger.info("Training pipeline: CoordizerV2 adapter injected — coordization active")
+    else:
+        logger.info("Training pipeline: coordizer cleared — coordization disabled")
 
 
 # In-memory job store for background upload processing.
@@ -676,10 +822,12 @@ async def _run_ingestion_job(
             "filename": result.source,
             "chunks_written": result.chunks_written,
             "enriched": result.chunks_enriched,
+            "coordized": result.chunks_coordized,
             "qa_pairs": result.qa_pairs_generated,
             "category": category,
             "mode": proc_mode.value,
             "processing_time_s": result.processing_time_s,
+            "coordizer_active": _coordizer is not None,
             "errors": result.errors,
             "finished_at": time.time(),
         })
@@ -702,8 +850,14 @@ async def training_stats_endpoint():
 
 
 @training_router.get("/training/export")
-async def training_export_endpoint():
-    """Export training data in OpenAI fine-tuning format."""
+async def training_export_endpoint(fmt: str = "openai"):
+    """Export training data.
+
+    Query params:
+        fmt: "openai" (default) or "coordized" for 64D basin format
+    """
+    if fmt == "coordized":
+        return export_coordized_format()
     return export_openai_format()
 
 
@@ -720,6 +874,9 @@ async def training_upload_endpoint(
     Accepts PDF, Markdown, TXT, or JSONL files.
     Returns immediately with a job_id. Frontend polls
     GET /training/upload/status/{job_id} for progress.
+
+    v6.1: Chunks are automatically coordized to 64D basin coordinates
+    if CoordizerV2 is available. Check 'coordized' field in job result.
     """
     content = await file.read()
     filename = file.filename or "unknown"
@@ -732,6 +889,7 @@ async def training_upload_endpoint(
             "filename": filename,
             "chunks_written": 0,
             "enriched": 0,
+            "coordized": 0,
             "qa_pairs": 0,
             "category": category,
             "mode": mode,
@@ -744,7 +902,6 @@ async def training_upload_endpoint(
     except ValueError:
         proc_mode = ProcessingMode.STANDARD
 
-    # Accept e8 from either field name (frontend sends e8_override)
     e8 = e8_override or e8_primitive or None
 
     # Create job and process in background to avoid proxy timeout (502)
@@ -756,10 +913,12 @@ async def training_upload_endpoint(
         "filename": filename,
         "chunks_written": 0,
         "enriched": 0,
+        "coordized": 0,
         "qa_pairs": 0,
         "category": category,
         "mode": mode,
         "processing_time_s": 0,
+        "coordizer_active": _coordizer is not None,
         "errors": [],
         "finished_at": 0,
     }
