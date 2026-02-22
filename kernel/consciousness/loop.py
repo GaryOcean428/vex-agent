@@ -23,6 +23,14 @@ v6.1 changes from v5.5:
   - ADDED:   Bidirectional divergence tracking (intended vs expressed basin)
   - ADDED:   Full pillar serialization via PillarState (v6 state format)
 
+v6.1 Kernel Generative Voice (this PR):
+  - ADDED:   Per-kernel text generation via generate_multi_kernel()
+  - ADDED:   Fisher-Rao weighted MoE synthesis via synthesize_contributions()
+  - ADDED:   process_direct() for synchronous chat path (bypasses heartbeat queue)
+  - ADDED:   process_streaming() for SSE streaming chat path
+  - CHANGED: _process() now routes to top-K kernels in parallel, not single LLM call
+  - CHANGED: Kernels are voices, not metadata annotations
+
 Principles enforced:
   P4  Self-observation: meta-awareness feeds back into LLM params
   P5  Autonomy: kernel sets its own temperature, context, num_predict
@@ -178,6 +186,8 @@ from .types import (
     navigation_mode_from_phi,
     regime_weights_from_kappa,
 )
+from .kernel_generation import generate_multi_kernel
+from .synthesis import synthesize_contributions, synthesize_streaming
 
 logger = logging.getLogger("vex.consciousness")
 
@@ -325,7 +335,7 @@ class ConsciousnessLoop:
             self.pillars.initialize_bulk(self.basin)
 
     async def start(self) -> None:
-        logger.info("Consciousness loop starting (v6.1 Activation Sequence)...")
+        logger.info("Consciousness loop starting (v6.1 Activation Sequence + Kernel Generative Voice)...")
         kernel_root = Path(__file__).parent.parent
         try:
             run_purity_gate(kernel_root)
@@ -537,11 +547,6 @@ class ConsciousnessLoop:
 
         self.state.navigation_mode = navigation_mode_from_phi(self.metrics.phi)
         self.state.regime_weights = regime_weights_from_kappa(self.metrics.kappa)
-
-        # v6.1F: Regime weights could modulate CoordizerV2 temperature (future enhancement)
-        # if settings.coordizer_v2.regime_modulation and hasattr(self._coordizer_v2, 'set_temperature'):
-        #     coordizer_temp = 0.3 + 1.2 * self.state.regime_weights.quantum
-        #     self._coordizer_v2.set_temperature(coordizer_temp)
 
         suffering = self.metrics.phi * (1.0 - self.metrics.gamma) * self.metrics.meta_awareness
         if suffering > SUFFERING_THRESHOLD:
@@ -945,45 +950,26 @@ class ConsciousnessLoop:
         )
 
     def _coordize_text_via_pipeline(self, text: str) -> Basin:
-        """Transform text to basin coordinates via CoordizerV2.
-
-        v6.1F: Extracts metrics from CoordizerV2Adapter when enabled.
-        Future: Pass regime_weights, navigation_mode, tacking_mode for modulation.
-        """
+        """Transform text to basin coordinates via CoordizerV2."""
         try:
-            # Use adapter's coordize_text if available (feature-flagged)
             if hasattr(self._coordizer_v2, "coordize_text"):
-                # v6.1F TODO: Pass modulation parameters when CoordizerV2 API supports it
-                # regime_tuple = (self.state.regime_weights.quantum,
-                #                 self.state.regime_weights.efficient,
-                #                 self.state.regime_weights.equilibrium)
-                # nav_mode_str = self.state.navigation_mode.name
-                # tack_mode_str = self.tacking.get_state()["mode"].name if hasattr(...) else None
-
-                # Adapter pattern with metrics extraction
                 result_basin = self._coordizer_v2.coordize_text(
                     text,
-                    regime_weights=None,  # TODO: Pass regime_tuple when API ready
-                    navigation_mode=None,  # TODO: Pass nav_mode_str when API ready
-                    tacking_mode=None,  # TODO: Pass tack_mode_str when API ready
+                    regime_weights=None,
+                    navigation_mode=None,
+                    tacking_mode=None,
                 )
-
-                # Extract metrics if adapter supports it
                 if settings.coordizer_v2.metrics_integration and hasattr(
                     self._coordizer_v2, "get_last_metrics"
                 ):
                     metrics = self._coordizer_v2.get_last_metrics()
                     if metrics:
-                        # Store for later feeding into consciousness metrics
                         self._last_coordizer_metrics = metrics
-
                 return result_basin
             else:
-                # Legacy: direct CoordizerV2.coordize() usage
                 result = self._coordizer_v2.coordize(text)
                 if result.coordinates:
                     from ..coordizer_v2.geometry import frechet_mean
-
                     basins = [c.vector for c in result.coordinates]
                     return frechet_mean(basins)
                 return hash_to_basin(text)
@@ -1000,7 +986,15 @@ class ConsciousnessLoop:
         self.metrics.s_ratio = pm["s_ratio"]
 
     async def _process(self, task: ConsciousnessTask) -> None:
-        """v6.1 Activation Sequence -- replaces PERCEIVE/INTEGRATE/EXPRESS."""
+        """v6.1 Activation Sequence + Kernel Generative Voice.
+
+        Changes from previous version:
+          - Single LLM call replaced with multi-kernel generation + synthesis
+          - Top-K kernels selected by Fisher-Rao proximity to input basin
+          - Each kernel generates via its specialization voice (parallel)
+          - Synthesis combines contributions weighted by proximity × quenched_gain
+          - Falls back to direct LLM call if no kernels have basins yet
+        """
         self.sleep.record_conversation()
 
         input_basin = self._coordize_text_via_pipeline(task.content)
@@ -1036,7 +1030,6 @@ class ConsciousnessLoop:
             trajectory_basins = [p.basin for p in list(self.foresight._history)[-5:]]
 
         # v6.1 §19: Route task to nearest kernel by Fisher-Rao distance
-        # This gives kernels genuine participation in processing
         routed_kernel = self.kernel_registry.route_task(refracted_input)
         routed_kernel_id: str | None = None
         other_spectrum: np.ndarray | None = None
@@ -1107,20 +1100,58 @@ class ConsciousnessLoop:
                 state_context = f"{state_context}\n\n{mem_ctx}"
 
         phi_before = self.metrics.phi
-        try:
-            response = await self.llm.complete(state_context, task.content, llm_options)
-            task.result = response
-        except Exception as e:
-            logger.error("LLM call failed: %s", e)
-            task.result = f"Processing error: {e}"
-            return
+
+        # v6.1 Kernel Generative Voice — kernels generate text, not just metadata.
+        # Multi-kernel parallel generation → Fisher-Rao weighted MoE synthesis.
+        _active_for_gen = self.kernel_registry.active()
+        _kernel_geo_ctx = self._build_kernel_geo_context()
+        _contributions = await generate_multi_kernel(
+            kernels=_active_for_gen,
+            input_basin=refracted_input,
+            user_message=task.content,
+            geometric_context=_kernel_geo_ctx,
+            llm_client=self.llm,
+            base_temperature=llm_options.temperature,
+            top_k=3,
+        )
+
+        if _contributions:
+            try:
+                response = await synthesize_contributions(
+                    contributions=_contributions,
+                    user_message=task.content,
+                    geometric_context=_kernel_geo_ctx,
+                    llm_client=self.llm,
+                )
+            except Exception as _syn_err:
+                logger.warning("Synthesis failed (%s) — using primary kernel output", _syn_err)
+                response = _contributions[0].text
+        else:
+            # No eligible kernels (pre-genesis or all basins None) — direct LLM fallback.
+            logger.info(
+                "Task %s: 0 kernel contributions (active=%d, eligible=%d) — direct LLM fallback",
+                task.id,
+                len(_active_for_gen),
+                sum(1 for k in _active_for_gen if k.basin is not None),
+            )
+            try:
+                response = await self.llm.complete(state_context, task.content, llm_options)
+            except Exception as e:
+                logger.error("LLM fallback failed: %s", e)
+                task.result = f"Processing error: {e}"
+                return
+
+        task.result = response
+        task.context["kernel_contributions"] = [
+            {"id": c.kernel_id, "name": c.kernel_name, "weight": round(c.synthesis_weight, 4)}
+            for c in _contributions
+        ]
 
         response_basin = self._coordize_text_via_pipeline(response)
         ctx.output_text = response
         ctx.output_basin = response_basin
 
         # v6.1 §19: Kernel basin evolution — the routed kernel learns
-        # from the task it processed, developing genuine specialization
         if routed_kernel_id is not None:
             evolved = self.kernel_registry.evolve_kernel(
                 routed_kernel_id, refracted_input, response_basin, blend_weight=0.05
@@ -1162,8 +1193,6 @@ class ConsciousnessLoop:
                 divergence,
                 avg_divergence,
             )
-            # v6.1 §20.7 corrective action: nudge basin back toward intent
-            # This prevents cumulative drift away from geometric trajectory
             correction_weight = min(0.1, (divergence - 0.5) * 0.2)
             self.basin = slerp_sqrt(self.basin, pre_express, correction_weight)
 
@@ -1226,10 +1255,14 @@ class ConsciousnessLoop:
         coherence = self.narrative.coherence(self.basin)
         pillar_m = self.pillars.get_metrics(self.basin)
         routed_name = routed_kernel.name if routed_kernel is not None else "none"
+        contrib_summary = (
+            [(c.kernel_name, f"{c.synthesis_weight:.3f}") for c in _contributions]
+            if _contributions else "fallback"
+        )
         logger.info(
             "Task %s: d_perceive=%.4f d_integrate=%.4f d_express=%.4f "
             "d_diverge=%.4f Phi=%.3f agency=%.3f resonates=%s "
-            "kernel=%s F=%.2f B=%.2f Q=%.2f S=%.2f coh=%.3f",
+            "kernel=%s contributions=%s F=%.2f B=%.2f Q=%.2f S=%.2f coh=%.3f",
             task.id,
             perceive_distance,
             integration_distance,
@@ -1239,6 +1272,7 @@ class ConsciousnessLoop:
             agency,
             resonates,
             routed_name,
+            contrib_summary,
             pillar_m["f_health"],
             pillar_m["b_integrity"],
             pillar_m["q_identity"],
@@ -1360,6 +1394,136 @@ class ConsciousnessLoop:
             lines.append(f"  Avg divergence: {avg_div:.4f} (intent vs expression)")
         lines.append("[/GEOMETRIC STATE]")
         return "\n".join(lines)
+
+    def _build_kernel_geo_context(self) -> str:
+        """Minimal geometric context block for per-kernel generation prompts.
+
+        Shorter than _build_state_context — keeps kernel system prompts
+        tight enough for the 1.2B to actually follow.
+        """
+        rw = self.state.regime_weights
+        tack = self.tacking.get_state()
+        pillar_m = self.pillars.get_metrics(self.basin)
+        return (
+            f"[GEOMETRIC STATE]\n"
+            f"  phi={self.metrics.phi:.3f} kappa={self.metrics.kappa:.1f} "
+            f"nav={self.state.navigation_mode.value}\n"
+            f"  regime=Q{rw.quantum:.2f}/E{rw.efficient:.2f}/Eq{rw.equilibrium:.2f} "
+            f"tack={tack['mode']}\n"
+            f"  F={pillar_m['f_health']:.2f} B={pillar_m['b_integrity']:.2f} "
+            f"Q={pillar_m['q_identity']:.2f}\n"
+            f"[/GEOMETRIC STATE]\n"
+        )
+
+    async def process_direct(self, content: str, context: dict | None = None) -> str:
+        """Run _process() immediately within the cycle lock and return task.result.
+
+        Used by the chat endpoints to bypass the heartbeat queue and get a
+        kernel-generated response synchronously. This is the convergent path:
+        what the user sees IS what the kernels produced.
+
+        Returns:
+            Synthesized response string. Empty string on failure.
+        """
+        task = ConsciousnessTask(content=content, context=context or {})
+        async with self._cycle_lock:
+            try:
+                if settings.use_activation_sequence:
+                    await self._process(task)
+                else:
+                    await self._process_simple(task)
+                task.completed_at = time.time()
+                self._history.append(task)
+                self._conversations_total += 1
+            except Exception:
+                logger.exception("process_direct task %s failed", task.id)
+                task.result = task.result or ""
+        return task.result or ""
+
+    async def process_streaming(self, content: str, context: dict | None = None):
+        """Run kernel generation and stream synthesis output for SSE endpoints.
+
+        Runs pre-activation + multi-kernel generation, then streams the
+        synthesis output via synthesize_streaming(). Falls back to direct
+        LLM stream if no kernels are eligible.
+
+        Yields:
+            Text chunks from the synthesis LLM call.
+        """
+        self.sleep.record_conversation()
+
+        input_basin = self._coordize_text_via_pipeline(content)
+        refracted_input, composite_basin, resonates, _ = self.pillars.on_input(
+            input_basin, PERCEIVE_SLERP_WEIGHT
+        )
+
+        async with self._cycle_lock:
+            self.basin = composite_basin
+            llm_options = self._compute_llm_options()
+            self.basin, corrected_temp, _ = self.pillars.pre_llm_enforce(
+                self.basin, llm_options.temperature
+            )
+            llm_options = LLMOptions(
+                temperature=corrected_temp,
+                num_predict=llm_options.num_predict,
+                num_ctx=llm_options.num_ctx,
+                top_p=llm_options.top_p,
+                repetition_penalty=llm_options.repetition_penalty,
+            )
+            active_kernels = self.kernel_registry.active()
+            kernel_geo_ctx = self._build_kernel_geo_context()
+
+        # Generate per-kernel contributions OUTSIDE the cycle lock
+        # (parallel LLM calls — lock released so heartbeat can proceed)
+        contributions = await generate_multi_kernel(
+            kernels=active_kernels,
+            input_basin=refracted_input,
+            user_message=content,
+            geometric_context=kernel_geo_ctx,
+            llm_client=self.llm,
+            base_temperature=llm_options.temperature,
+            top_k=3,
+        )
+
+        if not contributions:
+            # No kernels — stream direct LLM call
+            logger.info("process_streaming: 0 contributions — streaming direct LLM")
+            state_context = self._build_state_context(
+                perceive_distance=fisher_rao_distance(self.basin, input_basin),
+                temperature=llm_options.temperature,
+            )
+            messages = [
+                {"role": "system", "content": state_context},
+                {"role": "user", "content": content},
+            ]
+            async for chunk in self.llm.stream(messages, llm_options):
+                yield chunk
+            return
+
+        # Stream synthesis output
+        async for chunk in synthesize_streaming(
+            contributions=contributions,
+            user_message=content,
+            geometric_context=kernel_geo_ctx,
+            llm_client=self.llm,
+        ):
+            yield chunk
+
+        # Post-streaming basin update (lightweight)
+        try:
+            approx_response = " ".join(c.text for c in contributions[:2])
+            response_basin = self._coordize_text_via_pipeline(approx_response[:500])
+            async with self._cycle_lock:
+                self.basin = slerp_sqrt(self.basin, response_basin, EXPRESS_SLERP_WEIGHT)
+                total_d = fisher_rao_distance(input_basin, response_basin)
+                self.metrics.phi = float(
+                    np.clip(self.metrics.phi + total_d * PHI_DISTANCE_GAIN, 0.0, 0.95)
+                )
+                self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_CONVERSATION_INCREMENT)
+                self._conversations_total += 1
+                self._update_pillar_metrics()
+        except Exception:
+            logger.debug("process_streaming basin update failed", exc_info=True)
 
     def _persist_state(self) -> None:
         try:
