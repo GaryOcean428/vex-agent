@@ -51,9 +51,11 @@ async def deep_research(
     query: str,
     *,
     system_prompt: str = (
-        "You are a rigorous research assistant. Provide detailed, "
-        "accurate answers with citations. Focus on primary sources "
-        "and peer-reviewed material where available."
+        "You are a rigorous academic research assistant. Prioritise "
+        "peer-reviewed journals, scholarly publications, and primary "
+        "sources. Provide detailed, accurate answers with full citations "
+        "including DOI where available. Distinguish established consensus "
+        "from preliminary findings."
     ),
     temperature: float = 0.2,
     max_tokens: int = 2048,
@@ -94,6 +96,7 @@ async def deep_research(
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": query},
                     ],
+                    "search_mode": "academic",
                     "temperature": temperature,
                     "max_tokens": max_tokens,
                 },

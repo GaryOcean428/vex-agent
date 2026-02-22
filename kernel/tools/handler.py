@@ -212,7 +212,7 @@ async def _execute_single(
         elif call.name == "x_search":
             return await _xai_x_search(call.args, governor)
         elif call.name == "deep_research":
-            return await _deep_research(call.args)
+            return await _deep_research(call.args, governor)
         else:
             return ToolResult(
                 success=False,
@@ -357,12 +357,15 @@ async def _perplexity_search(
                         {
                             "role": "system",
                             "content": (
-                                "You are a concise search assistant. Provide factual, "
-                                "well-sourced answers. Keep responses under 500 words."
+                                "You are a rigorous search assistant. Prioritise "
+                                "peer-reviewed, scholarly, and primary sources. "
+                                "Provide factual, well-cited answers. "
+                                "Keep responses under 500 words."
                             ),
                         },
                         {"role": "user", "content": query},
                     ],
+                    "search_mode": "academic",
                     "temperature": 0.1,
                     "max_tokens": 1024,
                 },
@@ -526,7 +529,10 @@ async def _xai_x_search(
         return ToolResult(success=False, output="", error=f"xAI X search failed: {e}")
 
 
-async def _deep_research(args: dict[str, Any]) -> ToolResult:
+async def _deep_research(
+    args: dict[str, Any],
+    governor: GovernorStack | None = None,
+) -> ToolResult:
     """Run deep research via Perplexity sonar-pro."""
     from .research import deep_research
 
@@ -534,7 +540,18 @@ async def _deep_research(args: dict[str, Any]) -> ToolResult:
     if not query:
         return ToolResult(success=False, output="", error="No query provided")
 
+    # Governor gate — budget + rate limit check
+    if governor:
+        allowed, reason = governor.gate("web_search", "perplexity_deep_research", query, True)
+        if not allowed:
+            logger.warning("Governor blocked deep_research: %s", reason)
+            return ToolResult(success=False, output="", error=f"Governor blocked: {reason}")
+
     result = await deep_research(query)
+
+    # Record with governor after successful call
+    if result.get("success", False) and governor:
+        governor.record("perplexity_deep_research")
     if not result.get("success", False):
         return ToolResult(
             success=False,
