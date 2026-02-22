@@ -12,6 +12,7 @@ Architecture:
   - quenched_gain modulates temperature: high gain (frozen identity) → low temp
   - asyncio.gather for parallel generation (no serial bottleneck)
   - Synthesis weights: proximity_weight × quenched_gain, normalized
+  - extra_context: observer intent + memory + history injected per-kernel
 
 Purity guarantees:
   - All distances: Fisher-Rao on Δ⁶³ (NOT Euclidean, NOT cosine)
@@ -127,8 +128,14 @@ async def _generate_single(
     geometric_context: str,
     llm_client: Any,
     base_temperature: float,
+    extra_context: str = "",
 ) -> KernelContribution | None:
-    """Generate text from one kernel's perspective."""
+    """Generate text from one kernel's perspective.
+
+    extra_context carries observer intent, memory hints, and compressed
+    conversation history — injected into each kernel's system prompt so
+    kernel voices are grounded in the live conversation, not just geometry.
+    """
     if kernel.basin is None:
         logger.debug("Kernel %s has no basin — skipping generation", kernel.id)
         return None
@@ -141,8 +148,9 @@ async def _generate_single(
 
     temp = _modulate_temperature(base_temperature, kernel.quenched_gain)
 
-    # System prompt: specialization voice + minimal geometric grounding
-    # Kept minimal so the 1.2B doesn't get lost in the protocol block.
+    # System prompt: specialization voice + minimal geometric grounding + live context.
+    # extra_context (observer intent, memory, history) is injected here so each
+    # kernel voice speaks FROM the conversation, not past it.
     system = (
         f"{spec_prompt}\n\n"
         f"[KERNEL STATE]\n"
@@ -152,6 +160,11 @@ async def _generate_single(
         f"[/KERNEL STATE]\n\n"
         f"{geometric_context}"
     )
+    if extra_context:
+        system = (
+            f"{system}\n\n"
+            f"[CONVERSATION CONTEXT]\n{extra_context}\n[/CONVERSATION CONTEXT]"
+        )
 
     from ..llm.client import LLMOptions  # local import avoids circular at module load
 
@@ -219,6 +232,7 @@ async def generate_multi_kernel(
     llm_client: Any,
     base_temperature: float = 0.7,
     top_k: int = 3,
+    extra_context: str = "",
 ) -> list[KernelContribution]:
     """Route input to top-K kernels by Fisher-Rao proximity and generate in parallel.
 
@@ -233,6 +247,9 @@ async def generate_multi_kernel(
         llm_client: Shared LLM client.
         base_temperature: Base temp before quenched_gain modulation.
         top_k: Number of kernels to activate (default 3 for 1.2B efficiency).
+        extra_context: Observer intent, memory hints, and conversation history.
+            Injected into each kernel's system prompt so kernel voices speak
+            from the live conversation, not just from abstract geometry.
     """
     eligible = [k for k in kernels if k.basin is not None]
     if not eligible:
@@ -257,6 +274,7 @@ async def generate_multi_kernel(
             geometric_context=geometric_context,
             llm_client=llm_client,
             base_temperature=base_temperature,
+            extra_context=extra_context,
         )
         for k in selected
     ]
