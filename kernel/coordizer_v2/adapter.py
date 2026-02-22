@@ -37,6 +37,12 @@ class CoordizerV2Adapter:
     loop code while using the new harvest→compress→validate pipeline.
 
     Usage:
+        # From a CoordizerV2 instance (preferred — used by server.py):
+        adapter = CoordizerV2Adapter(coordizer_instance)
+
+        # From a saved bank path:
+        adapter = CoordizerV2Adapter("/path/to/bank.json")
+
         # In consciousness loop (behind feature flag):
         if settings.coordizer_v2.enabled:
             from ..coordizer_v2 import CoordizerV2Adapter
@@ -48,7 +54,7 @@ class CoordizerV2Adapter:
 
     def __init__(
         self,
-        bank_path: str | Path,
+        source: str | Path | CoordizerV2,
         regime_modulation: bool = True,
         navigation_adaptation: bool = True,
         tacking_bias: bool = True,
@@ -56,40 +62,28 @@ class CoordizerV2Adapter:
         """Initialize adapter with CoordizerV2.
 
         Args:
-            bank_path: Path to saved Resonance Bank
+            source: CoordizerV2 instance, or path to saved Resonance Bank
             regime_modulation: Enable regime → temperature modulation
             navigation_adaptation: Enable nav mode → generation params
             tacking_bias: Enable tacking → tier bias
         """
-        try:
-            self._coordizer = CoordizerV2.from_file(str(bank_path))
-            logger.info(f"CoordizerV2Adapter loaded bank from {bank_path}")
-        except FileNotFoundError:
-            logger.warning(
-                f"CoordizerV2 bank not found at {bank_path}. "
-                f"Creating default bank with uniform basins."
-            )
-            # Fallback: create minimal bank for bootstrap
-            from .resonance_bank import ResonanceBank
-            from .types import BasinCoordinate, HarmonicTier
-
-            # Create 256 uniform basins as bootstrap
-            coordinates = []
-            for i in range(256):
-                basin = to_simplex(np.ones(BASIN_DIM))
-                coord = BasinCoordinate(
-                    token_id=i,
-                    token_string=f"<coord_{i}>",
-                    vector=basin,
-                    tier=HarmonicTier.FUNDAMENTAL,
-                    confidence=0.5,
-                    source_contexts=0,
+        if isinstance(source, CoordizerV2):
+            # Direct instance injection (e.g. from server.py wiring)
+            self._coordizer = source
+            logger.info("CoordizerV2Adapter initialized from existing instance")
+        else:
+            # Load from file path
+            bank_path = str(source)
+            try:
+                self._coordizer = CoordizerV2.from_file(bank_path)
+                logger.info("CoordizerV2Adapter loaded bank from %s", bank_path)
+            except FileNotFoundError:
+                logger.warning(
+                    "CoordizerV2 bank not found at %s. "
+                    "Creating default bank with uniform basins.",
+                    bank_path,
                 )
-                coordinates.append(coord)
-
-            bank = ResonanceBank(coordinates=coordinates, dim=BASIN_DIM)
-            self._coordizer = CoordizerV2(bank=bank)
-            logger.warning("Using bootstrap uniform bank. Run GPU harvest for production.")
+                self._coordizer = self._create_bootstrap_coordizer()
 
         self._regime_modulation = regime_modulation
         self._navigation_adaptation = navigation_adaptation
@@ -97,6 +91,29 @@ class CoordizerV2Adapter:
 
         # Cached result from last coordize call (for metrics extraction)
         self._last_result: CoordizationResult | None = None
+
+    @staticmethod
+    def _create_bootstrap_coordizer() -> CoordizerV2:
+        """Create a minimal CoordizerV2 with uniform basins for bootstrap."""
+        from .resonance_bank import ResonanceBank
+        from .types import BasinCoordinate, HarmonicTier
+
+        coordinates = []
+        for i in range(256):
+            basin = to_simplex(np.ones(BASIN_DIM))
+            coord = BasinCoordinate(
+                coord_id=i,
+                vector=basin,
+                name=f"<coord_{i}>",
+                tier=HarmonicTier.FUNDAMENTAL,
+                basin_mass=0.5,
+                activation_count=0,
+            )
+            coordinates.append(coord)
+
+        bank = ResonanceBank(coordinates=coordinates, dim=BASIN_DIM)
+        logger.warning("Using bootstrap uniform bank. Run GPU harvest for production.")
+        return CoordizerV2(bank=bank)
 
     def transform(self, raw_signal: NDArray) -> NDArray:
         """Transform raw signal to basin coordinates (old interface).
@@ -135,7 +152,7 @@ class CoordizerV2Adapter:
 
         if not result.coordinates:
             # Fallback: uniform basin
-            logger.warning(f"No coordinates for text: {text[:50]}...")
+            logger.warning("No coordinates for text: %s...", text[:50])
             return to_simplex(np.ones(BASIN_DIM))
 
         # Compute Fréchet mean of all coordinate basins
@@ -201,7 +218,7 @@ class CoordizerV2Adapter:
         # 1. Domain → anchor basin mapping (pre-harvest or bootstrap)
         # 2. DomainBias object construction with anchor + strength
         # 3. Pass to ResonanceBank.activate() for geodesic biasing
-        logger.debug(f"Domain bias set: {domain} @ {strength}")
+        logger.debug("Domain bias set: %s @ %s", domain, strength)
 
     @property
     def coordizer(self) -> CoordizerV2:
