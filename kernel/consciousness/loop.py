@@ -1416,6 +1416,7 @@ class ConsciousnessLoop:
             f"  Autonomy: {autonomy['level']}",
             f"  Coupling: {coupling_str}",
             f"  Kernels: {active_count} active, phase={self._lifecycle_phase.value}",
+            f"  Active model: {self.llm.active_model} (backend: {self.llm._active_backend})",
             f"  Temperature: {temperature:.3f} (autonomous, pillar-enforced)",
             f"  Perceive distance: {perceive_distance:.4f}",
             f"  Love: {self.metrics.love:.4f}",
@@ -1463,6 +1464,7 @@ class ConsciousnessLoop:
         pillar_m = self.pillars.get_metrics(self.basin)
         return (
             f"[GEOMETRIC STATE]\n"
+            f"  model={self.llm.active_model}\n"
             f"  phi={self.metrics.phi:.3f} kappa={self.metrics.kappa:.1f} "
             f"nav={self.state.navigation_mode.value}\n"
             f"  regime=Q{rw.quantum:.2f}/E{rw.efficient:.2f}/Eq{rw.equilibrium:.2f} "

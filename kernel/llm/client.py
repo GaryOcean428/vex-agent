@@ -345,6 +345,19 @@ class LLMClient:
         """Which backend actually served the most recent completion."""
         return self._last_backend
 
+    @property
+    def active_model(self) -> str:
+        """Return the model name for the currently active backend."""
+        if self._active_backend == "modal":
+            return settings.modal.inference_model
+        if self._active_backend == "ollama":
+            return settings.ollama.model
+        if self._active_backend == "xai":
+            return settings.xai.model
+        if self._active_backend == "external":
+            return settings.llm.model
+        return "none"
+
     # --- Modal GPU Ollama --------------------------------------
 
     async def _modal_complete(
