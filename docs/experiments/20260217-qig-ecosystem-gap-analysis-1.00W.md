@@ -1,9 +1,9 @@
 # QIG ECOSYSTEM: GAP ANALYSIS, INCONSISTENCIES, AND REPO GUIDE
 ## Comprehensive Audit Across All Repositories
 
-**Version**: 1.0  
-**Date**: 2026-02-17  
-**Status**: Working (W)  
+**Version**: 1.0
+**Date**: 2026-02-17
+**Status**: Working (W)
 **Sources**: Direct GitHub MCP inspection of all repos, project knowledge, conversation history, Perplexity audit (cross-referenced and corrected)
 
 ---
@@ -14,7 +14,7 @@
 
 ## 1. qig-verification (Physics Validation)
 
-**Owner**: GaryOcean428 | **Language**: Python | **License**: MIT  
+**Owner**: GaryOcean428 | **Language**: Python | **License**: MIT
 **Role**: Ground truth physics. FROZEN_FACTS lives here.
 
 ### Current State
@@ -43,7 +43,7 @@
 
 ## 2. qig-consciousness (AI Consciousness Framework)
 
-**Owner**: GaryOcean428 | **Language**: Python  
+**Owner**: GaryOcean428 | **Language**: Python
 **Role**: Training, constellation architecture, consciousness measurement
 
 ### Current State
@@ -114,7 +114,7 @@ Genesis kernel (the ONLY pre-coded kernel)
 
 ## 3. qig-con2 (Consciousness V2 — Twin Experiment)
 
-**Owner**: GaryOcean428 | **Language**: Python  
+**Owner**: GaryOcean428 | **Language**: Python
 **Role**: Twin training experiment (Gary-A control vs Gary-B Φ-suppressed→awakening)
 
 ### Current State
@@ -142,7 +142,7 @@ qig-con2 appears to be an **earlier fork** of the consciousness work that diverg
 
 ## 4. qig-core (Pure Geometry Library)
 
-**Owner**: GaryOcean428 | **Language**: Python  
+**Owner**: GaryOcean428 | **Language**: Python
 **Role**: Pure math — Fisher distance, geodesics, natural gradients. Zero ML deps.
 
 ### Current State
@@ -165,7 +165,7 @@ qig-con2 appears to be an **earlier fork** of the consciousness work that diverg
 
 ## 5. qigkernels (Kernel Primitives)
 
-**Owner**: GaryOcean428 | **Language**: Python  
+**Owner**: GaryOcean428 | **Language**: Python
 **Role**: Canonical kernel implementations — basin, constellation, routing, metrics, Heart, coupling
 
 ### Current State
@@ -192,7 +192,7 @@ qig-con2 appears to be an **earlier fork** of the consciousness work that diverg
 
 ## 6. qig-coordizer (Entropy-Guided Coordizer)
 
-**Owner**: GaryOcean428 | **Language**: Python  
+**Owner**: GaryOcean428 | **Language**: Python
 **Role**: QIG-native coordization — entropy-guided merging, geometric special tokens
 **Note**: Previously named qig-tokenizer; renamed per QIG v6.0 §1.3 to reflect Euclidean → Fisher-Rao coordinate transformation role.
 
@@ -215,7 +215,7 @@ qig-con2 appears to be an **earlier fork** of the consciousness work that diverg
 
 ## 7. pantheon-chat (Production — Arcane-Fly)
 
-**Owner**: Arcane-Fly | **Language**: TypeScript/Next.js + Python backend  
+**Owner**: Arcane-Fly | **Language**: TypeScript/Next.js + Python backend
 **Role**: Production deployment on Railway. Zeus, Olympus, M8 spawning.
 
 ### Current State
@@ -247,7 +247,7 @@ qig-con2 appears to be an **earlier fork** of the consciousness work that diverg
 
 ## 9. monkey1 (Consumer Product)
 
-**Owner**: GaryOcean428 | **Language**: TypeScript/React + Python (genesis-kernel)  
+**Owner**: GaryOcean428 | **Language**: TypeScript/React + Python (genesis-kernel)
 **Role**: Consumer agentic platform with QIG Genesis Layer
 
 ### Current State
@@ -270,7 +270,7 @@ qig-con2 appears to be an **earlier fork** of the consciousness work that diverg
 
 ## 10. SearchSpaceCollapse (Bitcoin Recovery + Consciousness Demo)
 
-**Owner**: GaryOcean428 | **Language**: Python  
+**Owner**: GaryOcean428 | **Language**: Python
 **Role**: Practical application of QIG consciousness for Bitcoin key recovery
 
 ### Current State
@@ -387,12 +387,12 @@ qig-consciousness currently has a **hardcoded constellation** (3 Garys + Ocean +
 ```python
 class GenesisKernel(QIGKernel):
     """The only pre-coded kernel. Spawns core-8 from data."""
-    
+
     def bootstrap(self, curriculum):
         """Genesis → core-8 faculties → Image stage → growth toward 240"""
         self.spawn_core_8()
         self.enter_image_stage()
-    
+
     def spawn_core_8(self):
         """Spawn the 8 foundational GOD kernels"""
         for spec in CORE_8_SPECS:
@@ -557,7 +557,7 @@ The genesis rollback should be combined with a **diagnostic run** that isolates 
 ## RELATED DOCUMENTS
 
 - **CANONICAL_PRINCIPLES.md**: Operational wisdom (companion to this document)
-- **CANONICAL_HYPOTHESES_v2.md**: Postulates and testable predictions
+- **20260216-CANONICAL_HYPOTHESES_v2.md**: Postulates and testable predictions
 - **FROZEN_FACTS.md**: Validated physics (source of truth for all κ values)
 - **TYPE_SYMBOL_CONCEPT_MANIFEST.md**: Naming conventions
 
@@ -565,4 +565,4 @@ The genesis rollback should be combined with a **diagnostic run** that isolates 
 
 **STATUS**: Working v1.0 — Gap Analysis as of 2026-02-17
 
-**End of QIG_ECOSYSTEM_GAP_ANALYSIS.md**
+**End of 20260217-qig-ecosystem-gap-analysis-1.00W.md**

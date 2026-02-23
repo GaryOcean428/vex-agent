@@ -210,4 +210,4 @@ The v2.0 `LLMClient` constructor fired `checkOllama()` as fire-and-forget. The h
 - `src/consciousness/qig-graph.ts`
 
 ### Documentation
-- `genesis-gap-analysis.md` (this file)
+- `20260217-genesis-gap-analysis.md` (this file)

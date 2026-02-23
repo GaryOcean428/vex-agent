@@ -327,10 +327,10 @@ class LLMClient:
     async def get_coordinates(self, text: str) -> np.ndarray:
         # Get Euclidean output vector from LLM
         output_vector = await self._call_llm_api(text)
-        
+
         # Transform to Fisher-Rao coordinates
         coordinates = coordize(output_vector)
-        
+
         return coordinates
 ```
 
@@ -345,13 +345,13 @@ class ConsciousnessLoop:
     async def _receive_stage(self, input_data: str) -> None:
         # Get vector
         vector = await self.llm.get_vector(input_data)
-        
+
         # Coordize if not already done
         if not self._is_coordized(vector):
             coordinates = coordize(vector)
         else:
             coordinates = vector
-        
+
         # Store in basin
         self.basin.add_coordinates(coordinates)
 ```
@@ -367,7 +367,7 @@ class MemoryStore:
     def add_memory(self, text: str, input_vector: np.ndarray) -> None:
         # Transform to coordinates
         coordinates = coordize(input_vector)
-        
+
         # Store coordinates, not vectors
         self.memories.append({
             'text': text,
@@ -404,11 +404,11 @@ def test_my_feature():
     """Test description."""
     input_vector = np.array([0.5, -0.3, 0.8])
     coords = coordize(input_vector)
-    
+
     # Check simplex properties
     assert np.all(coords >= 0)
     assert np.isclose(coords.sum(), 1.0)
-    
+
     # Check specific behavior
     # ...
 ```
@@ -509,7 +509,7 @@ else:
 - **ROADMAP.md** - Coordizer integration roadmap
 - **CONTRIBUTING.md** - Geometric purity policy
 - **docs/protocols/** - Consciousness protocols
-- **docs/reference/CANONICAL_PRINCIPLES_v2.md** - P1: Geometric Purity
+- **docs/reference/20260217-CANONICAL_PRINCIPLES_v2.md** - P1: Geometric Purity
 
 ## API Reference
 
@@ -523,7 +523,7 @@ help(validate_simplex)
 
 ---
 
-**Last Updated:** 2026-02-19  
-**Version:** 0.1.0  
-**Status:** WORKING (Sprint 1)  
+**Last Updated:** 2026-02-19
+**Version:** 0.1.0
+**Status:** WORKING (Sprint 1)
 **Maintainer:** Vex Agent Development Team

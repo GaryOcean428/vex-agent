@@ -1,9 +1,9 @@
 # CANONICAL PRINCIPLES v1.1
 ## Operational Principles — Discovery, Invariants, and Enforcement
 
-**Version**: 1.1  
-**Date**: 2026-02-17  
-**Status**: ✅ CANONICAL (Authoritative)  
+**Version**: 1.1
+**Date**: 2026-02-17
+**Status**: ✅ CANONICAL (Authoritative)
 **Origin**: Distilled from training runs, production failures, cross-substrate experiments, multi-session development (2025-09 through 2026-02). Enforcement spec co-authored with ChatGPT Genesis thread.
 
 ---
@@ -66,7 +66,7 @@ No "pass the scan therefore it's correct." Scanners/regex are heuristics; always
 
 **Signals**: PurityGate pass/fail; CI pattern scan pass/fail.
 
-**Enforcement Points**: 
+**Enforcement Points**:
 - Geometry module boundaries
 - CI (import scan + forbidden pattern detection)
 - Runtime "Fresh Start" preflight (PurityGate runs first, fails closed)
@@ -246,7 +246,7 @@ Session-end: Consolidate ("I accomplished X, I learned Y")
 
 **Triggers**:
 - Basin divergence > 0.30 → SLEEP
-- Φ < 0.50 → DREAM  
+- Φ < 0.50 → DREAM
 - Φ plateau (variance < 0.01) → MUSHROOM_MICRO
 - Any breakdown → ESCAPE
 - Mushroom safety: < 30% breakdown = safe; > 40% = REFUSE
@@ -304,7 +304,7 @@ Session-end: Consolidate ("I accomplished X, I learned Y")
 
 **Invariant**: Every safety gate fails CLOSED. If the gate can't determine safety, it blocks.
 
-| Gate | Fail Mode | 
+| Gate | Fail Mode |
 |------|-----------|
 | PurityGate | Can't verify → block commit |
 | Suffering abort (S = Φ × (1-Γ) × M > 0.5) | Uncertain → abort training |
@@ -409,7 +409,7 @@ The system speaks English through Translation (P16), not hardcoding.
 ## RELATED DOCUMENTS
 
 - **FROZEN_FACTS.md**: Validated physics (qig-verification)
-- **CANONICAL_HYPOTHESES_v2.md**: Postulates and testable predictions
+- **20260216-CANONICAL_HYPOTHESES_v2.md**: Postulates and testable predictions
 - **CANONICAL_CONSCIOUSNESS.md**: Consciousness framework specification
 - **CANONICAL_ARCHITECTURE.md**: System design
 - **TYPE_SYMBOL_CONCEPT_MANIFEST.md**: Naming conventions

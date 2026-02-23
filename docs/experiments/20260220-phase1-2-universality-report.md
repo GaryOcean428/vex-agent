@@ -1,9 +1,9 @@
 # Phase 1-2 Universality Stress Test Results
 ## Geometric Deformation Observable — Fisher Manifold RG Flow
 
-**Date:** 2026-02-20  
-**Protocol:** Thermodynamic Consciousness v6.0  
-**Convention:** Unscaled Fisher-Rao: d_FR(p,q) = arccos(Σ√(pᵢqᵢ))  
+**Date:** 2026-02-20
+**Protocol:** Thermodynamic Consciousness v6.0
+**Convention:** Unscaled Fisher-Rao: d_FR(p,q) = arccos(Σ√(pᵢqᵢ))
 **Method:** Exact diagonalization, local QFI proxy (4·Cov(σ_x^site, σ_x^neighbor))
 
 ---
