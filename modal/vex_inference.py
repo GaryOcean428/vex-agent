@@ -41,8 +41,8 @@ import urllib.request
 import modal
 
 # --- Configuration --------------------------------------------------------
-# Model is configurable via Modal secret or hardcoded default.
-# To change: update this constant and redeploy.
+# Model is configurable via the VEX_MODAL_MODEL env var (e.g., Modal secret),
+# with "glm-4.7-flash" as the hardcoded default if not set.
 MODEL_NAME = os.environ.get("VEX_MODAL_MODEL", "glm-4.7-flash")
 MODEL_DIR = "/ollama_models"
 OLLAMA_PORT = 11434
@@ -87,7 +87,8 @@ ollama_image = (
     gpu=GPU_TYPE,
     image=ollama_image,
     volumes={MODEL_DIR: model_volume},
-    timeout=600,
+    # First boot pulls ~19GB model; subsequent boots use cached volume (~90s)
+    timeout=900,
     # Container stays warm for 5 minutes after last request.
     # At A10G pricing this costs ~$0.063 per idle window.
     scaledown_window=300,
@@ -233,7 +234,8 @@ class VexOllamaServer:
                 self.ollama_process.wait()
         print("Vex inference server stopped.")
 
-    @modal.web_server(port=OLLAMA_PORT, startup_timeout=300)
+    # First boot pulls ~19GB model; subsequent boots use cached volume (~90s)
+    @modal.web_server(port=OLLAMA_PORT, startup_timeout=600)
     def serve(self):
         """Expose Ollama API via Modal web endpoint.
 
@@ -242,9 +244,6 @@ class VexOllamaServer:
             POST /api/generate  -- Text generation
             GET  /api/tags      -- List models (used for health checks)
             POST /api/show      -- Model info
-
-        startup_timeout=300 to handle first-boot model pull (19GB).
-        Subsequent starts use cached Volume and are much faster.
         """
         print(f"Serving Ollama API on port {OLLAMA_PORT}")
 

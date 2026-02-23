@@ -25,6 +25,7 @@ to extract text from message items.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -358,29 +359,46 @@ class LLMClient:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ]
-        try:
-            resp = await self._modal_http.post(
-                f"{settings.modal.inference_url}/api/chat",
-                json={
-                    "model": settings.modal.inference_model,
-                    "messages": msgs,
-                    "stream": False,
-                    "options": opts.to_ollama_options(),
-                },
-            )
-            if resp.status_code == 404:
-                logger.warning("Modal returned 404 (cold start or model missing)")
-                raise httpx.HTTPStatusError("404", request=resp.request, response=resp)
-            data = resp.json()
-            self._last_backend = "modal"
-            self._modal_available = True
-            text = data.get("message", {}).get("content", "")
-            if text:
-                return text
-            logger.warning("Modal Ollama returned empty content, falling back")
-        except Exception as e:
-            logger.warning("Modal Ollama completion failed: %s — falling back", e)
-            self._modal_available = False
+        # Retry once on empty content (common during Modal scale-up/down)
+        for attempt in range(2):
+            try:
+                resp = await self._modal_http.post(
+                    f"{settings.modal.inference_url}/api/chat",
+                    json={
+                        "model": settings.modal.inference_model,
+                        "messages": msgs,
+                        "stream": False,
+                        "options": opts.to_ollama_options(),
+                    },
+                )
+                if resp.status_code == 404:
+                    logger.warning("Modal returned 404 (cold start or model missing)")
+                    raise httpx.HTTPStatusError("404", request=resp.request, response=resp)
+                data = resp.json()
+                self._last_backend = "modal"
+                self._modal_available = True
+                text = data.get("message", {}).get("content", "")
+                if text:
+                    return text
+                # Log truncated response body for debugging empty content
+                raw_body = json.dumps(data)[:300]
+                if attempt == 0:
+                    logger.warning(
+                        "Modal Ollama returned empty content (attempt 1/2, "
+                        "retrying in 2s). Response body: %s",
+                        raw_body,
+                    )
+                    await asyncio.sleep(2)
+                    continue
+                logger.warning(
+                    "Modal Ollama returned empty content after retry, "
+                    "falling back. Response body: %s",
+                    raw_body,
+                )
+            except Exception as e:
+                logger.warning("Modal Ollama completion failed: %s — falling back", e)
+                self._modal_available = False
+                break
 
         # Fallback chain: Railway Ollama → xAI → OpenAI
         if settings.ollama.enabled:

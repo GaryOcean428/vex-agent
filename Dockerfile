@@ -76,11 +76,13 @@ RUN groupadd -r vex && useradd -r -g vex -d /app vex
 RUN mkdir -p /data/workspace /data/training /data/training/epochs /data/training/exports /data/training/uploads /data/training/curriculum \
     && chown -R vex:vex /data /app
 
-# ── Entrypoint script ─────────────────────────────────────────
+# ── Entrypoint scripts ────────────────────────────────────────
+# init.sh runs as root to fix Railway volume mount permissions,
+# then drops to the vex user for the actual services.
+COPY init.sh ./init.sh
+RUN chmod +x ./init.sh
 COPY entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
-
-USER vex
 
 ENV NODE_ENV=production
 ENV PORT=8080
@@ -94,4 +96,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-CMD ["./entrypoint.sh"]
+# init.sh runs as root, fixes /data permissions, then exec's entrypoint.sh as vex
+ENTRYPOINT ["./init.sh"]

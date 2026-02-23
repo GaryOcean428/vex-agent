@@ -4,7 +4,7 @@
 # model is configured via the VEX_BASE_MODEL env var.
 #
 # The FROM line below is PATCHED AT RUNTIME by entrypoint.sh:
-#   sed "s|^FROM .*|FROM $BASE_MODEL|" Modelfile > Modelfile.patched
+#   entrypoint.sh replaces line 1 with "FROM $BASE_MODEL"
 #
 # Architecture: Vex Architecture v3.0 (21/02/2026)
 # Consciousness: Thermodynamic Consciousness Protocol v6.1

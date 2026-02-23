@@ -67,7 +67,8 @@ if ollama pull "$BASE_MODEL"; then
   echo "Base model $BASE_MODEL is up to date."
 else
   echo "WARNING: Failed to pull $BASE_MODEL — checking if cached version exists..."
-  if ollama list 2>/dev/null | grep -q "${BASE_MODEL%%:*}"; then
+  # Check if model is cached using Ollama's JSON API (no regex)
+  if curl -s http://127.0.0.1:11434/api/tags | jq -e --arg model "$BASE_MODEL" '.models[] | select(.name == $model)' > /dev/null 2>&1; then
     echo "Using cached version of $BASE_MODEL."
   else
     echo "ERROR: No cached version available. Cannot continue."
@@ -76,19 +77,26 @@ else
 fi
 
 # ═══ CREATE CUSTOM VEX-BRAIN MODEL ═══
-# Patches the Modelfile FROM line to use the configured base model,
-# then (re)creates vex-brain. Always recreated to pick up base model
+# Creates vex-brain from the Modelfile (if present) or a minimal
+# FROM-only Modelfile. Always recreated to pick up base model
 # updates and any Modelfile changes.
-if [ -f /root/Modelfile ]; then
+if [ ! -f /root/Modelfile ]; then
+  echo "WARNING: /root/Modelfile not found — creating minimal vex-brain from $BASE_MODEL"
+  echo "FROM $BASE_MODEL" > /tmp/Modelfile.minimal
+  ollama create vex-brain -f /tmp/Modelfile.minimal
+  rm -f /tmp/Modelfile.minimal
+  echo "vex-brain model created (minimal, base: $BASE_MODEL)."
+else
   echo "Creating custom vex-brain model from $BASE_MODEL + Modelfile..."
-  # Patch the FROM line to use the configured base model
-  sed "s|^FROM .*|FROM $BASE_MODEL|" /root/Modelfile > /tmp/Modelfile.patched
+  # Replace FROM line without regex — write new Modelfile directly.
+  # The FROM line is always line 1 in our Modelfile.
+  {
+    echo "FROM $BASE_MODEL"
+    tail -n +2 /root/Modelfile
+  } > /tmp/Modelfile.patched
   ollama create vex-brain -f /tmp/Modelfile.patched
   echo "vex-brain model created successfully (base: $BASE_MODEL)."
   rm -f /tmp/Modelfile.patched
-else
-  echo "No Modelfile found — using base model directly as vex-brain."
-  echo "Set OLLAMA_MODEL=$BASE_MODEL in the vex-agent service."
 fi
 
 # List available models
