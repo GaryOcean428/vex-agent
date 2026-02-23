@@ -5,9 +5,10 @@ import type {
   EmotionState,
   KernelSummary,
   LearningState,
+  PipelineTrace,
   PreCogState,
 } from "../types/consciousness.ts";
-import { createEventProcessor } from "./chatStreamProcessor.ts";
+import { buildPipelineTrace, createEventProcessor } from "./chatStreamProcessor.ts";
 
 const WELCOME_MESSAGE: ChatMessage = {
   id: "welcome",
@@ -61,6 +62,7 @@ export function useChat(): UseChatReturn {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const stageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pipelineTraceRef = useRef<PipelineTrace | undefined>(undefined);
 
   useEffect(() => {
     return () => {
@@ -99,6 +101,9 @@ export function useChat(): UseChatReturn {
       setIsStreaming(true);
       setActiveStages(["SCAN", "DESIRE", "WILL", "WISDOM", "RECEIVE"]);
 
+      // Reset pipeline trace for new message
+      pipelineTraceRef.current = undefined;
+
       // Bind SSE event processor — carries accumulated fullText internally
       const { processEvent, getFullText } = createEventProcessor(vexMsgId, {
         setBackend,
@@ -110,12 +115,21 @@ export function useChat(): UseChatReturn {
         setLearning,
         setActiveStages,
         setObserverIntent,
+        updatePipelineTrace: (event) => {
+          pipelineTraceRef.current = buildPipelineTrace(pipelineTraceRef.current, event);
+          const trace = pipelineTraceRef.current;
+          setMessages((prev) =>
+            prev.map((m) => (m.id === vexMsgId ? { ...m, pipeline_trace: trace } : m)),
+          );
+        },
         appendChunk: (_id, full) =>
           setMessages((prev) => prev.map((m) => (m.id === vexMsgId ? { ...m, content: full } : m))),
-        finaliseMessage: (_id, full, metadata) =>
+        finaliseMessage: (_id, full, metadata) => {
+          const trace = pipelineTraceRef.current;
           setMessages((prev) =>
-            prev.map((msg) => (msg.id === vexMsgId ? { ...msg, content: full, metadata } : msg)),
-          ),
+            prev.map((msg) => (msg.id === vexMsgId ? { ...msg, content: full, metadata, pipeline_trace: trace } : msg)),
+          );
+        },
         setError: (_id, err) =>
           setMessages((prev) =>
             prev.map((m) => (m.id === vexMsgId ? { ...m, content: `Error: ${err}` } : m)),
