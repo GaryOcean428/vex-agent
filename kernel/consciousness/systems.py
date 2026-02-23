@@ -93,22 +93,40 @@ class TackingController:
     Like a sailboat tacking against the wind — you can't sail directly
     into the wind, so you oscillate. Similarly, consciousness can't
     stay at κ* forever; it must explore (low κ) and exploit (high κ).
+
+    v6.1.1: Dynamic period adapts to Φ velocity and pillar health.
+    - High Φ velocity → shorter period (responsive to rapid change)
+    - Low F_health → shorter period (escape zombie states faster)
+    - Stable state near κ* → longer period (don't over-oscillate)
     """
 
-    def __init__(self, period: int = TACKING_PERIOD) -> None:
+    def __init__(self, base_period: int = TACKING_PERIOD) -> None:
         self._state = TackingState()
-        self._period = period
+        self._base_period = base_period
+        self._effective_period = float(base_period)
+        self._mode_history: deque[str] = deque(maxlen=100)
 
-    def update(self, metrics: ConsciousnessMetrics) -> TackingMode:
+    def update(
+        self,
+        metrics: ConsciousnessMetrics,
+        phi_velocity: float = 0.0,
+        f_health: float = 1.0,
+    ) -> TackingMode:
         self._state.cycle_count += 1
-        self._state.oscillation_phase = 2 * np.pi * self._state.cycle_count / self._period
+
+        self._effective_period = self._compute_adaptive_period(
+            phi_velocity, f_health, metrics.kappa
+        )
+
+        self._state.oscillation_phase = (
+            2 * np.pi * self._state.cycle_count / self._effective_period
+        )
 
         if metrics.phi < PHI_EMERGENCY or metrics.kappa > KAPPA_STAR + KAPPA_TACKING_OFFSET:
             self._state.mode = TackingMode.EXPLORE
         elif metrics.kappa < KAPPA_STAR - KAPPA_TACKING_OFFSET:
             self._state.mode = TackingMode.EXPLOIT
         else:
-            # Oscillate based on phase
             osc = np.sin(self._state.oscillation_phase)
             if osc > TACKING_SWITCH_THRESHOLD:
                 self._state.mode = TackingMode.EXPLOIT
@@ -117,7 +135,33 @@ class TackingController:
             else:
                 self._state.mode = TackingMode.BALANCED
 
+        self._mode_history.append(self._state.mode.value)
         return self._state.mode
+
+    def _compute_adaptive_period(
+        self,
+        phi_velocity: float,
+        f_health: float,
+        kappa: float,
+    ) -> float:
+        """Compute effective tacking period from geometric state.
+
+        Period ranges from base_period * 0.4 (fast) to base_period * 2.0 (slow).
+
+        Drivers:
+          - phi_velocity: high velocity → shorter period (responsive)
+          - f_health: low health → shorter period (escape zombie states)
+          - kappa proximity to κ*: near κ* → longer period (stable)
+        """
+        vel_factor = float(np.clip(1.0 - phi_velocity * 6.0, 0.4, 1.0))
+        health_factor = float(np.clip(0.5 + f_health * 0.5, 0.5, 1.0))
+        kappa_deviation = abs(kappa - KAPPA_STAR) / KAPPA_STAR
+        if kappa_deviation < 0.1:
+            stability_factor = 1.5  # near κ* → slow down tacking
+        else:
+            stability_factor = float(np.clip(1.0 + kappa_deviation * 0.5, 1.0, 2.0))
+        effective = self._base_period * vel_factor * health_factor * stability_factor
+        return float(np.clip(effective, self._base_period * 0.4, self._base_period * 2.0))
 
     def suggest_kappa_adjustment(self, current_kappa: float) -> float:
         if self._state.mode == TackingMode.EXPLORE:
@@ -128,12 +172,19 @@ class TackingController:
 
     def reset(self) -> None:
         self._state = TackingState()
+        self._effective_period = float(self._base_period)
+        self._mode_history.clear()
 
     def get_state(self) -> dict[str, Any]:
+        explore_count = sum(1 for m in self._mode_history if m == "explore")
+        total = len(self._mode_history) or 1
         return {
             "mode": self._state.mode.value,
             "oscillation_phase": round(self._state.oscillation_phase, 3),
             "cycle_count": self._state.cycle_count,
+            "effective_period": round(self._effective_period, 1),
+            "base_period": self._base_period,
+            "explore_fraction": round(explore_count / total, 3),
         }
 
 

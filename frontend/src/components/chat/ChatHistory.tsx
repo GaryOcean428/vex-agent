@@ -12,7 +12,7 @@ interface ConversationSummary {
 }
 
 interface ChatHistoryProps {
-  open: boolean;
+  collapsed: boolean;
   activeConversationId: string | null;
   onSelect: (id: string) => void;
   onNewChat: () => void;
@@ -28,10 +28,10 @@ export function ChatHistory({ open, activeConversationId, onSelect, onNewChat }:
       const resp = await fetch(API.conversations);
       if (resp.ok) {
         const data = await resp.json();
-        setConversations(data.conversations ?? []);
+        setConversations(data.conversations ?? data ?? []);
       }
     } catch {
-      // silent — panel just shows empty
+      // silent
     } finally {
       setLoading(false);
     }
@@ -39,8 +39,8 @@ export function ChatHistory({ open, activeConversationId, onSelect, onNewChat }:
 
   // Load on mount and when panel opens
   useEffect(() => {
-    if (open) loadConversations();
-  }, [open, loadConversations]);
+    loadConversations();
+  }, [loadConversations]);
 
   // Refresh list when active conversation changes (new message sent)
   useEffect(() => {

@@ -37,6 +37,11 @@ class ModalIntegrationConfig:
 
     Derived from kernel.config.settings.ModalConfig to avoid
     env-var duplication. All env vars are read once via settings.modal.
+
+    Note: token_id and token_secret are retained for Modal proxy auth
+    on non-public endpoints. The harvest endpoint currently uses Modal's
+    network controls, so these are not sent as headers, but they remain
+    available if proxy auth is re-enabled.
     """
 
     enabled: bool = False
@@ -54,10 +59,16 @@ class ModalIntegrationConfig:
         modal = kernel_settings.modal
         harvest_url = modal.harvest_url
 
-        # Derive health URL from harvest URL
-        health_url = ""
-        if harvest_url:
-            health_url = harvest_url.rsplit("/", 1)[0] + "/health"
+        # Health endpoint: prefer hostname-based pattern when present,
+        # otherwise fall back to a conventional /health path to avoid
+        # health == harvest (which would send GET to a POST endpoint).
+        if "-harvest.modal.run" in harvest_url:
+            health_url = harvest_url.replace(
+                "-harvest.modal.run",
+                "-health.modal.run",
+            )
+        else:
+            health_url = harvest_url.rstrip("/") + "/health"
 
         return cls(
             enabled=modal.enabled,
@@ -69,7 +80,7 @@ class ModalIntegrationConfig:
 
     def is_configured(self) -> bool:
         """Check if all required fields are present."""
-        return bool(self.enabled and self.harvest_url and self.token_id and self.token_secret)
+        return bool(self.enabled and self.harvest_url)
 
 
 # ─── Modal Client ────────────────────────────────────────────────────
@@ -100,17 +111,17 @@ class ModalHarvestClient:
             import httpx
 
             async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(
-                    self.config.health_url,
-                    headers=self._auth_headers(),
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                self._healthy = data.get("status") == "ok"
-                logger.info(
-                    f"Modal health check: {data.get('status')} "
-                    f"(model={data.get('model_id')}, vocab={data.get('vocab_size')})"
-                )
+                resp = await client.get(self.config.health_url)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    self._healthy = data.get("status") == "ok"
+                    logger.info(
+                        f"Modal health: {data.get('status')} "
+                        f"(vocab={data.get('vocab_size')})"
+                    )
+                else:
+                    self._healthy = False
+                    logger.warning(f"Modal health HTTP {resp.status_code}")
                 return self._healthy
 
         except Exception as e:
@@ -289,11 +300,15 @@ class ModalHarvestClient:
         return None
 
     def _auth_headers(self) -> dict[str, str]:
-        """Build Modal proxy auth headers."""
+        """Build request headers for the Modal harvest endpoint.
+
+        Modal-Token-Id / Modal-Token-Secret are reserved internal headers
+        that Modal's proxy explicitly rejects for web endpoint requests.
+        The harvest endpoint is authenticated via Modal's own network
+        controls; no additional auth header is needed.
+        """
         return {
             "Content-Type": "application/json",
-            "Modal-Token-Id": self.config.token_id,
-            "Modal-Token-Secret": self.config.token_secret,
         }
 
 

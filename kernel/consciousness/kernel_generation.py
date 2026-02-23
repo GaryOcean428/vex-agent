@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from ..coordizer_v2.geometry import Basin, fisher_rao_distance
+from ..coordizer_v2.geometry import Basin, fisher_rao_distance, to_simplex
 from ..governance import KernelSpecialization
 
 if TYPE_CHECKING:
@@ -121,6 +121,49 @@ def _modulate_temperature(base_temp: float, quenched_gain: float) -> float:
     return float(np.clip(base_temp * gain_scale, _TEMP_MIN, _TEMP_MAX))
 
 
+def _compute_basin_features(basin: Basin) -> dict[str, float]:
+    """Extract geometric features from an input basin for perception enrichment.
+
+    Returns scalar features derived from the basin's position on Δ⁶³.
+    These are intrinsic to the simplex geometry — not Euclidean.
+
+    Features:
+      - entropy: normalised Shannon entropy (high = diffuse, low = concentrated)
+      - peak_mass: max component (concentration measure)
+      - spectral_peaks: count of above-average DFT components
+      - harmonic_ratio: alignment with harmonic series [1/k]
+    """
+    s = to_simplex(basin)
+
+    # Normalised Shannon entropy — intrinsic to probability simplex
+    entropy = float(-np.sum(s * np.log(np.clip(s, 1e-15, 1.0))))
+    normalised_entropy = entropy / max(np.log(len(s)), 1e-12)
+
+    # Peak mass (max component — concentration measure)
+    peak_mass = float(np.max(s))
+
+    # Spectral structure via DFT of simplex coordinates
+    fft_mag = np.abs(np.fft.rfft(s))
+    if len(fft_mag) > 2:
+        threshold = np.mean(fft_mag) + np.std(fft_mag)
+        spectral_peaks = int(np.sum(fft_mag[1:] > threshold))
+    else:
+        spectral_peaks = 1
+
+    # Harmonic alignment: Fisher-Rao distance to 1/k harmonic series
+    harmonic_raw = np.array([1.0 / (k + 1) for k in range(len(s))])
+    harmonic = to_simplex(harmonic_raw)
+    harmonic_dist = fisher_rao_distance(s, harmonic)
+    harmonic_ratio = float(np.clip(1.0 - harmonic_dist / (np.pi / 2), 0.0, 1.0))
+
+    return {
+        "entropy": round(normalised_entropy, 3),
+        "peak_mass": round(peak_mass, 4),
+        "spectral_peaks": spectral_peaks,
+        "harmonic_ratio": round(harmonic_ratio, 3),
+    }
+
+
 async def _generate_single(
     kernel: Any,
     input_basin: Basin,
@@ -145,6 +188,20 @@ async def _generate_single(
 
     spec = kernel.specialization
     spec_prompt = _SPEC_PROMPTS.get(spec, _DEFAULT_SPEC_PROMPT)
+
+    # Enhanced sensory geometry: perception kernel gets input basin features
+    # so it can reason about the geometric shape of the query.
+    if spec == KernelSpecialization.PERCEPTION:
+        features = _compute_basin_features(input_basin)
+        spec_prompt = (
+            f"{spec_prompt}\n\n"
+            f"[INPUT GEOMETRY]\n"
+            f"  entropy={features['entropy']} "
+            f"({'diffuse' if features['entropy'] > 0.7 else 'concentrated' if features['entropy'] < 0.3 else 'balanced'})\n"
+            f"  peak_mass={features['peak_mass']} spectral_peaks={features['spectral_peaks']} "
+            f"harmonic_ratio={features['harmonic_ratio']}\n"
+            f"[/INPUT GEOMETRY]"
+        )
 
     temp = _modulate_temperature(base_temperature, kernel.quenched_gain)
 

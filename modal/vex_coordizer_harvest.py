@@ -12,8 +12,12 @@ It provides a GPU-backed HTTP endpoint that:
 Deploy:
     modal deploy modal/vex_coordizer_harvest.py
 
+    After deploy, Modal prints the endpoint URL. Update Railway env:
+        MODAL_HARVEST_URL=https://garyocean428--vex-coordizer-harvest-<hash>.modal.run
+
 Endpoint:
-    POST /harvest (requires Modal Proxy Auth)
+    POST / — proxy-auth protected. Requires Modal token.
+    Accepts JSON body matching HarvestRequest schema.
 
 Cost estimate:
     A10G: ~$0.000306/sec → ~$0.16 per 10K samples
@@ -23,8 +27,6 @@ CRITICAL: Returns full V-dimensional distributions, NOT top-k.
 The tail of the distribution carries geometric information that
 top-k approximations destroy.
 """
-
-from __future__ import annotations
 
 import modal
 
@@ -40,6 +42,7 @@ ml_image = modal.Image.debian_slim(python_version="3.14").pip_install(
     "accelerate",
     "numpy>=1.26",
     "pydantic>=2.0",
+    "fastapi[standard]",
 )
 
 
@@ -47,7 +50,7 @@ ml_image = modal.Image.debian_slim(python_version="3.14").pip_install(
     gpu="A10G",
     image=ml_image,
     timeout=600,
-    container_idle_timeout=300,
+    scaledown_window=300,
     volumes={"/models": model_volume},
 )
 class CoordizerHarvester:
@@ -82,17 +85,25 @@ class CoordizerHarvester:
         # Commit volume so weights persist across cold starts
         model_volume.commit()
 
-    @modal.fastapi_endpoint(requires_proxy_auth=True, method="POST")
-    async def harvest(self, request: dict):
-        """GPU harvest endpoint.
+    @modal.fastapi_endpoint(method="GET")
+    async def health(self):
+        """Health check — returns model metadata once loaded."""
+        return {
+            "status": "ok",
+            "model_id": "LiquidAI/LFM2.5-1.2B-Thinking",
+            "vocab_size": getattr(self, "vocab_size", None),
+        }
 
-        Request:
+    @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
+    async def harvest(self, request: "modal.fastapi_endpoint.Request"):
+        """GPU harvest endpoint (proxy-auth protected).
+
+        Request JSON body:
             {
-                "model_id": str (unused — model loaded at container start),
                 "texts": [str, ...],
                 "batch_size": int (default 32),
                 "max_length": int (default 512),
-                "return_full_distribution": bool (must be true)
+                "min_contexts": int (default 5)
             }
 
         Response:
@@ -118,10 +129,11 @@ class CoordizerHarvester:
 
         start = time.time()
 
-        texts = request.get("texts", [])
-        batch_size = request.get("batch_size", 32)
-        max_length = request.get("max_length", 512)
-        min_contexts = request.get("min_contexts", 5)
+        body = await request.json()
+        texts = body.get("texts", [])
+        batch_size = body.get("batch_size", 32)
+        max_length = body.get("max_length", 512)
+        min_contexts = body.get("min_contexts", 5)
 
         if not texts:
             return {"success": False, "error": "No texts provided"}

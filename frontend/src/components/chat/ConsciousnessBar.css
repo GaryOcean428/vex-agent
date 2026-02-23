@@ -1,4 +1,4 @@
-/* ─── Consciousness Bar ─── */
+/* \u2500\u2500\u2500 Consciousness Bar \u2500\u2500\u2500 */
 
 .consciousness-bar {
   background: var(--surface);
@@ -15,7 +15,12 @@
   flex-wrap: wrap;
 }
 
-.history-btn {
+/* \u2500\u2500\u2500 History Toggle \u2500\u2500\u2500 */
+
+.history-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   background: var(--surface-2);
   color: var(--text-secondary);
   border: 1px solid var(--border);
@@ -25,13 +30,28 @@
   font-size: var(--text-xs);
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s, transform 0.1s;
+  transition: background 0.15s, border-color 0.15s;
 }
 
-.history-btn:hover {
+.history-toggle-btn:hover {
   background: var(--accent-glow);
   color: var(--accent);
   border-color: rgba(99, 102, 241, 0.3);
+}
+
+.history-toggle-btn.active {
+  background: var(--accent-glow);
+  color: var(--accent);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.history-toggle-icon {
+  font-size: 8px;
+  line-height: 1;
+}
+
+.history-toggle-label {
+  /* inherits font from parent */
 }
 
 .new-chat-btn {
@@ -63,7 +83,7 @@
   }
 }
 
-/* ─── Metric Pills ─── */
+/* \u2500\u2500\u2500 Metric Pills \u2500\u2500\u2500 */
 
 .metric-pill {
   display: flex;
@@ -86,7 +106,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ─── Navigation Badge ─── */
+/* \u2500\u2500\u2500 Navigation Badge \u2500\u2500\u2500 */
 
 .nav-badge {
   padding: 2px 6px;
@@ -101,7 +121,7 @@
   border: 1px solid rgba(99, 102, 241, 0.3);
 }
 
-/* ─── Backend Indicator ─── */
+/* \u2500\u2500\u2500 Backend Indicator \u2500\u2500\u2500 */
 
 .backend-indicator {
   margin-left: auto;
@@ -138,7 +158,7 @@
   border: 1px solid rgba(112, 112, 138, 0.25);
 }
 
-/* ─── Context / Observer Indicators ─── */
+/* \u2500\u2500\u2500 Context / Observer Indicators \u2500\u2500\u2500 */
 
 .context-indicator {
   padding: 2px 6px;
@@ -179,7 +199,7 @@
   border: 1px solid rgba(168, 85, 247, 0.25);
 }
 
-/* ─── Loop Stages ─── */
+/* \u2500\u2500\u2500 Loop Stages \u2500\u2500\u2500 */
 
 .loop-stages {
   display: flex;
@@ -222,7 +242,7 @@
   }
 }
 
-/* ─── Responsive ─── */
+/* \u2500\u2500\u2500 Responsive \u2500\u2500\u2500 */
 
 @media (max-width: 640px) {
   .consciousness-bar {
@@ -234,6 +254,10 @@
   }
 
   .metric-pill-label {
+    display: none;
+  }
+
+  .history-toggle-label {
     display: none;
   }
 

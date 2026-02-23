@@ -13,6 +13,8 @@ import "./Chat.css";
 const SIDEBAR_KEY = "vex-sidebar-open";
 
 export default function Chat() {
+  const { conversationId: urlConvId } = useParams<{ conversationId?: string }>();
+  const navigate = useNavigate();
   const { data: state } = useVexState();
   const history = useMetricsHistory(state, 60);
   const navigate = useNavigate();
@@ -39,6 +41,20 @@ export default function Chat() {
   // Track whether we've synced the URL conversation on mount
   const initialLoadDone = useRef(false);
 
+  // Persist sidebar collapse state in localStorage
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem(SIDEBAR_KEY) === "true"; }
+    catch { return false; }
+  });
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((v) => {
+      const next = !v;
+      try { localStorage.setItem(SIDEBAR_KEY, String(next)); } catch { /* noop */ }
+      return next;
+    });
+  }, []);
+
   const {
     messages,
     input,
@@ -60,7 +76,32 @@ export default function Chat() {
     startNewChat,
     loadConversation,
     handleKeyDown,
-  } = useChat();
+  } = useChat(urlConvId);
+
+  // Sync conversationId to URL when it changes (e.g. server assigns ID on first message)
+  const prevConvId = useRef(conversationId);
+  useEffect(() => {
+    if (conversationId && conversationId !== prevConvId.current) {
+      prevConvId.current = conversationId;
+      // Only navigate if the URL doesn't already match
+      if (conversationId !== urlConvId) {
+        navigate(`/chat/${conversationId}`, { replace: true });
+      }
+    }
+  }, [conversationId, urlConvId, navigate]);
+
+  const handleNewChat = useCallback(() => {
+    startNewChat();
+    navigate("/chat", { replace: true });
+  }, [startNewChat, navigate]);
+
+  const handleSelectConversation = useCallback(
+    (id: string) => {
+      loadConversation(id);
+      navigate(`/chat/${id}`, { replace: true });
+    },
+    [loadConversation, navigate],
+  );
 
   // On mount: load conversation from URL if present
   useEffect(() => {

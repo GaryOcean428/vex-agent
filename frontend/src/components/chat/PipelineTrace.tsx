@@ -96,6 +96,12 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
                       onClick={() => toggleKernel(k.kernel_id)}
                       aria-expanded={expandedKernels[k.kernel_id] ?? false}
                     >
+                      <span
+                        className={`pipeline-gen-chevron ${expandedKernels[k.kernel_id] ? "expanded" : ""}`}
+                        aria-hidden="true"
+                      >
+                        &#x25B6;
+                      </span>
                       <span className="pipeline-kernel-name">{k.kernel_name}</span>
                       <span className="pipeline-weight-bar-container">
                         <span
@@ -108,7 +114,7 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
                       </span>
                       <span className="pipeline-kernel-stat">{k.token_count} tok</span>
                     </button>
-                    {expandedKernels[k.kernel_id] && (
+                    {expandedKernels[k.kernel_id] && k.text_preview && (
                       <div className="pipeline-gen-preview">
                         {k.text_preview}
                       </div>

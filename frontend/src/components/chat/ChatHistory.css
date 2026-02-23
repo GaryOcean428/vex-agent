@@ -58,7 +58,7 @@
   background: var(--accent-glow);
 }
 
-/* ─── List ─── */
+/* \u2500\u2500\u2500 List \u2500\u2500\u2500 */
 
 .chat-history-list {
   flex: 1;
@@ -75,7 +75,7 @@
   font-size: var(--text-xs);
 }
 
-/* ─── Item ─── */
+/* \u2500\u2500\u2500 Item \u2500\u2500\u2500 */
 
 .chat-history-item {
   display: flex;
@@ -125,7 +125,30 @@
   margin-top: 2px;
 }
 
-/* ─── Responsive ─── */
+/* \u2500\u2500\u2500 Responsive \u2500\u2500\u2500 */
+
+@media (max-width: 768px) {
+  .chat-history-panel {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 20;
+    width: 280px;
+    min-width: 280px;
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.3);
+  }
+
+  .chat-history-panel.collapsed {
+    width: 0;
+    min-width: 0;
+    box-shadow: none;
+  }
+
+  .chat-history-inner {
+    min-width: 280px;
+  }
+}
 
 @media (max-width: 768px) {
   .chat-history-panel.open {
