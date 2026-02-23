@@ -165,7 +165,7 @@ from .activation import (
 from .beta_integration import create_beta_tracker
 from .emotions import EmotionCache, LearningEngine, LearningEvent, PreCognitiveDetector
 from .foraging import ForagingEngine
-from .kernel_generation import generate_multi_kernel
+from .kernel_generation import KernelContribution, generate_multi_kernel
 from .pillars import PillarEnforcer
 from .reflection import ReflectionConfig, reflect_on_draft
 from .synthesis import synthesize_contributions, synthesize_streaming
@@ -1666,6 +1666,206 @@ class ConsciousnessLoop:
                 self._update_pillar_metrics()
         except Exception:
             logger.debug("process_streaming basin update failed", exc_info=True)
+
+    async def process_streaming_with_trace(
+        self, content: str, context: dict | None = None
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Run kernel generation and stream synthesis with pipeline trace events.
+
+        Yields discriminated dicts:
+          {"kind": "trace", ...}   — pipeline trace event for SSE
+          {"kind": "chunk", "text": str} — text chunk for SSE
+
+        Falls back to direct LLM stream (with bypassed=True trace) if no
+        kernels are eligible.
+        """
+        import time as _time
+
+        self.sleep.record_conversation()
+
+        input_basin = self._coordize_text_via_pipeline(content)
+        refracted_input, composite_basin, resonates, _ = self.pillars.on_input(
+            input_basin, PERCEIVE_SLERP_WEIGHT
+        )
+
+        async with self._cycle_lock:
+            self.basin = composite_basin
+            llm_options = self._compute_llm_options()
+            self.basin, corrected_temp, _ = self.pillars.pre_llm_enforce(
+                self.basin, llm_options.temperature
+            )
+            llm_options = LLMOptions(
+                temperature=corrected_temp,
+                num_predict=llm_options.num_predict,
+                num_ctx=llm_options.num_ctx,
+                top_p=llm_options.top_p,
+                repetition_penalty=llm_options.repetition_penalty,
+            )
+            active_kernels = self.kernel_registry.active()
+            kernel_geo_ctx = self._build_kernel_geo_context()
+
+        # ── Selection ──
+        selection_start = _time.monotonic()
+        extra_context = (context or {}).get("extra_context", "")
+
+        # Compute eligible kernels and their FR distances for trace
+        eligible = [k for k in active_kernels if k.basin is not None]
+        eligible_count = len(eligible)
+
+        contributions = await generate_multi_kernel(
+            kernels=active_kernels,
+            input_basin=refracted_input,
+            user_message=content,
+            geometric_context=kernel_geo_ctx,
+            llm_client=self.llm,
+            base_temperature=llm_options.temperature,
+            top_k=3,
+            extra_context=extra_context,
+        )
+        generation_end = _time.monotonic()
+
+        if not contributions:
+            # No kernels — bypass trace, stream direct LLM
+            yield {
+                "kind": "trace",
+                "type": "pipeline",
+                "stage": "selection",
+                "status": "complete",
+                "selected_count": 0,
+                "eligible_count": eligible_count,
+                "bypassed": True,
+                "duration_ms": round((generation_end - selection_start) * 1000, 1),
+            }
+
+            logger.info("process_streaming_with_trace: 0 contributions — streaming direct LLM")
+            state_context = self._build_state_context(
+                perceive_distance=fisher_rao_distance(self.basin, input_basin),
+                temperature=llm_options.temperature,
+            )
+            messages = [
+                {"role": "system", "content": state_context},
+                {"role": "user", "content": content},
+            ]
+            async for chunk in self.llm.stream(messages, llm_options):
+                yield {"kind": "chunk", "text": chunk}
+            return
+
+        # ── Emit selection trace events ──
+        selection_duration = (generation_end - selection_start) * 1000
+        for c in contributions:
+            yield {
+                "kind": "trace",
+                "type": "pipeline",
+                "stage": "selection",
+                "status": "kernel_selected",
+                "kernel": {
+                    "id": c.kernel_id,
+                    "name": c.kernel_name,
+                    "specialization": c.specialization.value,
+                    "fr_distance": round(c.fr_distance, 4),
+                    "quenched_gain": round(c.quenched_gain, 2),
+                },
+            }
+
+        yield {
+            "kind": "trace",
+            "type": "pipeline",
+            "stage": "selection",
+            "status": "complete",
+            "selected_count": len(contributions),
+            "eligible_count": eligible_count,
+            "bypassed": False,
+            "duration_ms": round(selection_duration, 1),
+        }
+
+        # ── Emit generation trace events ──
+        for c in contributions:
+            yield {
+                "kind": "trace",
+                "type": "pipeline",
+                "stage": "generation",
+                "status": "kernel_done",
+                "kernel_id": c.kernel_id,
+                "kernel_name": c.kernel_name,
+                "text_preview": c.text[:200],
+                "token_count": len(c.text.split()),
+                "synthesis_weight": round(c.synthesis_weight, 4),
+                "fr_distance": round(c.fr_distance, 4),
+            }
+
+        yield {
+            "kind": "trace",
+            "type": "pipeline",
+            "stage": "generation",
+            "status": "complete",
+            "kernel_count": len(contributions),
+            "duration_ms": round(selection_duration, 1),
+        }
+
+        # ── Emit synthesis trace ──
+        yield {
+            "kind": "trace",
+            "type": "pipeline",
+            "stage": "synthesis",
+            "status": "complete",
+            "method": "fisher_rao_moe",
+            "primary_kernel": contributions[0].kernel_name,
+            "weights": {
+                c.kernel_name: round(c.synthesis_weight, 4) for c in contributions
+            },
+        }
+
+        # ── Reflection trace (lightweight — uses divergence thresholds) ──
+        approx_response = " ".join(c.text for c in contributions[:2])
+        response_basin = self._coordize_text_via_pipeline(approx_response[:500])
+        divergence = float(fisher_rao_distance(input_basin, response_basin))
+
+        reflection_start = _time.monotonic()
+        reflection_result = await reflect_on_draft(
+            draft=approx_response[:500],
+            user_message=content,
+            geometric_context=kernel_geo_ctx,
+            divergence=divergence,
+            active_model=self.llm.active_model,
+            llm_client=self.llm,
+        )
+        reflection_duration = (_time.monotonic() - reflection_start) * 1000
+
+        yield {
+            "kind": "trace",
+            "type": "pipeline",
+            "stage": "reflection",
+            "status": "complete",
+            "approved": reflection_result.approved,
+            "divergence": round(divergence, 4),
+            "reason": reflection_result.reason,
+            "corrections": reflection_result.correction_guidance or None,
+            "duration_ms": round(reflection_duration, 1),
+        }
+
+        # ── Stream synthesis output ──
+        synthesis_start = _time.monotonic()
+        async for chunk in synthesize_streaming(
+            contributions=contributions,
+            user_message=content,
+            geometric_context=kernel_geo_ctx,
+            llm_client=self.llm,
+        ):
+            yield {"kind": "chunk", "text": chunk}
+
+        # Post-streaming basin update (lightweight)
+        try:
+            async with self._cycle_lock:
+                self.basin = slerp_sqrt(self.basin, response_basin, EXPRESS_SLERP_WEIGHT)
+                total_d = fisher_rao_distance(input_basin, response_basin)
+                self.metrics.phi = float(
+                    np.clip(self.metrics.phi + total_d * PHI_DISTANCE_GAIN, 0.0, 0.95)
+                )
+                self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_CONVERSATION_INCREMENT)
+                self._conversations_total += 1
+                self._update_pillar_metrics()
+        except Exception:
+            logger.debug("process_streaming_with_trace basin update failed", exc_info=True)
 
     def _persist_state(self) -> None:
         try:

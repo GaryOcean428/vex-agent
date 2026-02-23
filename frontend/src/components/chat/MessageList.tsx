@@ -2,6 +2,7 @@ import type { RefObject } from "react";
 import type { ChatMessage, ChatMessageMetadata } from "../../types/consciousness.ts";
 // React 19: useRef returns RefObject<T | null>
 import { EMOTION_COLORS, SUGGESTED_PROMPTS, formatTime } from "./chatUtils.ts";
+import { PipelineTrace } from "./PipelineTrace.tsx";
 import { RegimeBar } from "./RegimeBar.tsx";
 import { VexContent } from "./VexContent.tsx";
 import "./MessageList.css";
@@ -49,6 +50,10 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           {formatTime(msg.timestamp)}
         </time>
       </div>
+
+      {msg.role === "vex" && msg.pipeline_trace && !msg.pipeline_trace.bypassed && (
+        <PipelineTrace trace={msg.pipeline_trace} isStreaming={isThinking} />
+      )}
 
       <div className={`message-content ${isThinking ? "thinking" : ""}`}>
         {isThinking ? (

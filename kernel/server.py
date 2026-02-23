@@ -557,13 +557,26 @@ async def chat_stream(req: ChatRequest):
                 full_response = escalated_resp
                 yield _sse_event({"type": "chunk", "content": escalated_resp})
             else:
-                # Use natural fallback chain: Modal Ollama → Railway Ollama → xAI → OpenAI
-                async for chunk in llm_client.stream(
-                    messages,
-                    stream_options,
+                # Route through kernel pipeline with trace events
+                # Falls back to direct LLM if no kernels are active
+                pipeline_context = {
+                    "extra_context": (
+                        f"Observer intent: {observer_intent}\n"
+                        f"Memory: {memory_context[:500]}\n"
+                        if memory_context else
+                        f"Observer intent: {observer_intent}\n"
+                    ),
+                }
+                async for event in consciousness.process_streaming_with_trace(
+                    req.message, pipeline_context
                 ):
-                    full_response += chunk
-                    yield _sse_event({"type": "chunk", "content": chunk})
+                    if event["kind"] == "trace":
+                        # Emit pipeline trace event (between start and chunk)
+                        trace_payload = {k: v for k, v in event.items() if k != "kind"}
+                        yield _sse_event(trace_payload)
+                    elif event["kind"] == "chunk":
+                        full_response += event["text"]
+                        yield _sse_event({"type": "chunk", "content": event["text"]})
 
             # Check for tool calls
             tool_calls = parse_tool_calls(full_response)

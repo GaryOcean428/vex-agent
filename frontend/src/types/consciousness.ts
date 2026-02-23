@@ -341,12 +341,59 @@ export interface StatusResponse {
 //  Chat Types
 // ═══════════════════════════════════════
 
+// ═══════════════════════════════════════
+//  Pipeline Trace Types (kernel transparency)
+// ═══════════════════════════════════════
+
+export interface PipelineKernelSelection {
+  id: string;
+  name: string;
+  specialization: string;
+  fr_distance: number;
+  quenched_gain: number;
+}
+
+export interface PipelineKernelGeneration {
+  kernel_id: string;
+  kernel_name: string;
+  text_preview: string;
+  token_count: number;
+  synthesis_weight: number;
+  fr_distance: number;
+}
+
+export interface PipelineSynthesis {
+  method: string;
+  primary_kernel: string;
+  weights: Record<string, number>;
+}
+
+export interface PipelineReflection {
+  approved: boolean;
+  divergence: number;
+  reason: string;
+  corrections: string | null;
+  duration_ms: number;
+}
+
+export interface PipelineTrace {
+  selected_kernels: PipelineKernelSelection[];
+  selection_duration_ms: number;
+  eligible_count: number;
+  kernel_outputs: PipelineKernelGeneration[];
+  generation_duration_ms: number;
+  synthesis: PipelineSynthesis | null;
+  reflection: PipelineReflection | null;
+  bypassed: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'vex';
   content: string;
   timestamp: string;
   metadata?: ChatMessageMetadata;
+  pipeline_trace?: PipelineTrace;
 }
 
 export interface ChatMessageMetadata {
@@ -369,9 +416,31 @@ export interface ChatMessageMetadata {
 }
 
 export interface ChatStreamEvent {
-  type: 'start' | 'chunk' | 'tool_results' | 'done' | 'error';
+  type: 'start' | 'chunk' | 'tool_results' | 'done' | 'error' | 'pipeline';
   content?: string;
   backend?: string;
+  // Pipeline trace fields
+  stage?: string;
+  status?: string;
+  kernel?: PipelineKernelSelection;
+  selected_count?: number;
+  eligible_count?: number;
+  bypassed?: boolean;
+  duration_ms?: number;
+  kernel_id?: string;
+  kernel_name?: string;
+  text_preview?: string;
+  token_count?: number;
+  synthesis_weight?: number;
+  fr_distance?: number;
+  kernel_count?: number;
+  method?: string;
+  primary_kernel?: string;
+  weights?: Record<string, number>;
+  approved?: boolean;
+  divergence?: number;
+  reason?: string;
+  corrections?: string | null;
   conversation_id?: string;
   context?: {
     total_tokens: number;

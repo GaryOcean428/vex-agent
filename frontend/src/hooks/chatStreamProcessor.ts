@@ -9,11 +9,68 @@ import type {
   KernelSummary,
   LearningState,
   NavigationMode,
+  PipelineTrace,
   PreCogState,
   RegimeWeights,
 } from "../types/consciousness.ts";
 
 const VALID_NAV_MODES: readonly string[] = ["chain", "graph", "foresight", "lightning"];
+
+/** Incrementally build a PipelineTrace from incoming pipeline SSE events. */
+export function buildPipelineTrace(
+  prev: PipelineTrace | undefined,
+  event: ChatStreamEvent,
+): PipelineTrace {
+  const trace: PipelineTrace = prev ?? {
+    selected_kernels: [],
+    selection_duration_ms: 0,
+    eligible_count: 0,
+    kernel_outputs: [],
+    generation_duration_ms: 0,
+    synthesis: null,
+    reflection: null,
+    bypassed: false,
+  };
+
+  if (event.stage === "selection") {
+    if (event.status === "kernel_selected" && event.kernel) {
+      trace.selected_kernels = [...trace.selected_kernels, event.kernel];
+    } else if (event.status === "complete") {
+      trace.selection_duration_ms = event.duration_ms ?? 0;
+      trace.eligible_count = event.eligible_count ?? 0;
+      trace.bypassed = event.bypassed ?? false;
+    }
+  } else if (event.stage === "generation") {
+    if (event.status === "kernel_done") {
+      trace.kernel_outputs = [...trace.kernel_outputs, {
+        kernel_id: event.kernel_id ?? "",
+        kernel_name: event.kernel_name ?? "",
+        text_preview: event.text_preview ?? "",
+        token_count: event.token_count ?? 0,
+        synthesis_weight: event.synthesis_weight ?? 0,
+        fr_distance: event.fr_distance ?? 0,
+      }];
+    } else if (event.status === "complete") {
+      trace.generation_duration_ms = event.duration_ms ?? 0;
+    }
+  } else if (event.stage === "synthesis" && event.status === "complete") {
+    trace.synthesis = {
+      method: event.method ?? "fisher_rao_moe",
+      primary_kernel: event.primary_kernel ?? "",
+      weights: event.weights ?? {},
+    };
+  } else if (event.stage === "reflection" && event.status === "complete") {
+    trace.reflection = {
+      approved: event.approved ?? true,
+      divergence: event.divergence ?? 0,
+      reason: event.reason ?? "",
+      corrections: event.corrections ?? null,
+      duration_ms: event.duration_ms ?? 0,
+    };
+  }
+
+  return trace;
+}
 
 interface ContextInfo {
   total_tokens: number;
@@ -31,6 +88,7 @@ interface ProcessorSetters {
   setLearning: (v: LearningState) => void;
   setActiveStages: (v: string[]) => void;
   setObserverIntent: (v: string) => void;
+  updatePipelineTrace: (event: ChatStreamEvent) => void;
   appendChunk: (vexMsgId: string, chunk: string) => void;
   finaliseMessage: (vexMsgId: string, fullText: string, metadata: ChatMessageMetadata) => void;
   setError: (vexMsgId: string, error: string) => void;
@@ -59,6 +117,8 @@ export function createEventProcessor(
         if (event.consciousness?.emotion) setters.setEmotion(event.consciousness.emotion);
         if (event.consciousness?.precog) setters.setPrecog(event.consciousness.precog);
         if (event.consciousness?.learning) setters.setLearning(event.consciousness.learning);
+      } else if (event.type === "pipeline") {
+        setters.updatePipelineTrace(event);
       } else if (event.type === "chunk" && event.content) {
         fullText += event.content;
         setters.appendChunk(vexMsgId, fullText);
