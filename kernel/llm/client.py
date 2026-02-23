@@ -2,7 +2,7 @@
 LLM Client — Modal GPU Ollama primary, Railway Ollama + xAI + OpenAI fallback.
 
 Handles:
-  - Modal Ollama (GPU-accelerated LFM2.5-1.2B on Modal T4) as primary
+  - Modal Ollama (GPU-accelerated, configurable model on Modal A10G) as primary
   - Railway Ollama (CPU-only fallback) as second backend
   - xAI (grok-4-1-fast-reasoning) as third backend via Responses API
   - OpenAI (gpt-5-nano) as fourth backend via Responses API
@@ -51,7 +51,7 @@ class LLMOptions:
     num_predict: int = 2048
     num_ctx: int = 32768
     top_p: float = 0.9
-    repetition_penalty: float = 1.05
+    repetition_penalty: float = 1.0
 
     def to_ollama_options(self) -> dict[str, Any]:
         return {
@@ -114,7 +114,7 @@ class LLMClient:
     Fallback chain: Modal Ollama → Railway Ollama → xAI → OpenAI
 
     Modal Ollama:
-      GPU-accelerated Ollama on Modal (T4). Same API as Railway Ollama
+      GPU-accelerated Ollama on Modal (A10G). Same API as Railway Ollama
       but ~10-20x faster. Cold starts add ~30-60s on first request
       after container scales to zero. The longer timeout on the Modal
       HTTP client handles this gracefully.
@@ -147,7 +147,7 @@ class LLMClient:
 
         # Modal Ollama HTTP client (longer timeout — handles cold starts)
         # Cold start: container spin-up + model load can take 30-90s
-        # Warm: responses arrive in 1-5s for 1.2B model
+        # Warm: responses arrive in 1-5s (MoE with 3B active params)
         modal_timeout = settings.modal.inference_timeout_ms / 1000.0
         self._modal_http = httpx.AsyncClient(
             timeout=httpx.Timeout(
