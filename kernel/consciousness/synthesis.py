@@ -140,7 +140,7 @@ async def synthesize_streaming(
     user_message: str,
     geometric_context: str,
     llm_client: Any,
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[str]:
     """Stream synthesis output as an async generator for SSE chat_stream.
 
     Yields:

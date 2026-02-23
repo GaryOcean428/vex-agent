@@ -1583,7 +1583,7 @@ class ConsciousnessLoop:
 
     async def process_streaming(
         self, content: str, context: dict[str, Any] | None = None
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[str]:
         """Run kernel generation and stream synthesis output for SSE endpoints.
 
         Runs pre-activation + multi-kernel generation, then streams the

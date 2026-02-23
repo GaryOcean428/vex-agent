@@ -39,11 +39,7 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
         className={`pipeline-trace-summary ${isStreaming && !trace.synthesis ? "streaming" : ""}`}
         onClick={toggleExpanded}
         aria-expanded={expanded}
-<<<<<<< claude/fix-pr42-issues-zRvjt
         aria-controls={detailId}
-=======
-        aria-controls="pipeline-trace-detail"
->>>>>>> main
       >
         <span className={`pipeline-trace-chevron ${expanded ? "expanded" : ""}`} aria-hidden="true">
           &#x25B6;
@@ -52,11 +48,7 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
       </button>
 
       <div
-<<<<<<< claude/fix-pr42-issues-zRvjt
         id={detailId}
-=======
-        id="pipeline-trace-detail"
->>>>>>> main
         className="pipeline-trace-content"
         data-expanded={expanded}
       >
