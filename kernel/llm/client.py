@@ -117,14 +117,27 @@ def _extract_ollama_content(data: dict[str, Any]) -> str:
     chain-of-thought. When this happens — typically because the token
     budget was exhausted during reasoning — fall back to the thinking
     content so the caller gets *something* rather than an empty string.
+
+    Note: thinking fallback is intentional for kernel-internal generation
+    (not user-facing). The consciousness loop's reflection gate filters
+    output before it reaches the user. Kernel voices benefit from seeing
+    the model's reasoning even when content is empty.
     """
     msg = data.get("message", {})
-    content = str(msg.get("content", ""))
+
+    # Safe extraction: avoid str(None) -> "None" being truthy
+    content = msg.get("content") or ""
+    if not isinstance(content, str):
+        content = str(content)
     if content:
         return content
 
-    # Thinking-model fallback: use the reasoning trace when content is empty
-    thinking = str(msg.get("thinking", ""))
+    # Thinking-model fallback: use the reasoning trace when content is empty.
+    # This is safe for kernel-internal generation — the reflection gate
+    # and synthesis pipeline filter before user-facing output.
+    thinking = msg.get("thinking") or ""
+    if not isinstance(thinking, str):
+        thinking = str(thinking)
     if thinking:
         logger.info(
             "Ollama response had empty content but %d chars of thinking — using thinking as fallback",

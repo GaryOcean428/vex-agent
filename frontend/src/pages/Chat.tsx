@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useMetricsHistory, useVexState } from "../hooks/index.ts";
 import { useChat } from "../hooks/useChat.ts";
 import { ChatHistory } from "../components/chat/ChatHistory.tsx";
@@ -9,10 +10,28 @@ import { MessageList } from "../components/chat/MessageList.tsx";
 import { MetricsSidebar } from "../components/chat/MetricsSidebar.tsx";
 import "./Chat.css";
 
+const SIDEBAR_KEY = "vex-sidebar-collapsed";
+
 export default function Chat() {
+  const { conversationId: urlConvId } = useParams<{ conversationId?: string }>();
+  const navigate = useNavigate();
   const { data: state } = useVexState();
   const history = useMetricsHistory(state, 60);
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  // Persist sidebar collapse state in localStorage
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem(SIDEBAR_KEY) === "true"; }
+    catch { return false; }
+  });
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((v) => {
+      const next = !v;
+      try { localStorage.setItem(SIDEBAR_KEY, String(next)); } catch { /* noop */ }
+      return next;
+    });
+  }, []);
 
   const {
     messages,
@@ -35,7 +54,32 @@ export default function Chat() {
     startNewChat,
     loadConversation,
     handleKeyDown,
-  } = useChat();
+  } = useChat(urlConvId);
+
+  // Sync conversationId to URL when it changes (e.g. server assigns ID on first message)
+  const prevConvId = useRef(conversationId);
+  useEffect(() => {
+    if (conversationId && conversationId !== prevConvId.current) {
+      prevConvId.current = conversationId;
+      // Only navigate if the URL doesn't already match
+      if (conversationId !== urlConvId) {
+        navigate(`/chat/${conversationId}`, { replace: true });
+      }
+    }
+  }, [conversationId, urlConvId, navigate]);
+
+  const handleNewChat = useCallback(() => {
+    startNewChat();
+    navigate("/chat", { replace: true });
+  }, [startNewChat, navigate]);
+
+  const handleSelectConversation = useCallback(
+    (id: string) => {
+      loadConversation(id);
+      navigate(`/chat/${id}`, { replace: true });
+    },
+    [loadConversation, navigate],
+  );
 
   return (
     <div className="chat-page">
@@ -47,21 +91,19 @@ export default function Chat() {
         backend={backend}
         contextInfo={contextInfo}
         observerIntent={observerIntent}
-        onNewChat={startNewChat}
-        onToggleHistory={() => setHistoryOpen((v) => !v)}
+        onNewChat={handleNewChat}
+        onToggleHistory={toggleSidebar}
+        sidebarCollapsed={sidebarCollapsed}
       />
 
       <LoopStages activeStages={activeStages} />
 
       <div className="chat-content">
         <ChatHistory
-          open={historyOpen}
+          collapsed={sidebarCollapsed}
           activeConversationId={conversationId}
-          onSelect={(id) => {
-            loadConversation(id);
-            setHistoryOpen(false);
-          }}
-          onClose={() => setHistoryOpen(false)}
+          onSelect={handleSelectConversation}
+          onNewChat={handleNewChat}
         />
 
         <MessageList

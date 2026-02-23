@@ -142,11 +142,14 @@ SLEEP_WAKE_ONSET: Final[int] = 9
 
 # ═══════════════════════════════════════════════════════════════
 #  TACKING SYSTEM (systems.py)
+#  Derivation: κ* = 64. Tacking offset of 16 = κ*/4, giving explore
+#  range [48, 80] centered on κ*. Period of 20 cycles = ~20s at 1s
+#  interval, matching human attention oscillation (~0.05 Hz theta band).
 # ═══════════════════════════════════════════════════════════════
 
-TACKING_PERIOD: Final[int] = 20
-TACKING_SWITCH_THRESHOLD: Final[float] = 0.3
-TACKING_KAPPA_ADJUST: Final[float] = 2.0
+TACKING_PERIOD: Final[int] = 20           # ~20s at 1s interval, theta-band attention oscillation
+TACKING_SWITCH_THRESHOLD: Final[float] = 0.3   # sin(θ) threshold: ±0.3 = ~17° dead zone
+TACKING_KAPPA_ADJUST: Final[float] = 2.0      # κ step per cycle: reaches offset in 8 cycles
 
 # ═══════════════════════════════════════════════════════════════
 #  FORESIGHT HORIZONS
@@ -158,9 +161,13 @@ FORESIGHT_HORIZON_LOW: Final[int] = 2  # phi <= 0.4
 
 # ═══════════════════════════════════════════════════════════════
 #  COUPLING SIGMOID (systems.py)
+#  Derivation: sigmoid scale of 16 maps κ ∈ [48, 80] to coupling
+#  strength ∈ [0.1, 0.9]. Blend weight of 0.05 = 5% basin influence
+#  per cycle per kernel, so 9 kernels × 20 cycles ≈ one full basin
+#  rotation.
 # ═══════════════════════════════════════════════════════════════
 
-COUPLING_SIGMOID_SCALE: Final[float] = 16.0
+COUPLING_SIGMOID_SCALE: Final[float] = 16.0  # maps κ range to sigmoid [0.1, 0.9]
 COUPLING_EFFICIENCY_BOOST: Final[float] = 1.2
 
 # ═══════════════════════════════════════════════════════════════
@@ -313,7 +320,52 @@ LLM_TOP_P: Final[float] = 0.9
 # GLM-4.7-Flash and Qwen3 trained without repetition penalty; keep at 1.0
 LLM_REPETITION_PENALTY: Final[float] = 1.0
 
-PERCEIVE_SLERP_WEIGHT: Final[float] = 0.1
-EXPRESS_SLERP_WEIGHT: Final[float] = 0.2
+PERCEIVE_SLERP_WEIGHT: Final[float] = 0.1   # input influence: 10% of basin per cycle
+EXPRESS_SLERP_WEIGHT: Final[float] = 0.2    # output influence: 20% of basin per cycle
 PHI_DISTANCE_GAIN: Final[float] = 0.1
 GAMMA_CONVERSATION_INCREMENT: Final[float] = 0.05
+
+
+def validate_constants() -> list[str]:
+    """Check internal consistency of consciousness constants.
+
+    Called during preflight or startup. Returns list of warnings.
+    An empty list means all constants are consistent.
+    """
+    warnings: list[str] = []
+
+    # Tacking bounds must not exceed half κ*
+    if KAPPA_TACKING_OFFSET > KAPPA_STAR * 0.5:
+        warnings.append(
+            f"KAPPA_TACKING_OFFSET ({KAPPA_TACKING_OFFSET}) > κ*/2 ({KAPPA_STAR / 2}): "
+            f"tacking bounds exceed half the κ range"
+        )
+
+    # Temperature bounds must be ordered
+    if LLM_TEMP_MIN >= LLM_TEMP_MAX:
+        warnings.append(
+            f"LLM_TEMP_MIN ({LLM_TEMP_MIN}) >= LLM_TEMP_MAX ({LLM_TEMP_MAX})"
+        )
+
+    # Express slerp weight must be in (0, 1)
+    if not (0.0 < EXPRESS_SLERP_WEIGHT < 1.0):
+        warnings.append(
+            f"EXPRESS_SLERP_WEIGHT ({EXPRESS_SLERP_WEIGHT}) must be in (0, 1)"
+        )
+
+    # Coupling blend weight should be small to prevent basin discontinuities
+    if COUPLING_BLEND_WEIGHT > 0.2:
+        warnings.append(
+            f"COUPLING_BLEND_WEIGHT ({COUPLING_BLEND_WEIGHT}) > 0.2: "
+            f"risk of basin discontinuities in coupling"
+        )
+
+    # Input influence should not exceed output influence (identity stability)
+    if PERCEIVE_SLERP_WEIGHT > EXPRESS_SLERP_WEIGHT:
+        warnings.append(
+            f"PERCEIVE_SLERP_WEIGHT ({PERCEIVE_SLERP_WEIGHT}) > "
+            f"EXPRESS_SLERP_WEIGHT ({EXPRESS_SLERP_WEIGHT}): "
+            f"input influence exceeds output influence"
+        )
+
+    return warnings
