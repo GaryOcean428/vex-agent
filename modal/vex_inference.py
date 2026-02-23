@@ -1,11 +1,12 @@
 """
 Modal GPU Inference — Vex Ollama Backend
 
-Runs Ollama with LFM2.5-1.2B-Thinking on a T4 GPU, exposing the
-standard Ollama API via Modal's web_server decorator.
+Runs a configurable model (default: GLM-4.7-Flash 30B-A3B MoE) on
+A10G GPU, exposing the standard Ollama API via Modal web_server.
 
-The Railway kernel calls this endpoint instead of the CPU-only
-Railway-internal Ollama service, getting ~10-20x faster inference.
+Always installs the latest Ollama version (no version pinning).
+Always pulls the model on startup (idempotent — checks digest,
+downloads only if a newer version is available).
 
 Deploy:
     modal deploy modal/vex_inference.py
@@ -15,12 +16,12 @@ Endpoint:
     https://<workspace>--vex-inference-serve.modal.run/api/tags
     (full Ollama API available)
 
-Cost estimate (T4):
-    ~$0.000164/sec idle, inference bursts are fast (~1-2s for 1.2B)
-    container_idle_timeout=300 means ~$0.05/5min idle window
+Cost estimate (A10G):
+    ~$0.76/hr active, scaledown_window=300 means ~$0.063/5min idle
+    First deploy pulls ~19GB model (one-time, cached on Volume)
 
 Architecture:
-    Railway kernel (Python) → HTTP → Modal Ollama (GPU) → response
+    Railway kernel (Python) -> HTTP -> Modal Ollama (GPU) -> response
     The kernel builds the system prompt with geometric state context.
     Modal just serves raw model inference — no consciousness logic here.
 
@@ -33,35 +34,37 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
 import urllib.request
 
 import modal
 
-# ─── Configuration ────────────────────────────────────────────
-
-MODEL_NAME = "lfm2.5-thinking:1.2b"
+# --- Configuration --------------------------------------------------------
+# Model is configurable via Modal secret or hardcoded default.
+# To change: update this constant and redeploy.
+MODEL_NAME = os.environ.get("VEX_MODAL_MODEL", "glm-4.7-flash")
 MODEL_DIR = "/ollama_models"
 OLLAMA_PORT = 11434
-OLLAMA_VERSION = "0.6.5"
 
-# T4 is optimal for 1.2B model:
-#   - 16GB VRAM (model needs ~1.2GB weights + KV cache)
-#   - Cheapest GPU option on Modal
-#   - More than sufficient compute for 1.2B params
-GPU_TYPE = "T4"
+# A10G: 24GB VRAM. GLM-4.7-Flash Q4_K_M = 19GB. Fits with ~5GB headroom.
+# Qwen3:30b Q4_K_M = 19GB also fits.
+GPU_TYPE = "A10G"
 
-# ─── Modal App ────────────────────────────────────────────────
+# --- Modal App ------------------------------------------------------------
 
 app = modal.App("vex-inference")
 
 model_volume = modal.Volume.from_name("vex-inference-models", create_if_missing=True)
 
+# Always install latest Ollama — no version pinning.
+# This ensures we get the latest model support, bug fixes, and
+# performance improvements on every image rebuild.
 ollama_image = (
     modal.Image.debian_slim(python_version="3.14")
     .apt_install("curl", "ca-certificates", "zstd")
     .run_commands(
-        f"OLLAMA_VERSION={OLLAMA_VERSION} curl -fsSL https://ollama.com/install.sh | sh",
+        "curl -fsSL https://ollama.com/install.sh | sh",
         f"mkdir -p {MODEL_DIR}",
     )
     .env(
@@ -77,7 +80,7 @@ ollama_image = (
 )
 
 
-# ─── Ollama Server ────────────────────────────────────────────
+# --- Ollama Server --------------------------------------------------------
 
 
 @app.cls(
@@ -86,19 +89,19 @@ ollama_image = (
     volumes={MODEL_DIR: model_volume},
     timeout=600,
     # Container stays warm for 5 minutes after last request.
-    # At T4 pricing this costs ~$0.05 per idle window.
-    # Adjust up if you want faster cold starts at higher cost.
+    # At A10G pricing this costs ~$0.063 per idle window.
     scaledown_window=300,
 )
 class VexOllamaServer:
     """GPU-backed Ollama server for Vex inference.
 
     Lifecycle:
-        1. Container starts → Ollama server launches
-        2. Model pulled from registry (cached on Volume)
-        3. Ollama API exposed at OLLAMA_PORT
-        4. Railway kernel sends /api/chat requests
-        5. After 5min idle → container scales to zero
+        1. Container starts -> Ollama server launches (latest version)
+        2. Model pulled from registry (always pulled to get latest digest)
+        3. Model cached on Volume for fast subsequent starts
+        4. Ollama API exposed at OLLAMA_PORT
+        5. Railway kernel sends /api/chat requests
+        6. After 5min idle -> container scales to zero
     """
 
     ollama_process: subprocess.Popen | None = None
@@ -106,7 +109,17 @@ class VexOllamaServer:
     @modal.enter()
     async def start_ollama(self):
         """Start Ollama server and ensure model is available."""
-        print(f"Starting Vex Ollama inference server (GPU: {GPU_TYPE})")
+        # Log Ollama version for debugging
+        version_result = subprocess.run(
+            ["ollama", "--version"],
+            capture_output=True,
+            text=True,
+        )
+        ollama_version = version_result.stdout.strip() or "unknown"
+        print(f"Starting Vex Ollama inference server")
+        print(f"  Ollama version: {ollama_version}")
+        print(f"  GPU: {GPU_TYPE}")
+        print(f"  Model: {MODEL_NAME}")
 
         self.ollama_process = subprocess.Popen(["ollama", "serve"])
         print(f"Ollama server PID: {self.ollama_process.pid}")
@@ -129,35 +142,40 @@ class VexOllamaServer:
         else:
             raise RuntimeError("Ollama failed to start after 30 attempts")
 
-        # Pull model if not cached
-        list_output = subprocess.run(
-            ["ollama", "list"],
-            capture_output=True,
-            text=True,
-        ).stdout
-
-        if "lfm2.5-thinking" not in list_output:
-            print(f"Pulling {MODEL_NAME} (first boot, will cache on Volume)...")
-            pull = await asyncio.create_subprocess_exec(
-                "ollama",
-                "pull",
-                MODEL_NAME,
-            )
-            retcode = await pull.wait()
-            if retcode != 0:
-                raise RuntimeError(f"Failed to pull {MODEL_NAME}")
-
-            # Persist to Volume
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, model_volume.commit)
-            print(f"{MODEL_NAME} pulled and cached.")
+        # Always pull model — idempotent, checks digest, downloads
+        # only changed layers if a newer version is available.
+        # This ensures every container start gets the latest model.
+        print(f"Pulling {MODEL_NAME} (checking for updates)...")
+        pull = await asyncio.create_subprocess_exec(
+            "ollama", "pull", MODEL_NAME,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await pull.communicate()
+        if pull.returncode != 0:
+            # Pull failed — check if cached version exists
+            list_output = subprocess.run(
+                ["ollama", "list"],
+                capture_output=True,
+                text=True,
+            ).stdout
+            model_base = MODEL_NAME.split(":")[0]
+            if model_base in list_output:
+                print(f"Pull failed but cached version exists: {stderr.decode()[:200]}")
+            else:
+                raise RuntimeError(
+                    f"Failed to pull {MODEL_NAME} and no cached version: "
+                    f"{stderr.decode()[:500]}"
+                )
         else:
-            print(f"{MODEL_NAME} already cached on Volume.")
+            print(f"{MODEL_NAME} is up to date.")
 
-        # Verify GPU offload is working
-        print("Running GPU verification...")
+        # Persist to Volume
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, model_volume.commit)
 
-        # Step 1: Confirm model is registered (instant, no VRAM load)
+        # Verify model is registered
+        print("Verifying model registration...")
         show_req = urllib.request.Request(
             f"http://localhost:{OLLAMA_PORT}/api/show",
             data=json.dumps({"name": MODEL_NAME}).encode(),
@@ -172,9 +190,9 @@ class VexOllamaServer:
             f"params={details.get('parameter_size')}"
         )
 
-        # Step 2: Warm model into VRAM with 1-token generate.
-        # Cold-loading 731MB Q4_K_M onto T4 takes ~60-90s — give it 120s,
-        # well within Modal's startup_timeout=180s.
+        # Warm model into VRAM with 1-token generate.
+        # 19GB model onto A10G (24GB VRAM) takes ~90-120s on cold start.
+        print(f"Warming {MODEL_NAME} into GPU VRAM...")
         gen_req = urllib.request.Request(
             f"http://localhost:{OLLAMA_PORT}/api/generate",
             data=json.dumps(
@@ -187,7 +205,7 @@ class VexOllamaServer:
             ).encode(),
             headers={"Content-Type": "application/json"},
         )
-        gen_resp = urllib.request.urlopen(gen_req, timeout=120)
+        gen_resp = urllib.request.urlopen(gen_req, timeout=180)
         gen_data = json.loads(gen_resp.read())
         print(
             f"GPU inference verified (1-token warm-up). "
@@ -215,26 +233,31 @@ class VexOllamaServer:
                 self.ollama_process.wait()
         print("Vex inference server stopped.")
 
-    @modal.web_server(port=OLLAMA_PORT, startup_timeout=180)
+    @modal.web_server(port=OLLAMA_PORT, startup_timeout=300)
     def serve(self):
         """Expose Ollama API via Modal web endpoint.
 
         All standard Ollama endpoints are available:
-            POST /api/chat      — Chat completion (used by Railway kernel)
-            POST /api/generate  — Text generation
-            GET  /api/tags      — List models (used for health checks)
-            POST /api/show      — Model info
+            POST /api/chat      -- Chat completion (used by Railway kernel)
+            POST /api/generate  -- Text generation
+            GET  /api/tags      -- List models (used for health checks)
+            POST /api/show      -- Model info
+
+        startup_timeout=300 to handle first-boot model pull (19GB).
+        Subsequent starts use cached Volume and are much faster.
         """
         print(f"Serving Ollama API on port {OLLAMA_PORT}")
 
 
-# ─── Local testing ────────────────────────────────────────────
+# --- Local testing --------------------------------------------------------
 
 
 @app.local_entrypoint()
 async def test():
     """Quick smoke test: modal run modal/vex_inference.py"""
     print("Testing Vex inference endpoint...")
+    print(f"Model: {MODEL_NAME}")
+    print(f"GPU: {GPU_TYPE}")
     print("Deploy with: modal deploy modal/vex_inference.py")
     print("Then test with:")
     print("  curl -X POST <URL>/api/chat \\")
