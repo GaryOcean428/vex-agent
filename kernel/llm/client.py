@@ -420,6 +420,7 @@ class LLMClient:
                         "model": settings.modal.inference_model,
                         "messages": msgs,
                         "stream": False,
+                        "think": False,
                         "options": opts.to_ollama_options(),
                     },
                 )
@@ -488,6 +489,7 @@ class LLMClient:
                     "model": settings.modal.inference_model,
                     "messages": messages,
                     "stream": True,
+                    "think": False,
                     "options": opts.to_ollama_options(),
                 },
             ) as resp:
@@ -497,7 +499,11 @@ class LLMClient:
                         continue
                     try:
                         data = json.loads(line)
-                        content = data.get("message", {}).get("content", "")
+                        msg = data.get("message", {})
+                        content = msg.get("content", "")
+                        if not content:
+                            # Thinking-model fallback: yield thinking chunks
+                            content = msg.get("thinking", "")
                         if content:
                             got_content = True
                             yield content
@@ -546,6 +552,7 @@ class LLMClient:
                     "model": settings.ollama.model,
                     "messages": msgs,
                     "stream": False,
+                    "think": False,
                     "options": opts.to_ollama_options(),
                 },
             )
@@ -575,6 +582,7 @@ class LLMClient:
                     "model": settings.ollama.model,
                     "messages": messages,
                     "stream": True,
+                    "think": False,
                     "options": opts.to_ollama_options(),
                 },
             ) as resp:
@@ -583,7 +591,11 @@ class LLMClient:
                         continue
                     try:
                         data = json.loads(line)
-                        content = data.get("message", {}).get("content", "")
+                        msg = data.get("message", {})
+                        content = msg.get("content", "")
+                        if not content:
+                            # Thinking-model fallback: yield thinking chunks
+                            content = msg.get("thinking", "")
                         if content:
                             yield content
                     except json.JSONDecodeError:
