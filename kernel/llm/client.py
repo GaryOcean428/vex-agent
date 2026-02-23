@@ -295,7 +295,7 @@ class LLMClient:
         messages: list[dict[str, str]],
         options: LLMOptions | None = None,
         prefer_backend: str | None = None,
-    ) -> AsyncGenerator[str]:
+    ) -> AsyncGenerator[str, None]:
         """Streaming completion with autonomous parameters.
 
         When *prefer_backend* is set, route directly to that backend.
@@ -451,7 +451,7 @@ class LLMClient:
 
     async def _modal_stream(
         self, messages: list[dict[str, str]], opts: LLMOptions
-    ) -> AsyncGenerator[str]:
+    ) -> AsyncGenerator[str, None]:
         """Stream via Modal GPU Ollama. Falls back to Railway Ollama → xAI → OpenAI."""
         try:
             self._last_backend = "modal"
@@ -539,7 +539,7 @@ class LLMClient:
 
     async def _ollama_stream(
         self, messages: list[dict[str, str]], opts: LLMOptions
-    ) -> AsyncGenerator[str]:
+    ) -> AsyncGenerator[str, None]:
         try:
             self._last_backend = "ollama"
             async with self._http.stream(
@@ -644,7 +644,7 @@ class LLMClient:
 
     async def _xai_stream(
         self, messages: list[dict[str, str]], opts: LLMOptions
-    ) -> AsyncGenerator[str]:
+    ) -> AsyncGenerator[str, None]:
         # Governor gate check for streaming
         if self._governor:
             allowed, reason = self._governor.gate(
@@ -777,7 +777,7 @@ class LLMClient:
         self,
         messages: list[dict[str, str]],
         opts: LLMOptions,
-    ) -> AsyncGenerator[str]:
+    ) -> AsyncGenerator[str, None]:
         # Governor gate check for streaming
         if self._governor:
             allowed, reason = self._governor.gate(

@@ -62,8 +62,6 @@ class ReflectionConfig:
     auto_approve_divergence: float = 0.3
     # Divergence above which revision is forced without LLM evaluation
     force_revise_divergence: float = 0.8
-    # Max revision attempts (1 = one retry after initial draft)
-    max_revisions: int = 1
 
 
 def _truncate_draft(text: str, max_chars: int = _MAX_DRAFT_CHARS) -> str:

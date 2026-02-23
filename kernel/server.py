@@ -108,7 +108,7 @@ _boot_time = time.time()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Startup and shutdown lifecycle."""
     logger.info("Vex Kernel starting on port %d", settings.port)
     await llm_client.init()
@@ -470,7 +470,7 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
     - type: "error" — error message
     """
 
-    async def event_generator() -> AsyncGenerator[str]:
+    async def event_generator() -> AsyncGenerator[str, None]:
         try:
             # Resolve conversation (non-fatal: chat works without persistence)
             _store_ok = True
