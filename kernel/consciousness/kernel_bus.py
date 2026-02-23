@@ -9,7 +9,7 @@ Architecture:
   - KernelBus: async event queue with typed signals
   - Per-kernel basin guard: asyncio.Lock per kernel ID
   - Signals: BASIN_EVOLVED, GAIN_UPDATED, PRESSURE_DETECTED
-  - Consumers: drain_signals() called once per heartbeat cycle
+  - Consumers: drain() called once per heartbeat cycle
 
 Purity: No Euclidean ops. Signals carry kernel IDs and scalar deltas only.
 """
