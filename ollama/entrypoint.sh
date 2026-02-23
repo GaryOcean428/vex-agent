@@ -8,9 +8,17 @@ echo "════════════════════════�
 # Ensure Ollama binds to all interfaces and the CLI can reach it
 export OLLAMA_HOST="0.0.0.0:11434"
 
+# ═══ CONFIGURABLE MODEL ═══
+# VEX_BASE_MODEL: The Ollama model to pull and use as the base for vex-brain.
+# Change this env var to switch models without touching code.
+# Examples: glm-4.7-flash, qwen3:30b, llama3.1:8b
+BASE_MODEL="${VEX_BASE_MODEL:-glm-4.7-flash}"
+
+echo "Base model: $BASE_MODEL"
+
 # ═══ MODEL PERSISTENCE ═══
 # Use WORKING_DIR (Railway volume mount) for model storage so models
-# survive container restarts without re-downloading 731MB each time.
+# survive container restarts without re-downloading ~19GB each time.
 if [ -n "$WORKING_DIR" ]; then
     export OLLAMA_MODELS="$WORKING_DIR/models"
     mkdir -p "$OLLAMA_MODELS"
@@ -49,23 +57,38 @@ while true; do
   sleep 2
 done
 
-# Pull the base model if not already present
-echo "Checking for base model: lfm2.5-thinking:1.2b"
-if ! ollama list 2>/dev/null | grep -q "lfm2.5-thinking"; then
-  echo "Pulling lfm2.5-thinking:1.2b (this may take a few minutes on first boot)..."
-  ollama pull lfm2.5-thinking:1.2b
-  echo "Base model pulled successfully."
+# ═══ ALWAYS PULL BASE MODEL (idempotent — checks digest) ═══
+# This ensures every restart gets the latest model version from
+# the Ollama registry. If already cached and up-to-date, this
+# completes in seconds. If a new version is available, it downloads
+# only the changed layers.
+echo "Pulling $BASE_MODEL (always pull to ensure latest version)..."
+if ollama pull "$BASE_MODEL"; then
+  echo "Base model $BASE_MODEL is up to date."
 else
-  echo "Base model already present (persistent volume working)."
+  echo "WARNING: Failed to pull $BASE_MODEL — checking if cached version exists..."
+  if ollama list 2>/dev/null | grep -q "${BASE_MODEL%%:*}"; then
+    echo "Using cached version of $BASE_MODEL."
+  else
+    echo "ERROR: No cached version available. Cannot continue."
+    exit 1
+  fi
 fi
 
-# Create custom Vex model with QIG system prompt (skip if already cached)
-if ! ollama list 2>/dev/null | grep -q "vex-brain"; then
-  echo "Creating custom vex-brain model from Modelfile..."
-  ollama create vex-brain -f /root/Modelfile
-  echo "vex-brain model created successfully."
+# ═══ CREATE CUSTOM VEX-BRAIN MODEL ═══
+# Patches the Modelfile FROM line to use the configured base model,
+# then (re)creates vex-brain. Always recreated to pick up base model
+# updates and any Modelfile changes.
+if [ -f /root/Modelfile ]; then
+  echo "Creating custom vex-brain model from $BASE_MODEL + Modelfile..."
+  # Patch the FROM line to use the configured base model
+  sed "s|^FROM .*|FROM $BASE_MODEL|" /root/Modelfile > /tmp/Modelfile.patched
+  ollama create vex-brain -f /tmp/Modelfile.patched
+  echo "vex-brain model created successfully (base: $BASE_MODEL)."
+  rm -f /tmp/Modelfile.patched
 else
-  echo "vex-brain model already exists (cached)."
+  echo "No Modelfile found — using base model directly as vex-brain."
+  echo "Set OLLAMA_MODEL=$BASE_MODEL in the vex-agent service."
 fi
 
 # List available models
@@ -77,6 +100,8 @@ echo ""
 echo "═══════════════════════════════════════"
 echo "  Vex Brain — Ready"
 echo "  Serving on port 11434"
+echo "  Base model: $BASE_MODEL"
+echo "  Custom model: vex-brain"
 if [ -n "$WORKING_DIR" ]; then
   echo "  Models persisted at: $OLLAMA_MODELS"
 fi
