@@ -1,24 +1,31 @@
-/* ─── Chat History Panel ─── */
+/* ─── Chat History Sidebar ─── */
 
 .chat-history-panel {
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 280px;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  z-index: 10;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
   overflow: hidden;
+  flex-shrink: 0;
+  transition: width 0.2s ease;
 }
+
+.chat-history-panel.open {
+  width: 260px;
+}
+
+.chat-history-panel.collapsed {
+  width: 0;
+  border-right: none;
+}
+
+/* ─── Header ─── */
 
 .chat-history-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -32,18 +39,23 @@
   letter-spacing: 0.5px;
 }
 
-.chat-history-close {
+.chat-history-new {
   background: none;
-  border: none;
-  color: var(--text-dim);
-  font-size: 18px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 16px;
+  font-weight: 600;
   cursor: pointer;
-  padding: 0 4px;
+  padding: 2px 8px;
   line-height: 1;
+  transition: all 0.15s;
 }
 
-.chat-history-close:hover {
-  color: var(--text-primary);
+.chat-history-new:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-glow);
 }
 
 /* ─── List ─── */
@@ -56,7 +68,7 @@
 
 .chat-history-loading,
 .chat-history-empty {
-  padding: 24px 16px;
+  padding: 24px 14px;
   text-align: center;
   color: var(--text-dim);
   font-family: var(--mono);
@@ -70,13 +82,13 @@
   flex-direction: column;
   gap: 2px;
   width: 100%;
-  padding: 10px 16px;
+  padding: 10px 14px;
   background: none;
   border: none;
-  border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .chat-history-item:hover {
@@ -85,7 +97,7 @@
 
 .chat-history-item.active {
   background: var(--accent-glow);
-  border-left: 3px solid var(--accent);
+  border-left-color: var(--accent);
 }
 
 .chat-history-item-title {
@@ -115,8 +127,20 @@
 
 /* ─── Responsive ─── */
 
-@media (max-width: 640px) {
-  .chat-history-panel {
+@media (max-width: 768px) {
+  .chat-history-panel.open {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    z-index: 20;
+    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.3);
+  }
+}
+
+@media (max-width: 480px) {
+  .chat-history-panel.open {
     width: 100%;
   }
 }

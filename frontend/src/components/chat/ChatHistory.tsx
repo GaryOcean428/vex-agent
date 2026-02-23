@@ -15,10 +15,10 @@ interface ChatHistoryProps {
   open: boolean;
   activeConversationId: string | null;
   onSelect: (id: string) => void;
-  onClose: () => void;
+  onNewChat: () => void;
 }
 
-export function ChatHistory({ open, activeConversationId, onSelect, onClose }: ChatHistoryProps) {
+export function ChatHistory({ open, activeConversationId, onSelect, onNewChat }: ChatHistoryProps) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -37,43 +37,68 @@ export function ChatHistory({ open, activeConversationId, onSelect, onClose }: C
     }
   }, []);
 
+  // Load on mount and when panel opens
   useEffect(() => {
     if (open) loadConversations();
   }, [open, loadConversations]);
 
-  if (!open) return null;
+  // Refresh list when active conversation changes (new message sent)
+  useEffect(() => {
+    if (open && activeConversationId) {
+      // Debounce: wait 500ms for the server to persist the message
+      const timer = setTimeout(loadConversations, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [open, activeConversationId, loadConversations]);
 
   return (
-    <aside className="chat-history-panel" aria-label="Chat history">
-      <div className="chat-history-header">
-        <span className="chat-history-title">History</span>
-        <button className="chat-history-close" onClick={onClose} aria-label="Close history">
-          &times;
-        </button>
-      </div>
+    <aside
+      className={`chat-history-panel ${open ? "open" : "collapsed"}`}
+      aria-label="Chat history"
+      aria-hidden={!open}
+    >
+      {open && (
+        <>
+          <div className="chat-history-header">
+            <span className="chat-history-title">Conversations</span>
+            <button
+              className="chat-history-new"
+              onClick={onNewChat}
+              aria-label="New conversation"
+              title="New conversation"
+            >
+              +
+            </button>
+          </div>
 
-      {loading && <div className="chat-history-loading">Loading...</div>}
+          {loading && conversations.length === 0 && (
+            <div className="chat-history-loading">Loading...</div>
+          )}
 
-      <div className="chat-history-list">
-        {conversations.length === 0 && !loading && (
-          <div className="chat-history-empty">No past conversations</div>
-        )}
-        {conversations.map((conv) => (
-          <button
-            key={conv.id}
-            className={`chat-history-item ${conv.id === activeConversationId ? "active" : ""}`}
-            onClick={() => onSelect(conv.id)}
-          >
-            <span className="chat-history-item-title">{conv.title || "Untitled"}</span>
-            <span className="chat-history-item-meta">
-              {conv.message_count} msgs &middot; {formatRelativeTime(conv.updated_at)}
-            </span>
-            {conv.preview && (
-              <span className="chat-history-item-preview">{conv.preview}</span>
+          <div className="chat-history-list">
+            {conversations.length === 0 && !loading && (
+              <div className="chat-history-empty">No past conversations</div>
             )}
-          </button>
-        ))}
-      </div>
+            {conversations.map((conv) => (
+              <button
+                key={conv.id}
+                className={`chat-history-item ${conv.id === activeConversationId ? "active" : ""}`}
+                onClick={() => onSelect(conv.id)}
+              >
+                <span className="chat-history-item-title">
+                  {conv.title || "Untitled"}
+                </span>
+                <span className="chat-history-item-meta">
+                  {conv.message_count} msgs &middot; {formatRelativeTime(conv.updated_at)}
+                </span>
+                {conv.preview && (
+                  <span className="chat-history-item-preview">{conv.preview}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </aside>
   );
 }

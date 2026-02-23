@@ -24,13 +24,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* No animations in this file, but keep gradient static */
   .chat-page::before {
     background: none;
   }
 }
 
-/* ─── Chat Content (Messages + Sidebar) ─── */
+/* ─── Chat Content (History + Messages + Metrics Sidebar) ─── */
 
 .chat-content {
   display: flex;
