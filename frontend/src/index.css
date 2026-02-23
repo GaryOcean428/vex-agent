@@ -29,7 +29,15 @@
   --nav-lightning: #f59e0b;
   --radius: 12px;
   --radius-sm: 8px;
-  --sidebar-width: clamp(180px, 15vw, 220px);
+  --radius-lg: 16px;
+  /* Layout widths */
+  --nav-rail-width: 64px;
+  --sidebar-width: var(--nav-rail-width);
+  --metrics-panel-width: 300px;
+  --metrics-panel-min: 260px;
+  --metrics-panel-max: 480px;
+  --chat-max-width: 840px;
+  --bottom-bar-height: 56px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
   --mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace;

@@ -1,3 +1,5 @@
+/* ─── Layout Shell ─── */
+
 .layout {
   display: flex;
   height: 100%;
@@ -27,31 +29,38 @@
   outline-offset: 2px;
 }
 
-/* ─── Sidebar ─── */
+/* ─── Nav Rail (Desktop & Tablet) ─── */
 
-.sidebar {
-  width: var(--sidebar-width);
+.nav-rail {
+  width: var(--nav-rail-width);
   background: var(--surface);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 10;
 }
 
-.sidebar-header {
-  padding: 16px;
+.rail-header {
+  padding: 14px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
   border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 
-.vex-identity {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.rail-logo {
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--text);
 }
+
+/* ─── Pulse Dot (status) ─── */
 
 .pulse-dot {
   width: 8px;
@@ -84,93 +93,88 @@
   }
 }
 
-.vex-name {
-  font-family: var(--mono);
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 3px;
-  text-transform: uppercase;
-}
+/* ─── Rail Navigation Items ─── */
 
-.version-badge {
-  font-family: var(--mono);
-  font-size: var(--text-xs);
-  color: var(--text-dim);
-  padding: 2px 6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
-
-/* ─── Navigation ─── */
-
-.sidebar-nav {
-  padding: 12px 8px;
+.rail-nav {
+  padding: 8px 0;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 2px;
 }
 
-.nav-item {
+.rail-item {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 2px;
+  width: 52px;
+  padding: 8px 4px 6px;
   border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  color: var(--text-dim);
   text-decoration: none;
-  font-size: 14px;
-  font-weight: 500;
   transition: background 0.15s, color 0.15s;
 }
 
-.nav-item:hover {
+.rail-item:hover {
   background: var(--surface-2);
-  color: var(--text);
+  color: var(--text-secondary);
   text-decoration: none;
 }
 
-.nav-item.active {
+.rail-item.active {
   background: var(--accent-glow);
   color: var(--accent);
-  font-weight: 600;
 }
 
-.nav-item:focus-visible {
+.rail-item:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 
-.nav-icon {
-  font-size: 16px;
-  width: 20px;
-  text-align: center;
+.rail-icon {
+  font-size: 20px;
+  line-height: 1;
 }
 
-/* ─── Dashboard Tabs ─── */
+.rail-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ─── Dashboard Tabs (inside rail, desktop only) ─── */
 
 .dashboard-tabs {
-  padding: 8px;
+  padding: 6px 4px;
   border-top: 1px solid var(--border);
   flex: 1;
   overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .tabs-label {
   font-family: var(--mono);
-  font-size: var(--text-xs);
+  font-size: 8px;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 1px;
-  padding: 4px 12px 8px;
+  padding: 4px 6px 6px;
+  text-align: center;
 }
 
 .tab-item {
   display: block;
-  padding: 7px 12px;
+  padding: 5px 6px;
   border-radius: 6px;
   color: var(--text-dim);
   text-decoration: none;
-  font-size: 13px;
+  font-size: 10px;
+  font-family: var(--mono);
+  text-align: center;
   transition: background 0.15s, color 0.15s;
 }
 
@@ -191,66 +195,43 @@
   outline-offset: 2px;
 }
 
-/* ─── Sidebar Footer ─── */
+/* ─── Rail Footer ─── */
 
-.sidebar-footer {
+.rail-footer {
   margin-top: auto;
-  padding: 12px 16px;
+  padding: 10px 0;
   border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-
-.footer-stat {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 4px;
 }
 
-.footer-label {
-  font-size: var(--text-xs);
+.rail-backend {
+  font-size: 14px;
+  cursor: help;
+}
+
+.rail-backend.ollama {
+  color: var(--alive);
+}
+
+.rail-backend.external {
+  color: var(--kappa);
+}
+
+.rail-backend.none {
+  color: var(--error);
+}
+
+.rail-backend:not(.ollama):not(.external):not(.none) {
   color: var(--text-dim);
 }
 
-.footer-value {
+.rail-version {
   font-family: var(--mono);
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-.backend-pill {
-  font-family: var(--mono);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.backend-pill.ollama {
-  background: rgba(16, 185, 129, 0.12);
-  color: var(--alive);
-  border: 1px solid rgba(16, 185, 129, 0.25);
-}
-
-.backend-pill.external {
-  background: rgba(245, 158, 11, 0.12);
-  color: var(--kappa);
-  border: 1px solid rgba(245, 158, 11, 0.25);
-}
-
-.backend-pill.none {
-  background: rgba(239, 68, 68, 0.12);
-  color: var(--error);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-}
-
-.backend-pill:not(.ollama):not(.external):not(.none) {
-  background: rgba(112, 112, 138, 0.12);
-  color: var(--text-secondary);
-  border: 1px solid rgba(112, 112, 138, 0.25);
+  font-size: 8px;
+  color: var(--text-dim);
 }
 
 /* ─── Main Content ─── */
@@ -261,31 +242,96 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  /* Remove default focus ring on programmatic focus (skip-link target) */
   outline: none;
 }
 
-/* ─── Responsive ─── */
+/* ─── Bottom Tab Bar (Mobile only) ─── */
 
-@media (max-width: 768px) {
-  .sidebar {
-    width: 56px;
+.bottom-bar {
+  display: none;
+}
+
+/* ─── Responsive: Tablet (768–1279px) ─── */
+
+@media (max-width: 1279px) {
+  .dashboard-tabs {
+    scrollbar-width: none;
   }
 
-  .vex-name,
-  .version-badge,
-  .dashboard-tabs,
-  .sidebar-footer {
+  .dashboard-tabs::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ─── Responsive: Mobile (<768px) ─── */
+
+@media (max-width: 767px) {
+  .layout {
+    flex-direction: column;
+  }
+
+  /* Hide the left rail on mobile */
+  .nav-rail {
     display: none;
   }
 
-  .sidebar-header {
-    justify-content: center;
-    padding: 12px 8px;
+  /* Main content takes full space, accounting for bottom bar */
+  .main-content {
+    flex: 1;
+    padding-bottom: 0;
   }
 
-  .nav-item {
-    justify-content: center;
-    padding: 10px 8px;
+  /* Show bottom tab bar */
+  .bottom-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    height: var(--bottom-bar-height);
+    padding-bottom: var(--safe-bottom);
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 20;
+  }
+
+  .bottom-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 12px;
+    color: var(--text-dim);
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+    transition: color 0.15s;
+    min-width: 0;
+  }
+
+  .bottom-tab:hover {
+    text-decoration: none;
+  }
+
+  .bottom-tab.active {
+    color: var(--accent);
+  }
+
+  .bottom-icon {
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  .bottom-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+  .bottom-tab {
+    transition: none;
   }
 }

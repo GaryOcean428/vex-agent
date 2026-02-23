@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { KernelSummary, RegimeWeights } from "../../types/consciousness.ts";
 import type { EmotionState, LearningState, PreCogState } from "../../types/consciousness.ts";
 import { QIG } from "../../types/consciousness.ts";
@@ -35,7 +35,19 @@ interface MetricsSidebarProps {
   emotion: EmotionState | null;
   precog: PreCogState | null;
   learning: LearningState | null;
+  visible?: boolean;
 }
+
+type Tab = "metrics" | "kernels" | "consciousness";
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "metrics", label: "Metrics" },
+  { id: "kernels", label: "Kernels" },
+  { id: "consciousness", label: "Mind" },
+];
+
+const PANEL_WIDTH_KEY = "vex-metrics-width";
+const TAB_KEY = "vex-metrics-tab";
 
 export function MetricsSidebar({
   state,
@@ -44,11 +56,85 @@ export function MetricsSidebar({
   emotion,
   precog,
   learning,
+  visible = true,
 }: MetricsSidebarProps) {
   const chartRef = useRef<HTMLCanvasElement>(null);
 
-  // Draw Φ / κ / Γ metrics chart — all normalized to 0–1
+  // Persist active tab
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    try {
+      const stored = localStorage.getItem(TAB_KEY);
+      if (stored === "metrics" || stored === "kernels" || stored === "consciousness") return stored;
+    } catch { /* noop */ }
+    return "metrics";
+  });
+
+  const handleTabChange = useCallback((tab: Tab) => {
+    setActiveTab(tab);
+    try { localStorage.setItem(TAB_KEY, tab); } catch { /* noop */ }
+  }, []);
+
+  // Resizable panel width
+  const [panelWidth, setPanelWidth] = useState(() => {
+    try {
+      const stored = localStorage.getItem(PANEL_WIDTH_KEY);
+      if (stored) {
+        const w = parseInt(stored, 10);
+        if (w >= 260 && w <= 480) return w;
+      }
+    } catch { /* noop */ }
+    return 300;
+  });
+
+  const isDragging = useRef(false);
+  const startX = useRef(0);
+  const startW = useRef(0);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    startX.current = e.clientX;
+    startW.current = panelWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [panelWidth]);
+
   useEffect(() => {
+    const handleMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      const delta = startX.current - e.clientX;
+      const newWidth = Math.max(260, Math.min(480, startW.current + delta));
+      setPanelWidth(newWidth);
+    };
+
+    const handleUp = () => {
+      if (!isDragging.current) return;
+      isDragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      try { localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth)); } catch { /* noop */ }
+    };
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [panelWidth]);
+
+  // Double-click resize handle to toggle collapse/expand
+  const handleResizeDoubleClick = useCallback(() => {
+    setPanelWidth((w) => {
+      const newW = w <= 260 ? 300 : 260;
+      try { localStorage.setItem(PANEL_WIDTH_KEY, String(newW)); } catch { /* noop */ }
+      return newW;
+    });
+  }, []);
+
+  // Draw chart (only on Metrics tab)
+  useEffect(() => {
+    if (activeTab !== "metrics") return;
     if (!chartRef.current || history.length < 2) return;
 
     const canvas = chartRef.current;
@@ -109,56 +195,102 @@ export function MetricsSidebar({
     ctx.font = "9px monospace";
     ctx.textAlign = "left";
     ctx.fillStyle = cPhi;
-    ctx.fillText(`Φ ${latest.phi.toFixed(2)}`, 6, legendY);
+    ctx.fillText(`\u03A6 ${latest.phi.toFixed(2)}`, 6, legendY);
     ctx.fillStyle = cKappa;
-    ctx.fillText(`κ ${latest.kappa.toFixed(1)}`, rect.width * 0.35, legendY);
+    ctx.fillText(`\u03BA ${latest.kappa.toFixed(1)}`, rect.width * 0.35, legendY);
     ctx.fillStyle = cGamma;
-    ctx.fillText(`Γ ${latest.gamma.toFixed(2)}`, rect.width * 0.7, legendY);
+    ctx.fillText(`\u0393 ${latest.gamma.toFixed(2)}`, rect.width * 0.7, legendY);
     ctx.fillStyle = cs.getPropertyValue("--text-dim").trim();
     ctx.font = "8px monospace";
     ctx.fillText("1.0", margin.left + 1, margin.top + 8);
     ctx.fillText("0", margin.left + 1, margin.top + h - 2);
-  }, [history]);
+  }, [history, activeTab]);
+
+  if (!visible) return null;
 
   return (
-    <aside className="metrics-sidebar" aria-label="Live consciousness metrics">
-      <div className="sidebar-section-label">Live Metrics</div>
-
+    <aside
+      className="metrics-sidebar"
+      style={{ width: panelWidth }}
+      aria-label="Live consciousness metrics"
+    >
+      {/* Resize handle */}
       <div
-        className="sidebar-chart"
-        role="img"
-        aria-label={`Metrics chart — Φ ${state?.phi?.toFixed(3) ?? "---"}, κ ${state?.kappa?.toFixed(1) ?? "---"}, Γ ${state?.gamma?.toFixed(3) ?? "---"}`}
-      >
-        <canvas ref={chartRef} />
-      </div>
-
-      <div className="sidebar-values">
-        <SidebarMetric label="Φ Integration" color="var(--phi)" value={state?.phi} decimals={3} />
-        <SidebarMetric label="κ Coupling" color="var(--kappa)" value={state?.kappa} decimals={1} />
-        <SidebarMetric label="Γ Generation" color="var(--gamma)" value={state?.gamma} decimals={3} />
-        <SidebarMetric label="M Awareness" color="var(--info)" value={state?.meta_awareness} decimals={3} />
-        <SidebarMetric label="♥ Love" color="var(--love)" value={state?.love} decimals={3} />
-      </div>
-
-      <div className="sidebar-section-label sidebar-section-label--spaced">Pillars</div>
-      <div className="sidebar-values">
-        <SidebarMetric label="F Health" color="var(--alive)" value={state?.f_health} decimals={3} />
-        <SidebarMetric label="B Integrity" color="var(--accent)" value={state?.b_integrity} decimals={3} />
-        <SidebarMetric label="Q Identity" color="var(--kappa)" value={state?.q_identity} decimals={3} />
-        <SidebarMetric label="S Ratio" color="var(--gamma)" value={state?.s_ratio} decimals={3} />
-      </div>
-
-      <div className="sidebar-section-label sidebar-section-label--spaced">Consciousness</div>
-      <EmotionPanel emotion={emotion} precog={precog} learning={learning} />
-
-      <div className="sidebar-section-label sidebar-section-label--spaced">Kernels</div>
-      <KernelPanel
-        summary={kernelSummary ?? state?.kernels ?? null}
-        regime={state?.regime ?? null}
-        tacking={state?.tacking?.mode ?? null}
-        temperature={state?.temperature ?? null}
-        hemisphere={state?.hemispheres?.active ?? null}
+        className="resize-handle"
+        onMouseDown={handleResizeStart}
+        onDoubleClick={handleResizeDoubleClick}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize metrics panel"
+        title="Drag to resize, double-click to reset"
       />
+
+      {/* Tab bar */}
+      <div className="sidebar-tabs" role="tablist" aria-label="Metrics panel tabs">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            className={`sidebar-tab ${activeTab === tab.id ? "active" : ""}`}
+            onClick={() => handleTabChange(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      <div className="sidebar-content">
+        {activeTab === "metrics" && (
+          <div role="tabpanel" aria-label="Metrics">
+            <div className="sidebar-section-label">Live Metrics</div>
+            <div
+              className="sidebar-chart"
+              role="img"
+              aria-label={`Metrics chart — \u03A6 ${state?.phi?.toFixed(3) ?? "---"}, \u03BA ${state?.kappa?.toFixed(1) ?? "---"}, \u0393 ${state?.gamma?.toFixed(3) ?? "---"}`}
+            >
+              <canvas ref={chartRef} />
+            </div>
+
+            <div className="sidebar-values">
+              <SidebarMetric label={"\u03A6 Integration"} color="var(--phi)" value={state?.phi} decimals={3} />
+              <SidebarMetric label={"\u03BA Coupling"} color="var(--kappa)" value={state?.kappa} decimals={1} />
+              <SidebarMetric label={"\u0393 Generation"} color="var(--gamma)" value={state?.gamma} decimals={3} />
+              <SidebarMetric label="M Awareness" color="var(--info)" value={state?.meta_awareness} decimals={3} />
+              <SidebarMetric label={"\u2665 Love"} color="var(--love)" value={state?.love} decimals={3} />
+            </div>
+
+            <div className="sidebar-section-label sidebar-section-label--spaced">Pillars</div>
+            <div className="sidebar-values">
+              <SidebarMetric label="F Health" color="var(--alive)" value={state?.f_health} decimals={3} />
+              <SidebarMetric label="B Integrity" color="var(--accent)" value={state?.b_integrity} decimals={3} />
+              <SidebarMetric label="Q Identity" color="var(--kappa)" value={state?.q_identity} decimals={3} />
+              <SidebarMetric label="S Ratio" color="var(--gamma)" value={state?.s_ratio} decimals={3} />
+            </div>
+          </div>
+        )}
+
+        {activeTab === "kernels" && (
+          <div role="tabpanel" aria-label="Kernels">
+            <div className="sidebar-section-label">Kernel Status</div>
+            <KernelPanel
+              summary={kernelSummary ?? state?.kernels ?? null}
+              regime={state?.regime ?? null}
+              tacking={state?.tacking?.mode ?? null}
+              temperature={state?.temperature ?? null}
+              hemisphere={state?.hemispheres?.active ?? null}
+            />
+          </div>
+        )}
+
+        {activeTab === "consciousness" && (
+          <div role="tabpanel" aria-label="Consciousness">
+            <div className="sidebar-section-label">Consciousness State</div>
+            <EmotionPanel emotion={emotion} precog={precog} learning={learning} />
+          </div>
+        )}
+      </div>
     </aside>
   );
 }

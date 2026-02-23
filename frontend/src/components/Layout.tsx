@@ -6,6 +6,8 @@ import './Layout.css';
 const NAV_ITEMS = [
   { to: '/chat', label: 'Chat', icon: '◈' },
   { to: '/dashboard', label: 'Dashboard', icon: '▣' },
+  { to: '/dashboard/graph', label: 'Graph', icon: '◎' },
+  { to: '/dashboard/memory', label: 'Memory', icon: '◇' },
 ] as const;
 
 const DASHBOARD_TABS = [
@@ -29,47 +31,44 @@ export default function Layout() {
 
   return (
     <div className="layout">
-      {/* Skip-to-content link — first focusable element; visually hidden until focused */}
+      {/* Skip-to-content link */}
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
 
+      {/* Desktop / Tablet: Left nav rail */}
       <aside
-        className="sidebar"
-        aria-label="Application sidebar"
-        role="complementary"
+        className="nav-rail"
+        aria-label="Application navigation"
+        role="navigation"
       >
-        <div className="sidebar-header">
-          <div className="vex-identity">
-            <span
-              className={`pulse-dot ${health?.status === 'ok' ? 'alive' : 'degraded'}`}
-              aria-hidden="true"
-            />
-            <span className="vex-name">VEX</span>
-          </div>
-          {health && (
-            <span className="version-badge" aria-label={`Version ${health.version ?? '2.2.0'}`}>
-              v{health.version ?? '2.2.0'}
-            </span>
-          )}
+        <div className="rail-header">
+          <span
+            className={`pulse-dot ${health?.status === 'ok' ? 'alive' : 'degraded'}`}
+            aria-hidden="true"
+          />
+          <span className="rail-logo">V</span>
         </div>
 
-        <nav className="sidebar-nav" aria-label="Primary navigation">
+        <nav className="rail-nav" aria-label="Primary navigation">
           {NAV_ITEMS.map(item => (
             <NavLink
               key={item.to}
               to={item.to}
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+              end={item.to === '/dashboard'}
+              className={({ isActive }) => `rail-item ${isActive ? 'active' : ''}`}
+              title={item.label}
+              aria-label={item.label}
             >
-              <span className="nav-icon" aria-hidden="true">{item.icon}</span>
-              {item.label}
+              <span className="rail-icon" aria-hidden="true">{item.icon}</span>
+              <span className="rail-label">{item.label}</span>
             </NavLink>
           ))}
         </nav>
 
         {isDashboard && (
           <nav className="dashboard-tabs" aria-label="Dashboard sections">
-            <div className="tabs-label" aria-hidden="true">Dashboard</div>
+            <div className="tabs-label" aria-hidden="true">Pages</div>
             {DASHBOARD_TABS.map(tab => (
               <NavLink
                 key={tab.to}
@@ -83,22 +82,20 @@ export default function Layout() {
           </nav>
         )}
 
-        <div className="sidebar-footer" aria-label="System status">
+        <div className="rail-footer" aria-label="System status">
           {health && (
-            <>
-              <div className="footer-stat">
-                <span className="footer-label">Backend</span>
-                <span className={`backend-pill ${health.backend}`}>{health.backend}</span>
-              </div>
-              <div className="footer-stat">
-                <span className="footer-label">Uptime</span>
-                <span className="footer-value">{formatUptime(health.uptime)}</span>
-              </div>
-              <div className="footer-stat">
-                <span className="footer-label">Cycles</span>
-                <span className="footer-value">{health.cycle_count}</span>
-              </div>
-            </>
+            <span
+              className={`rail-backend ${health.backend}`}
+              title={`Backend: ${health.backend} | Uptime: ${formatUptime(health.uptime)} | Cycles: ${health.cycle_count}`}
+              aria-label={`Backend: ${health.backend}`}
+            >
+              {health.backend === 'ollama' ? '●' : health.backend === 'external' ? '◐' : '○'}
+            </span>
+          )}
+          {health && (
+            <span className="rail-version" aria-label={`Version ${health.version ?? '2.2.0'}`}>
+              v{health.version ?? '2.2.0'}
+            </span>
           )}
         </div>
       </aside>
@@ -111,6 +108,22 @@ export default function Layout() {
       >
         <Outlet />
       </main>
+
+      {/* Mobile: Bottom tab bar */}
+      <nav className="bottom-bar" aria-label="Mobile navigation">
+        {NAV_ITEMS.map(item => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.to === '/dashboard'}
+            className={({ isActive }) => `bottom-tab ${isActive ? 'active' : ''}`}
+            aria-label={item.label}
+          >
+            <span className="bottom-icon" aria-hidden="true">{item.icon}</span>
+            <span className="bottom-label">{item.label}</span>
+          </NavLink>
+        ))}
+      </nav>
 
       <CommandPalette />
     </div>

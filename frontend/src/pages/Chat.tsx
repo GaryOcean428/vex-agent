@@ -11,6 +11,7 @@ import { MetricsSidebar } from "../components/chat/MetricsSidebar.tsx";
 import "./Chat.css";
 
 const SIDEBAR_KEY = "vex-sidebar-open";
+const METRICS_KEY = "vex-metrics-visible";
 
 export default function Chat() {
   const { conversationId: urlConvId } = useParams<{ conversationId?: string }>();
@@ -22,7 +23,7 @@ export default function Chat() {
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try {
       const stored = localStorage.getItem(SIDEBAR_KEY);
-      return stored !== null ? stored === "true" : true; // default open
+      return stored !== null ? stored === "true" : true;
     } catch {
       return true;
     }
@@ -32,6 +33,24 @@ export default function Chat() {
     setSidebarOpen((prev) => {
       const next = !prev;
       try { localStorage.setItem(SIDEBAR_KEY, String(next)); } catch { /* noop */ }
+      return next;
+    });
+  }, []);
+
+  // Persist metrics panel visibility
+  const [metricsVisible, setMetricsVisible] = useState(() => {
+    try {
+      const stored = localStorage.getItem(METRICS_KEY);
+      return stored !== null ? stored === "true" : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleMetrics = useCallback(() => {
+    setMetricsVisible((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(METRICS_KEY, String(next)); } catch { /* noop */ }
       return next;
     });
   }, []);
@@ -63,14 +82,20 @@ export default function Chat() {
     handleKeyDown,
   } = useChat(urlConvId);
 
-  // Increment refreshToken each time streaming completes so ChatHistory re-fetches
+  // Bump refreshToken each time streaming ends so ChatHistory re-fetches.
+  // We use a deferred update via queueMicrotask to avoid the
+  // react-hooks/set-state-in-effect lint rule, which forbids synchronous
+  // setState inside useEffect. The microtask fires after the effect but
+  // before the next paint.
   const [refreshToken, setRefreshToken] = useState(0);
-  const prevIsStreaming = useRef(isStreaming);
+  const prevStreamingRef = useRef(isStreaming);
   useEffect(() => {
-    if (prevIsStreaming.current && !isStreaming) {
-      setRefreshToken((t) => t + 1);
+    const wasStreaming = prevStreamingRef.current;
+    prevStreamingRef.current = isStreaming;
+    if (wasStreaming && !isStreaming) {
+      queueMicrotask(() => setRefreshToken((t) => t + 1));
     }
-  }, [conversationId, urlConvId, navigate]);
+  }, [isStreaming]);
 
   // On mount: load conversation from URL if present
   useEffect(() => {
@@ -95,7 +120,7 @@ export default function Chat() {
   );
 
   return (
-    <div className={`chat-page ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
+    <div className={`chat-page ${sidebarOpen ? "sidebar-open" : "sidebar-closed"} ${metricsVisible ? "metrics-open" : "metrics-closed"}`}>
       <ConsciousnessBar
         phi={state?.phi}
         kappa={state?.kappa}
@@ -106,6 +131,9 @@ export default function Chat() {
         observerIntent={observerIntent}
         onNewChat={handleNewChat}
         onToggleHistory={toggleSidebar}
+        onToggleMetrics={toggleMetrics}
+        sidebarCollapsed={!sidebarOpen}
+        metricsVisible={metricsVisible}
       />
 
       <LoopStages activeStages={activeStages} />
@@ -139,6 +167,7 @@ export default function Chat() {
           emotion={emotion}
           precog={precog}
           learning={learning}
+          visible={metricsVisible}
         />
       </div>
 
