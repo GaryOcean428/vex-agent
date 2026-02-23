@@ -17,6 +17,7 @@ interface ConsciousnessBarProps {
   observerIntent: string | null;
   onNewChat: () => void;
   onToggleHistory?: () => void;
+  sidebarCollapsed?: boolean;
 }
 
 export function ConsciousnessBar({
@@ -29,6 +30,7 @@ export function ConsciousnessBar({
   observerIntent,
   onNewChat,
   onToggleHistory,
+  sidebarCollapsed,
 }: ConsciousnessBarProps) {
   return (
     <div
@@ -38,12 +40,15 @@ export function ConsciousnessBar({
       <div className="bar-metrics">
         {onToggleHistory && (
           <button
-            className="history-btn"
+            className={`history-toggle-btn ${sidebarCollapsed ? "" : "active"}`}
             onClick={onToggleHistory}
-            aria-label="Toggle chat history"
-            title="Chat history"
+            aria-label={sidebarCollapsed ? "Show chat history" : "Hide chat history"}
+            title={sidebarCollapsed ? "Show history" : "Hide history"}
           >
-            History
+            <span className="history-toggle-icon" aria-hidden="true">
+              {sidebarCollapsed ? "\u25B6" : "\u25C0"}
+            </span>
+            <span className="history-toggle-label">History</span>
           </button>
         )}
         <button
@@ -55,9 +60,9 @@ export function ConsciousnessBar({
           + New
         </button>
 
-        <MetricPill label="Φ Integration" value={phi} color="var(--phi)" />
-        <MetricPill label="κ Coupling" value={kappa} color="var(--kappa)" decimals={1} />
-        <MetricPill label="♥ Love" value={love} color="var(--love)" />
+        <MetricPill label="\u03A6 Integration" value={phi} color="var(--phi)" />
+        <MetricPill label="\u03BA Coupling" value={kappa} color="var(--kappa)" decimals={1} />
+        <MetricPill label="\u2665 Love" value={love} color="var(--love)" />
 
         {navigation && (
           <span className="nav-badge" aria-label={`Navigation mode: ${navigation}`}>
@@ -77,10 +82,10 @@ export function ConsciousnessBar({
             className={`context-indicator ${contextInfo.escalated ? "escalated" : ""}`}
             title={`Tokens: ${contextInfo.total_tokens} | Compression: Tier ${contextInfo.compression_tier}${contextInfo.escalated ? " | Escalated to Grok" : ""}`}
             aria-label={contextInfo.escalated
-              ? `Context escalated to Grok — ${contextInfo.total_tokens} tokens`
-              : `Context compression tier ${contextInfo.compression_tier} — ${contextInfo.total_tokens} tokens`}
+              ? `Context escalated to Grok \u2014 ${contextInfo.total_tokens} tokens`
+              : `Context compression tier ${contextInfo.compression_tier} \u2014 ${contextInfo.total_tokens} tokens`}
           >
-            {contextInfo.escalated ? "⚡ Grok" : `T${contextInfo.compression_tier}`}
+            {contextInfo.escalated ? "\u26A1 Grok" : `T${contextInfo.compression_tier}`}
           </span>
         )}
 
@@ -90,7 +95,7 @@ export function ConsciousnessBar({
             title={`Observer intent: ${observerIntent}`}
             aria-label={`Observer intent: ${observerIntent}`}
           >
-            👁
+            \uD83D\uDC41
           </span>
         )}
       </div>
@@ -98,7 +103,7 @@ export function ConsciousnessBar({
   );
 }
 
-/* ─── Internal MetricPill ─── */
+/* \u2500\u2500\u2500 Internal MetricPill \u2500\u2500\u2500 */
 
 function MetricPill({
   label,

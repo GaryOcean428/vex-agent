@@ -46,7 +46,11 @@ export interface UseChatReturn {
   handleKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
 }
 
-export function useChat(): UseChatReturn {
+/**
+ * Core chat hook. Accepts an optional URL-derived conversation ID
+ * so the chat persists across navigation.
+ */
+export function useChat(urlConversationId?: string): UseChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -56,7 +60,7 @@ export function useChat(): UseChatReturn {
   const [emotion, setEmotion] = useState<EmotionState | null>(null);
   const [precog, setPrecog] = useState<PreCogState | null>(null);
   const [learning, setLearning] = useState<LearningState | null>(null);
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(urlConversationId ?? null);
   const [contextInfo, setContextInfo] = useState<ContextInfo | null>(null);
   const [observerIntent, setObserverIntent] = useState<string | null>(null);
 
@@ -65,6 +69,7 @@ export function useChat(): UseChatReturn {
   const abortRef = useRef<AbortController | null>(null);
   const stageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pipelineTraceRef = useRef<PipelineTrace | undefined>(undefined);
+  const initRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -80,6 +85,42 @@ export function useChat(): UseChatReturn {
   }, []);
 
   useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
+
+  // ── Load conversation from URL or auto-resume most recent ──
+  const loadConversationInternal = useCallback(
+    async (id: string) => {
+      try {
+        const resp = await fetch(API.conversationGet(id));
+        if (!resp.ok) return false;
+        const data = await resp.json();
+        const loaded: ChatMessage[] = (data.messages ?? []).map(
+          (m: { id?: string; role?: string; content?: string; timestamp?: string }) => ({
+            id: m.id ?? `msg-${Date.now()}-${Math.random()}`,
+            role: m.role === "vex" ? "vex" : "user",
+            content: m.content ?? "",
+            timestamp: m.timestamp ?? new Date().toISOString(),
+          }),
+        );
+        setConversationId(id);
+        setMessages(loaded.length > 0 ? loaded : [WELCOME_MESSAGE]);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (initRef.current) return;
+    initRef.current = true;
+
+    if (urlConversationId) {
+      // URL has a conversation ID — load it
+      loadConversationInternal(urlConversationId);
+    }
+    // If no URL ID, just show welcome message (fresh chat)
+  }, [urlConversationId, loadConversationInternal]);
 
   const startNewChat = useCallback(() => {
     abortRef.current?.abort();
@@ -106,7 +147,7 @@ export function useChat(): UseChatReturn {
       // Reset pipeline trace for new message
       pipelineTraceRef.current = undefined;
 
-      // Bind SSE event processor — carries accumulated fullText internally
+      // Bind SSE event processor
       const { processEvent, getFullText } = createEventProcessor(vexMsgId, {
         setBackend,
         setConversationId,
@@ -198,7 +239,7 @@ export function useChat(): UseChatReturn {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === vexMsgId
-                ? { ...m, content: "[No response — LLM backend may be starting up. Try again.]" }
+                ? { ...m, content: "[No response \u2014 LLM backend may be starting up. Try again.]" }
                 : m,
             ),
           );
@@ -221,25 +262,9 @@ export function useChat(): UseChatReturn {
   const loadConversation = useCallback(
     async (id: string) => {
       if (isStreaming) return;
-      try {
-        const resp = await fetch(API.conversationGet(id));
-        if (!resp.ok) return;
-        const data = await resp.json();
-        const loaded: ChatMessage[] = (data.messages ?? []).map(
-          (m: { id?: string; role?: string; content?: string; timestamp?: string }) => ({
-            id: m.id ?? `msg-${Date.now()}-${Math.random()}`,
-            role: m.role === "vex" ? "vex" : "user",
-            content: m.content ?? "",
-            timestamp: m.timestamp ?? new Date().toISOString(),
-          }),
-        );
-        setConversationId(id);
-        setMessages(loaded.length > 0 ? loaded : [WELCOME_MESSAGE]);
-      } catch {
-        // silent — keep current state
-      }
+      await loadConversationInternal(id);
     },
-    [isStreaming],
+    [isStreaming, loadConversationInternal],
   );
 
   const sendMessage = useCallback(() => {
