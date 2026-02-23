@@ -42,6 +42,7 @@ ml_image = modal.Image.debian_slim(python_version="3.14").pip_install(
     "accelerate",
     "numpy>=1.26",
     "pydantic>=2.0",
+    "fastapi[standard]",
 )
 
 
