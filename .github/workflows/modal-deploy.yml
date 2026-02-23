@@ -3,7 +3,10 @@ name: Deploy Modal Inference
 on:
   push:
     branches: [main]
-    paths: ['modal/**']
+    paths:
+      - 'modal/**'
+      - 'kernel/llm/client.py'
+      - 'kernel/config/settings.py'
   workflow_dispatch:
 
 jobs:
