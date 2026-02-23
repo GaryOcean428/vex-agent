@@ -847,8 +847,8 @@ async def coordizer_validate(request: Request) -> dict[str, Any] | JSONResponse:
         coordizer = consciousness._coordizer_v2
         result = coordizer.validate()
         kappa_ok = abs(result.kappa_measured - KAPPA_STAR) < COORDIZER_KAPPA_TOLERANCE_FACTOR * max(  # type: ignore[union-attr]
-            result.kappa_std,
-            COORDIZER_KAPPA_STD_FLOOR,  # type: ignore[union-attr]
+            result.kappa_std,  # type: ignore[union-attr]
+            COORDIZER_KAPPA_STD_FLOOR,
         )
         beta_ok = result.beta_running < COORDIZER_BETA_THRESHOLD  # type: ignore[union-attr]
         semantic_ok = result.semantic_correlation > COORDIZER_SEMANTIC_THRESHOLD  # type: ignore[union-attr]
