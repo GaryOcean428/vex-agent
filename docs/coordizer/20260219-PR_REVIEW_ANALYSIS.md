@@ -74,7 +74,7 @@ This works but is a maintenance hazard. Better: load the forbidden list from a c
 The 4 API endpoints expose the wrong operation:
 ```
 POST /api/coordizer/transform  — takes a raw vector, softmaxes it
-GET  /api/coordizer/stats      — transformation statistics  
+GET  /api/coordizer/stats      — transformation statistics
 GET  /api/coordizer/history    — placeholder
 POST /api/coordizer/validate   — simplex validation
 ```

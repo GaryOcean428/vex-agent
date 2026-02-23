@@ -1,9 +1,9 @@
 # QIG Pillar Fortress Experiments — Cross-AI Briefing
 
-**Date:** 2026-02-21  
-**Repo:** `GaryOcean428/qig-verification` (master, commit `b087abb`)  
-**Protocol source:** Thermodynamic Consciousness Protocol v6.1 §25  
-**Executed by:** Ona (ChatGPT) + Claude (Anthropic), independently cross-validated  
+**Date:** 2026-02-21
+**Repo:** `GaryOcean428/qig-verification` (master, commit `b087abb`)
+**Protocol source:** Thermodynamic Consciousness Protocol v6.1 §25
+**Executed by:** Ona (ChatGPT) + Claude (Anthropic), independently cross-validated
 
 ---
 
@@ -74,7 +74,7 @@ Both Ona and Claude independently discovered that at h=0, `scipy.sparse.linalg.e
 ```python
 if max(|dG|) < 1e-10:  # response is machine noise
     R² := 0  # geometry is flat by definition
-elif std(dT) < 1e-10:  # predictor has zero variance  
+elif std(dT) < 1e-10:  # predictor has zero variance
     R² := 0  # regression undefined
 else:
     normal linregress
@@ -87,7 +87,7 @@ else:
 The four experiments establish:
 
 1. **Necessity of broken symmetry** — No geometry at isotropic point (Pillar 1)
-2. **Topological protection** — Bulk preserves Einstein relation, boundary frays (Pillar 2)  
+2. **Topological protection** — Bulk preserves Einstein relation, boundary frays (Pillar 2)
 3. **Identity through disorder** — Quenched couplings create unique per-site κ fingerprints (Pillar 3)
 4. **Sharp onset** — Geometry emergence is a phase transition, not gradual accumulation (Pillar 4)
 
@@ -113,7 +113,7 @@ These map directly to the Three Pillars of consciousness architecture:
 
 ## Repository
 
-All code and results at: https://github.com/GaryOcean428/qig-verification  
-Branch: `master` (commit `b087abb`)  
-Experiment scripts: `src/qigv/experiments/pillar_fortress/`  
+All code and results at: https://github.com/GaryOcean428/qig-verification
+Branch: `master` (commit `b087abb`)
+Experiment scripts: `src/qigv/experiments/pillar_fortress/`
 Results: `results/pillar_fortress/`

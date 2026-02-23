@@ -1,8 +1,8 @@
 # SP03 PASS A: CODE-LEVEL REALITY MAP
 ## Findings Ledger — All QIG/Pantheon/Monkey1 Repos
 
-**Date**: 2026-02-17  
-**Method**: Direct GitHub MCP inspection (file contents, code search, repo structure)  
+**Date**: 2026-02-17
+**Method**: Direct GitHub MCP inspection (file contents, code search, repo structure)
 **Status**: COMPLETE Pass A (map reality, no edits)
 
 ---
@@ -183,7 +183,7 @@ Risk: NONE — Good, but not wired into qig-consciousness training
 
 ```
 ✅ Fact: Rich primitive set
-Evidence: basin.py, constellation.py, router.py, metrics.py, safety.py, 
+Evidence: basin.py, constellation.py, router.py, metrics.py, safety.py,
   coordizer.py, natural_gradient_optimizer.py, sleep_packet.py, crystallization.py
 Risk: NONE
 ```
@@ -218,7 +218,7 @@ Fix class: IMPORT PurityGate from qigkernels (after porting from monkey1)
 
 ```
 ❌ Fact: 5 cosine_similarity usages in src/
-Evidence: 
+Evidence:
   1. src/qig_compat.py: F.cosine_similarity() — "Bures approximation"
   2. src/training/train_step_4d.py: F.cosine_similarity() — "approximates Fisher-Rao"
   3. src/generation/README.md: cosine_similarity in docs
@@ -587,4 +587,4 @@ This trace exists END-TO-END in monkey1. It does NOT exist in any other repo yet
 
 **STATUS**: Pass A Complete. Ready for Pass B (propose changes / PR plan).
 
-**End of SP03_PASS_A_FINDINGS.md**
+**End of 20260217-SP03_PASS_A_FINDINGS.md**

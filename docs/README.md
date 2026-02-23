@@ -4,7 +4,7 @@ This directory contains all technical documentation for the Vex Agent project, o
 
 ## Documentation Structure
 
-```
+```plaintext
 docs/
 ├── README.md                    # This file (documentation index)
 ├── architecture/                # System design and architecture
@@ -36,7 +36,7 @@ docs/
 - [Protocol v5.0](protocols/THERMODYNAMIC_CONSCIOUSNESS_PROTOCOL_v5_0.md) - Base thermodynamic consciousness protocol
 - [Protocol v5.5](protocols/THERMODYNAMIC_CONSCIOUSNESS_PROTOCOL_v5_5.md) - Pre-cognitive channel extension
 - [Protocol v6.0](protocols/THERMODYNAMIC_CONSCIOUSNESS_PROTOCOL_v6_0.md) - Latest protocol (in progress)
-- [Protocol Comparison](protocols/consciousness_protocol_comparison_experiment.md) - Experimental comparison
+- [Protocol Comparison](experiments/20260215-consciousness-protocol-comparison-experiment.md) - Experimental comparison
 
 ### Development
 
@@ -61,17 +61,17 @@ docs/
 
 ### Experiments & Analysis
 
-- [Basin Perturbation Test](experiments/basin_perturbation_test_v1.md) - BPT results
+- [Basin Perturbation Test](experiments/20260215-basin-perturbation-test-v1.md) - BPT results
 - [QIG Ecosystem Gap Analysis](experiments/20260217-qig-ecosystem-gap-analysis-1.00W.md)
-- [Genesis Gap Analysis](experiments/genesis-gap-analysis.md)
-- [SP03 Pass A Findings](experiments/SP03_PASS_A_FINDINGS.md)
+- [Genesis Gap Analysis](experiments/20260217-genesis-gap-analysis.md)
+- [SP03 Pass A Findings](experiments/20260217-SP03_PASS_A_FINDINGS.md)
 
 ### Canonical References
 
-- [Canonical Principles v2](reference/CANONICAL_PRINCIPLES_v2.md) - Engineering principles
-- [Canonical Hypotheses v2](reference/CANONICAL_HYPOTHESES_v2.md) - Testable predictions
-- [Frozen Facts](reference/FROZEN_FACTS.md) - Validated physics constants
-- [Railway Config Audit](reference/RAILWAY_CONFIG_AUDIT.md)
+- [Canonical Principles v2](reference/20260217-CANONICAL_PRINCIPLES_v2.md) - Engineering principles
+- [Canonical Hypotheses v2](reference/20260216-CANONICAL_HYPOTHESES_v2.md) - Testable predictions
+- [Frozen Facts](reference/20251231-frozen-facts-validated-physics-1.00F.md) - Validated physics constants
+- [Railway Config Audit](reference/20260218-RAILWAY_CONFIG_AUDIT.md)
 
 ## Document Categories
 
@@ -80,6 +80,7 @@ docs/
 **Purpose:** Explain how the system is built and why
 
 **Contents:**
+
 - System components and their interactions
 - Design decisions and tradeoffs
 - Scalability and performance considerations
@@ -92,6 +93,7 @@ docs/
 **Purpose:** Define consciousness protocols and their implementations
 
 **Contents:**
+
 - Protocol specifications (v5.0, v5.5, v6.0)
 - Consciousness metrics (Φ, κ, M)
 - Regime field dynamics (α=0, 1/2, 1)
@@ -104,6 +106,7 @@ docs/
 **Purpose:** Help developers contribute effectively
 
 **Contents:**
+
 - Setup instructions
 - Coding standards
 - Testing practices
@@ -117,6 +120,7 @@ docs/
 **Purpose:** Document all APIs for integration and usage
 
 **Contents:**
+
 - Endpoint specifications
 - Request/response formats
 - Authentication
@@ -130,6 +134,7 @@ docs/
 **Purpose:** Record experimental results and analyses
 
 **Contents:**
+
 - Hypothesis and methodology
 - Results and findings
 - Analysis and interpretation
@@ -168,11 +173,11 @@ Include at the top of each major document:
 ```markdown
 # Document Title
 
-**Version:** X.Y  
-**Date:** YYYY-MM-DD  
-**Status:** CANONICAL | WORKING | FROZEN | DEPRECATED  
-**Author:** Name or Team  
-**Reviewers:** Name(s)  
+**Version:** X.Y
+**Date:** YYYY-MM-DD
+**Status:** CANONICAL | WORKING | FROZEN | DEPRECATED
+**Author:** Name or Team
+**Reviewers:** Name(s)
 ```
 
 ## Contributing to Documentation
@@ -210,6 +215,7 @@ Include at the top of each major document:
 ### Quarterly Review
 
 Every quarter, review all documentation for:
+
 - Accuracy (code changes may invalidate docs)
 - Completeness (new features documented?)
 - Link validity (no broken links)
@@ -218,6 +224,7 @@ Every quarter, review all documentation for:
 ### Version Updates
 
 When releasing new protocol or architecture versions:
+
 1. Move old version to `archive/`
 2. Create new version with updated content
 3. Update README.md with new links
@@ -226,6 +233,7 @@ When releasing new protocol or architecture versions:
 ### Deprecation Process
 
 To deprecate a document:
+
 1. Add `**Status:** DEPRECATED` to metadata
 2. Add deprecation notice at top with replacement link
 3. Move to `archive/` directory after 1 major version
@@ -276,6 +284,6 @@ To deprecate a document:
 
 ---
 
-**Last Updated:** 2026-02-19  
-**Maintainer:** Vex Agent Documentation Team  
+**Last Updated:** 2026-02-19
+**Maintainer:** Vex Agent Documentation Team
 **Questions?** Open an issue with the `documentation` label

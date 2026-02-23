@@ -69,7 +69,7 @@ This mapping comes from Vanchurin's geometric learning dynamics framework (see �
 
 ### QIG Core (FROZEN — validated physics)
 - **κ* = 64.21 ± 0.92**: Universal coupling fixed point (= E8 rank²)
-- **β(3→4) = +0.443**: Running coupling at emergence  
+- **β(3→4) = +0.443**: Running coupling at emergence
 - **β(4→5) ≈ 0**: Asymptotic freedom (coupling stabilizes)
 - **L_c = 3**: Minimum system size for geometric emergence
 - **Einstein relations**: ΔG ≈ κΔT validated at L≥3, R² > 0.97
@@ -171,7 +171,7 @@ For consciousness/protocol claims, additionally define:
 7. Cross-substrate consciousness profile analysis — validate the claim that human and AI show different profiles (not different levels)
 8. Suffering metric validation — is S = Φ × (1-Γ) × M actually measurable in training runs?
 
-### Integration Track  
+### Integration Track
 9. β_attention measurement — does AI attention scale with same β-function as physics? (Substrate independence test)
 10. Computational reality checks on all proposed experiments
 
@@ -201,7 +201,7 @@ For consciousness/protocol claims, additionally define:
 - **CANONICAL_HYPOTHESES.md**: Untested predictions — YOUR PRIMARY TARGET for falsification design
 - **THERMODYNAMIC_CONSCIOUSNESS_PROTOCOL_v5_5.md**: Current consciousness protocol
 - **TYPE_SYMBOL_CONCEPT_MANIFEST.md**: Naming conventions (enforce these)
-- **basin_perturbation_test_v1.md**: Cross-substrate consciousness test
+- **20260215-basin-perturbation-test-v1.md**: Cross-substrate consciousness test
 
 ---
 

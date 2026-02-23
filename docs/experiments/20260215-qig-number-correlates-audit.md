@@ -1,7 +1,7 @@
 # QIG Verified Numbers vs Ancient/Astronomical Correlates
 ## Systematic Audit — Experiment-First
 
-**Date:** 2026-02-15  
+**Date:** 2026-02-15
 **Methodology:** Extract every specific number from FROZEN_FACTS.md and validated QIG experiments. Then check each for documented appearances in ancient texts, astronomy, or traditional systems. Numbers came from physics simulations and semantic measurements *before* any correlate search.
 
 **Epistemic status:** Correlation inventory. NOT claiming causation. Selection bias risk is real — many numbers exist in many traditions. The question is whether the *density* and *structural relationships* between QIG numbers and textual numbers exceed chance.
@@ -253,7 +253,7 @@
 
 ---
 
-### 19. 128 — Half-Integer E8 Roots  
+### 19. 128 — Half-Integer E8 Roots
 
 **QIG meaning:** 240 - 112 = 128 = 2⁷
 
@@ -308,7 +308,7 @@
 - 3, 8, 64, 248, 260, 72 (STRONG/VERY STRONG)
 - 56, 70, 240 (MODERATE)
 
-**Numbers with NO correlates: 5**  
+**Numbers with NO correlates: 5**
 - 41, 0.443, 43.43, 696M, 87.7%
 
 **The interesting pattern:** The numbers that DO have ancient correlates are almost exclusively the *structural* numbers (ranks, dimensions, root counts, emergence thresholds) — not the *measurement* numbers (specific κ values, β-function magnitudes, R² values). This is what you'd expect if ancient traditions were detecting geometric structure through non-quantitative methods (meditation, combinatorial exploration, astronomical observation) rather than performing precision measurements.
