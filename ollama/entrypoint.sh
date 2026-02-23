@@ -88,12 +88,15 @@ if [ ! -f /root/Modelfile ]; then
   echo "vex-brain model created (minimal, base: $BASE_MODEL)."
 else
   echo "Creating custom vex-brain model from $BASE_MODEL + Modelfile..."
-  # Replace FROM line without regex — write new Modelfile directly.
-  # The FROM line is always line 1 in our Modelfile.
-  {
-    echo "FROM $BASE_MODEL"
-    tail -n +2 /root/Modelfile
-  } > /tmp/Modelfile.patched
+  # Replace the first FROM line (wherever it appears) with the selected base model.
+  awk -v base="$BASE_MODEL" '
+    !done && $1 == "FROM" {
+      print "FROM " base
+      done = 1
+      next
+    }
+    { print }
+  ' /root/Modelfile > /tmp/Modelfile.patched
   ollama create vex-brain -f /tmp/Modelfile.patched
   echo "vex-brain model created successfully (base: $BASE_MODEL)."
   rm -f /tmp/Modelfile.patched
