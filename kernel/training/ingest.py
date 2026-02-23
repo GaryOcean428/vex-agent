@@ -133,7 +133,7 @@ class IngestionResult:
     errors: list[str] = field(default_factory=list)
 
 
-class FeedbackRequest(BaseModel):
+class FeedbackRequest(BaseModel):  # type: ignore[misc]
     conversation_id: str
     rating: int
     comment: str = ""
@@ -206,7 +206,7 @@ async def _log_feedback(conversation_id: str, rating: int, comment: str) -> None
 def _extract_pdf(content: bytes) -> str:
     """Extract text from PDF using pymupdf in-process."""
     try:
-        import fitz  # type: ignore[import-untyped]
+        import fitz
     except ImportError as exc:
         raise RuntimeError(
             "PDF extraction requires pymupdf. Install with: pip install pymupdf"
@@ -320,12 +320,12 @@ TEXT:
 def _extract_responses_text(data: dict[str, Any]) -> str:
     """Extract text from Responses API JSON (same as client.py helper)."""
     if data.get("output_text"):
-        return data["output_text"]
+        return str(data["output_text"])
     for item in data.get("output", []):
         if item.get("type") == "message":
             for block in item.get("content", []):
                 if block.get("type") == "output_text" and block.get("text"):
-                    return block["text"]
+                    return str(block["text"])
     return ""
 
 
@@ -388,7 +388,8 @@ async def _enrich_chunk_xai(
                 json_str = re.sub(r"```(?:json)?\s*", "", json_str)
                 json_str = json_str.rstrip("`").strip()
 
-            return json.loads(json_str)
+            result: dict[str, Any] = json.loads(json_str)
+            return result
     except json.JSONDecodeError as e:
         logger.warning("xAI enrichment returned invalid JSON: %s", str(e)[:100])
         return {}
@@ -415,7 +416,8 @@ async def _enrich_chunk_llm(
         if json_str.startswith("```"):
             json_str = re.sub(r"```(?:json)?\s*", "", json_str)
             json_str = json_str.rstrip("`").strip()
-        return json.loads(json_str)
+        result: dict[str, Any] = json.loads(json_str)
+        return result
     except Exception as e:
         logger.warning("LLM enrichment failed: %s", str(e)[:100])
         return {}
@@ -849,14 +851,14 @@ async def _run_ingestion_job(
 training_router = APIRouter()
 
 
-@training_router.get("/training/stats")
-async def training_stats_endpoint():
+@training_router.get("/training/stats")  # type: ignore[untyped-decorator]
+async def training_stats_endpoint() -> dict[str, Any]:
     """Get training data statistics."""
     return get_stats()
 
 
-@training_router.get("/training/export")
-async def training_export_endpoint(fmt: str = "openai"):
+@training_router.get("/training/export")  # type: ignore[untyped-decorator]
+async def training_export_endpoint(fmt: str = "openai") -> dict[str, Any]:
     """Export training data.
 
     Query params:
@@ -867,14 +869,14 @@ async def training_export_endpoint(fmt: str = "openai"):
     return export_openai_format()
 
 
-@training_router.post("/training/upload")
+@training_router.post("/training/upload")  # type: ignore[untyped-decorator]
 async def training_upload_endpoint(
     file: UploadFile = File(...),
     category: str = Form(default="curriculum"),
     mode: str = Form(default="standard"),
     e8_primitive: str = Form(default=""),
     e8_override: str = Form(default=""),
-):
+) -> dict[str, Any]:
     """Upload a document for training ingestion.
 
     Accepts PDF, Markdown, TXT, or JSONL files.
@@ -936,8 +938,8 @@ async def training_upload_endpoint(
     return {"status": "processing", "job_id": job_id, "filename": filename}
 
 
-@training_router.get("/training/upload/status/{job_id}")
-async def training_upload_status(job_id: str):
+@training_router.get("/training/upload/status/{job_id}")  # type: ignore[untyped-decorator]
+async def training_upload_status(job_id: str) -> dict[str, Any]:
     """Poll ingestion job status. Returns full result when complete."""
     job = _jobs.get(job_id)
     if not job:
@@ -945,8 +947,8 @@ async def training_upload_status(job_id: str):
     return job
 
 
-@training_router.post("/training/feedback")
-async def training_feedback_endpoint(req: FeedbackRequest):
+@training_router.post("/training/feedback")  # type: ignore[untyped-decorator]
+async def training_feedback_endpoint(req: FeedbackRequest) -> dict[str, str]:
     """Submit feedback on a response."""
     await _log_feedback(req.conversation_id, req.rating, req.comment)
     return {"status": "recorded"}

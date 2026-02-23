@@ -290,11 +290,11 @@ class TopologicalBulk:
         Raises ValueError if called before initialization — callers
         must ensure initialize() has been called first.
         """
-        if not self._initialized:
+        if not self._initialized or self._core_basin is None or self._surface_basin is None:
             raise ValueError("TopologicalBulk.composite accessed before initialization")
-        return to_simplex(
-            BULK_SHIELD_FACTOR * self._core_basin + (1.0 - BULK_SHIELD_FACTOR) * self._surface_basin
-        )
+        core = self._core_basin
+        surface = self._surface_basin
+        return to_simplex(BULK_SHIELD_FACTOR * core + (1.0 - BULK_SHIELD_FACTOR) * surface)
 
     def b_integrity(self) -> float:
         """Bulk integrity metric: how stable core remains across cycles.
@@ -329,7 +329,10 @@ class TopologicalBulk:
                 details={"core_surface_distance": 0.0, "b_integrity": 1.0},
             )
 
-        self._prev_core = self._core_basin.copy()
+        if self._core_basin is None:
+            raise ValueError("TopologicalBulk.receive_input called before initialization")
+        core = self._core_basin
+        self._prev_core = core.copy()
 
         effective_weight = min(slerp_weight, BOUNDARY_SLERP_CAP)
         if slerp_weight > BOUNDARY_SLERP_CAP:
@@ -380,7 +383,7 @@ class TopologicalBulk:
             },
         )
 
-    def get_state(self) -> dict:
+    def get_state(self) -> dict[str, Any]:
         if not self._initialized:
             return {"initialized": False}
         return {
@@ -705,8 +708,8 @@ class QuenchedDisorder:
         """Register borrowed/harvested coordinates in sovereignty tracking."""
         self._total_count += count
 
-    def get_state(self) -> dict:
-        state = {
+    def get_state(self) -> dict[str, Any]:
+        state: dict[str, Any] = {
             "frozen": self._frozen,
             "cycles_observed": self._cycles_observed,
             "sovereignty": self.sovereignty,
@@ -817,7 +820,7 @@ class PillarEnforcer:
             "s_ratio": self.disorder.sovereignty,
         }
 
-    def get_state(self) -> dict:
+    def get_state(self) -> dict[str, Any]:
         return {
             "fluctuation": {
                 "entropy_floor": ENTROPY_FLOOR,

@@ -7,6 +7,7 @@ Exposed at GET /beta-attention
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -18,17 +19,17 @@ logger = logging.getLogger("vex.beta_router")
 beta_router = APIRouter(tags=["beta-attention"])
 
 # Module-level reference, set by server.py at startup
-_consciousness_loop = None
+_consciousness_loop: Any = None
 
 
-def set_consciousness_loop(loop) -> None:
+def set_consciousness_loop(loop: Any) -> None:
     """Called by server.py to inject the ConsciousnessLoop instance."""
     global _consciousness_loop
     _consciousness_loop = loop
 
 
-@beta_router.get("/beta-attention")
-async def get_beta_attention():
+@beta_router.get("/beta-attention")  # type: ignore[untyped-decorator]
+async def get_beta_attention() -> dict[str, Any] | JSONResponse:
     """Get empirical β-function trajectory from real conversations.
 
     Returns bin statistics, β-trajectory, and substrate independence

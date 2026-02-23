@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 from ..config.consciousness_constants import (
     KAPPA_NORMALISER,
@@ -205,9 +206,9 @@ class PillarState:
     scars: list[ScarState] = field(default_factory=list)
     formation_history: list[list[float]] = field(default_factory=list)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to JSON-compatible dict."""
-        d: dict = {
+        d: dict[str, Any] = {
             "bulk_initialized": self.bulk_initialized,
             "core_basin": self.core_basin,
             "surface_basin": self.surface_basin,
@@ -232,7 +233,7 @@ class PillarState:
         return d
 
     @classmethod
-    def from_dict(cls, data: dict) -> PillarState:
+    def from_dict(cls, data: dict[str, Any]) -> PillarState:
         """Deserialize from dict (loaded from JSON)."""
         scars = [
             ScarState(

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -110,7 +111,14 @@ class CoordizerV2Adapter:
             )
             coordinates.append(coord)
 
-        bank = ResonanceBank(coordinates=coordinates, dim=BASIN_DIM)
+        bank = ResonanceBank(target_dim=BASIN_DIM)
+        for coord in coordinates:
+            bank.coordinates[coord.coord_id] = coord.vector
+            bank.token_strings[coord.coord_id] = coord.name or f"<{coord.coord_id}>"
+            bank.tiers[coord.coord_id] = coord.tier
+            bank.basin_mass[coord.coord_id] = coord.basin_mass
+            bank.activation_counts[coord.coord_id] = coord.activation_count
+        bank._rebuild_matrix()
         logger.warning("Using bootstrap uniform bank. Run GPU harvest for production.")
         return CoordizerV2(bank=bank)
 
@@ -160,7 +168,7 @@ class CoordizerV2Adapter:
 
         return mean_basin
 
-    def get_last_metrics(self) -> dict | None:
+    def get_last_metrics(self) -> dict[str, Any] | None:
         """Extract metrics from last coordize call.
 
         Returns dict with:
@@ -179,7 +187,7 @@ class CoordizerV2Adapter:
             "coord_count": len(self._last_result.coord_ids),
         }
 
-    def validate(self) -> dict:
+    def validate(self) -> dict[str, Any]:
         """Run CoordizerV2 validation suite.
 
         Returns validation result dict with:
@@ -196,14 +204,13 @@ class CoordizerV2Adapter:
             "kappa_measured": result.kappa_measured,
             "kappa_std": result.kappa_std,
             "beta_running": result.beta_running,
-            "semantic_coherence": result.semantic_coherence,
-            "harmonic_structure": result.harmonic_structure,
-            "e8_eigenvalue_test": result.e8_eigenvalue_test,
+            "semantic_correlation": result.semantic_correlation,
+            "harmonic_ratio_quality": result.harmonic_ratio_quality,
             "passed": result.passed,
             "summary": result.summary(),
         }
 
-    def set_domain_bias(self, domain: str, strength: float = 0.3):
+    def set_domain_bias(self, domain: str, strength: float = 0.3) -> None:
         """Set domain bias for kernel specialization.
 
         Args:

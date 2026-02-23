@@ -29,6 +29,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -259,7 +260,7 @@ class Harvester:
         Less accurate than Transformers — we only get top-k logprobs,
         not the full distribution.
         """
-        import requests
+        import requests  # type: ignore[import-untyped]
 
         logger.info(f"Harvesting via Ollama at {ollama_url}, model={model_name}")
 
@@ -392,7 +393,7 @@ async def harvest_model_auto(
     target_tokens: int = 2000,
     device: str = "cpu",
     min_contexts: int = 10,
-) -> dict:
+) -> dict[str, Any]:
     """Auto-routing harvest: Modal (if enabled) or local Transformers.
 
     Checks settings.modal.enabled and delegates accordingly.
@@ -408,7 +409,12 @@ async def harvest_model_auto(
             model_id=model_id,
             target_tokens=target_tokens,
         )
-        return result.to_dict()
+        return {
+            "success": True,
+            "token_count": len(result.token_fingerprints),
+            "model_name": result.model_name,
+            "harvest_time_seconds": result.harvest_time_seconds,
+        }
 
     # Fall back to local harvesting
     logger.info("Modal not enabled — running local harvest")

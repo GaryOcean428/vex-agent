@@ -69,7 +69,7 @@ class BasinCoordinate:
     frequency: float = 0.0  # Characteristic oscillation frequency
     activation_count: int = 0  # Times activated (for tier assignment)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if len(self.vector) != BASIN_DIM:
             raise ValueError(f"Basin coordinate must be {BASIN_DIM}D, got {len(self.vector)}")
         # Enforce simplex constraint

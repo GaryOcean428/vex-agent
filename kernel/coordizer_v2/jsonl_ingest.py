@@ -251,7 +251,7 @@ def stream_jsonl(
     path: str,
     *,
     skip_invalid: bool = True,
-) -> Generator[tuple[IngestEntry, ValidationError | None]]:
+) -> Generator[tuple[IngestEntry | None, ValidationError | None]]:
     """Stream JSONL entries from a file, yielding validated entries.
 
     Reads line-by-line — never loads the full file into memory.
@@ -311,6 +311,7 @@ def batch_entries(
                 source=entry.source,
             )
 
+        assert current_batch is not None  # guaranteed by needs_new_batch logic
         current_batch.entries.append(entry)
 
     if current_batch and current_batch.entries:
@@ -599,7 +600,7 @@ class JSONLIngestor:
 
     def _logits_to_basins(
         self,
-        raw: dict,
+        raw: dict[str, Any],
     ) -> list[NDArray | None]:
         """Convert raw Modal harvest response to basin coordinates.
 

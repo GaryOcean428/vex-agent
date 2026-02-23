@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -121,7 +122,7 @@ class ModalHarvestClient:
         self,
         texts: list[str],
         max_length: int = 512,
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         """Send texts to Modal for GPU harvesting.
 
         Args:
@@ -181,7 +182,7 @@ class ModalHarvestClient:
         texts: list[str],
         min_contexts: int = 10,
         max_length: int = 512,
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         """Harvest and compute Fréchet mean fingerprints per token.
 
         This is the full pipeline:
@@ -252,7 +253,7 @@ class ModalHarvestClient:
         self,
         texts: list[str],
         max_length: int,
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         """Send a single batch with retry."""
         import httpx
 
@@ -270,7 +271,8 @@ class ModalHarvestClient:
                         },
                     )
                     resp.raise_for_status()
-                    return resp.json()
+                    result: dict[str, Any] = resp.json()
+                    return result
 
             except httpx.TimeoutException:
                 logger.warning(f"Modal timeout (attempt {attempt + 1}/{self.config.max_retries})")
@@ -302,7 +304,7 @@ def generate_synthetic_harvest(
     vocab_size: int = 32000,
     n_tokens: int = 5000,
     basin_dim: int = 64,
-) -> dict:
+) -> dict[str, Any]:
     """Generate synthetic harvest data for development/testing.
 
     Used when Modal is unavailable. Produces random distributions

@@ -14,13 +14,15 @@ Reference: qig_geometry/canonical.py from pantheon-chat
 
 from __future__ import annotations
 
+from typing import TypeAlias
+
 import numpy as np
 from numpy.typing import NDArray
 
 from ..config.frozen_facts import BASIN_DIM
 
 # Type alias for basin vectors (points on Δ⁶³)
-Basin = NDArray[np.float64]
+Basin: TypeAlias = NDArray[np.float64]
 
 # Small epsilon to prevent log(0) / division by zero
 _EPS = 1e-12

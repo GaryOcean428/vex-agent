@@ -59,7 +59,7 @@ def _extract_responses_text(data: dict[str, Any]) -> str:
     """
     # Fast path: convenience field (may exist in some API versions)
     if data.get("output_text"):
-        return data["output_text"]
+        return str(data["output_text"])
 
     # Walk the output array — standard Responses API structure
     texts: list[str] = []
@@ -138,7 +138,7 @@ def _try_json_format(inner: str) -> list[ToolCall] | None:
         for item in data:
             if isinstance(item, dict) and "name" in item:
                 args = item.get("arguments", item.get("parameters", {}))
-                calls.append(ToolCall(name=item["name"], args=args))
+                calls.append(ToolCall(name=item["name"], args=args or {}))
         return calls if calls else None
     except (json.JSONDecodeError, TypeError):
         return None

@@ -131,6 +131,8 @@ __all__ = [
 
 # Import canonical version — do not hardcode.
 try:
-    from kernel.config.version import VERSION as __version__
+    from kernel.config.version import VERSION as _VERSION
+
+    __version__: str = str(_VERSION)
 except ImportError:
     __version__ = "2.4.0"  # fallback for isolated imports

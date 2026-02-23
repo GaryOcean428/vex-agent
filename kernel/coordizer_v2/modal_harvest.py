@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -124,7 +125,7 @@ async def modal_harvest(
 
 
 def _parse_modal_response(
-    data: dict,
+    data: dict[str, Any],
     model_id: str,
     elapsed: float,
 ) -> HarvestResult:

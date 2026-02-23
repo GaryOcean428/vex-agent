@@ -33,6 +33,7 @@ import logging
 import math
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
@@ -44,7 +45,7 @@ from ..config.frozen_facts import (
 logger = logging.getLogger(__name__)
 
 # Type alias
-Basin = NDArray[np.float64]
+Basin: TypeAlias = NDArray[np.float64]
 
 # Numerical floor
 _EPS = 1e-12

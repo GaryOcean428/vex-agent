@@ -184,7 +184,7 @@ class ResonanceBank:
     ) -> list[tuple[int, float]]:
         """Resonance activation: find tokens closest to query on Δ⁶³."""
         self._ensure_matrix()
-        if self._coord_matrix is None or len(self._coord_ids) == 0:
+        if self._coord_matrix is None or self._coord_ids is None or len(self._coord_ids) == 0:
             return []
         query = to_simplex(query)
         if domain_bias is not None and domain_bias.strength > 0:

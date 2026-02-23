@@ -495,7 +495,7 @@ class ContextManager:
 def _extract_responses_text(data: dict[str, Any]) -> str:
     """Extract text from xAI/OpenAI Responses API JSON response."""
     if data.get("output_text"):
-        return data["output_text"]
+        return str(data["output_text"])
 
     for item in data.get("output", []):
         if item.get("type") == "message":
@@ -503,7 +503,7 @@ def _extract_responses_text(data: dict[str, Any]) -> str:
                 if content_block.get("type") == "output_text":
                     text = content_block.get("text", "")
                     if text:
-                        return text
+                        return str(text)
 
     texts: list[str] = []
     for item in data.get("output", []):
