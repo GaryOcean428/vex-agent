@@ -39,6 +39,8 @@ if [ -d /data ]; then
         touch "$CHOWN_MARKER"
     else
         echo "[init] /data permissions already set (marker found) — skipping recursive chown"
+        # Always re-chown /data itself: Railway re-mounts volumes as root on restart
+        chown -h --no-dereference vex:vex /data 2>/dev/null || true
         mkdir -p /data/workspace /data/training
         chown -h --no-dereference vex:vex /data/workspace /data/training 2>/dev/null || true
     fi
