@@ -49,6 +49,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "kernel/tests/**" = ["S101", "ANN"]  # allow assert + missing annotations in tests
+"kernel/consciousness/loop.py" = ["E402"]  # imports after warnings.filterwarnings
 
 [tool.ruff.format]
 quote-style = "double"

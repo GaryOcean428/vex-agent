@@ -32,13 +32,11 @@ Purity gate:
 from __future__ import annotations
 
 import logging
-import time
 import uuid
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional
-
-import numpy as np
+from typing import Any
 
 from ..config.frozen_facts import (
     KAPPA_STAR,
@@ -68,8 +66,8 @@ class LifecycleOutcome:
 
     success: bool
     kernel: Any = None
-    decision: Optional[GovernanceDecision] = None
-    assessment: Optional[SpawnAssessment] = None
+    decision: GovernanceDecision | None = None
+    assessment: SpawnAssessment | None = None
     reason: str = ""
 
 
@@ -94,18 +92,20 @@ class GovernedLifecycle:
     def __init__(
         self,
         registry: Any,
-        voter_registry: Optional[VoterRegistry] = None,
-        voting_engine: Optional[VotingEngine] = None,
-        purity_root: Optional[Path] = None,
-        on_spawn_approved: Optional[Callable] = None,
-        on_promote_approved: Optional[Callable] = None,
-        on_prune_approved: Optional[Callable] = None,
-        on_rejected: Optional[Callable] = None,
+        voter_registry: VoterRegistry | None = None,
+        voting_engine: VotingEngine | None = None,
+        purity_root: Path | None = None,
+        skip_purity: bool = False,
+        on_spawn_approved: Callable | None = None,
+        on_promote_approved: Callable | None = None,
+        on_prune_approved: Callable | None = None,
+        on_rejected: Callable | None = None,
     ) -> None:
         self._registry = registry
         self._vr = voter_registry or get_voter_registry()
         self._engine = voting_engine or get_voting_engine()
         self._purity_root = purity_root or _KERNEL_ROOT
+        self._skip_purity = skip_purity
         self._on_spawn_approved = on_spawn_approved
         self._on_promote_approved = on_promote_approved
         self._on_prune_approved = on_prune_approved
@@ -158,12 +158,12 @@ class GovernedLifecycle:
         name: str,
         kind: KernelKind,
         specialization: KernelSpecialization = KernelSpecialization.GENERAL,
-        proposed_gain: Optional[float] = None,
+        proposed_gain: float | None = None,
         proposed_basin: Any = None,
         skip_purity: bool = False,
     ) -> LifecycleOutcome:
         """Governed spawn: purity → suffering → assess → vote → spawn → sync."""
-        if not skip_purity:
+        if not (skip_purity or self._skip_purity):
             try:
                 self._purity_check()
             except Exception as e:
@@ -205,7 +205,9 @@ class GovernedLifecycle:
             if self._on_rejected:
                 self._on_rejected(decision)
             return LifecycleOutcome(
-                success=False, decision=decision, assessment=assessment,
+                success=False,
+                decision=decision,
+                assessment=assessment,
                 reason=decision.summary(),
             )
 
@@ -214,7 +216,9 @@ class GovernedLifecycle:
         except Exception as e:
             logger.error("Registry spawn failed after governance approval: %s", e)
             return LifecycleOutcome(
-                success=False, decision=decision, assessment=assessment,
+                success=False,
+                decision=decision,
+                assessment=assessment,
                 reason=f"Registry spawn failed: {e}",
             )
 
@@ -222,13 +226,18 @@ class GovernedLifecycle:
 
         logger.info(
             "Spawn approved: %s (%s/%s) gain=%.3f assessment=%.3f",
-            name, kind.value, specialization.value,
-            kernel.quenched_gain, assessment.score,
+            name,
+            kind.value,
+            specialization.value,
+            kernel.quenched_gain,
+            assessment.score,
         )
         if self._on_spawn_approved:
             self._on_spawn_approved(decision, kernel)
 
-        return LifecycleOutcome(success=True, kernel=kernel, decision=decision, assessment=assessment)
+        return LifecycleOutcome(
+            success=True, kernel=kernel, decision=decision, assessment=assessment
+        )
 
     # ───────────────────────────────────────────────────────────────
     # PROMOTE (CHAOS → GOD)
@@ -240,19 +249,21 @@ class GovernedLifecycle:
         skip_purity: bool = False,
     ) -> LifecycleOutcome:
         """Governed CHAOS → GOD: purity → vote (supermajority) → registry phi gate → sync."""
-        if not skip_purity:
+        if not (skip_purity or self._skip_purity):
             try:
                 self._purity_check()
             except Exception as e:
                 return LifecycleOutcome(success=False, reason=f"Purity gate: {e}")
 
-        kernel = next(
-            (k for k in self._registry.active() if k.id == kernel_id), None
-        )
+        kernel = next((k for k in self._registry.active() if k.id == kernel_id), None)
         if kernel is None:
-            return LifecycleOutcome(success=False, reason=f"Kernel {kernel_id} not found or inactive")
+            return LifecycleOutcome(
+                success=False, reason=f"Kernel {kernel_id} not found or inactive"
+            )
         if kernel.kind != KernelKind.CHAOS:
-            return LifecycleOutcome(success=False, reason=f"Kernel {kernel.name} is {kernel.kind.value}, not CHAOS")
+            return LifecycleOutcome(
+                success=False, reason=f"Kernel {kernel.name} is {kernel.kind.value}, not CHAOS"
+            )
 
         proposal = GovernanceProposal(
             proposal_id=uuid.uuid4().hex[:8],
@@ -303,15 +314,13 @@ class GovernedLifecycle:
         skip_purity: bool = False,
     ) -> LifecycleOutcome:
         """Governed termination: purity → vote (supermajority) → deregister → terminate."""
-        if not skip_purity:
+        if not (skip_purity or self._skip_purity):
             try:
                 self._purity_check()
             except Exception as e:
                 return LifecycleOutcome(success=False, reason=f"Purity gate: {e}")
 
-        kernel = next(
-            (k for k in self._registry.active() if k.id == kernel_id), None
-        )
+        kernel = next((k for k in self._registry.active() if k.id == kernel_id), None)
         if kernel is None:
             return LifecycleOutcome(success=False, reason=f"Kernel {kernel_id} not found")
         if kernel.kind == KernelKind.GENESIS:
@@ -341,7 +350,8 @@ class GovernedLifecycle:
         terminated = self._registry.terminate(kernel_id)
         if not terminated:
             return LifecycleOutcome(
-                success=False, decision=decision,
+                success=False,
+                decision=decision,
                 reason=f"Registry termination failed for {kernel_id}",
             )
 
@@ -360,7 +370,7 @@ class GovernedLifecycle:
         skip_purity: bool = False,
     ) -> LifecycleOutcome:
         """Governed merge: unanimous vote → slerp basins → prune victim."""
-        if not skip_purity:
+        if not (skip_purity or self._skip_purity):
             try:
                 self._purity_check()
             except Exception as e:
@@ -381,10 +391,7 @@ class GovernedLifecycle:
             proposal_id=uuid.uuid4().hex[:8],
             proposal_type=ProposalType.MERGE,
             requester="system",
-            description=(
-                f"Merge {victim.name} -> {absorber.name} "
-                f"(blend={blend_weight:.2f})"
-            ),
+            description=(f"Merge {victim.name} -> {absorber.name} (blend={blend_weight:.2f})"),
             subject_kernel_id=victim_id,
             subject_kernel_name=victim.name,
         )
@@ -399,6 +406,7 @@ class GovernedLifecycle:
 
         if absorber.basin is not None and victim.basin is not None:
             from ..coordizer_v2.geometry import slerp
+
             absorber.basin = slerp(absorber.basin, victim.basin, blend_weight)
 
         absorber.phi = max(absorber.phi, victim.phi)
@@ -410,7 +418,11 @@ class GovernedLifecycle:
 
         logger.info(
             "Merged: %s -> %s | blend=%.2f | phi=%.3f | %s",
-            victim.name, absorber.name, blend_weight, absorber.phi, decision.summary(),
+            victim.name,
+            absorber.name,
+            blend_weight,
+            absorber.phi,
+            decision.summary(),
         )
         return LifecycleOutcome(success=True, kernel=absorber, decision=decision)
 

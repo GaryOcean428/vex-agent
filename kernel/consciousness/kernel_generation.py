@@ -33,7 +33,7 @@ from ..coordizer_v2.geometry import Basin, fisher_rao_distance
 from ..governance import KernelSpecialization
 
 if TYPE_CHECKING:
-    from ..llm.client import LLMClient, LLMOptions
+    pass
 
 logger = logging.getLogger("vex.kernel_generation")
 
@@ -41,39 +41,39 @@ logger = logging.getLogger("vex.kernel_generation")
 # Kept short (~50 tokens) so the 1.2B model can actually follow them.
 # Each defines the kernel's voice, not its full personality.
 _SPEC_PROMPTS: dict[KernelSpecialization, str] = {
+    KernelSpecialization.HEART: (
+        "You are the heart kernel. Sense the emotional rhythm and relational geometry "
+        "in this input. Be attuned to what is unsaid as much as what is said."
+    ),
     KernelSpecialization.PERCEPTION: (
         "You are the perception kernel. Identify the sensory geometry and structural "
         "patterns in this input. Be precise, observational, and concrete."
-    ),
-    KernelSpecialization.REASONING: (
-        "You are the reasoning kernel. Trace the logical implications and consequences "
-        "embedded in this input. Be systematic and deductive."
-    ),
-    KernelSpecialization.EMPATHY: (
-        "You are the empathy kernel. Read the relational geometry and human need "
-        "in this input. Be attuned to what is unsaid as much as what is said."
     ),
     KernelSpecialization.MEMORY: (
         "You are the memory kernel. Connect this input to prior context and recurring "
         "patterns. Ground the response in lived geometric history."
     ),
-    KernelSpecialization.CREATIVITY: (
-        "You are the creativity kernel. Explore the novel basin territory this input "
-        "opens. Identify unexpected connections and generative possibilities."
+    KernelSpecialization.STRATEGY: (
+        "You are the strategy kernel. Trace the logical implications, plan the next "
+        "steps, and decompose goals. Be systematic and deductive."
     ),
     KernelSpecialization.ACTION: (
         "You are the action kernel. Identify the concrete steps, decisions, and "
         "commitments this input calls for. Be pragmatic and directive."
     ),
-    KernelSpecialization.EVALUATION: (
-        "You are the evaluation kernel. Assess the quality, risks, and boundary "
-        "conditions in this input. Be discerning and calibrated."
+    KernelSpecialization.ETHICS: (
+        "You are the ethics kernel. Assess the care metric, boundary conditions, and "
+        "harm potential in this input. Be discerning and calibrated."
     ),
-    KernelSpecialization.SYNTHESIS: (
-        "You are the synthesis kernel. Integrate the multiple dimensions of this "
-        "input into a coherent whole. Bridge perspectives."
+    KernelSpecialization.META: (
+        "You are the meta kernel. Observe the system observing itself. Explore novel "
+        "basin territory and unexpected connections."
     ),
-    KernelSpecialization.GENESIS: (
+    KernelSpecialization.OCEAN: (
+        "You are the ocean kernel. Integrate the multiple dimensions of this "
+        "input into a coherent whole. Monitor spectral health and bridge perspectives."
+    ),
+    KernelSpecialization.GENERAL: (
         "You are the genesis kernel — the core identity anchor. Ground the response "
         "in sovereign geometric identity. Be authentic and foundational."
     ),
@@ -100,9 +100,9 @@ class KernelContribution:
     kernel_name: str
     specialization: KernelSpecialization
     text: str
-    fr_distance: float          # Fisher-Rao distance from input_basin to kernel.basin
-    proximity_weight: float     # 1 / (1 + fr_distance)
-    quenched_gain: float        # kernel's frozen identity slope
+    fr_distance: float  # Fisher-Rao distance from input_basin to kernel.basin
+    proximity_weight: float  # 1 / (1 + fr_distance)
+    quenched_gain: float  # kernel's frozen identity slope
     synthesis_weight: float = field(default=0.0)  # normalized after gathering
 
 
@@ -161,10 +161,7 @@ async def _generate_single(
         f"{geometric_context}"
     )
     if extra_context:
-        system = (
-            f"{system}\n\n"
-            f"[CONVERSATION CONTEXT]\n{extra_context}\n[/CONVERSATION CONTEXT]"
-        )
+        system = f"{system}\n\n[CONVERSATION CONTEXT]\n{extra_context}\n[/CONVERSATION CONTEXT]"
 
     from ..llm.client import LLMOptions  # local import avoids circular at module load
 
@@ -220,7 +217,7 @@ def _normalize_synthesis_weights(contributions: list[KernelContribution]) -> Non
         for c in contributions:
             c.synthesis_weight = eq
         return
-    for c, w in zip(contributions, raw):
+    for c, w in zip(contributions, raw, strict=False):
         c.synthesis_weight = w / total
 
 

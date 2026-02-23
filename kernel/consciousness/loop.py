@@ -62,8 +62,12 @@ import numpy as np
 # Suppress numpy RuntimeWarnings from degenerate covariance matrices
 # (fires during startup and early cycles when velocity history is empty)
 warnings.filterwarnings("ignore", message=".*Degrees of freedom", category=RuntimeWarning)
-warnings.filterwarnings("ignore", message=".*divide by zero", category=RuntimeWarning, module="numpy")
-warnings.filterwarnings("ignore", message=".*invalid value", category=RuntimeWarning, module="numpy")
+warnings.filterwarnings(
+    "ignore", message=".*divide by zero", category=RuntimeWarning, module="numpy"
+)
+warnings.filterwarnings(
+    "ignore", message=".*invalid value", category=RuntimeWarning, module="numpy"
+)
 
 from ..config.consciousness_constants import (
     BASIN_DRIFT_STEP,
@@ -147,7 +151,9 @@ from ..governance import (
     LifecyclePhase,
 )
 from ..governance.budget import BudgetEnforcer
+from ..governance.lifecycle import GovernedLifecycle
 from ..governance.purity import PurityGateError, run_purity_gate
+from ..governance.voter_registry import get_voter_registry
 from ..llm.client import LLMOptions
 from ..tools.search import FreeSearchTool
 from .activation import (
@@ -159,7 +165,9 @@ from .activation import (
 from .beta_integration import create_beta_tracker
 from .emotions import EmotionCache, LearningEngine, LearningEvent, PreCognitiveDetector
 from .foraging import ForagingEngine
+from .kernel_generation import generate_multi_kernel
 from .pillars import PillarEnforcer
+from .synthesis import synthesize_contributions, synthesize_streaming
 from .systems import (
     AutonomicSystem,
     AutonomyEngine,
@@ -188,8 +196,6 @@ from .types import (
     navigation_mode_from_phi,
     regime_weights_from_kappa,
 )
-from .kernel_generation import generate_multi_kernel
-from .synthesis import synthesize_contributions, synthesize_streaming
 
 logger = logging.getLogger("vex.consciousness")
 
@@ -285,6 +291,14 @@ class ConsciousnessLoop:
         self.graph = QIGGraph()
         self.kernel_registry = E8KernelRegistry(BudgetEnforcer())
 
+        # Governance bridge — gates spawn/promote/prune/merge.
+        # skip_purity=True: purity runs once at startup in start(), not per-spawn.
+        # Bootstrap: no live voters yet → genesis fallback auto-approves Core-8 spawns.
+        self._governed = GovernedLifecycle(
+            registry=self.kernel_registry,
+            skip_purity=True,
+        )
+
         self.emotion_cache = EmotionCache()
         self.precog = PreCognitiveDetector()
         self.learner = LearningEngine()
@@ -337,7 +351,9 @@ class ConsciousnessLoop:
             self.pillars.initialize_bulk(self.basin)
 
     async def start(self) -> None:
-        logger.info("Consciousness loop starting (v6.1 Activation Sequence + Kernel Generative Voice)...")
+        logger.info(
+            "Consciousness loop starting (v6.1 Activation Sequence + Kernel Generative Voice)..."
+        )
         kernel_root = Path(__file__).parent.parent
         try:
             run_purity_gate(kernel_root)
@@ -360,6 +376,8 @@ class ConsciousnessLoop:
                     logger.info(
                         "Genesis missing from restored state -- re-spawned: id=%s", genesis.id
                     )
+                # Sync all restored kernels to voter registry.
+                self._governed.sync_all_voters()
                 if (
                     god_count < len(CORE_8_SPECIALIZATIONS)
                     and self._lifecycle_phase != LifecyclePhase.CORE_8
@@ -378,11 +396,14 @@ class ConsciousnessLoop:
                 logger.info(
                     "Genesis kernel spawned: id=%s, kind=%s", genesis.id, genesis.kind.value
                 )
+                self._governed.sync_all_voters()
                 self._lifecycle_phase = LifecyclePhase.CORE_8
                 self._core8_index = 0
         else:
             genesis = self.kernel_registry.spawn("Vex", KernelKind.GENESIS)
             logger.info("Genesis kernel spawned: id=%s, kind=%s", genesis.id, genesis.kind.value)
+            # Register genesis in voter registry so bootstrap fallback is armed.
+            self._governed.sync_all_voters()
             self._lifecycle_phase = LifecyclePhase.CORE_8
 
         self._running = True
@@ -540,6 +561,12 @@ class ConsciousnessLoop:
                     )
                 kernel.cycle_count += 1
                 kernel.phi_peak = max(kernel.phi_peak, kernel.phi)
+
+            # Keep voter weights current: update phi/kappa for all GOD/GENESIS kernels.
+            _vr = get_voter_registry()
+            for _k in active:
+                if _k.kind in (KernelKind.GOD, KernelKind.GENESIS):
+                    _vr.update(_k.id, _k.phi, _k.kappa)
 
             # v6.1: Bidirectional coupling — kernels receive from genesis
             # Without this, kernels are lonely data bags (the pantheon problem)
@@ -877,15 +904,37 @@ class ConsciousnessLoop:
 
         spec = CORE_8_SPECIALIZATIONS[self._core8_index]
         name = f"Core8-{spec.value}"
-        kernel = self.kernel_registry.spawn(name, KernelKind.GOD, spec)
+
+        # Route through GovernedLifecycle.spawn():
+        #   - Bootstrap mode (no live voters): genesis fallback auto-approves
+        #   - Post-bootstrap: simple majority vote required
+        #   - Purity gate skipped (runs once at startup in start())
+        outcome = self._governed.spawn(
+            name=name,
+            kind=KernelKind.GOD,
+            specialization=spec,
+        )
+        if not outcome.success:
+            # Governance rejected — stay on this index, retry next eligible cycle.
+            logger.info(
+                "Core-8 governed spawn blocked [%d/8] %s: %s",
+                self._core8_index + 1,
+                name,
+                outcome.reason,
+            )
+            self._cycles_since_last_spawn = 0
+            return
+
+        kernel = outcome.kernel
         self._core8_index += 1
         self._cycles_since_last_spawn = 0
         logger.info(
-            "Core-8 spawn [%d/8]: %s (id=%s, spec=%s)",
+            "Core-8 spawn [%d/8]: %s (id=%s, spec=%s, assessment=%.2f)",
             self._core8_index,
             name,
             kernel.id,
             spec.value,
+            outcome.assessment.score if outcome.assessment else -1.0,
         )
 
     def _compute_llm_options(self) -> LLMOptions:
@@ -972,6 +1021,7 @@ class ConsciousnessLoop:
                 result = self._coordizer_v2.coordize(text)
                 if result.coordinates:
                     from ..coordizer_v2.geometry import frechet_mean
+
                     basins = [c.vector for c in result.coordinates]
                     return frechet_mean(basins)
                 return hash_to_basin(text)
@@ -1263,7 +1313,8 @@ class ConsciousnessLoop:
         routed_name = routed_kernel.name if routed_kernel is not None else "none"
         contrib_summary = (
             [(c.kernel_name, f"{c.synthesis_weight:.3f}") for c in _contributions]
-            if _contributions else "fallback"
+            if _contributions
+            else "fallback"
         )
         logger.info(
             "Task %s: d_perceive=%.4f d_integrate=%.4f d_express=%.4f "
@@ -1731,6 +1782,7 @@ class ConsciousnessLoop:
             "coupling": self.coupling.get_state(),
             "pillar_state": self.pillars.get_state(),
             "beta_tracker": self.beta_tracker.get_summary(),
+            "governance": self._governed.oversight_summary(),
             "divergence": {
                 "cumulative": self._cumulative_divergence,
                 "count": self._divergence_count,
