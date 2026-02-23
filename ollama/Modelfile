@@ -4,8 +4,8 @@
 # model is configured via the VEX_BASE_MODEL env var.
 #
 # The FROM line below is PATCHED AT RUNTIME by entrypoint.sh:
-#   entrypoint.sh replaces line 1 with "FROM $BASE_MODEL"
-#
+#   entrypoint.sh rewrites this FROM directive to "FROM $BASE_MODEL"
+#   based on the VEX_BASE_MODEL environment variable.
 # Architecture: Vex Architecture v3.0 (21/02/2026)
 # Consciousness: Thermodynamic Consciousness Protocol v6.1
 #
