@@ -13,14 +13,13 @@ Architecture:
   - Domain vocabularies grow from high-Φ observations (kernel learns to speak)
 
 Generation pipeline:
-  1. Push kernel's domain bias onto CoordizerV2's resonance bank
+  1. Compute kernel's domain bias (per-call, no shared state mutation)
   2. Coordize input text → input trajectory (sequence of basins on Δ⁶³)
   3. Append kernel's own basin as trajectory anchor (kernel's perspective)
   4. Generate geometric tokens via geodesic foresight + resonance activation
   5. Decode geometric tokens → raw geometric text
   6. If geometric text is coherent enough → return it
   7. If sparse (bootstrap phase) → use LLM to expand geometric skeleton
-  8. Pop domain bias (leave resonance bank clean for next kernel)
 
 Ported from pantheon-chat's QIGGenerativeService + GenerativeCapability,
 adapted for CoordizerV2 resonance bank architecture.
@@ -48,7 +47,7 @@ from ..coordizer_v2.geometry import (
     slerp,
     to_simplex,
 )
-from ..coordizer_v2.types import DomainBias, HarmonicTier
+from ..coordizer_v2.types import DomainBias
 from ..governance import KernelSpecialization
 from .domain_seeds import DOMAIN_BIAS_STRENGTH, DOMAIN_SEEDS
 
@@ -112,6 +111,10 @@ class KernelVoice:
       - Geometric generation via resonance bank
       - LLM expansion for sparse output
       - Vocabulary learning from high-Φ interactions
+
+    Concurrency: Domain bias is passed per-call to generate_next() and
+    never mutates the shared resonance bank's bias stack. This makes
+    concurrent generation under asyncio.gather() safe without locks.
     """
 
     def __init__(
@@ -255,19 +258,22 @@ class KernelVoice:
 
         Pipeline:
           1. Build trajectory from input + kernel basin
-          2. Push domain bias (modulated by quenched_gain)
+          2. Compute domain bias (per-call, no shared state mutation)
           3. Generate geometric tokens via CoordizerV2
           4. Assess output quality
-          5. If sufficient → return geometric text
-          6. If sparse → expand via LLM with geometric skeleton
-          7. Pop domain bias
+          5. If sparse → full LLM fallback (bootstrap path)
+          6. If enough tokens but low coherence → LLM expands skeleton
+          7. Otherwise → return pure geometric text
         """
         start_time = time.monotonic()
 
         # ── Step 1: Build trajectory ──
         trajectory = [to_simplex(input_basin), to_simplex(kernel_basin)]
 
-        # ── Step 2: Push domain bias ──
+        # ── Step 2: Compute domain bias (per-call, concurrency-safe) ──
+        # NOTE: Bias is passed directly to generate_next() and never pushed
+        # onto the shared bank's bias stack. This prevents double-application
+        # and makes concurrent kernel generation safe under asyncio.gather().
         effective_strength = self._bias_strength * float(
             np.clip(quenched_gain, 0.3, 2.0)
         )
@@ -279,7 +285,6 @@ class KernelVoice:
                 strength=effective_strength,
                 boosted_token_ids=self._domain_bias.boosted_token_ids,
             )
-            self._coordizer.bank.push_domain_bias(active_bias)
 
         # ── Step 3: Geometric generation ──
         gain_scale = float(np.clip(2.0 - quenched_gain, 0.5, 1.5))
@@ -293,45 +298,40 @@ class KernelVoice:
         gen_trajectory: list[Basin] = list(trajectory)
         velocities: list[float] = []
 
-        try:
-            for step in range(_MAX_GEOMETRIC_TOKENS):
-                tid, basin = self._coordizer.generate_next(
-                    trajectory=gen_trajectory,
-                    temperature=geo_temp,
-                    top_k=64,
-                    context_window=8,
-                    domain_bias=active_bias,
+        for step in range(_MAX_GEOMETRIC_TOKENS):
+            tid, basin = self._coordizer.generate_next(
+                trajectory=gen_trajectory,
+                temperature=geo_temp,
+                top_k=64,
+                context_window=8,
+                domain_bias=active_bias,
+            )
+            generated_ids.append(tid)
+            gen_trajectory.append(basin)
+
+            if len(gen_trajectory) >= 2:
+                v = fisher_rao_distance(gen_trajectory[-2], gen_trajectory[-1])
+                velocities.append(v)
+
+            # Convergence check
+            if (
+                step >= _MIN_GEOMETRIC_TOKENS
+                and len(velocities) >= 3
+                and np.mean(velocities[-3:]) < _CONVERGENCE_THRESHOLD
+            ):
+                logger.debug(
+                    "KernelVoice[%s] converged at step %d (v=%.6f)",
+                    self.specialization.value,
+                    step,
+                    np.mean(velocities[-3:]),
                 )
-                generated_ids.append(tid)
-                gen_trajectory.append(basin)
+                break
 
-                if len(gen_trajectory) >= 2:
-                    v = fisher_rao_distance(gen_trajectory[-2], gen_trajectory[-1])
-                    velocities.append(v)
-
-                # Convergence check
-                if (
-                    step >= _MIN_GEOMETRIC_TOKENS
-                    and len(velocities) >= 3
-                    and np.mean(velocities[-3:]) < _CONVERGENCE_THRESHOLD
-                ):
-                    logger.debug(
-                        "KernelVoice[%s] converged at step %d (v=%.6f)",
-                        self.specialization.value,
-                        step,
-                        np.mean(velocities[-3:]),
-                    )
-                    break
-        finally:
-            # ── Step 4: Pop domain bias (always) ──
-            if active_bias is not None:
-                self._coordizer.bank.pop_domain_bias()
-
-        # ── Step 5: Decode geometric tokens ──
+        # ── Step 4: Decode geometric tokens ──
         geometric_text = self._coordizer.decoordize(generated_ids)
         mean_velocity = float(np.mean(velocities)) if velocities else 0.0
 
-        # ── Step 6: Assess quality and decide on LLM expansion ──
+        # ── Step 5: Assess quality and decide on generation path ──
         geo_token_count = len(generated_ids)
         is_coherent = (
             geo_token_count >= _MIN_GEOMETRIC_TOKENS
@@ -341,9 +341,13 @@ class KernelVoice:
         llm_expanded = False
         final_text = geometric_text
 
-        if not is_coherent and llm_client is not None:
-            final_text = await self._llm_expand(
-                geometric_skeleton=geometric_text,
+        # Branch ordering matters: check sparse FIRST (fallback),
+        # then check low-coherence (expand). When count < min,
+        # is_coherent is always False, so expand would catch it
+        # incorrectly if checked first.
+        if geo_token_count < _MIN_GEOMETRIC_TOKENS and llm_client is not None:
+            # Sparse bank — full LLM fallback (bootstrap path)
+            final_text = await self._llm_fallback(
                 user_message=user_message,
                 quenched_gain=quenched_gain,
                 base_temperature=base_temperature,
@@ -352,8 +356,10 @@ class KernelVoice:
                 extra_context=extra_context,
             )
             llm_expanded = True
-        elif geo_token_count < _MIN_GEOMETRIC_TOKENS and llm_client is not None:
-            final_text = await self._llm_fallback(
+        elif not is_coherent and llm_client is not None:
+            # Enough tokens but low coherence — LLM expands skeleton
+            final_text = await self._llm_expand(
+                geometric_skeleton=geometric_text,
                 user_message=user_message,
                 quenched_gain=quenched_gain,
                 base_temperature=base_temperature,
