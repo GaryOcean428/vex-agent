@@ -28,7 +28,7 @@ def set_consciousness_loop(loop: Any) -> None:
     _consciousness_loop = loop
 
 
-@beta_router.get("/beta-attention")  # type: ignore[untyped-decorator]
+@beta_router.get("/beta-attention", response_model=None)  # type: ignore[untyped-decorator]
 async def get_beta_attention() -> dict[str, Any] | JSONResponse:
     """Get empirical β-function trajectory from real conversations.
 
