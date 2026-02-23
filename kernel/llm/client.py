@@ -341,6 +341,11 @@ class LLMClient:
         return self._governor
 
     @property
+    def active_backend(self) -> str:
+        """The currently configured primary backend."""
+        return self._active_backend
+
+    @property
     def last_backend(self) -> str:
         """Which backend actually served the most recent completion."""
         return self._last_backend
@@ -388,10 +393,10 @@ class LLMClient:
                     logger.warning("Modal returned 404 (cold start or model missing)")
                     raise httpx.HTTPStatusError("404", request=resp.request, response=resp)
                 data = resp.json()
-                self._last_backend = "modal"
-                self._modal_available = True
                 text = data.get("message", {}).get("content", "")
                 if text:
+                    self._last_backend = "modal"
+                    self._modal_available = True
                     return text
                 # Log truncated response body for debugging empty content
                 raw_body = json.dumps(data)[:300]
@@ -408,6 +413,7 @@ class LLMClient:
                     "falling back. Response body: %s",
                     raw_body,
                 )
+                self._modal_available = False
             except Exception as e:
                 logger.warning("Modal Ollama completion failed: %s — falling back", e)
                 self._modal_available = False
