@@ -109,6 +109,32 @@ def _extract_responses_text(data: dict[str, Any]) -> str:
     return ""
 
 
+def _extract_ollama_content(data: dict[str, Any]) -> str:
+    """Extract text from an Ollama /api/chat response.
+
+    Thinking models (GLM-4.7-flash, QwQ, etc.) may return an empty
+    ``content`` field but populate a ``thinking`` field with their
+    chain-of-thought. When this happens — typically because the token
+    budget was exhausted during reasoning — fall back to the thinking
+    content so the caller gets *something* rather than an empty string.
+    """
+    msg = data.get("message", {})
+    content = str(msg.get("content", ""))
+    if content:
+        return content
+
+    # Thinking-model fallback: use the reasoning trace when content is empty
+    thinking = str(msg.get("thinking", ""))
+    if thinking:
+        logger.info(
+            "Ollama response had empty content but %d chars of thinking — using thinking as fallback",
+            len(thinking),
+        )
+        return thinking
+
+    return ""
+
+
 class LLMClient:
     """Multi-backend LLM client with Modal GPU primary, Railway Ollama + API fallback.
 
@@ -394,6 +420,7 @@ class LLMClient:
                         "model": settings.modal.inference_model,
                         "messages": msgs,
                         "stream": False,
+                        "think": False,
                         "options": opts.to_ollama_options(),
                     },
                 )
@@ -401,7 +428,7 @@ class LLMClient:
                     logger.warning("Modal returned 404 (cold start or model missing)")
                     raise httpx.HTTPStatusError("404", request=resp.request, response=resp)
                 data = resp.json()
-                text = str(data.get("message", {}).get("content", ""))
+                text = _extract_ollama_content(data)
                 if text:
                     self._last_backend = "modal"
                     self._modal_available = True
@@ -462,6 +489,7 @@ class LLMClient:
                     "model": settings.modal.inference_model,
                     "messages": messages,
                     "stream": True,
+                    "think": False,
                     "options": opts.to_ollama_options(),
                 },
             ) as resp:
@@ -471,7 +499,11 @@ class LLMClient:
                         continue
                     try:
                         data = json.loads(line)
-                        content = data.get("message", {}).get("content", "")
+                        msg = data.get("message", {})
+                        content = msg.get("content", "")
+                        if not content:
+                            # Thinking-model fallback: yield thinking chunks
+                            content = msg.get("thinking", "")
                         if content:
                             got_content = True
                             yield content
@@ -520,12 +552,13 @@ class LLMClient:
                     "model": settings.ollama.model,
                     "messages": msgs,
                     "stream": False,
+                    "think": False,
                     "options": opts.to_ollama_options(),
                 },
             )
             data = resp.json()
             self._last_backend = "ollama"
-            return str(data.get("message", {}).get("content", ""))
+            return _extract_ollama_content(data)
         except Exception as e:
             logger.error("Ollama completion failed: %s", e)
             # Fallback chain: try xAI, then external
@@ -549,6 +582,7 @@ class LLMClient:
                     "model": settings.ollama.model,
                     "messages": messages,
                     "stream": True,
+                    "think": False,
                     "options": opts.to_ollama_options(),
                 },
             ) as resp:
@@ -557,7 +591,11 @@ class LLMClient:
                         continue
                     try:
                         data = json.loads(line)
-                        content = data.get("message", {}).get("content", "")
+                        msg = data.get("message", {})
+                        content = msg.get("content", "")
+                        if not content:
+                            # Thinking-model fallback: yield thinking chunks
+                            content = msg.get("thinking", "")
                         if content:
                             yield content
                     except json.JSONDecodeError:
