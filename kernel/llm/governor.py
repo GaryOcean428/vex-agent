@@ -109,8 +109,10 @@ class IntentGate:
 
         # Vex wants to search on its own initiative — BLOCK
         if tool_requested in (
-            "web_search", "x_search",
-            "perplexity_search", "perplexity_deep_research",
+            "web_search",
+            "x_search",
+            "perplexity_search",
+            "perplexity_deep_research",
         ):
             logger.info("INTENT GATE blocked autonomous %s — no user intent", tool_requested)
             return False
@@ -340,9 +342,10 @@ class GovernorStack:
 
         # Layer 2: Intent gate
         # Skip when operator explicitly enabled autonomous search via dashboard
-        if not self._autonomous_search:
-            if not self.intent_gate.should_use_external(user_message, provider_action):
-                return False, "intent_gate_blocked"
+        if not self._autonomous_search and not self.intent_gate.should_use_external(
+            user_message, provider_action
+        ):
+            return False, "intent_gate_blocked"
 
         # Layer 3: Rate limits
         if not self.rate_limiter.check(provider_action):

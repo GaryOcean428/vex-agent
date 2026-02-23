@@ -793,7 +793,9 @@ _JOB_TTL = 3600  # seconds
 def _prune_jobs() -> None:
     """Remove completed jobs older than TTL."""
     cutoff = time.time() - _JOB_TTL
-    expired = [jid for jid, j in _jobs.items() if j.get("finished_at", 0) and j["finished_at"] < cutoff]
+    expired = [
+        jid for jid, j in _jobs.items() if j.get("finished_at", 0) and j["finished_at"] < cutoff
+    ]
     for jid in expired:
         del _jobs[jid]
 
@@ -817,27 +819,31 @@ async def _run_ingestion_job(
             llm=_llm_client,
             governor=_governor,
         )
-        _jobs[job_id].update({
-            "status": result.status,
-            "filename": result.source,
-            "chunks_written": result.chunks_written,
-            "enriched": result.chunks_enriched,
-            "coordized": result.chunks_coordized,
-            "qa_pairs": result.qa_pairs_generated,
-            "category": category,
-            "mode": proc_mode.value,
-            "processing_time_s": result.processing_time_s,
-            "coordizer_active": _coordizer is not None,
-            "errors": result.errors,
-            "finished_at": time.time(),
-        })
+        _jobs[job_id].update(
+            {
+                "status": result.status,
+                "filename": result.source,
+                "chunks_written": result.chunks_written,
+                "enriched": result.chunks_enriched,
+                "coordized": result.chunks_coordized,
+                "qa_pairs": result.qa_pairs_generated,
+                "category": category,
+                "mode": proc_mode.value,
+                "processing_time_s": result.processing_time_s,
+                "coordizer_active": _coordizer is not None,
+                "errors": result.errors,
+                "finished_at": time.time(),
+            }
+        )
     except Exception as exc:
         logger.error("Background ingestion failed: %s", exc, exc_info=True)
-        _jobs[job_id].update({
-            "status": "error",
-            "errors": [str(exc)],
-            "finished_at": time.time(),
-        })
+        _jobs[job_id].update(
+            {
+                "status": "error",
+                "errors": [str(exc)],
+                "finished_at": time.time(),
+            }
+        )
 
 
 training_router = APIRouter()

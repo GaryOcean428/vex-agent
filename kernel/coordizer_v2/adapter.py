@@ -79,8 +79,7 @@ class CoordizerV2Adapter:
                 logger.info("CoordizerV2Adapter loaded bank from %s", bank_path)
             except FileNotFoundError:
                 logger.warning(
-                    "CoordizerV2 bank not found at %s. "
-                    "Creating default bank with uniform basins.",
+                    "CoordizerV2 bank not found at %s. Creating default bank with uniform basins.",
                     bank_path,
                 )
                 self._coordizer = self._create_bootstrap_coordizer()

@@ -117,7 +117,7 @@ class VexOllamaServer:
             text=True,
         )
         ollama_version = version_result.stdout.strip() or "unknown"
-        print(f"Starting Vex Ollama inference server")
+        print("Starting Vex Ollama inference server")
         print(f"  Ollama version: {ollama_version}")
         print(f"  GPU: {GPU_TYPE}")
         print(f"  Model: {MODEL_NAME}")
@@ -148,7 +148,9 @@ class VexOllamaServer:
         # This ensures every container start gets the latest model.
         print(f"Pulling {MODEL_NAME} (checking for updates)...")
         pull = await asyncio.create_subprocess_exec(
-            "ollama", "pull", MODEL_NAME,
+            "ollama",
+            "pull",
+            MODEL_NAME,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -165,8 +167,7 @@ class VexOllamaServer:
                 print(f"Pull failed but cached version exists: {stderr.decode()[:200]}")
             else:
                 raise RuntimeError(
-                    f"Failed to pull {MODEL_NAME} and no cached version: "
-                    f"{stderr.decode()[:500]}"
+                    f"Failed to pull {MODEL_NAME} and no cached version: {stderr.decode()[:500]}"
                 )
         else:
             print(f"{MODEL_NAME} is up to date.")

@@ -22,10 +22,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from ..llm.client import LLMClient
+from typing import Any
 
 from .kernel_generation import KernelContribution
 
@@ -130,7 +127,7 @@ async def synthesize_contributions(
                 len(result),
                 len(contributions),
             )
-            return result.strip()
+            return str(result.strip())
     except Exception:
         logger.warning("Synthesis LLM call failed — using primary kernel output", exc_info=True)
 
@@ -143,7 +140,7 @@ async def synthesize_streaming(
     user_message: str,
     geometric_context: str,
     llm_client: Any,
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[str]:
     """Stream synthesis output as an async generator for SSE chat_stream.
 
     Yields:

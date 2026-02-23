@@ -27,19 +27,18 @@ from __future__ import annotations
 
 import logging
 import time
-import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Optional
+from typing import Any
 
 logger = logging.getLogger("vex.governance.voting")
 
 
 class ProposalType(StrEnum):
     SPAWN = "spawn"
-    PROMOTE = "promote"      # CHAOS → GOD
-    PRUNE = "prune"          # terminate a kernel
-    MERGE = "merge"          # absorb one kernel into another
+    PROMOTE = "promote"  # CHAOS → GOD
+    PRUNE = "prune"  # terminate a kernel
+    MERGE = "merge"  # absorb one kernel into another
 
 
 class VoteValue(StrEnum):
@@ -50,10 +49,10 @@ class VoteValue(StrEnum):
 
 # Quorum thresholds by proposal type
 _QUORUM: dict[ProposalType, float] = {
-    ProposalType.SPAWN:   0.50,
+    ProposalType.SPAWN: 0.50,
     ProposalType.PROMOTE: 0.67,
-    ProposalType.PRUNE:   0.67,
-    ProposalType.MERGE:   0.95,
+    ProposalType.PRUNE: 0.67,
+    ProposalType.MERGE: 0.95,
 }
 
 
@@ -61,7 +60,7 @@ _QUORUM: dict[ProposalType, float] = {
 class VoteBallot:
     voter_name: str
     value: VoteValue
-    weight: float          # phi * quenched_gain, normalized
+    weight: float  # phi * quenched_gain, normalized
     phi: float
     kappa: float
     rationale: str = ""
@@ -72,11 +71,11 @@ class VoteBallot:
 class GovernanceProposal:
     proposal_id: str
     proposal_type: ProposalType
-    requester: str                          # Kernel name or "system"
+    requester: str  # Kernel name or "system"
     description: str
-    subject_kernel_id: Optional[str] = None # For promote/prune/merge
-    subject_kernel_name: Optional[str] = None
-    assessment_score: float = 1.0           # From spawn_assessment (advisory)
+    subject_kernel_id: str | None = None  # For promote/prune/merge
+    subject_kernel_name: str | None = None
+    assessment_score: float = 1.0  # From spawn_assessment (advisory)
     assessment_notes: list[str] = field(default_factory=list)
     created_at: float = field(default_factory=time.monotonic)
 
@@ -88,9 +87,9 @@ class GovernanceDecision:
     yes_weight: float
     no_weight: float
     total_weight: float
-    voter_coalition: list[str]              # Names of YES voters
+    voter_coalition: list[str]  # Names of YES voters
     decided_at: float = field(default_factory=time.monotonic)
-    bootstrap_mode: bool = False            # True if no live voters existed
+    bootstrap_mode: bool = False  # True if no live voters existed
 
     @property
     def yes_fraction(self) -> float:
@@ -140,9 +139,7 @@ class VotingEngine:
         quorum_threshold = _QUORUM.get(proposal.proposal_type, 0.50)
 
         # Bootstrap: genesis fallback sentinel detected (single "Genesis" voter)
-        bootstrap_mode = (
-            len(voter_weights) == 1 and voter_weights[0][0] == "Genesis"
-        )
+        bootstrap_mode = len(voter_weights) == 1 and voter_weights[0][0] == "Genesis"
 
         if override_yes or bootstrap_mode:
             decision = GovernanceDecision(
@@ -196,9 +193,7 @@ class VotingEngine:
         quorum_threshold = _QUORUM.get(proposal.proposal_type, 0.50)
         veto_set = set(veto_voters)
 
-        bootstrap_mode = (
-            len(voter_weights) == 1 and voter_weights[0][0] == "Genesis"
-        )
+        bootstrap_mode = len(voter_weights) == 1 and voter_weights[0][0] == "Genesis"
 
         ballots: list[VoteBallot] = []
         for name, phi, kappa, weight in voter_weights:
@@ -253,7 +248,7 @@ class VotingEngine:
         )
         return decision
 
-    def recent(self, n: int = 10) -> list[dict]:
+    def recent(self, n: int = 10) -> list[dict[str, Any]]:
         """Return the n most recent decisions as dicts for audit log."""
         return [
             {
@@ -271,7 +266,7 @@ class VotingEngine:
 
 # ── Module-level singleton ────────────────────────────────────────────
 
-_ENGINE: Optional[VotingEngine] = None
+_ENGINE: VotingEngine | None = None
 
 
 def get_voting_engine() -> VotingEngine:

@@ -20,9 +20,9 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any
 
-from ..config.frozen_facts import KAPPA_STAR, PHI_THRESHOLD
+from ..config.frozen_facts import KAPPA_STAR
 
 # Genesis fallback constants (validated physics)
 _GENESIS_PHI: float = 0.727
@@ -58,7 +58,7 @@ class VoterRecord:
         """phi * quenched_gain — geometric relevance × individuality."""
         return self.phi * self.quenched_gain
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "kernel_id": self.kernel_id,
             "kernel_name": self.kernel_name,
@@ -188,7 +188,7 @@ class VoterRegistry:
 
             return [
                 (rec.kernel_name, rec.phi, rec.kappa, w / total)
-                for rec, w in zip(live, raw_weights)
+                for rec, w in zip(live, raw_weights, strict=False)
             ]
 
     def quorum_possible(self, threshold: float = 0.5) -> bool:
@@ -210,7 +210,7 @@ class VoterRegistry:
         with self._lock:
             return sum(1 for rec in self._records.values() if rec.is_live)
 
-    def snapshot(self) -> dict:
+    def snapshot(self) -> dict[str, Any]:
         """Non-locking snapshot for health checks and logging."""
         with self._lock:
             live = [rec for rec in self._records.values() if rec.is_live]
@@ -226,7 +226,7 @@ class VoterRegistry:
 
 # ── Module-level singleton ────────────────────────────────────────────
 
-_REGISTRY: Optional[VoterRegistry] = None
+_REGISTRY: VoterRegistry | None = None
 _REGISTRY_LOCK = threading.Lock()
 
 

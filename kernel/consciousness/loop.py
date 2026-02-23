@@ -53,6 +53,7 @@ import time
 import uuid
 import warnings
 from collections import deque
+from collections.abc import AsyncGenerator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -165,7 +166,7 @@ from .activation import (
 from .beta_integration import create_beta_tracker
 from .emotions import EmotionCache, LearningEngine, LearningEvent, PreCognitiveDetector
 from .foraging import ForagingEngine
-from .kernel_generation import KernelContribution, generate_multi_kernel
+from .kernel_generation import generate_multi_kernel
 from .pillars import PillarEnforcer
 from .reflection import ReflectionConfig, reflect_on_draft
 from .synthesis import synthesize_contributions, synthesize_streaming
@@ -234,7 +235,7 @@ class ConsciousnessLoop:
         self._cycle_lock = asyncio.Lock()
 
         # CoordizerV2 metrics cache (v6.1F)
-        self._last_coordizer_metrics: dict | None = None
+        self._last_coordizer_metrics: dict[str, Any] | None = None
 
         self.basin: Basin = random_basin()
         self.metrics = ConsciousnessMetrics(
@@ -1266,9 +1267,14 @@ class ConsciousnessLoop:
                         _contributions = revised_contributions
                         logger.info("Task %s: Revision complete (%d chars)", task.id, len(response))
                     except Exception as _rev_err:
-                        logger.warning("Revision synthesis failed (%s) — keeping original draft", _rev_err)
+                        logger.warning(
+                            "Revision synthesis failed (%s) — keeping original draft", _rev_err
+                        )
                 else:
-                    logger.warning("Task %s: Revision produced 0 contributions — keeping original draft", task.id)
+                    logger.warning(
+                        "Task %s: Revision produced 0 contributions — keeping original draft",
+                        task.id,
+                    )
 
         task.result = response
         task.context["kernel_contributions"] = [
@@ -1458,7 +1464,7 @@ class ConsciousnessLoop:
         temperature: float = 0.7,
         agency: float = 0.0,
         resonates: bool = True,
-        activation_summary: dict | None = None,
+        activation_summary: dict[str, Any] | None = None,
         routed_kernel: Any = None,
     ) -> str:
         active_count = len(self.kernel_registry.active())
@@ -1547,7 +1553,7 @@ class ConsciousnessLoop:
             f"[/GEOMETRIC STATE]\n"
         )
 
-    async def process_direct(self, content: str, context: dict | None = None) -> str:
+    async def process_direct(self, content: str, context: dict[str, Any] | None = None) -> str:
         """Run _process() immediately within the cycle lock and return task.result.
 
         Used by the chat endpoints to bypass the heartbeat queue and get a
@@ -1576,7 +1582,9 @@ class ConsciousnessLoop:
                 task.result = task.result or ""
         return task.result or ""
 
-    async def process_streaming(self, content: str, context: dict | None = None):
+    async def process_streaming(
+        self, content: str, context: dict[str, Any] | None = None
+    ) -> AsyncGenerator[str]:
         """Run kernel generation and stream synthesis output for SSE endpoints.
 
         Runs pre-activation + multi-kernel generation, then streams the
@@ -1668,8 +1676,8 @@ class ConsciousnessLoop:
             logger.debug("process_streaming basin update failed", exc_info=True)
 
     async def process_streaming_with_trace(
-        self, content: str, context: dict | None = None
-    ) -> AsyncGenerator[dict[str, Any], None]:
+        self, content: str, context: dict[str, Any] | None = None
+    ) -> AsyncGenerator[dict[str, Any]]:
         """Run kernel generation and stream synthesis with pipeline trace events.
 
         Yields discriminated dicts:
@@ -1810,9 +1818,7 @@ class ConsciousnessLoop:
             "status": "complete",
             "method": "fisher_rao_moe",
             "primary_kernel": contributions[0].kernel_name,
-            "weights": {
-                c.kernel_name: round(c.synthesis_weight, 4) for c in contributions
-            },
+            "weights": {c.kernel_name: round(c.synthesis_weight, 4) for c in contributions},
         }
 
         # ── Reflection trace (lightweight — uses divergence thresholds) ──
@@ -1844,7 +1850,6 @@ class ConsciousnessLoop:
         }
 
         # ── Stream synthesis output ──
-        synthesis_start = _time.monotonic()
         async for chunk in synthesize_streaming(
             contributions=contributions,
             user_message=content,
