@@ -15,6 +15,25 @@
   flex-wrap: wrap;
 }
 
+.history-btn {
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.history-btn:hover {
+  background: var(--accent-glow);
+  color: var(--accent);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
 .new-chat-btn {
   background: var(--accent);
   color: var(--text-primary, #fff);

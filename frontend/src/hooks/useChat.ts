@@ -36,11 +36,13 @@ export interface UseChatReturn {
   learning: LearningState | null;
   contextInfo: ContextInfo | null;
   observerIntent: string | null;
+  conversationId: string | null;
   chatRef: React.RefObject<HTMLDivElement | null>;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   sendText: (text: string) => Promise<void>;
   sendMessage: () => void;
   startNewChat: () => void;
+  loadConversation: (id: string) => Promise<void>;
   handleKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
 }
 
@@ -216,6 +218,30 @@ export function useChat(): UseChatReturn {
     [isStreaming, scrollToBottom, conversationId],
   );
 
+  const loadConversation = useCallback(
+    async (id: string) => {
+      if (isStreaming) return;
+      try {
+        const resp = await fetch(API.conversationGet(id));
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const loaded: ChatMessage[] = (data.messages ?? []).map(
+          (m: { id?: string; role?: string; content?: string; timestamp?: string }) => ({
+            id: m.id ?? `msg-${Date.now()}-${Math.random()}`,
+            role: m.role === "vex" ? "vex" : "user",
+            content: m.content ?? "",
+            timestamp: m.timestamp ?? new Date().toISOString(),
+          }),
+        );
+        setConversationId(id);
+        setMessages(loaded.length > 0 ? loaded : [WELCOME_MESSAGE]);
+      } catch {
+        // silent — keep current state
+      }
+    },
+    [isStreaming],
+  );
+
   const sendMessage = useCallback(() => {
     const text = input.trim();
     setInput("");
@@ -232,6 +258,7 @@ export function useChat(): UseChatReturn {
   return {
     messages, input, setInput, isStreaming, activeStages, backend,
     kernelSummary, emotion, precog, learning, contextInfo, observerIntent,
-    chatRef, inputRef, sendText, sendMessage, startNewChat, handleKeyDown,
+    conversationId,
+    chatRef, inputRef, sendText, sendMessage, startNewChat, loadConversation, handleKeyDown,
   };
 }
