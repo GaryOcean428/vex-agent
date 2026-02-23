@@ -171,8 +171,8 @@ export function createChatRouter(arg: string | ChatRouterOptions): Router {
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
           res.write(chunk);
-          if (typeof (res as any).flush === "function") {
-            (res as any).flush();
+          if (typeof (res as unknown as { flush?: () => void }).flush === "function") {
+            (res as unknown as { flush: () => void }).flush();
           }
         }
       } catch (err) {

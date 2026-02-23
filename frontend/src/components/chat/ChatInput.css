@@ -30,9 +30,10 @@
   resize: none;
   outline: none;
   min-height: 48px;
-  max-height: 140px;
+  max-height: 200px;
   line-height: 1.5;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  overflow-y: auto;
+  transition: border-color 0.2s, box-shadow 0.2s, height 0.15s ease;
 }
 
 .chat-input:focus {
@@ -85,9 +86,45 @@
   cursor: not-allowed;
 }
 
+/* ─── Stop Button ─── */
+
+.stop-btn {
+  background: #dc2626;
+  border: none;
+  border-radius: var(--radius-sm);
+  width: 48px;
+  height: 48px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: white;
+  animation: stop-pulse 2s ease-in-out infinite;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.stop-btn:hover {
+  background: #b91c1c;
+  transform: scale(1.04);
+}
+
+.stop-btn:active {
+  transform: scale(0.96);
+}
+
+@keyframes stop-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(220, 38, 38, 0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .chat-input {
-    transition: border-color 0.01ms;
+    transition: border-color 0.01ms, height 0.01ms;
   }
 
   .send-btn {
@@ -96,6 +133,16 @@
 
   .send-btn:hover:not(:disabled),
   .send-btn:active:not(:disabled) {
+    transform: none;
+  }
+
+  .stop-btn {
+    animation: none;
+    transition: background 0.01ms;
+  }
+
+  .stop-btn:hover,
+  .stop-btn:active {
     transform: none;
   }
 }

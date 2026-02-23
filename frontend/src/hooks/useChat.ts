@@ -41,6 +41,7 @@ export interface UseChatReturn {
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   sendText: (text: string) => Promise<void>;
   sendMessage: () => void;
+  stopGeneration: () => void;
   startNewChat: () => void;
   loadConversation: (id: string) => Promise<void>;
   handleKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -273,6 +274,13 @@ export function useChat(urlConversationId?: string): UseChatReturn {
     sendText(text);
   }, [input, sendText]);
 
+  const stopGeneration = useCallback(() => {
+    abortRef.current?.abort();
+    setIsStreaming(false);
+    setActiveStages([]);
+    inputRef.current?.focus();
+  }, []);
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
@@ -284,6 +292,6 @@ export function useChat(urlConversationId?: string): UseChatReturn {
     messages, input, setInput, isStreaming, activeStages, backend,
     kernelSummary, emotion, precog, learning, contextInfo, observerIntent,
     conversationId,
-    chatRef, inputRef, sendText, sendMessage, startNewChat, loadConversation, handleKeyDown,
+    chatRef, inputRef, sendText, sendMessage, stopGeneration, startNewChat, loadConversation, handleKeyDown,
   };
 }

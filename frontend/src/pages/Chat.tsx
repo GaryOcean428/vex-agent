@@ -57,6 +57,7 @@ export default function Chat() {
     inputRef,
     sendText,
     sendMessage,
+    stopGeneration,
     startNewChat,
     loadConversation,
     handleKeyDown,
@@ -69,8 +70,7 @@ export default function Chat() {
     if (prevIsStreaming.current && !isStreaming) {
       setRefreshToken((t) => t + 1);
     }
-    prevIsStreaming.current = isStreaming;
-  }, [isStreaming]);
+  }, [conversationId, urlConvId, navigate]);
 
   // On mount: load conversation from URL if present
   useEffect(() => {
@@ -79,26 +79,13 @@ export default function Chat() {
     if (urlConvId && urlConvId !== conversationId) {
       loadConversation(urlConvId);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // intentionally run only once on mount
+  }, [urlConvId, conversationId, loadConversation]);
 
-  // Sync conversation ID changes back to the URL
-  useEffect(() => {
-    if (!initialLoadDone.current) return; // skip during initial load
-    if (conversationId && conversationId !== urlConvId) {
-      navigate(`/chat/${conversationId}`, { replace: true });
-    } else if (!conversationId && urlConvId) {
-      navigate("/chat", { replace: true });
-    }
-  }, [conversationId, urlConvId, navigate]);
-
-  // Wrap startNewChat to also navigate
   const handleNewChat = useCallback(() => {
     startNewChat();
     navigate("/chat", { replace: true });
   }, [startNewChat, navigate]);
 
-  // Wrap loadConversation to also navigate
   const handleSelectConversation = useCallback(
     (id: string) => {
       loadConversation(id);
@@ -139,6 +126,10 @@ export default function Chat() {
             setInput(text);
             sendText(text);
           }}
+          onRetry={(text) => {
+            setInput(text);
+            sendText(text);
+          }}
         />
 
         <MetricsSidebar
@@ -158,6 +149,7 @@ export default function Chat() {
         onChange={setInput}
         onKeyDown={handleKeyDown}
         onSend={sendMessage}
+        onStop={stopGeneration}
       />
     </div>
   );
