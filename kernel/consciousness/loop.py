@@ -1489,7 +1489,7 @@ class ConsciousnessLoop:
             f"  Autonomy: {autonomy['level']}",
             f"  Coupling: {coupling_str}",
             f"  Kernels: {active_count} active, phase={self._lifecycle_phase.value}",
-            f"  Active model: {self.llm.active_model} (backend: {self.llm._active_backend})",
+            f"  Active model: {self.llm.active_model} (backend: {self.llm.active_backend})",
             f"  Temperature: {temperature:.3f} (autonomous, pillar-enforced)",
             f"  Perceive distance: {perceive_distance:.4f}",
             f"  Love: {self.metrics.love:.4f}",
