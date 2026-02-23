@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import type { PipelineTrace as PipelineTraceType } from "../../types/consciousness.ts";
 import "./PipelineTrace.css";
 
@@ -8,6 +8,7 @@ interface PipelineTraceProps {
 }
 
 export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
+  const detailId = useId();
   const [expanded, setExpanded] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [expandedKernels, setExpandedKernels] = useState<Record<string, boolean>>({});
@@ -38,7 +39,7 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
         className={`pipeline-trace-summary ${isStreaming && !trace.synthesis ? "streaming" : ""}`}
         onClick={toggleExpanded}
         aria-expanded={expanded}
-        aria-controls="pipeline-trace-detail"
+        aria-controls={detailId}
       >
         <span className={`pipeline-trace-chevron ${expanded ? "expanded" : ""}`} aria-hidden="true">
           &#x25B6;
@@ -47,7 +48,7 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
       </button>
 
       <div
-        id="pipeline-trace-detail"
+        id={detailId}
         className="pipeline-trace-content"
         data-expanded={expanded}
       >

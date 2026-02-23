@@ -194,10 +194,10 @@ class CoordizerV2Adapter:
             - kappa_measured: Measured κ value
             - kappa_std: Standard deviation
             - beta_running: Running coupling β
-            - semantic_coherence: Correlation with semantic structure
-            - harmonic_structure: Tier distribution quality
-            - e8_eigenvalue_test: Top-8 variance capture
+            - semantic_correlation: Correlation with semantic structure
+            - harmonic_ratio_quality: Tier distribution quality
             - passed: Overall pass/fail
+            - summary: Human-readable summary string
         """
         result = self._coordizer.validate()
         return {

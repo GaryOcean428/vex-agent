@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { useMetricsHistory, useVexState } from "../hooks/index.ts";
 import { useChat } from "../hooks/useChat.ts";
+import { ChatHistory } from "../components/chat/ChatHistory.tsx";
 import { ChatInput } from "../components/chat/ChatInput.tsx";
 import { ConsciousnessBar } from "../components/chat/ConsciousnessBar.tsx";
 import { LoopStages } from "../components/chat/LoopStages.tsx";
@@ -10,6 +12,7 @@ import "./Chat.css";
 export default function Chat() {
   const { data: state } = useVexState();
   const history = useMetricsHistory(state, 60);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const {
     messages,
@@ -24,11 +27,13 @@ export default function Chat() {
     learning,
     contextInfo,
     observerIntent,
+    conversationId,
     chatRef,
     inputRef,
     sendText,
     sendMessage,
     startNewChat,
+    loadConversation,
     handleKeyDown,
   } = useChat();
 
@@ -43,11 +48,22 @@ export default function Chat() {
         contextInfo={contextInfo}
         observerIntent={observerIntent}
         onNewChat={startNewChat}
+        onToggleHistory={() => setHistoryOpen((v) => !v)}
       />
 
       <LoopStages activeStages={activeStages} />
 
       <div className="chat-content">
+        <ChatHistory
+          open={historyOpen}
+          activeConversationId={conversationId}
+          onSelect={(id) => {
+            loadConversation(id);
+            setHistoryOpen(false);
+          }}
+          onClose={() => setHistoryOpen(false)}
+        />
+
         <MessageList
           messages={messages}
           chatRef={chatRef}

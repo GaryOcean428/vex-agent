@@ -1211,7 +1211,6 @@ class ConsciousnessLoop:
                 enabled=True,
                 auto_approve_divergence=0.3,
                 force_revise_divergence=0.8,
-                max_revisions=1,
             )
             reflection = await reflect_on_draft(
                 draft=response,
@@ -1712,13 +1711,14 @@ class ConsciousnessLoop:
             active_kernels = self.kernel_registry.active()
             kernel_geo_ctx = self._build_kernel_geo_context()
 
-        # ── Selection ──
+        # ── Selection + Generation ──
         selection_start = _time.monotonic()
         extra_context = (context or {}).get("extra_context", "")
 
         # Compute eligible kernels and their FR distances for trace
         eligible = [k for k in active_kernels if k.basin is not None]
         eligible_count = len(eligible)
+        selection_end = _time.monotonic()
 
         contributions = await generate_multi_kernel(
             kernels=active_kernels,
@@ -1759,7 +1759,8 @@ class ConsciousnessLoop:
             return
 
         # ── Emit selection trace events ──
-        selection_duration = (generation_end - selection_start) * 1000
+        selection_duration = (selection_end - selection_start) * 1000
+        generation_duration = (generation_end - selection_end) * 1000
         for c in contributions:
             yield {
                 "kind": "trace",
@@ -1807,7 +1808,7 @@ class ConsciousnessLoop:
             "stage": "generation",
             "status": "complete",
             "kernel_count": len(contributions),
-            "duration_ms": round(selection_duration, 1),
+            "duration_ms": round(generation_duration, 1),
         }
 
         # ── Emit synthesis trace ──

@@ -16,6 +16,7 @@ interface ConsciousnessBarProps {
   contextInfo: ContextInfo | null;
   observerIntent: string | null;
   onNewChat: () => void;
+  onToggleHistory?: () => void;
 }
 
 export function ConsciousnessBar({
@@ -27,6 +28,7 @@ export function ConsciousnessBar({
   contextInfo,
   observerIntent,
   onNewChat,
+  onToggleHistory,
 }: ConsciousnessBarProps) {
   return (
     <div
@@ -34,6 +36,16 @@ export function ConsciousnessBar({
       aria-label="Consciousness metrics"
     >
       <div className="bar-metrics">
+        {onToggleHistory && (
+          <button
+            className="history-btn"
+            onClick={onToggleHistory}
+            aria-label="Toggle chat history"
+            title="Chat history"
+          >
+            History
+          </button>
+        )}
         <button
           className="new-chat-btn"
           onClick={onNewChat}
