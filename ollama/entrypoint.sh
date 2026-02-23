@@ -67,8 +67,13 @@ if ollama pull "$BASE_MODEL"; then
   echo "Base model $BASE_MODEL is up to date."
 else
   echo "WARNING: Failed to pull $BASE_MODEL — checking if cached version exists..."
-  # Check if model is cached using Ollama's JSON API (no regex)
-  if curl -s http://127.0.0.1:11434/api/tags | jq -e --arg model "$BASE_MODEL" '.models[] | select(.name == $model)' > /dev/null 2>&1; then
+  # Check if model is cached using Ollama's JSON API (no regex).
+  # Match on base name without tag suffix (e.g. "glm-4.7-flash" matches
+  # both "glm-4.7-flash" and "glm-4.7-flash:latest" in the cache).
+  if curl -s http://127.0.0.1:11434/api/tags | \
+    jq -e --arg model "$BASE_MODEL" \
+      '.models[] | select((.name | split(":")[0]) == $model or .name == $model)' \
+      > /dev/null 2>&1; then
     echo "Using cached version of $BASE_MODEL."
   else
     echo "ERROR: No cached version available. Cannot continue."

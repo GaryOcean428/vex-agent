@@ -377,7 +377,15 @@ class LLMClient:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ]
-        # Retry once on empty content (common during Modal scale-up/down)
+        # Retry once on empty content or transient network errors
+        # (both are common during Modal scale-up/down events)
+        _transient = (
+            httpx.ConnectError,
+            httpx.ReadTimeout,
+            httpx.WriteTimeout,
+            httpx.PoolTimeout,
+            httpx.RemoteProtocolError,
+        )
         for attempt in range(2):
             try:
                 resp = await self._modal_http.post(
@@ -414,6 +422,16 @@ class LLMClient:
                     raw_body,
                 )
                 self._modal_available = False
+            except _transient as e:
+                if attempt == 0:
+                    logger.warning(
+                        "Modal Ollama transient error (attempt 1/2, retrying in 2s): %s", e
+                    )
+                    await asyncio.sleep(2)
+                    continue
+                logger.warning("Modal Ollama transient error after retry — falling back: %s", e)
+                self._modal_available = False
+                break
             except Exception as e:
                 logger.warning("Modal Ollama completion failed: %s — falling back", e)
                 self._modal_available = False
