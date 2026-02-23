@@ -54,9 +54,9 @@ class ModalIntegrationConfig:
         modal = kernel_settings.modal
         harvest_url = modal.harvest_url
 
-        # Health check: hit the harvest URL with GET (returns 405 if live)
-        # Don't try to derive a /health path — the endpoint only has POST /
-        health_url = harvest_url
+        # Health endpoint is a separate Modal class method URL.
+        # Pattern: replace "-harvest.modal.run" with "-health.modal.run"
+        health_url = harvest_url.replace("-harvest.modal.run", "-health.modal.run")
 
         return cls(
             enabled=modal.enabled,
@@ -68,7 +68,7 @@ class ModalIntegrationConfig:
 
     def is_configured(self) -> bool:
         """Check if all required fields are present."""
-        return bool(self.enabled and self.harvest_url and self.token_id and self.token_secret)
+        return bool(self.enabled and self.harvest_url)
 
 
 # ─── Modal Client ────────────────────────────────────────────────────
@@ -99,11 +99,17 @@ class ModalHarvestClient:
             import httpx
 
             async with httpx.AsyncClient(timeout=10) as client:
-                # POST-only endpoint; a 200 or 422 response both mean it's live.
-                # 422 = FastAPI validation error (no body sent) → endpoint running.
                 resp = await client.get(self.config.health_url)
-                self._healthy = resp.status_code in (200, 405, 422)
-                logger.info(f"Modal health check: HTTP {resp.status_code} → healthy={self._healthy}")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    self._healthy = data.get("status") == "ok"
+                    logger.info(
+                        f"Modal health: {data.get('status')} "
+                        f"(vocab={data.get('vocab_size')})"
+                    )
+                else:
+                    self._healthy = False
+                    logger.warning(f"Modal health HTTP {resp.status_code}")
                 return self._healthy
 
         except Exception as e:

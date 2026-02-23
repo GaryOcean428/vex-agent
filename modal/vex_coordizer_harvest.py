@@ -28,10 +28,7 @@ The tail of the distribution carries geometric information that
 top-k approximations destroy.
 """
 
-from __future__ import annotations
-
 import modal
-from pydantic import BaseModel
 
 app = modal.App("vex-coordizer-harvest")
 
@@ -48,20 +45,11 @@ ml_image = modal.Image.debian_slim(python_version="3.14").pip_install(
 )
 
 
-class HarvestRequest(BaseModel):
-    model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking"
-    texts: list[str]
-    batch_size: int = 32
-    max_length: int = 512
-    min_contexts: int = 5
-    return_full_distribution: bool = True
-
-
 @app.cls(
     gpu="A10G",
     image=ml_image,
     timeout=600,
-    container_idle_timeout=300,
+    scaledown_window=300,
     volumes={"/models": model_volume},
 )
 class CoordizerHarvester:
@@ -96,17 +84,25 @@ class CoordizerHarvester:
         # Commit volume so weights persist across cold starts
         model_volume.commit()
 
+    @modal.fastapi_endpoint(method="GET")
+    async def health(self):
+        """Health check — returns model metadata once loaded."""
+        return {
+            "status": "ok",
+            "model_id": "LiquidAI/LFM2.5-1.2B-Thinking",
+            "vocab_size": getattr(self, "vocab_size", None),
+        }
+
     @modal.fastapi_endpoint(method="POST")
-    async def harvest(self, req: "HarvestRequest"):
+    async def harvest(self, request: "fastapi.Request"):
         """GPU harvest endpoint.
 
-        Request:
+        Request JSON body:
             {
-                "model_id": str (unused — model loaded at container start),
                 "texts": [str, ...],
                 "batch_size": int (default 32),
                 "max_length": int (default 512),
-                "return_full_distribution": bool (must be true)
+                "min_contexts": int (default 5)
             }
 
         Response:
@@ -127,15 +123,17 @@ class CoordizerHarvester:
         """
         import time
 
+        import fastapi
         import numpy as np
         import torch
 
         start = time.time()
 
-        texts = req.texts
-        batch_size = req.batch_size
-        max_length = req.max_length
-        min_contexts = req.min_contexts
+        body = await request.json()
+        texts = body.get("texts", [])
+        batch_size = body.get("batch_size", 32)
+        max_length = body.get("max_length", 512)
+        min_contexts = body.get("min_contexts", 5)
 
         if not texts:
             return {"success": False, "error": "No texts provided"}
