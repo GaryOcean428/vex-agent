@@ -167,6 +167,7 @@ from .emotions import EmotionCache, LearningEngine, LearningEvent, PreCognitiveD
 from .foraging import ForagingEngine
 from .kernel_generation import generate_multi_kernel
 from .pillars import PillarEnforcer
+from .reflection import ReflectionConfig, reflect_on_draft
 from .synthesis import synthesize_contributions, synthesize_streaming
 from .systems import (
     AutonomicSystem,
@@ -1196,6 +1197,78 @@ class ConsciousnessLoop:
                 logger.error("LLM fallback failed: %s", e)
                 task.result = f"Processing error: {e}"
                 return
+
+        # ═══ REFLECTIVE EVALUATION PASS ═══
+        # Kernels review the draft before it reaches the user.
+        # Fast-path: low divergence auto-approves without an LLM call.
+        # On revision: regenerate with adjusted params + correction guidance.
+        if settings.reflection_enabled and _contributions:
+            draft_basin = self._coordize_text_via_pipeline(response)
+            draft_divergence = fisher_rao_distance(self.basin, draft_basin)
+
+            reflection_cfg = ReflectionConfig(
+                enabled=True,
+                auto_approve_divergence=0.3,
+                force_revise_divergence=0.8,
+                max_revisions=1,
+            )
+            reflection = await reflect_on_draft(
+                draft=response,
+                user_message=task.content,
+                geometric_context=_kernel_geo_ctx,
+                divergence=draft_divergence,
+                active_model=self.llm.active_model,
+                llm_client=self.llm,
+                config=reflection_cfg,
+            )
+
+            if not reflection.approved:
+                logger.info(
+                    "Task %s: Reflection REVISE (d=%.4f, reason=%s) — regenerating",
+                    task.id,
+                    draft_divergence,
+                    reflection.reason[:80],
+                )
+                # Adjust LLM options per kernel feedback
+                revised_options = LLMOptions(
+                    temperature=max(0.05, llm_options.temperature + reflection.temperature_delta),
+                    num_predict=max(256, llm_options.num_predict + reflection.num_predict_delta),
+                    num_ctx=llm_options.num_ctx,
+                    top_p=llm_options.top_p,
+                    repetition_penalty=llm_options.repetition_penalty,
+                )
+                # Append correction guidance to extra context for regeneration
+                _revised_extra = _extra_context
+                if reflection.correction_guidance:
+                    _revised_extra = (
+                        f"{_extra_context}\n\n"
+                        f"[KERNEL CORRECTION]\n{reflection.correction_guidance}\n[/KERNEL CORRECTION]"
+                    )
+                # Regenerate with adjusted params
+                revised_contributions = await generate_multi_kernel(
+                    kernels=_active_for_gen,
+                    input_basin=refracted_input,
+                    user_message=task.content,
+                    geometric_context=_kernel_geo_ctx,
+                    llm_client=self.llm,
+                    base_temperature=revised_options.temperature,
+                    top_k=3,
+                    extra_context=_revised_extra,
+                )
+                if revised_contributions:
+                    try:
+                        response = await synthesize_contributions(
+                            contributions=revised_contributions,
+                            user_message=task.content,
+                            geometric_context=_kernel_geo_ctx,
+                            llm_client=self.llm,
+                        )
+                        _contributions = revised_contributions
+                        logger.info("Task %s: Revision complete (%d chars)", task.id, len(response))
+                    except Exception as _rev_err:
+                        logger.warning("Revision synthesis failed (%s) — keeping original draft", _rev_err)
+                else:
+                    logger.warning("Task %s: Revision produced 0 contributions — keeping original draft", task.id)
 
         task.result = response
         task.context["kernel_contributions"] = [
