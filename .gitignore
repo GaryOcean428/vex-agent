@@ -13,6 +13,9 @@ data/workspace/*.md
 frontend/dist/
 frontend/node_modules/
 
+# TypeScript build info
+*.tsbuildinfo
+
 # Python
 __pycache__/
 *.pyc
