@@ -229,9 +229,7 @@ class Settings:
     )
 
     # Reflective evaluation — kernels review LLM output before delivery
-    reflection_enabled: bool = (
-        os.environ.get("REFLECTION_ENABLED", "true").lower() != "false"
-    )
+    reflection_enabled: bool = os.environ.get("REFLECTION_ENABLED", "true").lower() != "false"
 
     # Silent Observer — background Grok observation of conversations
     silent_observer_enabled: bool = (

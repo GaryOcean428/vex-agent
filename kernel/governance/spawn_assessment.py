@@ -23,13 +23,9 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
 from ..config.frozen_facts import (
     CHAOS_POOL,
-    CORE_8_COUNT,
     FULL_IMAGE,
-    KAPPA_STAR,
 )
 from ..governance.types import KernelKind, KernelSpecialization
 
@@ -54,17 +50,17 @@ class SpawnAssessment:
     recommended: True if score >= threshold (advisory only — vote decides).
     """
 
-    spec_coverage_score: float      # How much this spec is needed
-    basin_diversity_score: float    # Geometric spread contribution
-    gain_health_score: float        # Quenched gain in healthy range
-    budget_headroom_score: float    # Budget saturation
-    score: float                    # Geometric mean of all four
-    recommended: bool               # score >= RECOMMEND_THRESHOLD
-    notes: list[str]                # Human-readable scoring notes
+    spec_coverage_score: float  # How much this spec is needed
+    basin_diversity_score: float  # Geometric spread contribution
+    gain_health_score: float  # Quenched gain in healthy range
+    budget_headroom_score: float  # Budget saturation
+    score: float  # Geometric mean of all four
+    recommended: bool  # score >= RECOMMEND_THRESHOLD
+    notes: list[str]  # Human-readable scoring notes
 
     RECOMMEND_THRESHOLD: float = 0.40  # Below this → vote is informed of concern
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "score": round(self.score, 4),
             "recommended": self.recommended,
@@ -96,7 +92,7 @@ def _spec_coverage_score(
 
 
 def _basin_diversity_score(
-    proposed_basin: "Basin | None",
+    proposed_basin: Basin | None,
     existing_kernels: list[Any],
 ) -> tuple[float, str]:
     """Score geometric diversity: how far is proposed basin from nearest existing."""
@@ -148,7 +144,10 @@ def _budget_headroom_score(
         used_frac = current_chaos_count / CHAOS_POOL
         remaining = CHAOS_POOL - current_chaos_count
         score = 1.0 - used_frac
-        return score, f"CHAOS budget: {current_chaos_count}/{CHAOS_POOL} used ({remaining} remaining)"
+        return (
+            score,
+            f"CHAOS budget: {current_chaos_count}/{CHAOS_POOL} used ({remaining} remaining)",
+        )
     if kind == KernelKind.GENESIS:
         return 0.0, "GENESIS already exists — cannot spawn another"
     return 0.5, f"Unknown kind {kind}"
@@ -171,7 +170,7 @@ def assess_spawn(
     existing_kernels: list[Any],
     current_god_count: int,
     current_chaos_count: int,
-    proposed_basin: "Basin | None" = None,
+    proposed_basin: Basin | None = None,
 ) -> SpawnAssessment:
     """Score a spawn proposal across all four dimensions.
 

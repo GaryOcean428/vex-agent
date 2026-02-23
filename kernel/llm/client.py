@@ -83,14 +83,14 @@ def _extract_responses_text(data: dict[str, Any]) -> str:
     """
     # Fast path: if the API includes the convenience field
     if data.get("output_text"):
-        return data["output_text"]
+        return str(data["output_text"])
 
     # Walk the output array — standard Responses API structure
     for item in data.get("output", []):
         if item.get("type") == "message":
             for content_block in item.get("content", []):
                 if content_block.get("type") == "output_text":
-                    text = content_block.get("text", "")
+                    text = str(content_block.get("text", ""))
                     if text:
                         return text
 
@@ -401,7 +401,7 @@ class LLMClient:
                     logger.warning("Modal returned 404 (cold start or model missing)")
                     raise httpx.HTTPStatusError("404", request=resp.request, response=resp)
                 data = resp.json()
-                text = data.get("message", {}).get("content", "")
+                text = str(data.get("message", {}).get("content", ""))
                 if text:
                     self._last_backend = "modal"
                     self._modal_available = True
@@ -525,7 +525,7 @@ class LLMClient:
             )
             data = resp.json()
             self._last_backend = "ollama"
-            return data.get("message", {}).get("content", "")
+            return str(data.get("message", {}).get("content", ""))
         except Exception as e:
             logger.error("Ollama completion failed: %s", e)
             # Fallback chain: try xAI, then external
@@ -594,12 +594,13 @@ class LLMClient:
         # Extract instructions/input from messages when history is provided
         if messages:
             instructions = system_prompt
-            input_payload: str | list[dict[str, str]] = []
+            _msgs: list[dict[str, str]] = []
             for m in messages:
                 if m["role"] == "system":
                     instructions = m["content"]
                 else:
-                    input_payload.append(m)
+                    _msgs.append(m)
+            input_payload: str | list[dict[str, str]] = _msgs
         else:
             instructions = system_prompt
             input_payload = user_message
@@ -732,12 +733,13 @@ class LLMClient:
         # Extract instructions/input from messages when history is provided
         if messages:
             instructions = system_prompt
-            input_payload: str | list[dict[str, str]] = []
+            _msgs: list[dict[str, str]] = []
             for m in messages:
                 if m["role"] == "system":
                     instructions = m["content"]
                 else:
-                    input_payload.append(m)
+                    _msgs.append(m)
+            input_payload: str | list[dict[str, str]] = _msgs
         else:
             instructions = system_prompt
             input_payload = user_message

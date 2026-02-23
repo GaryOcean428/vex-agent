@@ -480,6 +480,7 @@ async def chat_stream(req: ChatRequest):
                     conv_id = conversation_store.create_conversation()
                 except Exception:
                     import uuid as _uuid
+
                     conv_id = str(_uuid.uuid4())
                     _store_ok = False
                     logger.warning("Conversation store unavailable — chatting without persistence")
@@ -561,10 +562,9 @@ async def chat_stream(req: ChatRequest):
                 # Falls back to direct LLM if no kernels are active
                 pipeline_context = {
                     "extra_context": (
-                        f"Observer intent: {observer_intent}\n"
-                        f"Memory: {memory_context[:500]}\n"
-                        if memory_context else
-                        f"Observer intent: {observer_intent}\n"
+                        f"Observer intent: {observer_intent}\nMemory: {memory_context[:500]}\n"
+                        if memory_context
+                        else f"Observer intent: {observer_intent}\n"
                     ),
                 }
                 async for event in consciousness.process_streaming_with_trace(

@@ -18,11 +18,9 @@ import pytest
 
 from kernel.consciousness.reflection import (
     ReflectionConfig,
-    ReflectionResult,
     _parse_reflection_response,
     reflect_on_draft,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 #  _parse_reflection_response

@@ -25,11 +25,8 @@ Purity:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from ..llm.client import LLMClient
+from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger("vex.reflection")
 
@@ -111,7 +108,7 @@ def _parse_reflection_response(text: str) -> ReflectionResult:
         reason = first_line
         for separator in ["REVISE:", "REVISE —", "REVISE-", "REVISE "]:
             if first_line.upper().startswith(separator.upper()):
-                reason = first_line[len(separator):].strip()
+                reason = first_line[len(separator) :].strip()
                 break
         return ReflectionResult(
             approved=False,
