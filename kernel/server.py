@@ -458,7 +458,7 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
     }
 
 
-@app.post(R["chat_stream"])  # type: ignore[untyped-decorator]
+@app.post(R["chat_stream"], response_model=None)  # type: ignore[untyped-decorator]
 async def chat_stream(req: ChatRequest) -> StreamingResponse:
     """Streaming chat endpoint via SSE.
 
@@ -783,7 +783,7 @@ async def get_sleep_state() -> dict[str, Any]:
 # ─── CoordizerV2 Endpoints ───────────────────────────────────
 
 
-@app.post(R["coordizer_coordize"])  # type: ignore[untyped-decorator]
+@app.post(R["coordizer_coordize"], response_model=None)  # type: ignore[untyped-decorator]
 async def coordizer_coordize(req: CoordizeRequest) -> dict[str, Any] | JSONResponse:
     """Coordize text via CoordizerV2 resonance bank.
 
@@ -836,7 +836,7 @@ async def coordizer_stats() -> dict[str, Any]:
     }
 
 
-@app.post(R["coordizer_validate"])  # type: ignore[untyped-decorator]
+@app.post(R["coordizer_validate"], response_model=None)  # type: ignore[untyped-decorator]
 async def coordizer_validate(request: Request) -> dict[str, Any] | JSONResponse:
     """Run full geometric validation on the resonance bank.
 
@@ -911,7 +911,7 @@ async def coordizer_harvest(req: HarvestRequest) -> dict[str, Any]:
     }
 
 
-@app.post(R["coordizer_ingest"])  # type: ignore[untyped-decorator]
+@app.post(R["coordizer_ingest"], response_model=None)  # type: ignore[untyped-decorator]
 async def coordizer_ingest(request: Request) -> dict[str, Any] | JSONResponse:
     """Accept a JSONL upload and queue for harvesting.
 
@@ -959,7 +959,7 @@ async def coordizer_ingest(request: Request) -> dict[str, Any] | JSONResponse:
         )
 
 
-@app.get(R["coordizer_harvest_status"])  # type: ignore[untyped-decorator]
+@app.get(R["coordizer_harvest_status"], response_model=None)  # type: ignore[untyped-decorator]
 async def coordizer_harvest_status() -> dict[str, Any] | JSONResponse:
     """Return current harvest queue status.
 
@@ -1043,7 +1043,7 @@ async def list_conversations(limit: int = DEFAULT_CONVERSATION_LIST_LIMIT) -> di
     return {"conversations": convs}
 
 
-@app.get(R["conversations_get"])  # type: ignore[untyped-decorator]
+@app.get(R["conversations_get"], response_model=None)  # type: ignore[untyped-decorator]
 async def get_conversation(conversation_id: str) -> dict[str, Any] | JSONResponse:
     """Get a conversation with all messages."""
     conv = conversation_store.get_conversation(conversation_id)
@@ -1052,7 +1052,7 @@ async def get_conversation(conversation_id: str) -> dict[str, Any] | JSONRespons
     return conv
 
 
-@app.delete(R["conversations_delete"])  # type: ignore[untyped-decorator]
+@app.delete(R["conversations_delete"], response_model=None)  # type: ignore[untyped-decorator]
 async def delete_conversation(conversation_id: str) -> dict[str, Any] | JSONResponse:
     """Delete a conversation."""
     deleted = conversation_store.delete_conversation(conversation_id)
