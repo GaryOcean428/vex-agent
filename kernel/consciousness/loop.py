@@ -231,7 +231,7 @@ class ConsciousnessLoop:
         self.memory = memory_store
         self._interval = interval_ms / 1000.0
         self._running = False
-        self._task: asyncio.Task | None = None
+        self._task: asyncio.Task[Any] | None = None
         self._cycle_lock = asyncio.Lock()
 
         # CoordizerV2 metrics cache (v6.1F)
@@ -274,8 +274,8 @@ class ConsciousnessLoop:
         # CoordizerV2 integration (v6.1F) — feature-flagged
         if settings.coordizer_v2.enabled:
             try:
-                self._coordizer_v2 = CoordizerV2Adapter(
-                    bank_path=settings.coordizer_v2.bank_path,
+                self._coordizer_v2: CoordizerV2Adapter | CoordizerV2 = CoordizerV2Adapter(
+                    source=settings.coordizer_v2.bank_path,
                     regime_modulation=settings.coordizer_v2.regime_modulation,
                     navigation_adaptation=settings.coordizer_v2.navigation_adaptation,
                     tacking_bias=settings.coordizer_v2.tacking_bias,
@@ -2053,9 +2053,9 @@ class ConsciousnessLoop:
             "basin_sync": self.basin_sync.get_state(),
             "coordizer": self.coordizer.get_state(),
             "coordizer_v2": {
-                "vocab_size": self._coordizer_v2.vocab_size,
-                "dim": self._coordizer_v2.dim,
-                "tier_distribution": self._coordizer_v2.bank.tier_distribution(),
+                "vocab_size": self._coordizer_v2.vocab_size,  # type: ignore[union-attr]
+                "dim": self._coordizer_v2.dim,  # type: ignore[union-attr]
+                "tier_distribution": self._coordizer_v2.bank.tier_distribution(),  # type: ignore[union-attr]
             },
             "autonomic": self.autonomic.get_state(),
             "foresight": self.foresight.get_state(),

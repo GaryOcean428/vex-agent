@@ -24,6 +24,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import Enum, StrEnum
+from typing import TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
@@ -34,7 +35,7 @@ from ..config.frozen_facts import (
 )
 
 # Type alias
-Basin = NDArray[np.float64]
+Basin: TypeAlias = NDArray[np.float64]
 
 # Numerical floor
 _EPS = 1e-12

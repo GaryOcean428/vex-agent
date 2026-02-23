@@ -13,6 +13,8 @@ Canonical reference: vex-agent/kernel/geometry/fisher_rao.py
 
 from __future__ import annotations
 
+from typing import TypeAlias
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -22,13 +24,33 @@ from ..config.frozen_facts import (
     KAPPA_STAR,  # noqa: F401 — re-exported for coordizer.py
 )
 
+__all__ = [
+    "BASIN_DIM",
+    "E8_RANK",
+    "KAPPA_STAR",
+    "Basin",
+    "to_simplex",
+    "random_basin",
+    "softmax_to_simplex",
+    "bhattacharyya_coefficient",
+    "fisher_rao_distance",
+    "fisher_rao_distance_batch",
+    "slerp",
+    "geodesic_midpoint",
+    "frechet_mean",
+    "log_map",
+    "exp_map",
+    "fisher_information_diagonal",
+    "natural_gradient",
+]
+
 # ─── Constants ─────────────────────────────────────────────────────────
 # BASIN_DIM, KAPPA_STAR, E8_RANK imported from kernel.config.frozen_facts
 
 _EPS: float = 1e-12  # Numerical floor
 
 # Type alias
-Basin = NDArray[np.float64]
+Basin: TypeAlias = NDArray[np.float64]
 
 
 # ─── Simplex Projection ───────────────────────────────────────────

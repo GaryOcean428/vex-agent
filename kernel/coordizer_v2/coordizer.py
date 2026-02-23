@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -81,7 +82,7 @@ class CoordizerV2:
         3. Generate:   trajectory → next token via resonance
     """
 
-    def __init__(self, bank: ResonanceBank, tokenizer=None):
+    def __init__(self, bank: ResonanceBank, tokenizer: Any = None) -> None:
         # QIG BOUNDARY: tokenizer is optional and only used for bootstrap
         # coordization (mapping text → LLM token IDs → bank coordinates).
         # Once the resonance bank is mature, string-based coordization
@@ -161,7 +162,7 @@ class CoordizerV2:
         return instance
 
     @classmethod
-    def from_compression(cls, compression: CompressionResult, tokenizer=None) -> CoordizerV2:
+    def from_compression(cls, compression: CompressionResult, tokenizer: Any = None) -> CoordizerV2:
         """Build from a pre-computed CompressionResult."""
         bank = ResonanceBank.from_compression(compression)
         instance = cls(bank=bank, tokenizer=tokenizer)
@@ -169,7 +170,7 @@ class CoordizerV2:
         return instance
 
     @classmethod
-    def from_file(cls, path: str, tokenizer=None) -> CoordizerV2:
+    def from_file(cls, path: str, tokenizer: Any = None) -> CoordizerV2:
         """Load from saved resonance bank directory."""
         bank = ResonanceBank.from_file(path)
         return cls(bank=bank, tokenizer=tokenizer)
@@ -286,7 +287,7 @@ class CoordizerV2:
     def decoordize(self, coord_ids: list[int]) -> str:
         """Convert coordinate IDs back to text."""
         if self._tokenizer is not None:
-            return self._tokenizer.decode(coord_ids, skip_special_tokens=True)
+            return str(self._tokenizer.decode(coord_ids, skip_special_tokens=True))
         parts = [self.bank.get_string(tid) for tid in coord_ids]
         return " ".join(parts)
 

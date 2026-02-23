@@ -157,6 +157,10 @@ def _measure_kappa(
         return (0.0, 0.0)
 
     bank._ensure_matrix()
+    if bank._coord_matrix is None:
+        if verbose:
+            logger.info("No coordinate matrix for κ measurement")
+        return (0.0, 0.0)
     coords = bank._coord_matrix
     n = coords.shape[0]
 

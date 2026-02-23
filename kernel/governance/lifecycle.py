@@ -96,10 +96,10 @@ class GovernedLifecycle:
         voting_engine: VotingEngine | None = None,
         purity_root: Path | None = None,
         skip_purity: bool = False,
-        on_spawn_approved: Callable | None = None,
-        on_promote_approved: Callable | None = None,
-        on_prune_approved: Callable | None = None,
-        on_rejected: Callable | None = None,
+        on_spawn_approved: Callable[..., Any] | None = None,
+        on_promote_approved: Callable[..., Any] | None = None,
+        on_prune_approved: Callable[..., Any] | None = None,
+        on_rejected: Callable[..., Any] | None = None,
     ) -> None:
         self._registry = registry
         self._vr = voter_registry or get_voter_registry()
@@ -437,7 +437,7 @@ class GovernedLifecycle:
                 count += 1
         return count
 
-    def oversight_summary(self) -> dict:
+    def oversight_summary(self) -> dict[str, Any]:
         """Current governance state for audit/telemetry."""
         vr_snap = self._vr.snapshot()
         budget = self._registry._budget.summary()
