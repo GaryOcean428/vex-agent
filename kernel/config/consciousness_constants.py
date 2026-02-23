@@ -310,7 +310,8 @@ WISDOM_CARE_TEMP_SCALE: Final[float] = 0.2  # care_metric reduces temp by this *
 
 LLM_NUM_CTX: Final[int] = 32768
 LLM_TOP_P: Final[float] = 0.9
-LLM_REPETITION_PENALTY: Final[float] = 1.1
+# GLM-4.7-Flash and Qwen3 trained without repetition penalty; keep at 1.0
+LLM_REPETITION_PENALTY: Final[float] = 1.0
 
 PERCEIVE_SLERP_WEIGHT: Final[float] = 0.1
 EXPRESS_SLERP_WEIGHT: Final[float] = 0.2

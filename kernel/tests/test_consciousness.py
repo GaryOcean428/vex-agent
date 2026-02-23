@@ -705,7 +705,7 @@ class TestDWWisdomModulation:
             num_predict=NUM_PREDICT_BALANCED,
             num_ctx=32768,
             top_p=0.9,
-            repetition_penalty=1.1,
+            repetition_penalty=1.0,
         )
 
         # Import modulation function from loop
