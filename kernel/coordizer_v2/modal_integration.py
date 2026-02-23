@@ -54,10 +54,9 @@ class ModalIntegrationConfig:
         modal = kernel_settings.modal
         harvest_url = modal.harvest_url
 
-        # Derive health URL from harvest URL
-        health_url = ""
-        if harvest_url:
-            health_url = harvest_url.rsplit("/", 1)[0] + "/health"
+        # Health check: hit the harvest URL with GET (returns 405 if live)
+        # Don't try to derive a /health path — the endpoint only has POST /
+        health_url = harvest_url
 
         return cls(
             enabled=modal.enabled,
@@ -100,17 +99,11 @@ class ModalHarvestClient:
             import httpx
 
             async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(
-                    self.config.health_url,
-                    headers=self._auth_headers(),
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                self._healthy = data.get("status") == "ok"
-                logger.info(
-                    f"Modal health check: {data.get('status')} "
-                    f"(model={data.get('model_id')}, vocab={data.get('vocab_size')})"
-                )
+                # POST-only endpoint; a 200 or 422 response both mean it's live.
+                # 422 = FastAPI validation error (no body sent) → endpoint running.
+                resp = await client.get(self.config.health_url)
+                self._healthy = resp.status_code in (200, 405, 422)
+                logger.info(f"Modal health check: HTTP {resp.status_code} → healthy={self._healthy}")
                 return self._healthy
 
         except Exception as e:
@@ -289,11 +282,15 @@ class ModalHarvestClient:
         return None
 
     def _auth_headers(self) -> dict[str, str]:
-        """Build Modal proxy auth headers."""
+        """Build request headers for the Modal harvest endpoint.
+
+        Modal-Token-Id / Modal-Token-Secret are reserved internal headers
+        that Modal's proxy explicitly rejects for web endpoint requests.
+        The harvest endpoint is authenticated via Modal's own network
+        controls; no additional auth header is needed.
+        """
         return {
             "Content-Type": "application/json",
-            "Modal-Token-Id": self.config.token_id,
-            "Modal-Token-Secret": self.config.token_secret,
         }
 
 

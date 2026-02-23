@@ -192,17 +192,9 @@
   width: 100%;
   padding: 6px 8px;
   background: rgba(30, 30, 44, 0.3);
-  border: none;
   color: var(--text-secondary);
   font-family: var(--mono);
   font-size: var(--text-xs);
-  cursor: pointer;
-  text-align: left;
-  min-height: 44px;
-}
-
-.pipeline-gen-header:hover {
-  background: rgba(30, 30, 44, 0.5);
 }
 
 .pipeline-gen-preview {

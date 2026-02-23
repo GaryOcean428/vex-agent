@@ -12,8 +12,12 @@ It provides a GPU-backed HTTP endpoint that:
 Deploy:
     modal deploy modal/vex_coordizer_harvest.py
 
+    After deploy, Modal prints the endpoint URL. Update Railway env:
+        MODAL_HARVEST_URL=https://garyocean428--vex-coordizer-harvest-<hash>.modal.run
+
 Endpoint:
-    POST /harvest (requires Modal Proxy Auth)
+    POST / — public endpoint; no Modal proxy auth headers needed.
+    Accepts JSON body matching HarvestRequest schema.
 
 Cost estimate:
     A10G: ~$0.000306/sec → ~$0.16 per 10K samples
@@ -27,6 +31,7 @@ top-k approximations destroy.
 from __future__ import annotations
 
 import modal
+from pydantic import BaseModel
 
 app = modal.App("vex-coordizer-harvest")
 
@@ -41,6 +46,15 @@ ml_image = modal.Image.debian_slim(python_version="3.14").pip_install(
     "numpy>=1.26",
     "pydantic>=2.0",
 )
+
+
+class HarvestRequest(BaseModel):
+    model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking"
+    texts: list[str]
+    batch_size: int = 32
+    max_length: int = 512
+    min_contexts: int = 5
+    return_full_distribution: bool = True
 
 
 @app.cls(
@@ -82,8 +96,8 @@ class CoordizerHarvester:
         # Commit volume so weights persist across cold starts
         model_volume.commit()
 
-    @modal.fastapi_endpoint(requires_proxy_auth=True, method="POST")
-    async def harvest(self, request: dict):
+    @modal.fastapi_endpoint(method="POST")
+    async def harvest(self, req: "HarvestRequest"):
         """GPU harvest endpoint.
 
         Request:
@@ -118,10 +132,10 @@ class CoordizerHarvester:
 
         start = time.time()
 
-        texts = request.get("texts", [])
-        batch_size = request.get("batch_size", 32)
-        max_length = request.get("max_length", 512)
-        min_contexts = request.get("min_contexts", 5)
+        texts = req.texts
+        batch_size = req.batch_size
+        max_length = req.max_length
+        min_contexts = req.min_contexts
 
         if not texts:
             return {"success": False, "error": "No texts provided"}

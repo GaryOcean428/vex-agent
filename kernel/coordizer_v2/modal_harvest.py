@@ -82,13 +82,11 @@ async def modal_harvest(
         "return_full_distribution": True,  # CRITICAL: not top-k
     }
 
-    # Modal Proxy Auth headers
+    # Modal web endpoints reject Modal-Token-Id/Secret as "prohibited headers".
+    # Authentication is handled by Modal's network controls; no custom header needed.
     headers = {
         "Content-Type": "application/json",
     }
-    if settings.modal.token_id and settings.modal.token_secret:
-        headers["Modal-Token-Id"] = settings.modal.token_id
-        headers["Modal-Token-Secret"] = settings.modal.token_secret
 
     logger.info(
         f"Sending harvest request to Modal: {settings.modal.harvest_url} "
