@@ -12,13 +12,14 @@ interface ConversationSummary {
 }
 
 interface ChatHistoryProps {
-  collapsed: boolean;
+  open: boolean;
   activeConversationId: string | null;
+  refreshToken: number;
   onSelect: (id: string) => void;
   onNewChat: () => void;
 }
 
-export function ChatHistory({ collapsed, activeConversationId, onSelect, onNewChat }: ChatHistoryProps) {
+export function ChatHistory({ open, activeConversationId, refreshToken, onSelect, onNewChat }: ChatHistoryProps) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -37,60 +38,68 @@ export function ChatHistory({ collapsed, activeConversationId, onSelect, onNewCh
     }
   }, []);
 
-  // Load on mount and refresh when panel expands
+  // Load on mount and when panel opens
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
 
-  // Refresh list when panel is expanded (to catch new conversations)
+  // Refresh list when a message exchange completes (refreshToken increments on stream done)
   useEffect(() => {
-    if (!collapsed) loadConversations();
-  }, [collapsed, loadConversations]);
+    if (open) {
+      // Debounce: wait 500ms for the server to persist the message
+      const timer = setTimeout(loadConversations, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [open, refreshToken, loadConversations]);
 
   return (
     <aside
-      className={`chat-history-panel ${collapsed ? "collapsed" : ""}`}
+      className={`chat-history-panel ${open ? "open" : "collapsed"}`}
       aria-label="Chat history"
-      aria-hidden={collapsed}
+      aria-hidden={!open}
     >
-      <div className="chat-history-inner">
-        <div className="chat-history-header">
-          <span className="chat-history-title">History</span>
-          <button
-            className="chat-history-new-btn"
-            onClick={onNewChat}
-            aria-label="Start new conversation"
-            title="New conversation"
-          >
-            + New
-          </button>
-        </div>
-
-        {loading && conversations.length === 0 && (
-          <div className="chat-history-loading">Loading...</div>
-        )}
-
-        <div className="chat-history-list">
-          {conversations.length === 0 && !loading && (
-            <div className="chat-history-empty">No past conversations</div>
-          )}
-          {conversations.map((conv) => (
+      {open && (
+        <>
+          <div className="chat-history-header">
+            <span className="chat-history-title">Conversations</span>
             <button
-              key={conv.id}
-              className={`chat-history-item ${conv.id === activeConversationId ? "active" : ""}`}
-              onClick={() => onSelect(conv.id)}
+              className="chat-history-new"
+              onClick={onNewChat}
+              aria-label="New conversation"
+              title="New conversation"
             >
-              <span className="chat-history-item-title">{conv.title || "Untitled"}</span>
-              <span className="chat-history-item-meta">
-                {conv.message_count} msgs &middot; {formatRelativeTime(conv.updated_at)}
-              </span>
-              {conv.preview && (
-                <span className="chat-history-item-preview">{conv.preview}</span>
-              )}
+              +
             </button>
-          ))}
-        </div>
-      </div>
+          </div>
+
+          {loading && conversations.length === 0 && (
+            <div className="chat-history-loading">Loading...</div>
+          )}
+
+          <div className="chat-history-list">
+            {conversations.length === 0 && !loading && (
+              <div className="chat-history-empty">No past conversations</div>
+            )}
+            {conversations.map((conv) => (
+              <button
+                key={conv.id}
+                className={`chat-history-item ${conv.id === activeConversationId ? "active" : ""}`}
+                onClick={() => onSelect(conv.id)}
+              >
+                <span className="chat-history-item-title">
+                  {conv.title || "Untitled"}
+                </span>
+                <span className="chat-history-item-meta">
+                  {conv.message_count} msgs &middot; {formatRelativeTime(conv.updated_at)}
+                </span>
+                {conv.preview && (
+                  <span className="chat-history-item-preview">{conv.preview}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </aside>
   );
 }

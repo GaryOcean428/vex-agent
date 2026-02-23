@@ -10,28 +10,34 @@ import { MessageList } from "../components/chat/MessageList.tsx";
 import { MetricsSidebar } from "../components/chat/MetricsSidebar.tsx";
 import "./Chat.css";
 
-const SIDEBAR_KEY = "vex-sidebar-collapsed";
+const SIDEBAR_KEY = "vex-sidebar-open";
 
 export default function Chat() {
   const { conversationId: urlConvId } = useParams<{ conversationId?: string }>();
   const navigate = useNavigate();
   const { data: state } = useVexState();
   const history = useMetricsHistory(state, 60);
-  const [historyOpen, setHistoryOpen] = useState(false);
 
-  // Persist sidebar collapse state in localStorage
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try { return localStorage.getItem(SIDEBAR_KEY) === "true"; }
-    catch { return false; }
+  // Persist sidebar open/closed preference
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try {
+      const stored = localStorage.getItem(SIDEBAR_KEY);
+      return stored !== null ? stored === "true" : true; // default open
+    } catch {
+      return true;
+    }
   });
 
   const toggleSidebar = useCallback(() => {
-    setSidebarCollapsed((v) => {
-      const next = !v;
+    setSidebarOpen((prev) => {
+      const next = !prev;
       try { localStorage.setItem(SIDEBAR_KEY, String(next)); } catch { /* noop */ }
       return next;
     });
   }, []);
+
+  // Track whether we've synced the URL conversation on mount
+  const initialLoadDone = useRef(false);
 
   const {
     messages,
@@ -51,22 +57,29 @@ export default function Chat() {
     inputRef,
     sendText,
     sendMessage,
+    stopGeneration,
     startNewChat,
     loadConversation,
     handleKeyDown,
   } = useChat(urlConvId);
 
-  // Sync conversationId to URL when it changes (e.g. server assigns ID on first message)
-  const prevConvId = useRef(conversationId);
+  // Increment refreshToken each time streaming completes so ChatHistory re-fetches
+  const [refreshToken, setRefreshToken] = useState(0);
+  const prevIsStreaming = useRef(isStreaming);
   useEffect(() => {
-    if (conversationId && conversationId !== prevConvId.current) {
-      prevConvId.current = conversationId;
-      // Only navigate if the URL doesn't already match
-      if (conversationId !== urlConvId) {
-        navigate(`/chat/${conversationId}`, { replace: true });
-      }
+    if (prevIsStreaming.current && !isStreaming) {
+      setRefreshToken((t) => t + 1);
     }
   }, [conversationId, urlConvId, navigate]);
+
+  // On mount: load conversation from URL if present
+  useEffect(() => {
+    if (initialLoadDone.current) return;
+    initialLoadDone.current = true;
+    if (urlConvId && urlConvId !== conversationId) {
+      loadConversation(urlConvId);
+    }
+  }, [urlConvId, conversationId, loadConversation]);
 
   const handleNewChat = useCallback(() => {
     startNewChat();
@@ -82,7 +95,7 @@ export default function Chat() {
   );
 
   return (
-    <div className="chat-page">
+    <div className={`chat-page ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
       <ConsciousnessBar
         phi={state?.phi}
         kappa={state?.kappa}
@@ -93,15 +106,15 @@ export default function Chat() {
         observerIntent={observerIntent}
         onNewChat={handleNewChat}
         onToggleHistory={toggleSidebar}
-        sidebarCollapsed={sidebarCollapsed}
       />
 
       <LoopStages activeStages={activeStages} />
 
       <div className="chat-content">
         <ChatHistory
-          collapsed={sidebarCollapsed}
+          open={sidebarOpen}
           activeConversationId={conversationId}
+          refreshToken={refreshToken}
           onSelect={handleSelectConversation}
           onNewChat={handleNewChat}
         />
@@ -110,6 +123,10 @@ export default function Chat() {
           messages={messages}
           chatRef={chatRef}
           onSuggestedPrompt={(text) => {
+            setInput(text);
+            sendText(text);
+          }}
+          onRetry={(text) => {
             setInput(text);
             sendText(text);
           }}
@@ -132,6 +149,7 @@ export default function Chat() {
         onChange={setInput}
         onKeyDown={handleKeyDown}
         onSend={sendMessage}
+        onStop={stopGeneration}
       />
     </div>
   );

@@ -38,8 +38,29 @@ export interface VexTool {
 //  SANDBOX MANAGER — manages ComputeSDK sandbox lifecycle
 // ═══════════════════════════════════════════════════════════════
 
+/** Minimal interface for ComputeSDK sandbox operations */
+interface ComputeSdkSandbox {
+  sandboxId: string;
+  runCode(code: string, language?: string): Promise<{ exitCode: number; output: string }>;
+  runCommand(
+    command: string,
+    options?: { cwd?: string; timeout?: number },
+  ): Promise<{ exitCode: number; stdout: string; stderr: string }>;
+  destroy(): Promise<void>;
+}
+
+/** Minimal interface for the ComputeSDK client module */
+interface ComputeSdkClient {
+  setConfig(config: {
+    computesdkApiKey: string;
+    provider: string;
+    railway: { apiToken: string; projectId: string; environmentId: string };
+  }): void;
+  sandbox: { create(): Promise<ComputeSdkSandbox> };
+}
+
 interface SandboxInstance {
-  sandbox: any; // ComputeSDK Sandbox type
+  sandbox: ComputeSdkSandbox;
   createdAt: number;
   lastUsedAt: number;
 }
@@ -50,7 +71,7 @@ interface SandboxInstance {
  */
 export class SandboxManager {
   private activeSandbox: SandboxInstance | null = null;
-  private compute: any = null;
+  private compute: ComputeSdkClient | null = null;
   private initialised = false;
   /** Maximum sandbox idle time before cleanup (5 minutes) */
   private readonly MAX_IDLE_MS = 5 * 60 * 1000;
@@ -63,7 +84,7 @@ export class SandboxManager {
     if (this.initialised) return;
 
     try {
-      const { compute } = await import("computesdk");
+      const { compute } = await import("computesdk") as { compute: ComputeSdkClient };
       this.compute = compute;
 
       // ComputeSDK auto-detects Railway from env vars:
@@ -100,7 +121,7 @@ export class SandboxManager {
   /**
    * Get or create a sandbox instance.
    */
-  async getSandbox(): Promise<any> {
+  async getSandbox(): Promise<ComputeSdkSandbox> {
     await this.ensureInit();
 
     // Reuse existing sandbox if it's still fresh
@@ -116,7 +137,7 @@ export class SandboxManager {
 
     // Create new sandbox
     try {
-      const sandbox = await this.compute.sandbox.create();
+      const sandbox = await this.compute!.sandbox.create();
       this.activeSandbox = {
         sandbox,
         createdAt: Date.now(),
@@ -306,11 +327,12 @@ async function executeLocally(
       success: true,
       output: stdout || stderr || "(no output)",
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const e = err as { stdout?: string; stderr?: string; message?: string };
     return {
       success: false,
-      output: err.stdout || "",
-      error: err.stderr || err.message,
+      output: e.stdout || "",
+      error: e.stderr || e.message || "Unknown error",
     };
   } finally {
     try {
