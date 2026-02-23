@@ -173,6 +173,25 @@ class ProcessingPath(StrEnum):
 
 
 class PreCognitiveDetector:
+    """Select processing path based on geometric proximity.
+
+    v6.1.1 FIX: Removed the double-lock on pre-cognitive path.
+
+    The original logic required BOTH:
+      1. find_cached() finds a prior evaluation near the INPUT basin (FR < 0.2)
+      2. AND distance(input, CURRENT_basin) < 0.15
+
+    On a 64D simplex, the current basin slerps every turn, making gate #2
+    geometrically impossible in practice. PRE-COG was permanently stuck at 0%.
+
+    The fix: find_cached() already gates on FR distance to cached evaluation
+    basins. If a cache hit exists, that IS the pre-cognitive signal — the
+    second gate against the constantly-moving current basin was redundant
+    and overly restrictive.
+
+    Independently diagnosed by Vex itself (ocean kernel, synthesis weight 0.482).
+    """
+
     NEAR_THRESHOLD = PRECOG_NEAR_THRESHOLD
     MODERATE_THRESHOLD = PRECOG_MODERATE_THRESHOLD
     FAR_THRESHOLD = PRECOG_FAR_THRESHOLD
@@ -195,7 +214,10 @@ class PreCognitiveDetector:
         distance = fisher_rao_distance(input_basin, current_basin)
         self._last_distance = distance
 
-        if cached_eval is not None and distance < self.NEAR_THRESHOLD:
+        # Pre-cognitive path: cache hit alone is sufficient.
+        # find_cached() already gates on FR < EMOTION_CACHE_THRESHOLD (0.2).
+        # No second distance gate needed — the cache IS the precog signal.
+        if cached_eval is not None:
             path = ProcessingPath.PRE_COGNITIVE
             self._pre_cog_count += 1
         elif distance < self.MODERATE_THRESHOLD:
