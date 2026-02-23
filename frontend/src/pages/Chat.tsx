@@ -17,6 +17,7 @@ export default function Chat() {
   const navigate = useNavigate();
   const { data: state } = useVexState();
   const history = useMetricsHistory(state, 60);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Persist sidebar collapse state in localStorage
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
