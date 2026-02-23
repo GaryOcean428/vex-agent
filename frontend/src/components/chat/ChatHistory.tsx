@@ -14,11 +14,12 @@ interface ConversationSummary {
 interface ChatHistoryProps {
   open: boolean;
   activeConversationId: string | null;
+  refreshToken: number;
   onSelect: (id: string) => void;
   onNewChat: () => void;
 }
 
-export function ChatHistory({ open, activeConversationId, onSelect, onNewChat }: ChatHistoryProps) {
+export function ChatHistory({ open, activeConversationId, refreshToken, onSelect, onNewChat }: ChatHistoryProps) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -42,14 +43,14 @@ export function ChatHistory({ open, activeConversationId, onSelect, onNewChat }:
     loadConversations();
   }, [loadConversations]);
 
-  // Refresh list when active conversation changes (new message sent)
+  // Refresh list when a message exchange completes (refreshToken increments on stream done)
   useEffect(() => {
-    if (open && activeConversationId) {
+    if (open) {
       // Debounce: wait 500ms for the server to persist the message
       const timer = setTimeout(loadConversations, 500);
       return () => clearTimeout(timer);
     }
-  }, [open, activeConversationId, loadConversations]);
+  }, [open, refreshToken, loadConversations]);
 
   return (
     <aside

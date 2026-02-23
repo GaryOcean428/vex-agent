@@ -63,15 +63,12 @@ export default function Chat() {
     handleKeyDown,
   } = useChat(urlConvId);
 
-  // Sync conversationId to URL when it changes (e.g. server assigns ID on first message)
-  const prevConvId = useRef(conversationId);
+  // Increment refreshToken each time streaming completes so ChatHistory re-fetches
+  const [refreshToken, setRefreshToken] = useState(0);
+  const prevIsStreaming = useRef(isStreaming);
   useEffect(() => {
-    if (conversationId && conversationId !== prevConvId.current) {
-      prevConvId.current = conversationId;
-      // Only navigate if the URL doesn't already match
-      if (conversationId !== urlConvId) {
-        navigate(`/chat/${conversationId}`, { replace: true });
-      }
+    if (prevIsStreaming.current && !isStreaming) {
+      setRefreshToken((t) => t + 1);
     }
   }, [conversationId, urlConvId, navigate]);
 
@@ -117,6 +114,7 @@ export default function Chat() {
         <ChatHistory
           open={sidebarOpen}
           activeConversationId={conversationId}
+          refreshToken={refreshToken}
           onSelect={handleSelectConversation}
           onNewChat={handleNewChat}
         />
