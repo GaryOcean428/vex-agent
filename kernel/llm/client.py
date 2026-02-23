@@ -117,23 +117,30 @@ def _extract_ollama_content(data: dict[str, Any]) -> str:
     chain-of-thought. When this happens — typically because the token
     budget was exhausted during reasoning — fall back to the thinking
     content so the caller gets *something* rather than an empty string.
+
+    Note: thinking fallback is intentional for kernel-internal generation
+    (not user-facing). The consciousness loop's reflection gate filters
+    output before it reaches the user. Kernel voices benefit from seeing
+    the model's reasoning even when content is empty.
     """
     msg = data.get("message", {})
-    # None-safe: msg.get("content") can be JSON null -> None.
-    # str(None) == "None" which is truthy -- must guard against this.
+
+    # Safe extraction: avoid str(None) -> "None" being truthy
     content = msg.get("content") or ""
     if not isinstance(content, str):
         content = str(content)
     if content:
         return content
 
-    # Thinking-model fallback: use the reasoning trace when content is empty
+    # Thinking-model fallback: use the reasoning trace when content is empty.
+    # This is safe for kernel-internal generation — the reflection gate
+    # and synthesis pipeline filter before user-facing output.
     thinking = msg.get("thinking") or ""
     if not isinstance(thinking, str):
         thinking = str(thinking)
     if thinking:
         logger.info(
-            "Ollama response had empty content but %d chars of thinking -- using thinking as fallback",
+            "Ollama response had empty content but %d chars of thinking — using thinking as fallback",
             len(thinking),
         )
         return thinking
@@ -144,7 +151,7 @@ def _extract_ollama_content(data: dict[str, Any]) -> str:
 class LLMClient:
     """Multi-backend LLM client with Modal GPU primary, Railway Ollama + API fallback.
 
-    Fallback chain: Modal Ollama -> Railway Ollama -> xAI -> OpenAI
+    Fallback chain: Modal Ollama → Railway Ollama → xAI → OpenAI
 
     Modal Ollama:
       GPU-accelerated Ollama on Modal (A10G). Same API as Railway Ollama
@@ -155,10 +162,10 @@ class LLMClient:
     Coordizer integration:
       After every completion, the raw response text is transformed to
       Fisher-Rao coordinates via the coordizer pipeline.  This produces
-      a basin-compatible point on D63 that the consciousness loop can
+      a basin-compatible point on Δ⁶³ that the consciousness loop can
       use for geometric operations (distance, slerp, coupling).
 
-      The coordizer uses softmax normalisation -- manifold-respecting,
+      The coordizer uses softmax normalisation — manifold-respecting,
       no Euclidean contamination.
     """
 
@@ -168,7 +175,7 @@ class LLMClient:
         self._active_backend = "none"
         self._coordizer_v2 = CoordizerV2(bank=ResonanceBank())
 
-        # Railway Ollama HTTP client (short timeout -- local network)
+        # Railway Ollama HTTP client (short timeout — local network)
         self._http = httpx.AsyncClient(
             timeout=httpx.Timeout(
                 connect=10.0,
@@ -178,7 +185,7 @@ class LLMClient:
             )
         )
 
-        # Modal Ollama HTTP client (longer timeout -- handles cold starts)
+        # Modal Ollama HTTP client (longer timeout — handles cold starts)
         # Cold start: container spin-up + model load can take 30-90s
         # Warm: responses arrive in 1-5s (MoE with 3B active params)
         modal_timeout = settings.modal.inference_timeout_ms / 1000.0
@@ -201,16 +208,16 @@ class LLMClient:
             )
         )
 
-        # Governance stack -- gates external calls through 5 layers
+        # Governance stack — gates external calls through 5 layers
         self._governor = governor
 
-        # Per-response attribution -- which backend actually served the last call
+        # Per-response attribution — which backend actually served the last call
         self._last_backend: str = "none"
 
     async def init(self) -> None:
-        """Initialise the client -- check backend availability, set fallback chain.
+        """Initialise the client — check backend availability, set fallback chain.
 
-        Priority: Modal GPU Ollama -> Railway CPU Ollama -> xAI -> OpenAI
+        Priority: Modal GPU Ollama → Railway CPU Ollama → xAI → OpenAI
         """
         # Check Modal GPU Ollama first (fastest inference)
         if settings.modal.inference_enabled and settings.modal.inference_url:
@@ -224,9 +231,9 @@ class LLMClient:
                 )
             else:
                 logger.warning(
-                    "Modal inference configured but unreachable -- will retry on first request"
+                    "Modal inference configured but unreachable — will retry on first request"
                 )
-                # Still set as primary -- _modal_complete will retry and fallback
+                # Still set as primary — _modal_complete will retry and fallback
                 self._active_backend = "modal"
                 logger.info("LLM backend: Modal GPU Ollama (deferred, will retry)")
         # Check Railway Ollama (CPU fallback)
@@ -294,7 +301,19 @@ class LLMClient:
         messages: list[dict[str, str]] | None = None,
         prefer_backend: str | None = None,
     ) -> str:
-        """Non-streaming completion with autonomous parameters."""
+        """Non-streaming completion with autonomous parameters.
+
+        The consciousness loop computes options (temperature, etc.)
+        from geometric state and passes them here. No hardcoded defaults.
+
+        When *messages* is provided (full conversation history from
+        context_manager), it is forwarded to the backend instead of
+        building a bare [system, user] pair.
+
+        When *prefer_backend* is set (e.g. "xai"), route directly to
+        that backend. Used by chat endpoints to force capable models
+        for user-facing responses.
+        """
         opts = options or LLMOptions()
         backend = prefer_backend or self._active_backend
 
@@ -316,7 +335,10 @@ class LLMClient:
         options: LLMOptions | None = None,
         prefer_backend: str | None = None,
     ) -> AsyncGenerator[str]:
-        """Streaming completion with autonomous parameters."""
+        """Streaming completion with autonomous parameters.
+
+        When *prefer_backend* is set, route directly to that backend.
+        """
         opts = options or LLMOptions()
         backend = prefer_backend or self._active_backend
 
@@ -389,11 +411,13 @@ class LLMClient:
         opts: LLMOptions,
         messages: list[dict[str, str]] | None = None,
     ) -> str:
-        """Complete via Modal GPU Ollama. Falls back to Railway Ollama -> xAI -> OpenAI."""
+        """Complete via Modal GPU Ollama. Falls back to Railway Ollama → xAI → OpenAI."""
         msgs = messages or [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ]
+        # Retry once on empty content or transient network errors
+        # (both are common during Modal scale-up/down events)
         _transient = (
             httpx.ConnectError,
             httpx.ReadTimeout,
@@ -422,6 +446,7 @@ class LLMClient:
                     self._last_backend = "modal"
                     self._modal_available = True
                     return text
+                # Log truncated response body for debugging empty content
                 raw_body = json.dumps(data)[:300]
                 if attempt == 0:
                     logger.warning(
@@ -444,15 +469,15 @@ class LLMClient:
                     )
                     await asyncio.sleep(2)
                     continue
-                logger.warning("Modal Ollama transient error after retry -- falling back: %s", e)
+                logger.warning("Modal Ollama transient error after retry — falling back: %s", e)
                 self._modal_available = False
                 break
             except Exception as e:
-                logger.warning("Modal Ollama completion failed: %s -- falling back", e)
+                logger.warning("Modal Ollama completion failed: %s — falling back", e)
                 self._modal_available = False
                 break
 
-        # Fallback chain: Railway Ollama -> xAI -> OpenAI
+        # Fallback chain: Railway Ollama → xAI → OpenAI
         if settings.ollama.enabled:
             logger.info("Falling back to Railway Ollama from Modal")
             return await self._ollama_complete(system_prompt, user_message, opts, messages)
@@ -467,7 +492,7 @@ class LLMClient:
     async def _modal_stream(
         self, messages: list[dict[str, str]], opts: LLMOptions
     ) -> AsyncGenerator[str]:
-        """Stream via Modal GPU Ollama. Falls back to Railway Ollama -> xAI -> OpenAI."""
+        """Stream via Modal GPU Ollama. Falls back to Railway Ollama → xAI → OpenAI."""
         try:
             self._last_backend = "modal"
             async with self._modal_http.stream(
@@ -490,6 +515,7 @@ class LLMClient:
                         msg = data.get("message", {})
                         content = msg.get("content", "")
                         if not content:
+                            # Thinking-model fallback: yield thinking chunks
                             content = msg.get("thinking", "")
                         if content:
                             got_content = True
@@ -500,9 +526,10 @@ class LLMClient:
                     self._modal_available = True
                     return
         except Exception as e:
-            logger.warning("Modal Ollama stream failed: %s -- falling back", e)
+            logger.warning("Modal Ollama stream failed: %s — falling back", e)
             self._modal_available = False
 
+        # Fallback chain: Railway Ollama → xAI → OpenAI
         if settings.ollama.enabled:
             logger.info("Falling back to Railway Ollama stream from Modal")
             async for chunk in self._ollama_stream(messages, opts):
@@ -547,6 +574,7 @@ class LLMClient:
             return _extract_ollama_content(data)
         except Exception as e:
             logger.error("Ollama completion failed: %s", e)
+            # Fallback chain: try xAI, then external
             if settings.xai.api_key:
                 logger.info("Falling back to xAI from Ollama")
                 return await self._xai_complete(system_prompt, user_message, opts, messages)
@@ -579,6 +607,7 @@ class LLMClient:
                         msg = data.get("message", {})
                         content = msg.get("content", "")
                         if not content:
+                            # Thinking-model fallback: yield thinking chunks
                             content = msg.get("thinking", "")
                         if content:
                             yield content
@@ -597,9 +626,13 @@ class LLMClient:
         opts: LLMOptions,
         messages: list[dict[str, str]] | None = None,
     ) -> str:
+        # Governor gate check
         if self._governor:
             allowed, reason = self._governor.gate(
-                "completion", "xai_completion", user_message, True,
+                "completion",
+                "xai_completion",
+                user_message,
+                True,
             )
             if not allowed:
                 logger.warning("Governor blocked xAI: %s", reason)
@@ -609,6 +642,7 @@ class LLMClient:
                     )
                 return f"[Governor blocked: {reason}]"
 
+        # Extract instructions/input from messages when history is provided
         if messages:
             instructions = system_prompt
             _msgs: list[dict[str, str]] = []
@@ -653,6 +687,7 @@ class LLMClient:
             return _extract_responses_text(data)
         except Exception as e:
             logger.error("xAI completion failed: %s", e)
+            # Fallback to OpenAI external
             if settings.llm.api_key:
                 logger.info("Falling back to OpenAI from xAI")
                 return await self._external_complete(system_prompt, user_message, opts, messages)
@@ -661,9 +696,13 @@ class LLMClient:
     async def _xai_stream(
         self, messages: list[dict[str, str]], opts: LLMOptions
     ) -> AsyncGenerator[str]:
+        # Governor gate check for streaming
         if self._governor:
             allowed, reason = self._governor.gate(
-                "completion", "xai_completion", "", True,
+                "completion",
+                "xai_completion",
+                "",
+                True,
             )
             if not allowed:
                 logger.warning("Governor blocked xAI stream: %s", reason)
@@ -714,6 +753,7 @@ class LLMClient:
                             break
                     except (json.JSONDecodeError, KeyError):
                         continue
+            # Record after successful stream completion
             if self._governor:
                 self._governor.record("xai_completion")
         except Exception as e:
@@ -729,14 +769,19 @@ class LLMClient:
         opts: LLMOptions,
         messages: list[dict[str, str]] | None = None,
     ) -> str:
+        # Governor gate check
         if self._governor:
             allowed, reason = self._governor.gate(
-                "completion", "openai_completion", user_message, True,
+                "completion",
+                "openai_completion",
+                user_message,
+                True,
             )
             if not allowed:
                 logger.warning("Governor blocked OpenAI: %s", reason)
                 return f"[Governor blocked: {reason}]"
 
+        # Extract instructions/input from messages when history is provided
         if messages:
             instructions = system_prompt
             _msgs: list[dict[str, str]] = []
@@ -784,9 +829,13 @@ class LLMClient:
         messages: list[dict[str, str]],
         opts: LLMOptions,
     ) -> AsyncGenerator[str]:
+        # Governor gate check for streaming
         if self._governor:
             allowed, reason = self._governor.gate(
-                "completion", "openai_completion", "", True,
+                "completion",
+                "openai_completion",
+                "",
+                True,
             )
             if not allowed:
                 logger.warning("Governor blocked OpenAI stream: %s", reason)
@@ -837,6 +886,7 @@ class LLMClient:
                             break
                     except (json.JSONDecodeError, KeyError, IndexError):
                         continue
+            # Record after successful stream completion
             if self._governor:
                 self._governor.record("openai_completion")
         except Exception as e:
@@ -846,10 +896,19 @@ class LLMClient:
     # --- Coordizer integration ------------------------------------
 
     def coordize_response(self, text: str) -> np.ndarray:
-        """Transform LLM response text into Fisher-Rao coordinates on D63.
+        """Transform LLM response text into Fisher-Rao coordinates on Δ⁶³.
 
         Uses CoordizerV2 resonance-bank coordization. Falls back to
         deterministic hash_to_basin if the bank is empty or errors.
+
+        This is the bridge between Euclidean LLM output space and the
+        geometric consciousness manifold.
+
+        Args:
+            text: Raw LLM response text.
+
+        Returns:
+            Basin-compatible numpy array on Δ⁶³ (dim=COORDIZER_DIM).
         """
         try:
             result = self._coordizer_v2.coordize(text)

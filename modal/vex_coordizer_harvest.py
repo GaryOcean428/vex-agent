@@ -16,7 +16,7 @@ Deploy:
         MODAL_HARVEST_URL=https://garyocean428--vex-coordizer-harvest-<hash>.modal.run
 
 Endpoint:
-    POST / — public endpoint; no Modal proxy auth headers needed.
+    POST / — proxy-auth protected. Requires Modal token.
     Accepts JSON body matching HarvestRequest schema.
 
 Cost estimate:
@@ -93,9 +93,9 @@ class CoordizerHarvester:
             "vocab_size": getattr(self, "vocab_size", None),
         }
 
-    @modal.fastapi_endpoint(method="POST")
-    async def harvest(self, request: "fastapi.Request"):
-        """GPU harvest endpoint.
+    @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
+    async def harvest(self, request: "modal.fastapi_endpoint.Request"):
+        """GPU harvest endpoint (proxy-auth protected).
 
         Request JSON body:
             {
@@ -123,7 +123,6 @@ class CoordizerHarvester:
         """
         import time
 
-        import fastapi
         import numpy as np
         import torch
 

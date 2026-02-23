@@ -37,6 +37,11 @@ class ModalIntegrationConfig:
 
     Derived from kernel.config.settings.ModalConfig to avoid
     env-var duplication. All env vars are read once via settings.modal.
+
+    Note: token_id and token_secret are retained for Modal proxy auth
+    on non-public endpoints. The harvest endpoint currently uses Modal's
+    network controls, so these are not sent as headers, but they remain
+    available if proxy auth is re-enabled.
     """
 
     enabled: bool = False
@@ -54,9 +59,16 @@ class ModalIntegrationConfig:
         modal = kernel_settings.modal
         harvest_url = modal.harvest_url
 
-        # Health endpoint is a separate Modal class method URL.
-        # Pattern: replace "-harvest.modal.run" with "-health.modal.run"
-        health_url = harvest_url.replace("-harvest.modal.run", "-health.modal.run")
+        # Health endpoint: prefer hostname-based pattern when present,
+        # otherwise fall back to a conventional /health path to avoid
+        # health == harvest (which would send GET to a POST endpoint).
+        if "-harvest.modal.run" in harvest_url:
+            health_url = harvest_url.replace(
+                "-harvest.modal.run",
+                "-health.modal.run",
+            )
+        else:
+            health_url = harvest_url.rstrip("/") + "/health"
 
         return cls(
             enabled=modal.enabled,
