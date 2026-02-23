@@ -16,9 +16,20 @@ set -euo pipefail
 # user can write to /data (memory, conversations, consciousness state).
 if [ -d /data ]; then
     echo "[init] Fixing /data permissions for vex user..."
-    chown -R vex:vex /data 2>/dev/null || true
+    # Set ownership on the /data mount point itself without recursing
+    # and without following symlinks.
+    chown -h --no-dereference vex:vex /data 2>/dev/null || true
+
+    # Create known-safe subdirectories for vex to use.
     mkdir -p /data/workspace /data/training
-    chown -R vex:vex /data 2>/dev/null || true
+
+    # Recursively fix ownership only on known-safe, non-symlink subdirs,
+    # and do not follow any symlinks inside them.
+    for vex_dir in /data/workspace /data/training; do
+        if [ -d "$vex_dir" ] && [ ! -L "$vex_dir" ]; then
+            chown -R -h --no-dereference vex:vex "$vex_dir" 2>/dev/null || true
+        fi
+    done
 fi
 
 # ── Drop to vex user and exec entrypoint ────────────────────────
