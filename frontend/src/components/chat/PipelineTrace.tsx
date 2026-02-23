@@ -11,12 +11,16 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
   const detailId = useId();
   const [expanded, setExpanded] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
-  // text_preview is short (≤200 chars) — shown inline; no per-kernel expand needed
+  const [expandedKernels, setExpandedKernels] = useState<Record<string, boolean>>({});
 
   const toggleExpanded = useCallback(() => setExpanded((v) => !v), []);
 
   const toggleSection = useCallback((section: string) => {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  }, []);
+
+  const toggleKernel = useCallback((kernelId: string) => {
+    setExpandedKernels((prev) => ({ ...prev, [kernelId]: !prev[kernelId] }));
   }, []);
 
   const totalTokens = trace.kernel_outputs.reduce((s, k) => s + k.token_count, 0);
@@ -87,7 +91,17 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
               <div className="pipeline-generation-list">
                 {trace.kernel_outputs.map((k) => (
                   <div key={k.kernel_id} className="pipeline-gen-card">
-                    <div className="pipeline-gen-header">
+                    <button
+                      className="pipeline-gen-header"
+                      onClick={() => toggleKernel(k.kernel_id)}
+                      aria-expanded={expandedKernels[k.kernel_id] ?? false}
+                    >
+                      <span
+                        className={`pipeline-gen-chevron ${expandedKernels[k.kernel_id] ? "expanded" : ""}`}
+                        aria-hidden="true"
+                      >
+                        &#x25B6;
+                      </span>
                       <span className="pipeline-kernel-name">{k.kernel_name}</span>
                       <span className="pipeline-weight-bar-container">
                         <span
@@ -99,8 +113,8 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
                         w={k.synthesis_weight.toFixed(3)}
                       </span>
                       <span className="pipeline-kernel-stat">{k.token_count} tok</span>
-                    </div>
-                    {k.text_preview && (
+                    </button>
+                    {expandedKernels[k.kernel_id] && k.text_preview && (
                       <div className="pipeline-gen-preview">
                         {k.text_preview}
                       </div>

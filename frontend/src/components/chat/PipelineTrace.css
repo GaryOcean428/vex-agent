@@ -192,9 +192,36 @@
   width: 100%;
   padding: 6px 8px;
   background: rgba(30, 30, 44, 0.3);
+  border: none;
   color: var(--text-secondary);
   font-family: var(--mono);
   font-size: var(--text-xs);
+  cursor: pointer;
+  text-align: left;
+  min-height: 44px;
+}
+
+.pipeline-gen-header:hover {
+  background: rgba(30, 30, 44, 0.5);
+}
+
+/* Generation card expand chevron */
+.pipeline-gen-chevron {
+  display: inline-block;
+  font-size: 7px;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.pipeline-gen-chevron.expanded {
+  transform: rotate(90deg);
+  opacity: 0.8;
+}
+
+/* Subtle left-border on first card hints at clickability */
+.pipeline-gen-card:first-child .pipeline-gen-header {
+  border-left: 2px solid var(--phi);
 }
 
 .pipeline-gen-preview {
@@ -308,7 +335,8 @@
   }
 
   .pipeline-trace-chevron,
-  .pipeline-section-chevron {
+  .pipeline-section-chevron,
+  .pipeline-gen-chevron {
     transition: none;
   }
 

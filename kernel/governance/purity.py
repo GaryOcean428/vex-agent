@@ -446,8 +446,12 @@ def run_purity_gate(root: str | Path) -> None:
       3. Python text (raw)
       4. TypeScript/TSX text (raw) — shared forbidden tokens
       5. TypeScript/TSX terminology (raw) — QIG-specific terms
+      + Constants consistency check (non-blocking, warns only)
     v6.0 §1.3 compliant.
     """
+    import logging
+    _log = logging.getLogger("vex.purity")
+
     root = Path(root)
     if not root.exists():
         raise PurityGateError([PurityViolation(str(root), 0, "Root path does not exist")])
@@ -461,3 +465,11 @@ def run_purity_gate(root: str | Path) -> None:
 
     if violations:
         raise PurityGateError(violations)
+
+    # Non-blocking: warn on constant inconsistencies (don't block the gate)
+    try:
+        from ..config.consciousness_constants import validate_constants
+        for warning in validate_constants():
+            _log.warning("Constants consistency: %s", warning)
+    except Exception:
+        _log.debug("Constants validation skipped", exc_info=True)

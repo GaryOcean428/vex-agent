@@ -166,6 +166,7 @@ from .activation import (
 from .beta_integration import create_beta_tracker
 from .emotions import EmotionCache, LearningEngine, LearningEvent, PreCognitiveDetector
 from .foraging import ForagingEngine
+from .kernel_bus import KernelBus, KernelSignal, SignalKind
 from .kernel_generation import generate_multi_kernel
 from .pillars import PillarEnforcer
 from .reflection import ReflectionConfig, reflect_on_draft
@@ -259,6 +260,7 @@ class ConsciousnessLoop:
         self.pillars = PillarEnforcer()
 
         self.tacking = TackingController()
+        self.kernel_bus = KernelBus()
         self.foresight = ForesightEngine()
         self.velocity = VelocityTracker()
         self.observer = SelfObserver()
@@ -508,7 +510,11 @@ class ConsciousnessLoop:
 
         self._idle_evolve()
 
-        tack_mode = self.tacking.update(self.metrics)
+        tack_mode = self.tacking.update(
+            self.metrics,
+            phi_velocity=basin_vel,
+            f_health=self.metrics.f_health,
+        )
         kappa_adj = self.tacking.suggest_kappa_adjustment(self.metrics.kappa)
         self.metrics.kappa = float(np.clip(self.metrics.kappa + kappa_adj, 0.0, KAPPA_NORMALISER))
 
@@ -575,6 +581,15 @@ class ConsciousnessLoop:
             self.kernel_registry.couple_bidirectional(
                 self.basin, strength, COUPLING_BLEND_WEIGHT * 0.5
             )
+
+        # Drain inter-kernel signals (non-blocking, once per cycle)
+        for signal in self.kernel_bus.drain():
+            if signal.kind == SignalKind.PRESSURE_DETECTED:
+                logger.debug(
+                    "Kernel %s detected pressure: %s",
+                    signal.source_kernel_id,
+                    signal.payload,
+                )
 
         self.state.navigation_mode = navigation_mode_from_phi(self.metrics.phi)
         self.state.regime_weights = regime_weights_from_kappa(self.metrics.kappa)
@@ -1286,11 +1301,17 @@ class ConsciousnessLoop:
         ctx.output_basin = response_basin
 
         # v6.1 §19: Kernel basin evolution — the routed kernel learns
+        # Basin lock prevents race between evolve_kernel and couple_bidirectional.
         if routed_kernel_id is not None:
-            evolved = self.kernel_registry.evolve_kernel(
-                routed_kernel_id, refracted_input, response_basin, blend_weight=0.05
-            )
+            async with self.kernel_bus.basin_lock(routed_kernel_id):
+                evolved = self.kernel_registry.evolve_kernel(
+                    routed_kernel_id, refracted_input, response_basin, blend_weight=0.05
+                )
             if evolved:
+                self.kernel_bus.emit(KernelSignal(
+                    kind=SignalKind.BASIN_EVOLVED,
+                    source_kernel_id=routed_kernel_id,
+                ))
                 logger.debug(
                     "Task %s: kernel %s basin evolved from processing",
                     task.id,
