@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useHealth } from '../hooks/index.ts';
+import { CommandPalette } from './CommandPalette.tsx';
 import './Layout.css';
 
 const NAV_ITEMS = [
@@ -110,6 +111,8 @@ export default function Layout() {
       >
         <Outlet />
       </main>
+
+      <CommandPalette />
     </div>
   );
 }

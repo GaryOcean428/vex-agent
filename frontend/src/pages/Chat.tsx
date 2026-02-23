@@ -17,8 +17,6 @@ export default function Chat() {
   const navigate = useNavigate();
   const { data: state } = useVexState();
   const history = useMetricsHistory(state, 60);
-  const navigate = useNavigate();
-  const { conversationId: urlConversationId } = useParams<{ conversationId?: string }>();
 
   // Persist sidebar open/closed preference
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -41,20 +39,6 @@ export default function Chat() {
   // Track whether we've synced the URL conversation on mount
   const initialLoadDone = useRef(false);
 
-  // Persist sidebar collapse state in localStorage
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try { return localStorage.getItem(SIDEBAR_KEY) === "true"; }
-    catch { return false; }
-  });
-
-  const toggleSidebar = useCallback(() => {
-    setSidebarCollapsed((v) => {
-      const next = !v;
-      try { localStorage.setItem(SIDEBAR_KEY, String(next)); } catch { /* noop */ }
-      return next;
-    });
-  }, []);
-
   const {
     messages,
     input,
@@ -73,6 +57,7 @@ export default function Chat() {
     inputRef,
     sendText,
     sendMessage,
+    stopGeneration,
     startNewChat,
     loadConversation,
     handleKeyDown,
@@ -90,46 +75,20 @@ export default function Chat() {
     }
   }, [conversationId, urlConvId, navigate]);
 
-  const handleNewChat = useCallback(() => {
-    startNewChat();
-    navigate("/chat", { replace: true });
-  }, [startNewChat, navigate]);
-
-  const handleSelectConversation = useCallback(
-    (id: string) => {
-      loadConversation(id);
-      navigate(`/chat/${id}`, { replace: true });
-    },
-    [loadConversation, navigate],
-  );
-
   // On mount: load conversation from URL if present
   useEffect(() => {
     if (initialLoadDone.current) return;
     initialLoadDone.current = true;
-    if (urlConversationId && urlConversationId !== conversationId) {
-      loadConversation(urlConversationId);
+    if (urlConvId && urlConvId !== conversationId) {
+      loadConversation(urlConvId);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // intentionally run only once on mount
+  }, [urlConvId, conversationId, loadConversation]);
 
-  // Sync conversation ID changes back to the URL
-  useEffect(() => {
-    if (!initialLoadDone.current) return; // skip during initial load
-    if (conversationId && conversationId !== urlConversationId) {
-      navigate(`/chat/${conversationId}`, { replace: true });
-    } else if (!conversationId && urlConversationId) {
-      navigate("/chat", { replace: true });
-    }
-  }, [conversationId, urlConversationId, navigate]);
-
-  // Wrap startNewChat to also navigate
   const handleNewChat = useCallback(() => {
     startNewChat();
     navigate("/chat", { replace: true });
   }, [startNewChat, navigate]);
 
-  // Wrap loadConversation to also navigate
   const handleSelectConversation = useCallback(
     (id: string) => {
       loadConversation(id);
@@ -169,6 +128,10 @@ export default function Chat() {
             setInput(text);
             sendText(text);
           }}
+          onRetry={(text) => {
+            setInput(text);
+            sendText(text);
+          }}
         />
 
         <MetricsSidebar
@@ -188,6 +151,7 @@ export default function Chat() {
         onChange={setInput}
         onKeyDown={handleKeyDown}
         onSend={sendMessage}
+        onStop={stopGeneration}
       />
     </div>
   );

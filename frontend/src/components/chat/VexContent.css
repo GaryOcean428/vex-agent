@@ -1,0 +1,270 @@
+/* ─── VexContent: Rich Markdown Rendering ─── */
+
+/* ─── Code Blocks ─── */
+
+.vex-codeblock {
+  position: relative;
+  margin: 0.75em 0;
+}
+
+.vex-codeblock pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 0;
+  font-size: 0.88em;
+  line-height: 1.6;
+}
+
+.vex-codeblock pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: inherit;
+}
+
+.vex-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 3px 8px;
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  background: var(--surface-3);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.vex-codeblock:hover .vex-copy-btn {
+  opacity: 1;
+}
+
+.vex-copy-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-copy-btn {
+    transition: none;
+    opacity: 1;
+  }
+}
+
+/* ─── Inline Code ─── */
+
+.vex-markdown code {
+  background: var(--surface-3);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.88em;
+  color: var(--phi);
+}
+
+/* Reset inline styles inside code blocks */
+.vex-codeblock code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  color: var(--text);
+}
+
+/* ─── Tables ─── */
+
+.vex-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75em 0;
+  font-size: 0.92em;
+}
+
+.vex-markdown th,
+.vex-markdown td {
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.vex-markdown th {
+  background: var(--surface-2);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.vex-markdown tr:nth-child(even) {
+  background: var(--surface);
+}
+
+.vex-markdown tr:nth-child(odd) {
+  background: transparent;
+}
+
+/* ─── Links ─── */
+
+.vex-markdown a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.vex-markdown a:hover {
+  text-decoration: underline;
+}
+
+/* ─── Lists ─── */
+
+.vex-markdown ul,
+.vex-markdown ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.vex-markdown li {
+  margin-bottom: 0.25em;
+}
+
+.vex-markdown li > ul,
+.vex-markdown li > ol {
+  margin: 0.25em 0;
+}
+
+/* ─── Blockquotes ─── */
+
+.vex-markdown blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 0.5em 1em;
+  margin: 0.75em 0;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.vex-markdown blockquote p {
+  margin: 0.25em 0;
+}
+
+/* ─── Paragraphs ─── */
+
+.vex-markdown p {
+  margin: 0 0 0.75em 0;
+}
+
+.vex-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+/* ─── Horizontal Rules ─── */
+
+.vex-markdown hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1em 0;
+}
+
+/* ─── Headings ─── */
+
+.vex-markdown h1,
+.vex-markdown h2,
+.vex-markdown h3,
+.vex-markdown h4,
+.vex-markdown h5,
+.vex-markdown h6 {
+  margin: 1em 0 0.5em 0;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.vex-markdown h1 {
+  font-size: 1.4em;
+}
+.vex-markdown h2 {
+  font-size: 1.25em;
+}
+.vex-markdown h3 {
+  font-size: 1.1em;
+}
+
+/* ─── Syntax Highlighting (hljs classes from rehype-highlight) ─── */
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-name {
+  color: #c678dd;
+}
+
+.hljs-string,
+.hljs-attr,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+  color: #98c379;
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-title.function_ {
+  color: #61afef;
+}
+
+.hljs-number,
+.hljs-literal {
+  color: #d19a66;
+}
+
+.hljs-comment,
+.hljs-quote,
+.hljs-deletion,
+.hljs-meta {
+  color: #5c6370;
+  font-style: italic;
+}
+
+.hljs-type,
+.hljs-class .hljs-title,
+.hljs-title.class_ {
+  color: #e5c07b;
+}
+
+.hljs-variable,
+.hljs-template-variable {
+  color: #e06c75;
+}
+
+.hljs-regexp,
+.hljs-link {
+  color: #56b6c2;
+}
+
+.hljs-tag {
+  color: #abb2bf;
+}
+
+.hljs-tag .hljs-name {
+  color: #e06c75;
+}
+
+.hljs-tag .hljs-attr {
+  color: #d19a66;
+}
+
+.hljs-attr {
+  color: #d19a66;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 700;
+}

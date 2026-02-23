@@ -12,7 +12,7 @@ interface ConversationSummary {
 }
 
 interface ChatHistoryProps {
-  collapsed: boolean;
+  open: boolean;
   activeConversationId: string | null;
   onSelect: (id: string) => void;
   onNewChat: () => void;
