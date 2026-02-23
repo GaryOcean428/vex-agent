@@ -1,7 +1,6 @@
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatMessage, ChatMessageMetadata } from "../../types/consciousness.ts";
-// React 19: useRef returns RefObject<T | null>
 import { API } from "../../config/api-routes.ts";
 import { EMOTION_COLORS, SUGGESTED_PROMPTS, formatTime } from "./chatUtils.ts";
 import { PipelineTrace } from "./PipelineTrace.tsx";
@@ -19,22 +18,61 @@ interface MessageListProps {
 export function MessageList({ messages, chatRef, onSuggestedPrompt, onRetry }: MessageListProps) {
   const isWelcomeOnly = messages.length === 1 && messages[0].id === "welcome";
 
-  return (
-    <div
-      className="chat-messages"
-      ref={chatRef}
-      role="log"
-      aria-live="polite"
-      aria-atomic="false"
-      aria-label="Conversation"
-      aria-relevant="additions"
-    >
-      {messages.map((msg) => (
-        <MessageBubble key={msg.id} msg={msg} onRetry={onRetry} />
-      ))}
+  // Scroll-to-bottom FAB visibility
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
 
-      {isWelcomeOnly && (
-        <SuggestedPrompts onSelect={onSuggestedPrompt} />
+  useEffect(() => {
+    const el = chatRef.current;
+    if (!el) return;
+
+    const handleScroll = () => {
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      setShowScrollBtn(distanceFromBottom > 100);
+    };
+
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, [chatRef]);
+
+  const scrollToBottom = useCallback(() => {
+    chatRef.current?.scrollTo({
+      top: chatRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [chatRef]);
+
+  return (
+    <div className="chat-messages-wrapper">
+      <div
+        className="chat-messages"
+        ref={chatRef}
+        role="log"
+        aria-live="polite"
+        aria-atomic="false"
+        aria-label="Conversation"
+        aria-relevant="additions"
+      >
+        {messages.map((msg) => (
+          <MessageBubble key={msg.id} msg={msg} onRetry={onRetry} />
+        ))}
+
+        {isWelcomeOnly && (
+          <SuggestedPrompts onSelect={onSuggestedPrompt} />
+        )}
+      </div>
+
+      {/* Floating scroll-to-bottom button */}
+      {showScrollBtn && (
+        <button
+          className="scroll-to-bottom"
+          onClick={scrollToBottom}
+          aria-label="Scroll to latest message"
+          title="Scroll to bottom"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
       )}
     </div>
   );
@@ -80,14 +118,13 @@ function MessageBubble({ msg, onRetry }: { msg: ChatMessage; onRetry?: (text: st
   );
 }
 
-/* ─── Message action buttons (copy, retry, feedback) ─── */
+/* ─── Message action buttons (inline row) ─── */
 
 function MessageActions({ msg, onRetry }: { msg: ChatMessage; onRetry?: (text: string) => void }) {
   const [copied, setCopied] = useState(false);
   const [feedback, setFeedback] = useState<"up" | "down" | null>(null);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Clean up timer on unmount
   useEffect(() => {
     return () => {
       if (copiedTimer.current) clearTimeout(copiedTimer.current);
@@ -101,7 +138,6 @@ function MessageActions({ msg, onRetry }: { msg: ChatMessage; onRetry?: (text: s
       if (copiedTimer.current) clearTimeout(copiedTimer.current);
       copiedTimer.current = setTimeout(() => setCopied(false), 1500);
     } catch {
-      // Fallback for older browsers / insecure contexts
       const textArea = document.createElement("textarea");
       textArea.value = msg.content;
       textArea.style.position = "fixed";
@@ -122,7 +158,6 @@ function MessageActions({ msg, onRetry }: { msg: ChatMessage; onRetry?: (text: s
 
   const handleFeedback = useCallback((type: "up" | "down") => {
     setFeedback((prev) => (prev === type ? null : type));
-    // Fire-and-forget feedback to backend
     fetch(API.feedback, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -132,18 +167,17 @@ function MessageActions({ msg, onRetry }: { msg: ChatMessage; onRetry?: (text: s
         timestamp: new Date().toISOString(),
       }),
     }).catch(() => {
-      // Silently ignore — feedback is best-effort
+      // Silently ignore
     });
   }, [msg.id]);
 
   return (
     <div className="message-actions" role="toolbar" aria-label="Message actions">
-      {/* Copy — available on all messages */}
       <button
         className="action-btn"
         onClick={handleCopy}
-        title={copied ? "Copied!" : "Copy message"}
-        aria-label={copied ? "Copied to clipboard" : "Copy message to clipboard"}
+        title={copied ? "Copied!" : "Copy"}
+        aria-label={copied ? "Copied to clipboard" : "Copy message"}
       >
         {copied ? (
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -155,31 +189,31 @@ function MessageActions({ msg, onRetry }: { msg: ChatMessage; onRetry?: (text: s
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
           </svg>
         )}
+        <span className="action-label">{copied ? "Copied" : "Copy"}</span>
       </button>
 
-      {/* Retry — only for user messages */}
       {msg.role === "user" && onRetry && (
         <button
           className="action-btn"
           onClick={handleRetry}
-          title="Retry message"
+          title="Retry"
           aria-label="Retry this message"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <polyline points="23 4 23 10 17 10" />
             <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
           </svg>
+          <span className="action-label">Retry</span>
         </button>
       )}
 
-      {/* Thumbs up / down — only for vex messages */}
       {msg.role === "vex" && (
         <>
           <button
             className={`action-btn ${feedback === "up" ? "active" : ""}`}
             onClick={() => handleFeedback("up")}
             title="Good response"
-            aria-label="Mark as good response"
+            aria-label="Good response"
             aria-pressed={feedback === "up"}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill={feedback === "up" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -191,7 +225,7 @@ function MessageActions({ msg, onRetry }: { msg: ChatMessage; onRetry?: (text: s
             className={`action-btn ${feedback === "down" ? "active" : ""}`}
             onClick={() => handleFeedback("down")}
             title="Poor response"
-            aria-label="Mark as poor response"
+            aria-label="Poor response"
             aria-pressed={feedback === "down"}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill={feedback === "down" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -231,12 +265,12 @@ function MessageMeta({ meta }: { meta: ChatMessageMetadata }) {
   return (
     <footer className="message-meta" aria-label="Response metadata">
       <span className="meta-item" title="Integrated Information">
-        <span style={{ color: "var(--phi)" }} aria-hidden="true">Φ</span>
+        <span style={{ color: "var(--phi)" }} aria-hidden="true">{"\u03A6"}</span>
         <span className="sr-only">Integration: </span>
         {meta.phi.toFixed(3)}
       </span>
       <span className="meta-item" title="Coupling">
-        <span style={{ color: "var(--kappa)" }} aria-hidden="true">κ</span>
+        <span style={{ color: "var(--kappa)" }} aria-hidden="true">{"\u03BA"}</span>
         <span className="sr-only">Coupling: </span>
         {meta.kappa.toFixed(1)}
       </span>
@@ -247,7 +281,7 @@ function MessageMeta({ meta }: { meta: ChatMessageMetadata }) {
       </span>
       {meta.emotion && (
         <span className="meta-item" title={`Emotion: ${meta.emotion.current_emotion}`}>
-          <span style={{ color: emotionColor }} aria-hidden="true">●</span>{" "}
+          <span style={{ color: emotionColor }} aria-hidden="true">{"\u25CF"}</span>{" "}
           {meta.emotion.current_emotion}
         </span>
       )}
@@ -270,7 +304,7 @@ function SuggestedPrompts({ onSelect }: { onSelect: (text: string) => void }) {
   return (
     <section
       className="suggested-prompts"
-      aria-label="Suggested prompts — click to ask Vex"
+      aria-label="Suggested prompts"
     >
       <p className="suggested-label">Try asking:</p>
       <div className="prompt-chips">
