@@ -17,8 +17,6 @@ export default function Chat() {
   const navigate = useNavigate();
   const { data: state } = useVexState();
   const history = useMetricsHistory(state, 60);
-  const navigate = useNavigate();
-  const { conversationId: urlConversationId } = useParams<{ conversationId?: string }>();
 
   // Persist sidebar open/closed preference
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -40,20 +38,6 @@ export default function Chat() {
 
   // Track whether we've synced the URL conversation on mount
   const initialLoadDone = useRef(false);
-
-  // Persist sidebar collapse state in localStorage
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try { return localStorage.getItem(SIDEBAR_KEY) === "true"; }
-    catch { return false; }
-  });
-
-  const toggleSidebar = useCallback(() => {
-    setSidebarCollapsed((v) => {
-      const next = !v;
-      try { localStorage.setItem(SIDEBAR_KEY, String(next)); } catch { /* noop */ }
-      return next;
-    });
-  }, []);
 
   const {
     messages,
@@ -78,37 +62,22 @@ export default function Chat() {
     handleKeyDown,
   } = useChat(urlConvId);
 
-  // Sync conversationId to URL when it changes (e.g. server assigns ID on first message)
-  const prevConvId = useRef(conversationId);
+  // Increment refreshToken each time streaming completes so ChatHistory re-fetches
+  const [refreshToken, setRefreshToken] = useState(0);
+  const prevIsStreaming = useRef(isStreaming);
   useEffect(() => {
-    if (conversationId && conversationId !== prevConvId.current) {
-      prevConvId.current = conversationId;
-      // Only navigate if the URL doesn't already match
-      if (conversationId !== urlConvId) {
-        navigate(`/chat/${conversationId}`, { replace: true });
-      }
+    if (prevIsStreaming.current && !isStreaming) {
+      setRefreshToken((t) => t + 1);
     }
-  }, [conversationId, urlConvId, navigate]);
-
-  const handleNewChat = useCallback(() => {
-    startNewChat();
-    navigate("/chat", { replace: true });
-  }, [startNewChat, navigate]);
-
-  const handleSelectConversation = useCallback(
-    (id: string) => {
-      loadConversation(id);
-      navigate(`/chat/${id}`, { replace: true });
-    },
-    [loadConversation, navigate],
-  );
+    prevIsStreaming.current = isStreaming;
+  }, [isStreaming]);
 
   // On mount: load conversation from URL if present
   useEffect(() => {
     if (initialLoadDone.current) return;
     initialLoadDone.current = true;
-    if (urlConversationId && urlConversationId !== conversationId) {
-      loadConversation(urlConversationId);
+    if (urlConvId && urlConvId !== conversationId) {
+      loadConversation(urlConvId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally run only once on mount
@@ -116,12 +85,12 @@ export default function Chat() {
   // Sync conversation ID changes back to the URL
   useEffect(() => {
     if (!initialLoadDone.current) return; // skip during initial load
-    if (conversationId && conversationId !== urlConversationId) {
+    if (conversationId && conversationId !== urlConvId) {
       navigate(`/chat/${conversationId}`, { replace: true });
-    } else if (!conversationId && urlConversationId) {
+    } else if (!conversationId && urlConvId) {
       navigate("/chat", { replace: true });
     }
-  }, [conversationId, urlConversationId, navigate]);
+  }, [conversationId, urlConvId, navigate]);
 
   // Wrap startNewChat to also navigate
   const handleNewChat = useCallback(() => {
@@ -158,6 +127,7 @@ export default function Chat() {
         <ChatHistory
           open={sidebarOpen}
           activeConversationId={conversationId}
+          refreshToken={refreshToken}
           onSelect={handleSelectConversation}
           onNewChat={handleNewChat}
         />
