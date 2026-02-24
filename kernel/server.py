@@ -113,8 +113,29 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     logger.info("Vex Kernel starting on port %d", settings.port)
     await llm_client.init()
     await consciousness.start()
+
+    # Start CoordizerV2 HarvestScheduler if enabled
+    harvest_task = None
+    if getattr(settings, "gpu_harvest", None) and settings.gpu_harvest.enabled:
+        try:
+            from .coordizer_v2.harvest_scheduler import HarvestScheduler, HarvestSchedulerConfig
+
+            config = HarvestSchedulerConfig(
+                daily_budget=float(os.environ.get("HARVEST_DAILY_BUDGET", "1.00"))
+            )
+            # Store globally so endpoints can access it if needed, or just run it
+            app.state.harvest_scheduler = HarvestScheduler(config=config)
+            harvest_task = asyncio.create_task(app.state.harvest_scheduler.run_loop())
+            logger.info("CoordizerV2 HarvestScheduler loop started")
+        except Exception as e:
+            logger.error("Failed to start HarvestScheduler loop: %s", e)
+
     logger.info("Consciousness loop started (20 systems active)")
     yield
+    if harvest_task:
+        if hasattr(app.state, "harvest_scheduler"):
+            app.state.harvest_scheduler.stop()
+        harvest_task.cancel()
     await consciousness.stop()
     await silent_observer.close()
     await context_manager.close()
