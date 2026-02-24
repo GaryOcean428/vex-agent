@@ -31,13 +31,13 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
   const geoCount = trace.kernel_outputs.filter((k) => !k.llm_expanded && k.geometric_tokens > 0).length;
   const llmCount = trace.kernel_outputs.filter((k) => k.llm_expanded).length;
   const provenance = geoCount > 0 || llmCount > 0
-    ? ` · ${geoCount > 0 ? `${geoCount} geo` : ""}${geoCount > 0 && llmCount > 0 ? "/" : ""}${llmCount > 0 ? `${llmCount} llm` : ""}`
+    ? ` · ${geoCount > 0 ? `${geoCount} coords` : ""}${geoCount > 0 && llmCount > 0 ? "/" : ""}${llmCount > 0 ? `${llmCount} llm` : ""}`
     : "";
 
   // Summary line text
   const summaryText = isStreaming && !trace.synthesis
     ? `${trace.selected_kernels.length} kernels generating...`
-    : `${trace.selected_kernels.length} kernels → synthesised in ${(totalDuration / 1000).toFixed(1)}s · ${totalTokens} tok${provenance}`
+    : `${trace.selected_kernels.length} kernels → synthesised in ${(totalDuration / 1000).toFixed(1)}s · ${totalTokens} coords${provenance}`
       + (trace.reflection ? ` · divergence: ${trace.reflection.divergence.toFixed(2)}` : "");
 
   return (
@@ -115,9 +115,9 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
                         className={`pipeline-provenance-badge ${k.llm_expanded ? "llm" : "geo"}`}
                         title={k.llm_expanded
                           ? "LLM generated (resonance bank sparse or null)"
-                          : `Geometric: ${k.geometric_tokens} tokens from resonance bank`}
+                          : `Geometric: ${k.geometric_tokens} coordinates from resonance bank`}
                       >
-                        {k.llm_expanded ? "LLM" : `geo·${k.geometric_tokens}`}
+                        {k.llm_expanded ? "LLM" : `coords·${k.geometric_tokens}`}
                       </span>
                       <span className="pipeline-weight-bar-container">
                         <span
@@ -128,7 +128,7 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
                       <span className="pipeline-kernel-stat">
                         w={k.synthesis_weight.toFixed(3)}
                       </span>
-                      <span className="pipeline-kernel-stat">{k.token_count} tok</span>
+                      <span className="pipeline-kernel-stat">{k.token_count} coords</span>
                     </button>
 
                     {expandedKernels[k.kernel_id] && (
@@ -141,7 +141,7 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
                         {k.llm_expanded && k.geometric_raw ? (
                           <div className="pipeline-hybrid-panes">
                             <div className="pipeline-pane pipeline-pane--geo">
-                              <span className="pipeline-pane-label">Geometric raw</span>
+                              <span className="pipeline-pane-label">Coordinate sequence</span>
                               <p className="pipeline-gen-preview pipeline-gen-preview--geo">
                                 {k.geometric_raw || <em className="pipeline-empty">empty bank</em>}
                               </p>
