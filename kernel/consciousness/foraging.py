@@ -172,6 +172,14 @@ class ForagingEngine:
             self._max_daily,
         )
 
+        # T1.1: Forward forage result to harvest pipeline
+        from .harvest_bridge import forward_to_harvest
+        forward_to_harvest(
+            f"{query}\n{summary}",
+            source="forage",
+            metadata={"query": query, "results_count": len(results), "timestamp": time.time()},
+        )
+
         return {
             "status": "foraging_complete",
             "query": query,

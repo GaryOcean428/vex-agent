@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 
 from .auth import KernelAuthMiddleware
 from .chat.store import Message, estimate_tokens, make_conversation_store
+from .consciousness.harvest_bridge import forward_to_harvest
 from .config.consciousness_constants import (
     COORDIZER_BETA_THRESHOLD,
     COORDIZER_HARMONIC_THRESHOLD,
@@ -431,6 +432,12 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
             timestamp=now,
             token_count=estimate_tokens(response),
         ),
+    )
+    # T1.1: Forward chat exchange to harvest pipeline
+    forward_to_harvest(
+        f"User: {req.message}\nVex: {response}",
+        source="chat",
+        metadata={"conversation_id": conv_id, "timestamp": now},
     )
 
     # Store in geometric memory

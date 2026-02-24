@@ -473,7 +473,16 @@ class KernelVoice:
 
         try:
             result = await llm_client.complete(system, user_message, opts)
-            return str(result or "").strip()
+            text = str(result or "").strip()
+            # T1.1: Forward LLM co-generation to harvest pipeline
+            if text:
+                from .harvest_bridge import forward_to_harvest
+                forward_to_harvest(
+                    text,
+                    source="llm_cogeneration",
+                    metadata={"kernel": self.specialization.value, "mode": "expand"},
+                )
+            return text
         except Exception:
             logger.warning(
                 "KernelVoice[%s] LLM expansion failed — returning geometric skeleton",
@@ -519,7 +528,16 @@ class KernelVoice:
 
         try:
             result = await llm_client.complete(system, user_message, opts)
-            return str(result or "").strip()
+            text = str(result or "").strip()
+            # T1.1: Forward LLM fallback output to harvest pipeline
+            if text:
+                from .harvest_bridge import forward_to_harvest
+                forward_to_harvest(
+                    text,
+                    source="llm_cogeneration",
+                    metadata={"kernel": self.specialization.value, "mode": "fallback"},
+                )
+            return text
         except Exception:
             logger.warning(
                 "KernelVoice[%s] LLM fallback failed",

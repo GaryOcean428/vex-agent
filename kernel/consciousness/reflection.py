@@ -218,6 +218,13 @@ async def reflect_on_draft(
             divergence,
             result.reason[:100],
         )
+        # T1.1: Forward verdict + draft excerpt to harvest pipeline
+        from .harvest_bridge import forward_to_harvest
+        forward_to_harvest(
+            f"{draft[:400]}\n[verdict:{('APPROVE' if result.approved else 'REVISE')}] {result.reason}",
+            source="reflection",
+            metadata={"approved": result.approved, "divergence": divergence},
+        )
         return result
     except Exception as e:
         logger.warning("Reflection LLM call failed: %s — auto-approving", e)
