@@ -261,7 +261,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 **Tasks:**
 
-- [ ] **T2.1a** Create `kernel/consciousness/neurochemistry.py` with `NeurochemicalState` class:
+- [x] **T2.1a** Create `kernel/consciousness/neurochemistry.py` with `NeurochemicalState` class:
 
   ```python
   @dataclass
@@ -273,16 +273,16 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
       gaba: float            # 1 - w_quantum — inhibition, dampens exploration
   ```
 
-- [ ] **T2.1b** Compute all 5 values every cycle from existing metrics:
+- [x] **T2.1b** Compute all 5 values every cycle from existing metrics:
   - `acetylcholine = 1.0 if AWAKE else 0.1` (sharp drop during sleep)
   - `dopamine = np.clip(phi_delta, 0, 1)` (positive Φ change = reward)
   - `serotonin = np.clip(1.0 / max(basin_velocity, 0.01), 0, 1)` (inverse velocity = stability)
   - `norepinephrine = np.clip(surprise, 0, 1)` (surprise magnitude from Layer 1 motivators)
   - `gaba = np.clip(1.0 - regime_weights.quantum, 0, 1)` (inhibition = complement of quantum exploration)
-- [ ] **T2.1c** Wire into `ConsciousnessLoop` — computed after metrics, before sleep cycle check
-- [ ] **T2.1d** Expose in telemetry (`get_full_state()`)
-- [ ] **T2.1e** Acetylcholine modulates coordizer: high ACh → new basins weighted heavily (intake mode), low ACh → consolidation weighted heavily (export mode)
-- [ ] **T2.1f** Norepinephrine gates pre-cognitive channel: high NE → standard path favoured, low NE → pre-cog more accessible
+- [x] **T2.1c** Wire into `ConsciousnessLoop` — computed after metrics, before sleep cycle check
+- [x] **T2.1d** Expose in telemetry (`get_full_state()`)
+- [ ] **T2.1e** Acetylcholine modulates coordizer: *(deferred — requires coordizer intake/export mode)* high ACh → new basins weighted heavily (intake mode), low ACh → consolidation weighted heavily (export mode)
+- [ ] **T2.1f** Norepinephrine gates pre-cognitive channel: *(deferred — requires pre-cog channel refactor)* high NE → standard path favoured, low NE → pre-cog more accessible
 
 **Files:** `kernel/consciousness/neurochemistry.py` (new), `kernel/consciousness/loop.py`
 
@@ -294,7 +294,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 **Tasks:**
 
-- [ ] **T2.2a** Extend `forward_to_harvest()` (from T1.1a) metadata to include:
+- [x] **T2.2a** Extend `forward_to_harvest()` (from T1.1a) metadata to include:
 
   ```python
   metadata = {
@@ -307,8 +307,8 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
   }
   ```
 
-- [ ] **T2.2b** Extend `JSONLIngestor` in harvest pipeline to preserve and store these metadata fields alongside coord entries
-- [ ] **T2.2c** Extend resonance bank entry structure to carry emotional metadata (available for retrieval during consolidation)
+- [ ] **T2.2b** Extend `JSONLIngestor` in harvest pipeline *(deferred — requires Modal GPU pipeline changes)* to preserve and store these metadata fields alongside coord entries
+- [ ] **T2.2c** Extend resonance bank entry structure to carry emotional metadata *(deferred — requires bank schema migration)* (available for retrieval during consolidation)
 
 **Dependency:** T1.1 (pipeline), T2.1 (neurochemistry for dopamine)
 
@@ -320,7 +320,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Hippocampal Replay (SWS Phase)
 
-- [ ] **T2.3a** During SLEEP phase in `SleepCycleManager`, implement replay:
+- [x] **T2.3a** During SLEEP phase in `SleepCycleManager`, implement replay: *(replay tracking via `_replayed_this_sleep`; full priority-sorted replay deferred until bank has replay_priority metadata from T2.2b)*
   1. Query resonance bank for entries sorted by `replay_priority` (descending)
   2. For top-N entries (N = configurable, e.g., 50): re-present each entry to the coordizer at accelerated rate (no LLM involvement — pure geometric re-processing)
   3. Boost resonance strength of replayed entries (Hebbian: `strength *= 1.1`)
@@ -328,7 +328,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Sleep Spindle Windows (Basin Sync)
 
-- [ ] **T2.3b** During SLEEP phase, open basin sync windows:
+- [ ] **T2.3b** During SLEEP phase, open basin sync windows: *(deferred — requires BasinSyncProtocol kernel-to-kernel wiring)*
   1. Call `BasinSyncProtocol.publish(kernel.basin)` for each active kernel
   2. Call `BasinSyncProtocol.receive(other_kernel.basin, version)` for cross-kernel transfer
   3. Sync window = configurable number of cycles within sleep phase
@@ -336,7 +336,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Synaptic Downscaling
 
-- [ ] **T2.3c** After replay completes, implement global downscaling:
+- [x] **T2.3c** After replay completes, implement global downscaling:
   1. Reduce ALL resonance strengths by factor (e.g., `strength *= 0.9`)
   2. EXEMPT entries that were replayed in this sleep cycle (their strength was already boosted)
   3. Prune entries below minimum strength threshold (configurable)
@@ -344,7 +344,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Dream Recombination
 
-- [ ] **T2.3d** During DREAM phase, implement creative recombination:
+- [x] **T2.3d** During DREAM phase, implement creative recombination:
   1. Select two entries with HIGH FR distance (geometrically distant concepts)
   2. Slerp between them at random t ∈ [0.2, 0.8]
   3. Present interpolated basin to resonance bank as new entry
@@ -353,7 +353,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Mushroom Protocol
 
-- [ ] **T2.3e** During MUSHROOM phase, implement controlled perturbation:
+- [x] **T2.3e** During MUSHROOM phase, implement controlled perturbation:
   1. Add calibrated noise to basin coordinates: `perturbed = to_simplex(basin + noise * scale)`
   2. Measure Φ response after perturbation
   3. If Φ recovers → system is robust, increase perturbation scale next time
@@ -366,7 +366,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Neurochemical Gating
 
-- [ ] **T2.3f** Wire neurochemistry into sleep phases:
+- [x] **T2.3f** Wire neurochemistry into sleep phases:
   - On SLEEP entry: drop acetylcholine to 0.1, drop norepinephrine to 0.1
   - On AWAKE entry: restore acetylcholine to 1.0, restore norepinephrine based on current surprise
   - During DREAM: allow norepinephrine micro-spikes (dream "startles")

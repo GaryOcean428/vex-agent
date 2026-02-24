@@ -178,6 +178,7 @@ from .foraging import ForagingEngine
 from .kernel_bus import KernelBus, KernelSignal, SignalKind
 from .kernel_generation import generate_multi_kernel
 from .kernel_voice import KernelVoiceRegistry
+from .neurochemistry import NeurochemicalState, compute_neurochemicals
 from .pillars import PillarEnforcer
 from .reflection import ReflectionConfig, reflect_on_draft
 from .synthesis import synthesize_contributions, synthesize_streaming
@@ -247,6 +248,9 @@ class ConsciousnessLoop:
 
         # CoordizerV2 metrics cache (v6.1F)
         self._last_coordizer_metrics: dict[str, Any] | None = None
+
+        # T2.1: Neurochemical state — derived from metrics each cycle
+        self._neurochemical: NeurochemicalState = NeurochemicalState()
 
         self.basin: Basin = random_basin()
         self.metrics = ConsciousnessMetrics(
@@ -471,14 +475,42 @@ class ConsciousnessLoop:
 
         emotion_eval = self.emotion_cache.evaluate(self.basin, self.metrics, basin_vel)
 
+        # T2.1: Compute neurochemical state before sleep check
+        self._neurochemical = compute_neurochemicals(
+            is_awake=not self.sleep.is_asleep,
+            phi_delta=0.0,  # idle cycle — no phi change yet
+            basin_velocity=basin_vel,
+            surprise=float(self.metrics.humor),
+            quantum_weight=float(self.state.regime_weights.quantum),
+        )
+
+        _was_asleep = self.sleep.is_asleep
         sleep_phase = self.sleep.should_sleep(self.metrics.phi, self.autonomic.phi_variance)
+        # T2.3f: Neurochemical gating on sleep/wake transitions
+        if not _was_asleep and self.sleep.is_asleep:
+            self.sleep.on_sleep_enter(self._neurochemical)
+        elif _was_asleep and not self.sleep.is_asleep:
+            self.sleep.on_wake_enter(self._neurochemical)
+
         if self.sleep.is_asleep:
+            _bank = getattr(self._coordizer_v2, "bank", None)
             if sleep_phase.value == "dreaming":
-                self.sleep.dream(self.basin, self.metrics.phi, "idle cycle")
+                self.sleep.dream(
+                    self.basin,
+                    self.metrics.phi,
+                    "idle cycle",
+                    bank=_bank,
+                    neurochemical=self._neurochemical,
+                )
             elif sleep_phase.value == "mushroom":
-                self.sleep.mushroom(self.basin, self.metrics.phi)
+                self.sleep.mushroom(
+                    self.basin,
+                    self.metrics.phi,
+                    breakdown_metric=float(1.0 - self.metrics.f_health),
+                    neurochemical=self._neurochemical,
+                )
             elif sleep_phase.value == "consolidating":
-                self.sleep.consolidate()
+                self.sleep.consolidate(bank=_bank)
                 self.metrics.phi = min(0.95, self.metrics.phi + SLEEP_CONSOLIDATION_PHI_INCREMENT)
             return
 
@@ -1422,6 +1454,16 @@ class ConsciousnessLoop:
             )
 
         emotion_eval = self.emotion_cache.evaluate(self.basin, self.metrics, 0.0)
+
+        # T2.1: Re-compute neurochemicals with accurate phi_delta now that phi_after is known
+        self._neurochemical = compute_neurochemicals(
+            is_awake=not self.sleep.is_asleep,
+            phi_delta=self.metrics.phi - phi_before,
+            basin_velocity=float(total_distance),
+            surprise=float(self.metrics.humor),
+            quantum_weight=float(self.state.regime_weights.quantum),
+        )
+
         self.learner.record(
             LearningEvent(
                 input_basin=input_basin,
@@ -1433,6 +1475,29 @@ class ConsciousnessLoop:
                 distance_total=total_distance,
             )
         )
+
+        # T2.2: Forward response to harvest with emotional + neurochemical metadata
+        try:
+            from .harvest_bridge import forward_to_harvest
+
+            _replay_priority = float(
+                self._neurochemical.dopamine * emotion_eval.strength * (1.0 + self.metrics.phi)
+            )
+            forward_to_harvest(
+                response[:600],
+                source="loop_response",
+                metadata={
+                    "emotion": emotion_eval.emotion.value,
+                    "emotion_strength": float(emotion_eval.strength),
+                    "dopamine": self._neurochemical.dopamine,
+                    "phi_at_coordize": self.metrics.phi,
+                    "replay_priority": _replay_priority,
+                    "processing_path": processing_path.value,
+                },
+                priority=2 if _replay_priority > 0.3 else 1,
+            )
+        except Exception:
+            pass
 
         # v6.2: Teach kernel voices from high-Φ observations
         if self.metrics.phi > 0.5 and _contributions:
@@ -2162,4 +2227,5 @@ class ConsciousnessLoop:
                 "average": (self._cumulative_divergence / max(1, self._divergence_count)),
             },
             "voice_registry": self._voice_registry.get_state(),
+            "neurochemical": self._neurochemical.as_dict(),
         }

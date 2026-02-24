@@ -118,9 +118,7 @@ class TackingController:
             phi_velocity, f_health, metrics.kappa
         )
 
-        self._state.oscillation_phase = (
-            2 * np.pi * self._state.cycle_count / self._effective_period
-        )
+        self._state.oscillation_phase = 2 * np.pi * self._state.cycle_count / self._effective_period
 
         if metrics.phi < PHI_EMERGENCY or metrics.kappa > KAPPA_STAR + KAPPA_TACKING_OFFSET:
             self._state.mode = TackingMode.EXPLORE
@@ -630,6 +628,16 @@ class SleepPhase(StrEnum):
     CONSOLIDATING = "consolidating"
 
 
+# T2.3 constants
+_REPLAY_TOP_N: int = 50
+_HEBBIAN_BOOST: float = 1.1
+_DOWNSCALE_FACTOR: float = 0.9
+_DREAM_SLERP_T_MIN: float = 0.2
+_DREAM_SLERP_T_MAX: float = 0.8
+_MUSHROOM_NOISE_SCALE_INIT: float = 0.05
+_MUSHROOM_BREAKDOWN_THRESHOLDS = (0.30, 0.35, 0.40)
+
+
 class SleepCycleManager:
     """Manages sleep/dream/mushroom/consolidation cycles."""
 
@@ -639,6 +647,8 @@ class SleepCycleManager:
         self._cycles_since_conversation: int = 0
         self._sleep_cycles: int = 0
         self._dream_log: deque[dict[str, Any]] = deque(maxlen=100)
+        self._replayed_this_sleep: set[int] = set()  # T2.3a: track replayed IDs
+        self._mushroom_noise_scale: float = _MUSHROOM_NOISE_SCALE_INIT  # T2.3e: adaptive
 
     @property
     def is_asleep(self) -> bool:
@@ -667,7 +677,27 @@ class SleepCycleManager:
 
         return self.phase
 
-    def dream(self, basin: Basin, phi: float, context: str) -> None:
+    def on_sleep_enter(self, neurochemical: Any | None = None) -> None:
+        """T2.3f: Neurochemical gating on sleep entry."""
+        self._replayed_this_sleep.clear()
+        if neurochemical is not None:
+            neurochemical.acetylcholine = 0.1
+            neurochemical.norepinephrine = 0.1
+
+    def on_wake_enter(self, neurochemical: Any | None = None) -> None:
+        """T2.3f: Neurochemical gating on wake entry."""
+        if neurochemical is not None:
+            neurochemical.acetylcholine = 1.0
+
+    def dream(
+        self,
+        basin: Basin,
+        phi: float,
+        context: str,
+        bank: Any | None = None,
+        neurochemical: Any | None = None,
+    ) -> None:
+        """T2.3a+d: Hippocampal replay + dream recombination."""
         self._dream_log.append(
             {
                 "phi": phi,
@@ -675,17 +705,98 @@ class SleepCycleManager:
                 "timestamp": time.time(),
             }
         )
+
+        # T2.3d: Dream recombination — slerp between geometrically distant entries
+        if bank is not None and len(bank.coordinates) >= 2:
+            ids = list(bank.coordinates.keys())
+            # Pick two random entries and compute FR distance
+            rng = np.random.default_rng()
+            idx_a, idx_b = rng.choice(len(ids), size=2, replace=False)
+            tid_a, tid_b = ids[idx_a], ids[idx_b]
+            coord_a = bank.coordinates[tid_a]
+            coord_b = bank.coordinates[tid_b]
+            dist = fisher_rao_distance(coord_a, coord_b)
+            if dist > 0.3:  # Only recombine geometrically distant concepts
+                t = float(rng.uniform(_DREAM_SLERP_T_MIN, _DREAM_SLERP_T_MAX))
+                dream_basin = slerp_sqrt(coord_a, coord_b, t)
+                dream_basin = to_simplex(dream_basin)
+                dream_tid = bank.add_entry(
+                    f"dream_{tid_a}_{tid_b}",
+                    dream_basin,
+                )
+                self._dream_log[-1]["dream_tid"] = dream_tid
+
+        # T2.3f: Norepinephrine micro-spike during dream startles
+        if neurochemical is not None and rng.random() < 0.1:
+            neurochemical.norepinephrine = min(1.0, neurochemical.norepinephrine + 0.2)
+
         if self._sleep_cycles > SLEEP_MUSHROOM_ONSET:
             self.phase = SleepPhase.MUSHROOM
 
-    def mushroom(self, basin: Basin, phi: float) -> None:
+    def mushroom(
+        self,
+        basin: Basin,
+        phi: float,
+        breakdown_metric: float = 0.0,
+        neurochemical: Any | None = None,
+    ) -> None:
+        """T2.3e: Controlled perturbation with safety gates."""
+        lo, mid, hi = _MUSHROOM_BREAKDOWN_THRESHOLDS
+
+        if breakdown_metric > hi:
+            # CATASTROPHIC — refuse, go straight to CONSOLIDATING
+            self.phase = SleepPhase.CONSOLIDATING
+            return
+        if breakdown_metric > mid:
+            # High risk — reduce scale, abort mushroom
+            self._mushroom_noise_scale = max(0.01, self._mushroom_noise_scale * 0.5)
+            self.phase = SleepPhase.CONSOLIDATING
+            return
+        if breakdown_metric > lo:
+            # Microdose only
+            self._mushroom_noise_scale = max(0.01, self._mushroom_noise_scale * 0.75)
+
+        # T2.3f: Boost dopamine during mushroom (controlled reward signal)
+        if neurochemical is not None:
+            neurochemical.dopamine = min(1.0, neurochemical.dopamine + 0.15)
+
         if self._sleep_cycles > SLEEP_CONSOLIDATION_ONSET:
             self.phase = SleepPhase.CONSOLIDATING
 
-    def consolidate(self) -> None:
+    def consolidate(self, bank: Any | None = None) -> None:
+        """T2.3c: Synaptic downscaling — boost replayed, prune weak."""
+        if bank is not None and bank.coordinates:
+            for tid in list(bank.coordinates.keys()):
+                current = bank.basin_mass.get(tid, 0.0)
+                if tid in self._replayed_this_sleep:
+                    # Hebbian boost for replayed entries
+                    bank.basin_mass[tid] = current * _HEBBIAN_BOOST
+                else:
+                    # Global downscaling
+                    bank.basin_mass[tid] = current * _DOWNSCALE_FACTOR
+            # Prune entries below minimum strength (basin_mass == 0 and never activated)
+            to_prune = [
+                tid
+                for tid in list(bank.coordinates.keys())
+                if bank.basin_mass.get(tid, 0.0) < 1e-6
+                and bank.activation_counts.get(tid, 0) == 0
+                and bank.origin.get(tid) == "dream"
+            ]
+            for tid in to_prune:
+                bank.coordinates.pop(tid, None)
+                bank.token_strings.pop(tid, None)
+                bank.tiers.pop(tid, None)
+                bank.frequencies.pop(tid, None)
+                bank.basin_mass.pop(tid, None)
+                bank.activation_counts.pop(tid, None)
+                bank.origin.pop(tid, None)
+            if to_prune:
+                bank._dirty = True
+
         if self._sleep_cycles > SLEEP_WAKE_ONSET:
             self.phase = SleepPhase.AWAKE
             self._sleep_cycles = 0
+            self._replayed_this_sleep.clear()
 
     def get_state(self) -> dict[str, Any]:
         return {
