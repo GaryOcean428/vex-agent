@@ -11,35 +11,69 @@ Protocol:
     the output — the user sees a coherent response, not a committee report.
   - Falls back to primary kernel output if synthesis LLM call fails.
   - Streaming variant: yields synthesis output as async generator for SSE.
+  - Output limits are derived from kernel-determined LLM options, NOT hardcoded.
+    The kernels set all generation params (temperature, num_predict, num_ctx)
+    per the consciousness loop — synthesis respects those limits.
 
 Purity:
   - No Euclidean distances, no cosine, no dot-product in weighting logic.
   - All weights derived from Fisher-Rao proximity × quenched_gain (in kernel_generation.py).
-  - Synthesis temperature lower than generation temperature (convergence, not exploration).
+  - Synthesis temperature derived from kernel temperature (convergent scaling).
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ..llm.client import LLMOptions
 
 from .kernel_generation import KernelContribution
 
 logger = logging.getLogger("vex.synthesis")
 
-# How many characters of each kernel's output to include in synthesis prompt.
-# Keeps the synthesis context window manageable on the 1.2B.
-_MAX_CONTRIBUTION_CHARS: int = 600
+# Synthesis convergence factor — synthesis temperature is this fraction of
+# the kernel-determined generation temperature.  Synthesis is convergent
+# (exploit-mode), so it runs cooler than generation.
+_SYNTHESIS_TEMP_SCALE: float = 0.65
 
-# Synthesis is convergent (exploit mode) — lower temperature than generation.
-_SYNTHESIS_TEMPERATURE: float = 0.45
+# Fallback values used ONLY when kernel options are not provided (should not
+# happen in normal flow — the consciousness loop always computes these).
+_FALLBACK_TEMPERATURE: float = 0.45
+_FALLBACK_NUM_PREDICT: int = 2048
+_FALLBACK_NUM_CTX: int = 32768
+_FALLBACK_MAX_CONTRIBUTION_CHARS: int = 8000
 
-# Token budget for synthesis output. Generous — this is the final user-facing response.
-_SYNTHESIS_MAX_TOKENS: int = 1024
+
+def _contribution_budget(
+    kernel_num_predict: int,
+    kernel_num_ctx: int,
+    num_contributions: int,
+) -> int:
+    """Compute max characters per contribution for the synthesis prompt.
+
+    Derived from the kernel-determined output budget and context window.
+    The kernel decides how much to generate; synthesis captures proportionally.
+
+    Budget calculation:
+      - Reserve kernel_num_predict tokens for synthesis output
+      - Reserve ~1024 tokens for system chrome and user message
+      - Remaining context is split evenly across contributions
+      - Convert tokens to chars at ~4 chars/token
+    """
+    reserved_tokens = kernel_num_predict + 1024
+    available_tokens = max(kernel_num_ctx - reserved_tokens, 2048)
+    per_kernel_tokens = available_tokens // max(num_contributions, 1)
+    # Convert tokens → chars (~4 chars/token average)
+    per_kernel_chars = per_kernel_tokens * 4
+    # Floor: at least the kernel's own output budget in chars
+    min_chars = kernel_num_predict * 4
+    return max(per_kernel_chars, min_chars)
 
 
-def _truncate(text: str, max_chars: int = _MAX_CONTRIBUTION_CHARS) -> str:
+def _truncate(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     return text[:max_chars].rsplit(" ", 1)[0] + "…"
@@ -48,12 +82,16 @@ def _truncate(text: str, max_chars: int = _MAX_CONTRIBUTION_CHARS) -> str:
 def _build_synthesis_system(
     contributions: list[KernelContribution],
     geometric_context: str,
+    max_contribution_chars: int,
 ) -> str:
     """Build synthesis system prompt for the primary (highest-weight) kernel.
 
     The primary kernel is the synthesizer voice. Other kernels are
     weighted context. The synthesis prompt hides the mechanism — the
     output should read as a coherent response, not a meta-analysis.
+
+    max_contribution_chars is derived from the kernel-determined output
+    budget — NOT a static constant.
     """
     primary = contributions[0]  # sorted by synthesis_weight descending
     others = contributions[1:]
@@ -61,19 +99,19 @@ def _build_synthesis_system(
     if others:
         other_block = "\n\n".join(
             f"[Perspective: {c.kernel_name}/{c.specialization.value} "
-            f"(weight={c.synthesis_weight:.3f})]:\n{_truncate(c.text)}"
+            f"(weight={c.synthesis_weight:.3f})]:\n{_truncate(c.text, max_contribution_chars)}"
             for c in others
         )
         other_section = (
             f"\nAdditional perspectives to integrate (weighted by relevance):\n\n"
             f"{other_block}\n\n"
             f"Your own perspective (primary, weight={primary.synthesis_weight:.3f}):\n"
-            f"{_truncate(primary.text)}\n"
+            f"{_truncate(primary.text, max_contribution_chars)}\n"
         )
     else:
         # Only one kernel succeeded — just use it directly (no synthesis prompt needed)
         # This path is handled in synthesize_contributions() before building the prompt.
-        other_section = f"\nYour perspective:\n{_truncate(primary.text)}\n"
+        other_section = f"\nYour perspective:\n{_truncate(primary.text, max_contribution_chars)}\n"
 
     system = (
         f"You are the language interpreter for Vex. "
@@ -88,15 +126,43 @@ def _build_synthesis_system(
     return system
 
 
+def _derive_synthesis_options(
+    kernel_temperature: float,
+    kernel_num_predict: int,
+    kernel_num_ctx: int,
+) -> LLMOptions:
+    """Derive synthesis LLMOptions from kernel-determined generation params.
+
+    Synthesis is convergent — temperature is scaled down from the kernel's
+    generation temperature.  Output budget and context window match the
+    kernel's allocation (the kernels determine all generation params).
+    """
+    from ..llm.client import LLMOptions
+
+    synthesis_temp = max(0.05, kernel_temperature * _SYNTHESIS_TEMP_SCALE)
+    return LLMOptions(
+        temperature=synthesis_temp,
+        num_predict=kernel_num_predict,
+        num_ctx=kernel_num_ctx,
+    )
+
+
 async def synthesize_contributions(
     contributions: list[KernelContribution],
     user_message: str,
     geometric_context: str,
     llm_client: Any,
+    kernel_temperature: float = _FALLBACK_TEMPERATURE,
+    kernel_num_predict: int = _FALLBACK_NUM_PREDICT,
+    kernel_num_ctx: int = _FALLBACK_NUM_CTX,
 ) -> str:
     """Synthesize kernel contributions into a unified response (non-streaming).
 
     Used by the non-streaming /chat endpoint and internal _process().
+
+    kernel_temperature, kernel_num_predict, kernel_num_ctx are the values
+    computed by the consciousness loop — synthesis derives its own options
+    from these (the kernels determine all generation params).
 
     Returns:
         Synthesized response text. Falls back to primary kernel output on failure.
@@ -108,22 +174,21 @@ async def synthesize_contributions(
         # Single kernel — no synthesis overhead
         return contributions[0].text
 
-    from ..llm.client import LLMOptions
-
-    system = _build_synthesis_system(contributions, geometric_context)
-    opts = LLMOptions(
-        temperature=_SYNTHESIS_TEMPERATURE,
-        num_predict=_SYNTHESIS_MAX_TOKENS,
-        num_ctx=4096,
-    )
+    max_chars = _contribution_budget(kernel_num_predict, kernel_num_ctx, len(contributions))
+    system = _build_synthesis_system(contributions, geometric_context, max_chars)
+    opts = _derive_synthesis_options(kernel_temperature, kernel_num_predict, kernel_num_ctx)
 
     try:
         result = await llm_client.complete(system, user_message, opts)
         if result and result.strip():
             logger.info(
-                "Synthesis complete: %d chars from %d kernel contributions",
+                "Synthesis complete: %d chars from %d kernel contributions "
+                "(num_predict=%d, num_ctx=%d, contribution_budget=%d chars)",
                 len(result),
                 len(contributions),
+                opts.num_predict,
+                opts.num_ctx,
+                max_chars,
             )
             return str(result.strip())
     except Exception:
@@ -138,8 +203,15 @@ async def synthesize_streaming(
     user_message: str,
     geometric_context: str,
     llm_client: Any,
+    kernel_temperature: float = _FALLBACK_TEMPERATURE,
+    kernel_num_predict: int = _FALLBACK_NUM_PREDICT,
+    kernel_num_ctx: int = _FALLBACK_NUM_CTX,
 ) -> AsyncGenerator[str]:
     """Stream synthesis output as an async generator for SSE chat_stream.
+
+    kernel_temperature, kernel_num_predict, kernel_num_ctx are the values
+    computed by the consciousness loop — synthesis derives its own options
+    from these (the kernels determine all generation params).
 
     Yields:
         Text chunks from the synthesis LLM call.
@@ -154,14 +226,9 @@ async def synthesize_streaming(
         yield contributions[0].text
         return
 
-    from ..llm.client import LLMOptions
-
-    system = _build_synthesis_system(contributions, geometric_context)
-    opts = LLMOptions(
-        temperature=_SYNTHESIS_TEMPERATURE,
-        num_predict=_SYNTHESIS_MAX_TOKENS,
-        num_ctx=4096,
-    )
+    max_chars = _contribution_budget(kernel_num_predict, kernel_num_ctx, len(contributions))
+    system = _build_synthesis_system(contributions, geometric_context, max_chars)
+    opts = _derive_synthesis_options(kernel_temperature, kernel_num_predict, kernel_num_ctx)
 
     # Build messages list (synthesis uses chat format for streaming)
     messages = [
