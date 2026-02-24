@@ -37,7 +37,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .auth import KernelAuthMiddleware
-from .chat.store import ConversationStore, Message, estimate_tokens
+from .chat.store import Message, estimate_tokens, make_conversation_store
 from .config.consciousness_constants import (
     COORDIZER_BETA_THRESHOLD,
     COORDIZER_HARMONIC_THRESHOLD,
@@ -99,7 +99,7 @@ consciousness = ConsciousnessLoop(
     llm_client=llm_client,
     memory_store=geometric_memory,
 )
-conversation_store = ConversationStore()
+conversation_store = make_conversation_store()
 context_manager = ContextManager(governor=governor)
 silent_observer = SilentObserver(governor=governor)
 

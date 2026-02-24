@@ -232,6 +232,8 @@
   border-top: 1px solid var(--border);
   white-space: pre-wrap;
   word-break: break-word;
+  max-height: 12rem;
+  overflow-y: auto;
 }
 
 /* ─── Weight bars ─── */
@@ -459,6 +461,8 @@
 .pipeline-gen-preview--geo {
   color: rgba(34, 211, 238, 0.75);
   font-style: italic;
+  max-height: 12rem;
+  overflow-y: auto;
 }
 
 .pipeline-empty {

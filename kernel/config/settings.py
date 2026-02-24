@@ -171,6 +171,20 @@ class CoordizerV2Config:
 
 
 @dataclass(frozen=True)
+class RedisConfig:
+    """Redis connection for durable chat persistence.
+
+    When url is set and enabled=True, ConversationStore uses Redis
+    as the primary backend (hash per conversation, list per message).
+    Falls back to JSONL on /data if Redis is unavailable.
+    """
+
+    url: str = os.environ.get("REDIS_URL", "")
+    enabled: bool = os.environ.get("REDIS_ENABLED", "true").lower() != "false"
+    ttl_days: int = int(os.environ.get("REDIS_CONV_TTL_DAYS", "90"))
+
+
+@dataclass(frozen=True)
 class PerplexityConfig:
     """Perplexity sonar-pro deep research integration.
 
@@ -272,6 +286,7 @@ class Settings:
     governor: GovernorConfig = field(default_factory=GovernorConfig)
     searxng: SearXNGConfig = field(default_factory=SearXNGConfig)
     modal: ModalConfig = field(default_factory=ModalConfig)
+    redis: RedisConfig = field(default_factory=RedisConfig)
     perplexity: PerplexityConfig = field(default_factory=PerplexityConfig)
     coordizer_v2: CoordizerV2Config = field(default_factory=CoordizerV2Config)
 

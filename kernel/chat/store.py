@@ -29,6 +29,7 @@ from ..config.settings import settings
 
 logger = logging.getLogger("vex.chat.store")
 
+
 MAX_CONVERSATIONS = 200
 MAX_MESSAGES_PER_CONVERSATION = 500
 
@@ -330,3 +331,149 @@ class ConversationStore:
         for conv in sorted_convs[:to_remove]:
             self.delete_conversation(conv.id)
         logger.info("Pruned %d old conversations", to_remove)
+
+
+class RedisConversationStore:
+    """Redis-backed conversation persistence.
+
+    Storage layout:
+        vex:conv:{id}        — Hash: title, created_at, updated_at,
+                               message_count, preview, total_tokens
+        vex:conv:{id}:msgs   — List of JSON-encoded Message dicts (RPUSH)
+        vex:convs            — Sorted set: conv_id scored by updated_at
+
+    Implements the same interface as ConversationStore so it can be
+    used as a drop-in replacement.
+    """
+
+    _KEY_PREFIX = "vex:conv:"
+    _INDEX_KEY = "vex:convs"
+
+    def __init__(self, url: str, ttl_days: int = 90) -> None:
+        import redis  # type: ignore[import-untyped]
+
+        self._ttl = ttl_days * 86400
+        self._r = redis.from_url(url, decode_responses=True)
+        # Probe connection immediately so failure is caught at init time
+        self._r.ping()
+
+    def _meta_key(self, conv_id: str) -> str:
+        return f"{self._KEY_PREFIX}{conv_id}"
+
+    def _msgs_key(self, conv_id: str) -> str:
+        return f"{self._KEY_PREFIX}{conv_id}:msgs"
+
+    def create_conversation(self, conv_id: str | None = None) -> str:
+        cid = conv_id or str(uuid.uuid4())
+        now = time.time()
+        self._r.hset(
+            self._meta_key(cid),
+            mapping={
+                "id": cid,
+                "title": "New conversation",
+                "created_at": now,
+                "updated_at": now,
+                "message_count": 0,
+                "preview": "",
+                "total_tokens": 0,
+            },
+        )
+        self._r.expire(self._meta_key(cid), self._ttl)
+        self._r.zadd(self._INDEX_KEY, {cid: now})
+        return cid
+
+    def append_message(self, conv_id: str, message: Message) -> None:
+        if not self._r.exists(self._meta_key(conv_id)):
+            self.create_conversation(conv_id)
+        if message.token_count == 0:
+            message.token_count = estimate_tokens(message.content)
+        self._r.rpush(self._msgs_key(conv_id), json.dumps(message.to_dict()))
+        self._r.expire(self._msgs_key(conv_id), self._ttl)
+        now = time.time()
+        pipe = self._r.pipeline()
+        pipe.hset(
+            self._meta_key(conv_id),
+            mapping={
+                "updated_at": now,
+                "preview": message.content[:100],
+            },
+        )
+        pipe.hincrby(self._meta_key(conv_id), "message_count", 1)
+        pipe.hincrbyfloat(self._meta_key(conv_id), "total_tokens", message.token_count)
+        pipe.expire(self._meta_key(conv_id), self._ttl)
+        pipe.zadd(self._INDEX_KEY, {conv_id: now})
+        # Auto-title from first user message
+        if message.role == "user":
+            title = self._r.hget(self._meta_key(conv_id), "title")
+            if title == "New conversation":
+                new_title = message.content[:60]
+                if len(message.content) > 60:
+                    new_title += "..."
+                pipe.hset(self._meta_key(conv_id), "title", new_title)
+        pipe.execute()
+
+    def get_conversation(self, conv_id: str) -> dict[str, Any] | None:
+        meta = self._r.hgetall(self._meta_key(conv_id))
+        if not meta:
+            return None
+        raw_msgs = self._r.lrange(self._msgs_key(conv_id), 0, -1)
+        messages = []
+        for raw in raw_msgs[-MAX_MESSAGES_PER_CONVERSATION:]:
+            try:
+                messages.append(json.loads(raw))
+            except json.JSONDecodeError:
+                continue
+        return {**meta, "messages": messages}
+
+    def list_conversations(self, limit: int = 50) -> list[dict[str, Any]]:
+        ids = self._r.zrevrange(self._INDEX_KEY, 0, limit - 1)
+        result = []
+        for cid in ids:
+            meta = self._r.hgetall(self._meta_key(cid))
+            if meta:
+                result.append(meta)
+        return result
+
+    def delete_conversation(self, conv_id: str) -> bool:
+        if not self._r.exists(self._meta_key(conv_id)):
+            return False
+        self._r.delete(self._meta_key(conv_id), self._msgs_key(conv_id))
+        self._r.zrem(self._INDEX_KEY, conv_id)
+        return True
+
+    def get_llm_messages(self, conv_id: str, max_tokens: int = 28000) -> list[dict[str, str]]:
+        raw_msgs = self._r.lrange(self._msgs_key(conv_id), 0, -1)
+        messages = []
+        for raw in raw_msgs:
+            try:
+                messages.append(Message.from_dict(json.loads(raw)))
+            except (json.JSONDecodeError, KeyError):
+                continue
+        result: list[dict[str, str]] = []
+        token_sum = 0
+        for msg in reversed(messages):
+            tc = msg.token_count or estimate_tokens(msg.content)
+            if token_sum + tc > max_tokens:
+                break
+            result.append(msg.to_llm_message())
+            token_sum += tc
+        result.reverse()
+        return result
+
+    def get_token_count(self, conv_id: str) -> int:
+        val = self._r.hget(self._meta_key(conv_id), "total_tokens")
+        return int(float(val)) if val else 0
+
+
+def make_conversation_store() -> ConversationStore | RedisConversationStore:
+    """Factory: return RedisConversationStore if Redis is configured, else JSONL."""
+    cfg = settings.redis
+    if cfg.enabled and cfg.url:
+        try:
+            store = RedisConversationStore(url=cfg.url, ttl_days=cfg.ttl_days)
+            logger.info("Chat persistence: Redis (%s)", cfg.url.split("@")[-1])
+            return store
+        except Exception as exc:
+            logger.warning("Redis unavailable (%s) — falling back to JSONL store", exc)
+    logger.info("Chat persistence: JSONL (/data/conversations)")
+    return ConversationStore()
