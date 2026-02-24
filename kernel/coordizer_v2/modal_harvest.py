@@ -45,7 +45,7 @@ class ModalHarvestConfig:
     Primary: GLM-4.7-Flash (Modal GPU). Ollama fallback: LFM2.5-1.2B-Thinking.
     """
 
-    model_id: str = "zai-org/GLM-4.7-Flash"
+    model_id: str = ""
     target_tokens: int = 2000
     batch_size: int = 32
     max_length: int = 512
@@ -54,10 +54,10 @@ class ModalHarvestConfig:
 
 
 async def modal_harvest(
-    model_id: str = "zai-org/GLM-4.7-Flash",
+    model_id: str | None = None,
     _target_tokens: int = 2000,
     corpus_texts: list[str] | None = None,
-    timeout: float = 600.0,
+    timeout: float | None = None,
 ) -> HarvestResult:
     """Call Modal GPU endpoint to harvest LLM distributions.
 
@@ -73,13 +73,19 @@ async def modal_harvest(
     if not settings.modal.harvest_url:
         raise RuntimeError("MODAL_HARVEST_URL not configured.")
 
+    # Resolve from Railway env vars if not explicitly passed
+    resolved_model = model_id or settings.modal.harvest_model
+    resolved_timeout = (
+        timeout if timeout is not None else settings.modal.inference_timeout_ms / 1000.0
+    )
+
     # Default corpus: diverse prompts for distribution harvesting
     if corpus_texts is None:
         corpus_texts = _default_harvest_corpus()
 
     # Build request
     payload = {
-        "model_id": model_id,
+        "model_id": resolved_model,
         "texts": corpus_texts[:200],  # Cap per-request
         "batch_size": 32,
         "max_length": 512,
@@ -96,12 +102,12 @@ async def modal_harvest(
         "Sending harvest request to Modal: %s (%d texts, model=%s)",
         settings.modal.harvest_url,
         len(corpus_texts),
-        model_id,
+        resolved_model,
     )
 
     start_time = time.time()
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=resolved_timeout) as client:
         response = await client.post(
             settings.modal.harvest_url,
             json=payload,
