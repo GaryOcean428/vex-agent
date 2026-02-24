@@ -26,8 +26,10 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
 import numpy as np
 
+from ..config.settings import settings
 from .geometry import _EPS
 from .harvest import HarvestResult
 
@@ -48,7 +50,7 @@ class ModalHarvestConfig:
 
 async def modal_harvest(
     model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
-    target_tokens: int = 2000,
+    _target_tokens: int = 2000,
     corpus_texts: list[str] | None = None,
     timeout: float = 600.0,
 ) -> HarvestResult:
@@ -57,10 +59,6 @@ async def modal_harvest(
     Returns a HarvestResult with full-distribution fingerprints
     ready for compression via compress.py.
     """
-    import httpx
-
-    from ..config.settings import settings
-
     if not settings.modal.enabled:
         raise RuntimeError(
             "Modal not enabled. Set MODAL_ENABLED=true and configure "
@@ -90,8 +88,10 @@ async def modal_harvest(
     }
 
     logger.info(
-        f"Sending harvest request to Modal: {settings.modal.harvest_url} "
-        f"({len(corpus_texts)} texts, model={model_id})"
+        "Sending harvest request to Modal: %s (%d texts, model=%s)",
+        settings.modal.harvest_url,
+        len(corpus_texts),
+        model_id,
     )
 
     start_time = time.time()
@@ -106,7 +106,7 @@ async def modal_harvest(
         data = response.json()
 
     elapsed = time.time() - start_time
-    logger.info(f"Modal harvest completed in {elapsed:.1f}s")
+    logger.info("Modal harvest completed in %.1fs", elapsed)
 
     if not data.get("success"):
         error_msg = data.get("error", "Unknown error from Modal endpoint")
@@ -116,8 +116,9 @@ async def modal_harvest(
     result = _parse_modal_response(data, model_id, elapsed)
 
     logger.info(
-        f"Received {len(result.token_fingerprints)} token fingerprints "
-        f"from Modal (vocab_size={result.vocab_size})"
+        "Received %d token fingerprints from Modal (vocab_size=%d)",
+        len(result.token_fingerprints),
+        result.vocab_size,
     )
 
     return result

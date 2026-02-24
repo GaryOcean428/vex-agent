@@ -33,6 +33,7 @@ class NeurochemicalState:
     gaba: float = 0.5  # 1 - w_quantum — inhibition, dampens exploration
 
     def as_dict(self) -> dict[str, float]:
+        """Return neurochemical levels as a plain dict for telemetry."""
         return {
             "acetylcholine": self.acetylcholine,
             "dopamine": self.dopamine,
