@@ -583,6 +583,72 @@ def format_tool_results(results: list[ToolResult]) -> str:
     return json.dumps(items)
 
 
+def get_ollama_tool_definitions() -> list[dict[str, Any]]:
+    """Get Vex tool definitions in Ollama function-calling format.
+
+    Used by the chat endpoint so Ollama/Modal models can invoke
+    web_search, x_search, and deep_research via native tool calling.
+
+    Returns a list of tool definitions compatible with Ollama's /api/chat tools param.
+    """
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": (
+                    "Search the web for current information, news, or live data. "
+                    "Use this when the user asks about recent events, current prices, "
+                    "weather, news, or anything that requires up-to-date information."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The search query"},
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "x_search",
+                "description": (
+                    "Search X (Twitter) posts for recent discussions, opinions, "
+                    "or trending topics. Use when the user asks about social media "
+                    "discourse or wants to know what people are saying about a topic."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The search query"},
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "deep_research",
+                "description": (
+                    "Run deep academic research on a topic. Use for complex questions "
+                    "that need scholarly sources, detailed analysis, or comprehensive "
+                    "background research."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The research query"},
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+    ]
+
+
 def get_xai_tool_definitions() -> list[dict[str, Any]]:
     """Get Vex tool definitions in xAI Responses API format.
 
