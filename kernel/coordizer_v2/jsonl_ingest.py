@@ -28,6 +28,12 @@ Architecture:
     - Output: writes coordized JSONL with basin coordinates appended
     - Governor-aware: checks budget before routing to paid backends
 
+Failure policy:
+    If a backend cannot produce real logprobs for an entry, the entry is
+    written to output WITHOUT basin_coordinates (None). There is no hash
+    fallback. Hash-derived simplex points carry zero semantic structure and
+    corrupt the resonance bank. Explicit gaps are preferable to silent noise.
+
 Zero Euclidean contamination. Fisher-Rao is the ONLY distance metric.
 Terminology: "basin coordinates" (FORBIDDEN: embedding), "coordize" (FORBIDDEN: tokenize).
 """
@@ -337,6 +343,11 @@ def write_coordized_jsonl(
         "coordized_at": "ISO 8601 timestamp",
         "basin_dim": 64
 
+    Entries with basin=None are written without basin_coordinates.
+    This is an explicit gap, not an error. It means the backend could not
+    produce real logprobs for this entry. Do not substitute hash-derived
+    coordinates — that is silent corruption.
+
     Returns the number of entries written.
     """
     output_dir = Path(output_path).parent
@@ -579,12 +590,18 @@ class JSONLIngestor:
                                 basins.append(to_simplex(raw))
                                 continue
 
-                    # Fallback: generate a basin from text hash
-                    basins.append(self._text_to_basin_fallback(entry.text))
+                    # Ollama returned no usable logprobs — entry written without
+                    # basin_coordinates. Do NOT substitute a hash. Explicit gaps
+                    # are correct; hash-derived simplex points corrupt the bank.
+                    logger.warning(
+                        f"Ollama returned no logprobs for entry "
+                        f"(source={entry.source}, line={entry.line_number}) — skipping basin"
+                    )
+                    basins.append(None)
 
                 except Exception as e:
                     logger.warning(f"Ollama harvest failed for entry: {e}")
-                    basins.append(self._text_to_basin_fallback(entry.text))
+                    basins.append(None)
 
             try:
                 written = write_coordized_jsonl(
@@ -631,19 +648,3 @@ class JSONLIngestor:
                 basins.append(None)
 
         return basins
-
-    @staticmethod
-    def _text_to_basin_fallback(text: str) -> NDArray:
-        """Deterministic fallback: hash text to a basin coordinate.
-
-        Used when neither Modal nor Ollama can produce real logprobs.
-        The result is on the simplex but carries no real semantic
-        structure — it's a placeholder until real harvesting runs.
-        """
-        import hashlib
-
-        # SHA-512 gives 64 bytes = BASIN_DIM
-        h = hashlib.sha512(text.encode("utf-8")).digest()
-        raw = np.array([b for b in h[:BASIN_DIM]], dtype=np.float64)
-        raw = np.maximum(raw, 1e-12)
-        return to_simplex(raw)
