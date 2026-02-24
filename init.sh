@@ -52,7 +52,7 @@ if [ -d /data ]; then
 
         touch "$CHOWN_MARKER"
     else
-        echo "[init] /data permissions already set (marker found) — skipping recursive chown"
+        echo "[init] /data permissions already set (marker found) — fast-path chown"
         # Always re-chown /data itself: Railway re-mounts volumes as root on restart
         chown -h --no-dereference vex:vex /data 2>/dev/null || true
 
@@ -70,23 +70,18 @@ if [ -d /data ]; then
                  /data/harvest/failed \
                  /data/harvest/output
 
-        # Re-chown top-level dirs AND critical subdirs (Railway remounts as root on restart)
-        # Subdirs like conversations/ and harvest/pending/ may lose permissions independently
-        chown -h --no-dereference vex:vex \
-            /data/workspace \
-            /data/conversations \
-            /data/training \
-            /data/training/curriculum \
-            /data/training/uploads \
-            /data/training/exports \
-            /data/harvest \
-            /data/harvest/pending \
-            /data/harvest/processing \
-            /data/harvest/completed \
-            /data/harvest/failed \
-            /data/harvest/output 2>/dev/null || true
+        # Recursive chown on critical write-path directories.
+        # Railway bind-mounts change UUID on every restart; while file
+        # permissions inside the volume persist, the mount point itself
+        # and directory entries can revert to root ownership. Use -R to
+        # catch any files the kernel created in a previous run.
+        for vex_dir in /data/workspace /data/conversations /data/training /data/harvest; do
+            if [ -d "$vex_dir" ] && [ ! -L "$vex_dir" ]; then
+                chown -R -h --no-dereference vex:vex "$vex_dir" 2>/dev/null || true
+            fi
+        done
 
-        # Also fix files directly in /data
+        # Also fix files directly in /data (consciousness_state.json, etc.)
         find /data -maxdepth 1 -type f -exec chown vex:vex {} + 2>/dev/null || true
     fi
 fi

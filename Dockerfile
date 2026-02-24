@@ -106,7 +106,10 @@ ENV TRAINING_DIR=/data/training
 EXPOSE 8080
 
 # Health check against the web server (which probes the kernel)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+# start-period=90s: kernel takes ~20s, web server starts after, plus margin
+# interval=15s: check frequently once healthy so Railway sees liveness quickly
+# timeout=10s: single probe timeout (web server has its own 5s kernel fetch timeout)
+HEALTHCHECK --interval=15s --timeout=10s --start-period=90s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
 # init.sh runs as root, fixes /data permissions, then exec's entrypoint.sh as vex

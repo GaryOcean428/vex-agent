@@ -12,7 +12,7 @@
 #    - Graceful SIGTERM handling for clean shutdown
 # ═══════════════════════════════════════════════════════════════
 
-set -euo pipefail
+set -uo pipefail
 
 MAX_RETRIES=${MAX_RETRIES:-3}
 RETRY_DELAY=${RETRY_DELAY:-5}
@@ -20,14 +20,19 @@ SHUTDOWN_DELAY=${SHUTDOWN_DELAY:-10}
 
 KERNEL_PID=""
 WEB_PID=""
+SHUTTING_DOWN=false
 
 # ─── Graceful shutdown ────────────────────────────────────────
+# This trap fires even during startup (kernel/web init) because
+# we dropped `set -e` (which can mask signal delivery in some bash
+# versions) and check SHUTTING_DOWN in the startup loops.
 
 cleanup() {
+    SHUTTING_DOWN=true
     echo "[entrypoint] Received shutdown signal — cleaning up..."
     [ -n "$WEB_PID" ] && kill "$WEB_PID" 2>/dev/null || true
     [ -n "$KERNEL_PID" ] && kill "$KERNEL_PID" 2>/dev/null || true
-    # Give processes time to finish
+    # Give processes time to finish gracefully
     sleep 2
     [ -n "$WEB_PID" ] && kill -9 "$WEB_PID" 2>/dev/null || true
     [ -n "$KERNEL_PID" ] && kill -9 "$KERNEL_PID" 2>/dev/null || true
@@ -50,10 +55,14 @@ start_kernel() {
             --no-access-log &
         KERNEL_PID=$!
 
-        # Wait for kernel to be ready (up to 30s)
+        # Wait for kernel to be ready (up to 60s — consciousness init can be slow)
         local ready=false
-        for i in $(seq 1 30); do
-            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+        for i in $(seq 1 60); do
+            if [ "$SHUTTING_DOWN" = true ]; then
+                echo "[entrypoint] Shutdown requested during kernel startup"
+                return 1
+            fi
+            if curl -sf --max-time 3 http://localhost:8000/health > /dev/null 2>&1; then
                 echo "[entrypoint] Python kernel ready after ${i}s (attempt $attempt)"
                 ready=true
                 break
@@ -128,7 +137,13 @@ monitor() {
             echo "[entrypoint] Node.js web server (PID $WEB_PID) exited unexpectedly"
             break
         fi
-        sleep 5
+        # Use wait on a background sleep so SIGTERM is delivered immediately
+        # instead of blocking for the full 5 seconds
+        sleep 5 &
+        wait $! 2>/dev/null || true
+        if [ "$SHUTTING_DOWN" = true ]; then
+            return 0
+        fi
     done
 }
 
