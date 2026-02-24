@@ -46,6 +46,9 @@ if [ -d /data ]; then
             fi
         done
 
+        # Also fix files directly in /data (e.g. consciousness_state.json if DATA_DIR=/data)
+        find /data -maxdepth 1 -type f -exec chown vex:vex {} + 2>/dev/null || true
+
         touch "$CHOWN_MARKER"
     else
         echo "[init] /data permissions already set (marker found) — skipping recursive chown"
@@ -70,6 +73,9 @@ if [ -d /data ]; then
             /data/workspace \
             /data/training \
             /data/harvest 2>/dev/null || true
+
+        # Also fix files directly in /data
+        find /data -maxdepth 1 -type f -exec chown vex:vex {} + 2>/dev/null || true
     fi
 fi
 
