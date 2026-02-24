@@ -125,9 +125,7 @@ class ConversationStore:
             # Volume not writable — fall back to /tmp (ephemeral but functional)
             self._base_dir = Path("/tmp/vex-conversations")
             self._base_dir.mkdir(parents=True, exist_ok=True)
-            logger.warning(
-                "Data volume not writable — using ephemeral %s", self._base_dir
-            )
+            logger.warning("Data volume not writable — using ephemeral %s", self._base_dir)
         self._index_path = self._base_dir / "_index.json"
         self._index: dict[str, Conversation] = {}
         self._load_index()
@@ -283,9 +281,7 @@ class ConversationStore:
         messages = self._read_messages(conv_id)
         return {
             **conv.to_dict(),
-            "messages": [
-                m.to_dict() for m in messages[-MAX_MESSAGES_PER_CONVERSATION:]
-            ],
+            "messages": [m.to_dict() for m in messages[-MAX_MESSAGES_PER_CONVERSATION:]],
         }
 
     def list_conversations(self, limit: int = 50) -> list[dict[str, Any]]:
@@ -308,9 +304,7 @@ class ConversationStore:
         self._save_index()
         return True
 
-    def get_llm_messages(
-        self, conv_id: str, max_tokens: int = 28000
-    ) -> list[dict[str, str]]:
+    def get_llm_messages(self, conv_id: str, max_tokens: int = 28000) -> list[dict[str, str]]:
         """Get conversation messages formatted for LLM, truncated to fit token budget.
 
         Returns oldest-first messages as [{role, content}]. Drops oldest
@@ -468,9 +462,7 @@ class RedisConversationStore:
         self._r.zrem(self._INDEX_KEY, conv_id)
         return True
 
-    def get_llm_messages(
-        self, conv_id: str, max_tokens: int = 28000
-    ) -> list[dict[str, str]]:
+    def get_llm_messages(self, conv_id: str, max_tokens: int = 28000) -> list[dict[str, str]]:
         """Return recent messages in LLM format, capped by token budget."""
         raw_msgs = self._r.lrange(self._msgs_key(conv_id), 0, -1)
         messages = []
