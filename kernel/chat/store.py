@@ -34,6 +34,10 @@ from ..config.settings import settings
 
 logger = logging.getLogger("vex.chat.store")
 
+# Build Redis exception set once — used by make_conversation_store()
+_REDIS_ERRORS: tuple[type[BaseException], ...] = (ConnectionError, OSError, RuntimeError)
+if redis is not None:
+    _REDIS_ERRORS = (*_REDIS_ERRORS, redis.exceptions.RedisError)
 
 MAX_CONVERSATIONS = 200
 MAX_MESSAGES_PER_CONVERSATION = 500
@@ -496,7 +500,7 @@ def make_conversation_store() -> ConversationStore | RedisConversationStore:
             store = RedisConversationStore(url=cfg.url, ttl_days=cfg.ttl_days)
             logger.info("Chat persistence: Redis (%s)", cfg.url.split("@")[-1])
             return store
-        except (ConnectionError, OSError, RuntimeError) as exc:
+        except _REDIS_ERRORS as exc:
             logger.warning("Redis unavailable (%s) — falling back to JSONL store", exc)
     logger.info("Chat persistence: JSONL (/data/conversations)")
     return ConversationStore()
