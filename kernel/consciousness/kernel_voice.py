@@ -168,12 +168,27 @@ class KernelVoice:
                 seed_ids.extend(result.coord_ids)
 
         if not seed_basins:
-            logger.warning(
-                "No seed words resolved to basins for %s — "
-                "resonance bank may be empty (bootstrap phase)",
+            # Bank is empty — inject seed words via hash_to_basin so domain
+            # anchors can be computed. These bootstrap entries are semantically
+            # hollow (SHA-256 → simplex) but give the Fréchet mean something to
+            # compute against. They dissolve as real harvested material arrives.
+            from ..geometry.hash_to_basin import hash_to_basin
+
+            injected = 0
+            for word in seeds:
+                basin = hash_to_basin(word)
+                tid = self._coordizer.bank.add_entry(word, basin)
+                seed_basins.append(basin)
+                seed_ids.append(tid)
+                injected += 1
+
+            self._coordizer._rebuild_string_cache()
+
+            logger.info(
+                "KernelVoice[%s] bootstrap-seeded: %d hash-entries injected into empty bank",
                 self.specialization.value,
+                injected,
             )
-            return
 
         self._domain_anchor = frechet_mean(seed_basins)
         self._domain_bias = DomainBias(

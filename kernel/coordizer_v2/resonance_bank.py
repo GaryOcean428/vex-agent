@@ -159,6 +159,28 @@ class ResonanceBank:
             else:
                 self.frequencies[tid] = 80.0 + 120.0 * mass
 
+    def add_entry(
+        self,
+        token_string: str,
+        basin: Basin,
+        tier: HarmonicTier = HarmonicTier.OVERTONE_HAZE,
+    ) -> int:
+        """Dynamically add a single entry. Returns the assigned token ID.
+
+        Used for bootstrap seed injection when the bank is empty at init time.
+        Hash-seeded entries (semantically hollow) are outcompeted by real
+        harvested material as the pipeline matures.
+        """
+        tid = max(self.coordinates.keys(), default=-1) + 1
+        self.coordinates[tid] = to_simplex(basin)
+        self.token_strings[tid] = token_string
+        self.tiers[tid] = tier
+        self.frequencies[tid] = 0.0
+        self.basin_mass[tid] = 0.0
+        self.activation_counts[tid] = 0
+        self._dirty = True
+        return tid
+
     def _rebuild_matrix(self) -> None:
         """Rebuild stacked coordinate matrix for batch queries."""
         if not self.coordinates:
