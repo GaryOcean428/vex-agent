@@ -73,7 +73,20 @@ COPY ollama/ ./ollama/
 RUN groupadd -r vex && useradd -r -g vex -d /app vex
 
 # ── Create data directories ───────────────────────────────────
-RUN mkdir -p /data/workspace /data/training /data/training/epochs /data/training/exports /data/training/uploads /data/training/curriculum \
+# Note: Railway volume mounts overwrite these at runtime.
+# init.sh re-creates and re-chowns them on every start.
+RUN mkdir -p \
+    /data/workspace \
+    /data/training \
+    /data/training/curriculum \
+    /data/training/uploads \
+    /data/training/exports \
+    /data/harvest \
+    /data/harvest/pending \
+    /data/harvest/processing \
+    /data/harvest/completed \
+    /data/harvest/failed \
+    /data/harvest/output \
     && chown -R vex:vex /data /app
 
 # ── Entrypoint scripts ────────────────────────────────────────
