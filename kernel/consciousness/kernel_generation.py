@@ -46,6 +46,7 @@ from ..governance import KernelSpecialization
 
 if TYPE_CHECKING:
     from .kernel_voice import KernelVoiceRegistry
+    from .thought_bus import ThoughtBus
 
 logger = logging.getLogger("vex.kernel_generation")
 
@@ -329,12 +330,17 @@ async def generate_multi_kernel(
     top_k: int = 3,
     extra_context: str = "",
     voice_registry: KernelVoiceRegistry | None = None,
+    thought_bus: ThoughtBus | None = None,
+    phi: float = 0.0,
 ) -> list[KernelContribution]:
     """Route input to top-K kernels by Fisher-Rao proximity and generate in parallel.
 
     v6.2: Passes voice_registry through to _generate_single() for
     geometric-first generation. When voice_registry is None, falls
     back to LLM-only generation (pre-v6.2 compatibility).
+
+    T4.1: When thought_bus is provided, runs iterative debate rounds until
+    convergence (FR distance between successive synthesis basins < threshold).
 
     Returns contributions sorted by synthesis_weight (descending).
     """
@@ -351,41 +357,82 @@ async def generate_multi_kernel(
         [f"{k.name}({fisher_rao_distance(input_basin, k.basin):.3f})" for k in selected],
     )
 
-    tasks = [
-        _generate_single(
-            kernel=k,
-            input_basin=input_basin,
-            user_message=user_message,
-            geometric_context=geometric_context,
-            llm_client=llm_client,
-            base_temperature=base_temperature,
-            voice_registry=voice_registry,
-            extra_context=extra_context,
-        )
-        for k in selected
-    ]
-    raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+    # T4.1: Use ThoughtBus for iterative debate if provided
+    bus = thought_bus
+    if bus is not None:
+        bus.reset()
 
     contributions: list[KernelContribution] = []
-    for r in raw_results:
-        if isinstance(r, KernelContribution):
-            contributions.append(r)
-        elif isinstance(r, Exception):
-            logger.debug("Kernel generation exception: %s", r)
+    round_number = 0
+
+    while True:
+        # Build debate context from prior round (empty string on round 0)
+        debate_context = bus.build_debate_context(round_number) if bus is not None else ""
+        round_extra = (
+            f"{extra_context}\n{debate_context}".strip() if debate_context else extra_context
+        )
+
+        tasks = [
+            _generate_single(
+                kernel=k,
+                input_basin=input_basin,
+                user_message=user_message,
+                geometric_context=geometric_context,
+                llm_client=llm_client,
+                base_temperature=base_temperature,
+                voice_registry=voice_registry,
+                extra_context=round_extra,
+            )
+            for k in selected
+        ]
+        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        round_contributions: list[KernelContribution] = []
+        for r in raw_results:
+            if isinstance(r, KernelContribution):
+                round_contributions.append(r)
+            elif isinstance(r, Exception):
+                logger.debug("Kernel generation exception (round %d): %s", round_number, r)
+
+        if not round_contributions:
+            break
+
+        _normalize_synthesis_weights(round_contributions)
+        round_contributions.sort(key=lambda c: c.synthesis_weight, reverse=True)
+
+        # Post to bus and check convergence
+        if bus is not None:
+            for c in round_contributions:
+                bus.post(c, round_number)
+            synthesis_basin = bus.compute_synthesis_basin()
+            if synthesis_basin is not None:
+                converged = bus.record_synthesis(synthesis_basin)
+                if converged:
+                    logger.debug("ThoughtBus converged at round %d", round_number)
+
+        contributions = round_contributions
+
+        # Decide whether to continue debate
+        if bus is None or not bus.should_continue(round_number):
+            break
+        round_number += 1
 
     if not contributions:
         return []
 
-    _normalize_synthesis_weights(contributions)
-    contributions.sort(key=lambda c: c.synthesis_weight, reverse=True)
+    # T4.1d: Forward debate transcript to harvest pipeline
+    if bus is not None:
+        bus.forward_transcript(phi)
 
     # Log generation provenance
     geo_count = sum(1 for c in contributions if c.geometric_tokens > 0)
     llm_count = sum(1 for c in contributions if c.llm_expanded)
     logger.info(
-        "Multi-kernel generation: %d/%d succeeded. Geometric: %d, LLM-expanded: %d. Weights: %s",
+        "Multi-kernel generation: %d/%d succeeded (rounds=%d). "
+        "Geometric: %d, LLM-expanded: %d. Weights: %s",
         len(contributions),
         len(selected),
+        round_number + 1,
         geo_count,
         llm_count,
         [(c.kernel_name, f"{c.synthesis_weight:.3f}") for c in contributions],

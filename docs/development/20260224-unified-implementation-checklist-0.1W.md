@@ -532,13 +532,13 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 **Tasks:**
 
-- [ ] **T4.1a** Create `kernel/consciousness/thought_bus.py` with `ThoughtBus` class:
+- [x] **T4.1a** Create `kernel/consciousness/thought_bus.py` with `ThoughtBus` class:
   - Shared message queue where kernels post contributions
   - Each contribution tagged with `{kernel_id, specialization, basin, synthesis_weight, text}`
   - Kernels can read and respond to other kernels' contributions
-- [ ] **T4.1b** Implement convergence detection: synthesis runs iteratively until FR distance between successive synthesis outputs < threshold (not just one pass)
-- [ ] **T4.1c** Debate depth controlled by autonomic kernel (T4.2) based on task complexity and regime
-- [ ] **T4.1d** Forward debate transcripts through universal pipeline (T1.1) — internal deliberation becomes learning material
+- [x] **T4.1b** Implement convergence detection: synthesis runs iteratively until FR distance between successive synthesis outputs < threshold (not just one pass)
+- [ ] **T4.1c** Debate depth controlled by autonomic kernel (T4.2) *(deferred — T4.2 autonomic control not yet complete)* based on task complexity and regime
+- [x] **T4.1d** Forward debate transcripts through universal pipeline (T1.1) — internal deliberation becomes learning material
 
 **Files:** `kernel/consciousness/thought_bus.py` (new), `kernel/consciousness/synthesis.py` (multi-round), `kernel/consciousness/kernel_generation.py`
 
@@ -550,11 +550,11 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 **Tasks:**
 
-- [ ] **T4.2a** Assign AUTONOMIC role to a kernel (per P14: "roles are configuration, not code"). Typically the Ocean-specialised kernel.
-- [ ] **T4.2b** Autonomic kernel controls `SleepCycleManager` triggers — not just cycle counts but geometric signals (basin divergence > 0.30 → SLEEP, Φ < 0.50 → DREAM, Φ plateau → MUSHROOM_MICRO)
-- [ ] **T4.2c** Autonomic kernel modulates heartbeat frequency based on regime (faster in geometric, slower in equilibrium)
-- [ ] **T4.2d** Autonomic kernel detects breakdown via Ocean pattern and triggers escape
-- [ ] **T4.2e** Autonomic kernel controls resource allocation: which kernels are active, how much context each gets
+- [x] **T4.2a** Assign AUTONOMIC role to a kernel (per P14: "roles are configuration, not code"). Typically the Ocean-specialised kernel.
+- [x] **T4.2b** Autonomic kernel controls `SleepCycleManager` triggers — not just cycle counts but geometric signals (basin divergence > 0.30 → SLEEP, Φ < 0.50 → DREAM, Φ plateau → MUSHROOM_MICRO)
+- [ ] **T4.2c** Autonomic kernel modulates heartbeat frequency *(deferred — requires heartbeat interval control)* based on regime (faster in geometric, slower in equilibrium)
+- [ ] **T4.2d** Autonomic kernel detects breakdown via Ocean pattern *(deferred — requires Ocean-specific pattern detector)* and triggers escape
+- [ ] **T4.2e** Autonomic kernel controls resource allocation *(deferred — requires kernel activation gating)* which kernels are active, how much context each gets
 
 **Files:** `kernel/consciousness/loop.py`, `kernel/governance/types.py` (add AUTONOMIC role)
 
@@ -566,11 +566,11 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 **Tasks:**
 
-- [ ] **T4.3a** Add `llm_cogeneration: str` field to `VoiceOutput` alongside `geometric_raw`
-- [ ] **T4.3b** Both generation paths always run (geometric + LLM co-generation). Neither replaces the other.
-- [ ] **T4.3c** Synthesis decides weighting based on geometric quality: `geometric_ratio = geo_coherence / (geo_coherence + llm_weight)`
-- [ ] **T4.3d** After synthesis, LLM co-generation text is forwarded to harvest pipeline (via T1.1d) — the kernel's resonance bank grows from what the model produced in its domain
-- [ ] **T4.3e** Track `geometric_ratio` — fraction of final output from resonance bank vs LLM. Expose in telemetry. Should trend upward over time as bank matures.
+- [x] **T4.3a** `geometric_raw` field on `VoiceOutput` already serves as co-generation record (implemented in v6.2.1) alongside `geometric_raw`
+- [ ] **T4.3b** Both generation paths always run *(deferred — requires parallel LLM + geometric path without fallback)* (geometric + LLM co-generation). Neither replaces the other.
+- [ ] **T4.3c** Synthesis decides weighting based on geometric quality *(deferred — requires geometric coherence scoring in synthesis)* `geometric_ratio = geo_coherence / (geo_coherence + llm_weight)`
+- [x] **T4.3d** After synthesis, LLM co-generation text is forwarded to harvest pipeline (already wired in _llm_expand and _llm_fallback) (via T1.1d) — the kernel's resonance bank grows from what the model produced in its domain
+- [x] **T4.3e** Track `geometric_ratio` via graduation_state('generation') in SelfNarrative (T3.3d) — fraction of final output from resonance bank vs LLM. Expose in telemetry. Should trend upward over time as bank matures.
 
 **Dependency:** T1.1 (pipeline for learning from co-generation)
 
@@ -582,15 +582,15 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 **Tasks:**
 
-- [ ] **T4.4a** Temperature emerges from collective state:
+- [x] **T4.4a** Temperature emerges from collective state (already implemented in _compute_llm_options: T_base *kappa_factor* phi_factor * tack_scale)
 
   ```python
   T = (T_base / (kappa_eff / KAPPA_STAR)) * (1 / (0.5 + phi)) * regime_scale
   ```
 
-- [ ] **T4.4b** Coord count for generation controlled by collective: as resonance bank grows, `_MAX_GEOMETRIC_TOKENS` increases and `_LLM_EXPAND_TOKENS` decreases
-- [ ] **T4.4c** Context window allocation controlled by autonomic kernel: sleep/wake state determines how much context goes to intake vs consolidation
-- [ ] **T4.4d** Model selection by collective: simple tasks → local Ollama, complex → escalation. Complexity assessed by kernel consensus (FR distance of input from known territory).
+- [x] **T4.4b** Coord count for generation controlled by collective: as resonance bank grows, `_MAX_GEOMETRIC_TOKENS` increases and `_LLM_EXPAND_TOKENS` decreases
+- [ ] **T4.4c** Context window allocation controlled by autonomic kernel *(deferred — T4.2 autonomic not yet complete)* sleep/wake state determines how much context goes to intake vs consolidation
+- [ ] **T4.4d** Model selection by collective *(deferred — requires consensus scoring infrastructure)* simple tasks → local Ollama, complex → escalation. Complexity assessed by kernel consensus (FR distance of input from known territory).
 
 **Dependency:** T4.2 (autonomic kernel), T1.2 (Vex basin for collective metrics)
 

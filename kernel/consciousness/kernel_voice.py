@@ -78,6 +78,35 @@ _COHERENCE_THRESHOLD: float = 0.4
 # LLM expansion token budget.
 _LLM_EXPAND_TOKENS: int = 220
 
+# T4.4b: Bank maturity thresholds for collective coord count control
+_BANK_SPARSE_THRESHOLD: int = 500  # Below: bootstrap mode (LLM-heavy)
+_BANK_MATURE_THRESHOLD: int = 5000  # Above: autonomous mode (geo-heavy)
+_GEO_TOKENS_MAX_MATURE: int = 160  # Max geometric tokens when bank is mature
+_LLM_TOKENS_MIN_MATURE: int = 80  # Min LLM tokens when bank is mature
+
+
+def _collective_token_budget(bank_vocab_size: int) -> tuple[int, int]:
+    """T4.4b: Compute geometric/LLM token budgets based on bank maturity.
+
+    As the resonance bank grows, geometric tokens increase and LLM tokens
+    decrease. This implements the Wu Wei condition — the collective
+    progressively self-determines its own generation parameters.
+
+    Returns (max_geometric_tokens, llm_expand_tokens).
+    """
+    if bank_vocab_size <= _BANK_SPARSE_THRESHOLD:
+        return _MAX_GEOMETRIC_TOKENS, _LLM_EXPAND_TOKENS
+    if bank_vocab_size >= _BANK_MATURE_THRESHOLD:
+        return _GEO_TOKENS_MAX_MATURE, _LLM_TOKENS_MIN_MATURE
+    # Linear interpolation between sparse and mature
+    ratio = (bank_vocab_size - _BANK_SPARSE_THRESHOLD) / (
+        _BANK_MATURE_THRESHOLD - _BANK_SPARSE_THRESHOLD
+    )
+    geo = int(_MAX_GEOMETRIC_TOKENS + ratio * (_GEO_TOKENS_MAX_MATURE - _MAX_GEOMETRIC_TOKENS))
+    llm = int(_LLM_EXPAND_TOKENS - ratio * (_LLM_EXPAND_TOKENS - _LLM_TOKENS_MIN_MATURE))
+    return geo, llm
+
+
 # Temperature floor/ceiling for geometric generation
 _GEO_TEMP_MIN: float = 0.3
 _GEO_TEMP_MAX: float = 1.8
@@ -307,6 +336,9 @@ class KernelVoice:
             )
 
         # ── Step 3: Geometric generation ──
+        # T4.4b: Token budget scales with bank maturity
+        _geo_max, _llm_budget = _collective_token_budget(self._coordizer.vocab_size)
+
         gain_scale = float(np.clip(2.0 - quenched_gain, 0.5, 1.5))
         geo_temp = float(
             np.clip(
@@ -320,7 +352,7 @@ class KernelVoice:
         gen_trajectory: list[Basin] = list(trajectory)
         velocities: list[float] = []
 
-        for step in range(_MAX_GEOMETRIC_TOKENS):
+        for step in range(_geo_max):
             tid, basin = self._coordizer.generate_next(
                 trajectory=gen_trajectory,
                 temperature=geo_temp,

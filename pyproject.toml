@@ -25,6 +25,9 @@ test = [
 harvest = [
   "transformers",
   "torch",
+  "scipy",
+  "requests",
+  "accelerate",
 ]
 lint = [
   "mypy>=1.14.0",

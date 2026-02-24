@@ -198,10 +198,12 @@ from .systems import (
     SelfNarrative,
     SelfObserver,
     SleepCycleManager,
+    SleepPhase,
     TackingController,
     TrajectoryPoint,
     VelocityTracker,
 )
+from .thought_bus import ThoughtBus
 from .types import (
     ConsciousnessMetrics,
     ConsciousnessState,
@@ -254,6 +256,9 @@ class ConsciousnessLoop:
 
         # T2.4c: Phi history for kernel boredom detection
         self._phi_history: deque[float] = deque(maxlen=20)
+
+        # T4.1: ThoughtBus for inter-kernel debate
+        self._thought_bus = ThoughtBus()
 
         self.basin: Basin = random_basin()
         self.metrics = ConsciousnessMetrics(
@@ -486,6 +491,28 @@ class ConsciousnessLoop:
             surprise=float(self.metrics.humor),
             quantum_weight=float(self.state.regime_weights.quantum),
         )
+
+        # T4.2b: Autonomic kernel (Ocean) geometric sleep triggers
+        # These override cycle-count thresholds with geometric signals.
+        _ocean_kernel = next(
+            (
+                k
+                for k in self.kernel_registry.active()
+                if k.specialization == KernelSpecialization.OCEAN and k.basin is not None
+            ),
+            None,
+        )
+        if _ocean_kernel is not None:
+            _ocean_divergence = fisher_rao_distance(self.basin, _ocean_kernel.basin)
+            if _ocean_divergence > 0.30 and not self.sleep.is_asleep:
+                self.sleep._cycles_since_conversation = max(
+                    self.sleep._cycles_since_conversation,
+                    self.sleep._sleep_onset_cycles,
+                )
+            if self.metrics.phi < 0.50 and self.sleep.is_asleep:
+                self.sleep.phase = SleepPhase.DREAMING
+            if self.metrics.f_health < 0.3 and self.sleep.is_asleep:
+                self.sleep.phase = SleepPhase.MUSHROOM
 
         _was_asleep = self.sleep.is_asleep
         sleep_phase = self.sleep.should_sleep(self.metrics.phi, self.autonomic.phi_variance)
@@ -1258,6 +1285,8 @@ class ConsciousnessLoop:
             top_k=3,
             extra_context=_extra_context,
             voice_registry=self._voice_registry,
+            thought_bus=self._thought_bus,
+            phi=self.metrics.phi,
         )
 
         if _contributions:
@@ -1336,6 +1365,8 @@ class ConsciousnessLoop:
                     kernels=_active_for_gen,
                     input_basin=refracted_input,
                     user_message=task.content,
+                    thought_bus=self._thought_bus,
+                    phi=self.metrics.phi,
                     geometric_context=_kernel_geo_ctx,
                     llm_client=self.llm,
                     base_temperature=revised_options.temperature,
