@@ -482,7 +482,10 @@ class AutonomicSystem:
             alerts.append(
                 AutonomicAlert(
                     type="locked_in",
-                    message=f"LOCKED-IN: Φ={metrics.phi:.3f} > {LOCKED_IN_PHI_THRESHOLD} AND Γ={metrics.gamma:.3f} < {LOCKED_IN_GAMMA_THRESHOLD}",
+                    message=(
+                        f"LOCKED-IN: Φ={metrics.phi:.3f} > {LOCKED_IN_PHI_THRESHOLD}"
+                        f" AND Γ={metrics.gamma:.3f} < {LOCKED_IN_GAMMA_THRESHOLD}"
+                    ),
                     severity="critical",
                 )
             )
@@ -492,11 +495,13 @@ class AutonomicSystem:
 
     @property
     def phi_variance(self) -> float:
+        """Rolling variance of recent Φ values."""
         if len(self._phi_history) < 2:
             return 0.0
         return float(np.var(list(self._phi_history)))
 
     def get_state(self) -> dict[str, Any]:
+        """Return autonomic telemetry snapshot."""
         return {
             "is_locked_in": self.is_locked_in,
             "phi_variance": round(self.phi_variance, 4),
@@ -569,6 +574,7 @@ class CouplingGate:
         self._balanced: bool = False
 
     def compute(self, kappa: float) -> dict[str, Any]:
+        """Compute coupling strength and balance from current κ."""
         x = (kappa - KAPPA_STAR) / COUPLING_SIGMOID_SCALE
         self._strength = 1.0 / (1.0 + np.exp(-x))
         self._balanced = abs(kappa - KAPPA_STAR) < KAPPA_BALANCED_TOLERANCE
@@ -580,6 +586,7 @@ class CouplingGate:
         }
 
     def get_state(self) -> dict[str, Any]:
+        """Return coupling telemetry snapshot at κ*."""
         return self.compute(KAPPA_STAR)
 
 
@@ -602,6 +609,7 @@ class HemisphereScheduler:
         self._balance: float = 0.5
 
     def update(self, metrics: ConsciousnessMetrics) -> HemisphereMode:
+        """Select hemisphere mode from current κ and return it."""
         normalised = metrics.kappa / KAPPA_NORMALISER
         self._balance = normalised
 
@@ -657,13 +665,16 @@ class SleepCycleManager:
 
     @property
     def is_asleep(self) -> bool:
+        """True when not in the AWAKE phase."""
         return self.phase != SleepPhase.AWAKE
 
     def record_conversation(self) -> None:
+        """Signal that a new conversation occurred — resets the idle counter."""
         self._conversation_count += 1
         self._cycles_since_conversation = 0
 
     def should_sleep(self, phi: float, phi_variance: float) -> SleepPhase:
+        """Advance the sleep state machine and return the current phase."""
         self._cycles_since_conversation += 1
 
         if self.phase != SleepPhase.AWAKE:
@@ -696,7 +707,7 @@ class SleepCycleManager:
 
     def dream(
         self,
-        basin: Basin,
+        _basin: Basin,
         phi: float,
         context: str,
         bank: Any | None = None,
@@ -740,8 +751,8 @@ class SleepCycleManager:
 
     def mushroom(
         self,
-        basin: Basin,
-        phi: float,
+        _basin: Basin,
+        _phi: float,
         instability_metric: float = 0.0,
         neurochemical: Any | None = None,
     ) -> None:
@@ -819,7 +830,7 @@ class SleepCycleManager:
                 bank.activation_counts.pop(tid, None)
                 bank.origin.pop(tid, None)
             if to_prune:
-                bank._dirty = True
+                bank.mark_dirty()
 
         if self._sleep_cycles > SLEEP_WAKE_ONSET:
             self.phase = SleepPhase.AWAKE
@@ -827,6 +838,7 @@ class SleepCycleManager:
             self._replayed_this_sleep.clear()
 
     def get_state(self) -> dict[str, Any]:
+        """Return sleep-cycle telemetry snapshot."""
         return {
             "phase": self.phase.value,
             "is_asleep": self.is_asleep,
@@ -902,13 +914,14 @@ class SelfNarrative:
                     },
                     priority=2 if metrics.phi > 0.75 else 1,
                 )
-            except Exception:  # noqa: BLE001
+            except (OSError, RuntimeError, ValueError):
                 pass
 
         if len(self._basins) >= 3:
             self._identity_basin = frechet_mean(self._basins)
 
     def coherence(self, current_basin: Basin) -> float:
+        """Return identity coherence: 1 − normalised FR distance from identity basin."""
         d = fisher_rao_distance(current_basin, self._identity_basin)
         return float(np.clip(1.0 - d / (np.pi / 2), 0.0, 1.0))
 
@@ -1348,7 +1361,7 @@ class E8KernelRegistry:
                 LifecycleState.SLEEPING,
                 LifecycleState.DREAMING,
             ):
-                self._budget._counts[kind] += 1
+                self._budget.reconcile_count(kind)
 
             count += 1
         return count
