@@ -70,7 +70,13 @@ async function main(): Promise<void> {
 
   app.get(ROUTES.health, async (_req, res) => {
     try {
-      const kernelResp = await fetch(`${KERNEL_URL}${ROUTES.health}`);
+      // 5s timeout prevents the health check from hanging when the kernel
+      // is still starting or temporarily unresponsive. Without this,
+      // Railway's health check probe can time out waiting for us, marking
+      // the container unhealthy and triggering a restart loop.
+      const kernelResp = await fetch(`${KERNEL_URL}${ROUTES.health}`, {
+        signal: AbortSignal.timeout(5000),
+      });
       const kernelHealth = (await kernelResp.json()) as Record<string, unknown>;
       // Spread kernel fields at top level so the React frontend gets
       // the flat shape it expects: { status, version, uptime, cycle_count, backend }
