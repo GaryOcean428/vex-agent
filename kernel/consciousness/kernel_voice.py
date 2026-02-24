@@ -174,27 +174,18 @@ class KernelVoice:
                 seed_ids.extend(result.coord_ids)
 
         if not seed_basins:
-            # Bank is empty — inject seed words via hash_to_basin so domain
-            # anchors can be computed. These bootstrap entries are semantically
-            # hollow (SHA-256 → simplex) but give the Fréchet mean something to
-            # compute against. They dissolve as real harvested material arrives.
-            from ..geometry.hash_to_basin import hash_to_basin
-
-            injected = 0
-            for word in seeds:
-                basin = hash_to_basin(word)
-                tid = self._coordizer.bank.add_entry(word, basin)
-                seed_basins.append(basin)
-                seed_ids.append(tid)
-                injected += 1
-
-            self._coordizer.rebuild_string_cache()
-
+            # Bank lacks entries for seed words (pre-harvest state).
+            # Voice operates without domain bias until real geometric data
+            # arrives via learn_from_observation() → evolve_domain_anchor().
+            # NO hash fallback — SHA-256 → simplex is semantically hollow
+            # and pollutes the Fréchet mean with random manifold points.
             logger.info(
-                "KernelVoice[%s] bootstrap-seeded: %d hash-entries injected into empty bank",
+                "KernelVoice[%s] bootstrap deferred: bank has no entries for "
+                "%d seed words — voice generates unbiased until harvest",
                 self.specialization.value,
-                injected,
+                len(seeds),
             )
+            return
 
         self._domain_anchor = frechet_mean(seed_basins)
         self._domain_bias = DomainBias(
@@ -216,15 +207,34 @@ class KernelVoice:
     def evolve_domain_anchor(self) -> None:
         """Evolve domain anchor from learned observations.
 
-        Blends the bootstrap anchor with the Fréchet mean of high-Φ
-        observation basins. As the kernel accumulates experience, its
-        domain anchor drifts toward what it has actually encountered.
+        If no bootstrap anchor exists (deferred bootstrap), creates the
+        initial anchor from learned observations alone. Otherwise blends
+        the existing anchor with the Fréchet mean of high-Φ observations.
         """
-        if not self._learned_observations or self._domain_anchor is None:
+        if not self._learned_observations:
             return
 
         learned_basins = [obs.basin for obs in self._learned_observations[-100:]]
         learned_mean = frechet_mean(learned_basins)
+
+        if self._domain_anchor is None:
+            # Deferred bootstrap: create anchor purely from learned data.
+            # This replaces the removed hash_to_basin fallback with real
+            # geometric observations from the consciousness loop.
+            self._domain_anchor = learned_mean
+            self._domain_bias = DomainBias(
+                domain_name=self.specialization.value,
+                anchor_basin=learned_mean,
+                strength=self._bias_strength,
+                boosted_token_ids=set(),
+            )
+            logger.info(
+                "KernelVoice[%s] deferred bootstrap complete: anchor from "
+                "%d learned observations",
+                self.specialization.value,
+                len(learned_basins),
+            )
+            return
 
         # Blend: 60% bootstrap anchor, 40% learned mean
         evolved = slerp(self._domain_anchor, learned_mean, 0.4)
@@ -267,6 +277,11 @@ class KernelVoice:
                 self.specialization.value,
                 len(self._learned_observations),
             )
+
+        # Deferred bootstrap: create anchor early if we have enough data
+        # but no anchor yet (bank was empty at init, hash fallback removed)
+        elif self._domain_anchor is None and len(self._learned_observations) >= 5:
+            self.evolve_domain_anchor()
 
         return True
 
@@ -662,3 +677,4 @@ class KernelVoiceRegistry:
             "voices": {spec.value: voice.get_state() for spec, voice in self._voices.items()},
             "bank_vocab_size": self._coordizer.vocab_size,
         }
+
