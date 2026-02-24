@@ -148,6 +148,27 @@ def _extract_ollama_content(data: dict[str, Any]) -> str:
     return ""
 
 
+def _serialize_ollama_tool_calls(text: str, tool_calls: list[dict[str, Any]]) -> str:
+    """Serialize Ollama native tool_calls into LFM2.5 markers.
+
+    When Ollama returns structured tool_calls (from models that support
+    function calling), convert them to the <|tool_call_start|>...<|tool_call_end|>
+    format that parse_tool_calls() in handler.py already knows how to parse.
+
+    This bridges Ollama's native tool calling with the existing tool
+    execution pipeline without changing return types.
+    """
+    parts = [text] if text else []
+    for tc in tool_calls:
+        func = tc.get("function", {})
+        name = func.get("name", "")
+        args = func.get("arguments", {})
+        if name:
+            call_json = json.dumps({"name": name, "arguments": args})
+            parts.append(f"<|tool_call_start|>[{call_json}]<|tool_call_end|>")
+    return "\n".join(parts)
+
+
 class LLMClient:
     """Multi-backend LLM client with Modal GPU primary, Railway Ollama + API fallback.
 
@@ -300,6 +321,7 @@ class LLMClient:
         options: LLMOptions | None = None,
         messages: list[dict[str, str]] | None = None,
         prefer_backend: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> str:
         """Non-streaming completion with autonomous parameters.
 
@@ -313,6 +335,12 @@ class LLMClient:
         When *prefer_backend* is set (e.g. "xai"), route directly to
         that backend. Used by chat endpoints to force capable models
         for user-facing responses.
+
+        When *tools* is provided (Ollama function-calling format), the
+        tool definitions are forwarded to backends that support native
+        tool calling (Ollama, Modal). If the model returns tool_calls,
+        they are serialized as LFM2.5 markers in the response text so
+        the existing parse_tool_calls() pipeline can handle them.
         """
         opts = options or LLMOptions()
         backend = prefer_backend or self._active_backend
@@ -320,9 +348,9 @@ class LLMClient:
         if backend == "xai" and settings.xai.api_key:
             return await self._xai_complete(system_prompt, user_message, opts, messages)
         elif backend == "modal":
-            return await self._modal_complete(system_prompt, user_message, opts, messages)
+            return await self._modal_complete(system_prompt, user_message, opts, messages, tools)
         elif backend == "ollama":
-            return await self._ollama_complete(system_prompt, user_message, opts, messages)
+            return await self._ollama_complete(system_prompt, user_message, opts, messages, tools)
         elif backend == "xai":
             return await self._xai_complete(system_prompt, user_message, opts, messages)
         elif backend == "external":
@@ -410,12 +438,22 @@ class LLMClient:
         user_message: str,
         opts: LLMOptions,
         messages: list[dict[str, str]] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> str:
         """Complete via Modal GPU Ollama. Falls back to Railway Ollama → xAI → OpenAI."""
         msgs = messages or [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ]
+        request_body: dict[str, Any] = {
+            "model": settings.modal.inference_model,
+            "messages": msgs,
+            "stream": False,
+            "think": False,
+            "options": opts.to_ollama_options(),
+        }
+        if tools:
+            request_body["tools"] = tools
         # Retry once on empty content or transient network errors
         # (both are common during Modal scale-up/down events)
         _transient = (
@@ -429,19 +467,19 @@ class LLMClient:
             try:
                 resp = await self._modal_http.post(
                     f"{settings.modal.inference_url}/api/chat",
-                    json={
-                        "model": settings.modal.inference_model,
-                        "messages": msgs,
-                        "stream": False,
-                        "think": False,
-                        "options": opts.to_ollama_options(),
-                    },
+                    json=request_body,
                 )
                 if resp.status_code == 404:
                     logger.warning("Modal returned 404 (cold start or model missing)")
                     raise httpx.HTTPStatusError("404", request=resp.request, response=resp)
                 data = resp.json()
                 text = _extract_ollama_content(data)
+
+                # If model returned native tool_calls, serialize as LFM2.5 markers
+                tool_calls = data.get("message", {}).get("tool_calls")
+                if tool_calls:
+                    text = _serialize_ollama_tool_calls(text, tool_calls)
+
                 if text:
                     self._last_backend = "modal"
                     self._modal_available = True
@@ -554,25 +592,37 @@ class LLMClient:
         user_message: str,
         opts: LLMOptions,
         messages: list[dict[str, str]] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> str:
         msgs = messages or [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ]
+        request_body: dict[str, Any] = {
+            "model": settings.ollama.model,
+            "messages": msgs,
+            "stream": False,
+            "think": False,
+            "options": opts.to_ollama_options(),
+        }
+        if tools:
+            request_body["tools"] = tools
         try:
             resp = await self._http.post(
                 f"{settings.ollama.url}/api/chat",
-                json={
-                    "model": settings.ollama.model,
-                    "messages": msgs,
-                    "stream": False,
-                    "think": False,
-                    "options": opts.to_ollama_options(),
-                },
+                json=request_body,
             )
             data = resp.json()
             self._last_backend = "ollama"
-            return _extract_ollama_content(data)
+            text = _extract_ollama_content(data)
+
+            # If model returned native tool_calls, serialize as LFM2.5 markers
+            # so parse_tool_calls() in the chat endpoint can pick them up.
+            tool_calls = data.get("message", {}).get("tool_calls")
+            if tool_calls:
+                text = _serialize_ollama_tool_calls(text, tool_calls)
+
+            return text
         except Exception as e:
             logger.error("Ollama completion failed: %s", e)
             # Fallback chain: try xAI, then external
@@ -658,20 +708,23 @@ class LLMClient:
             input_payload = user_message
 
         try:
+            request_body: dict[str, Any] = {
+                "model": settings.xai.model,
+                "instructions": instructions,
+                "input": input_payload,
+                "temperature": opts.temperature,
+                "max_output_tokens": opts.num_predict,
+                "store": False,
+                "tools": [{"type": "web_search"}, {"type": "x_search"}],
+            }
+
             resp = await self._http.post(
                 f"{settings.xai.base_url}/responses",
                 headers={
                     "Authorization": f"Bearer {settings.xai.api_key}",
                     "Content-Type": "application/json",
                 },
-                json={
-                    "model": settings.xai.model,
-                    "instructions": instructions,
-                    "input": input_payload,
-                    "temperature": opts.temperature,
-                    "max_output_tokens": opts.num_predict,
-                    "store": False,
-                },
+                json=request_body,
             )
             data = resp.json()
             if resp.status_code != 200:
@@ -735,6 +788,7 @@ class LLMClient:
                     "max_output_tokens": opts.num_predict,
                     "stream": True,
                     "store": False,
+                    "tools": [{"type": "web_search"}, {"type": "x_search"}],
                 },
             ) as resp:
                 async for line in resp.aiter_lines():

@@ -71,6 +71,7 @@ from .memory.store import GeometricMemoryStore, MemoryStore
 from .tools.handler import (
     execute_tool_calls,
     format_tool_results,
+    get_ollama_tool_definitions,
     get_xai_tool_definitions,
     parse_tool_calls,
 )
@@ -388,7 +389,11 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
         response = await _escalated_complete(conv_id, system_prompt, req.message, chat_options)
     else:
         response = await llm_client.complete(
-            system_prompt, req.message, chat_options, messages=messages
+            system_prompt,
+            req.message,
+            chat_options,
+            messages=messages,
+            tools=get_ollama_tool_definitions(),
         )
 
     # Check for tool calls

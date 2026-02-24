@@ -341,9 +341,12 @@ class GovernorStack:
             return False, "autonomous_search_blocked"
 
         # Layer 2: Intent gate
-        # Skip when operator explicitly enabled autonomous search via dashboard
-        if not self._autonomous_search and not self.intent_gate.should_use_external(
-            user_message, provider_action
+        # Skip when user explicitly triggered the search (tool call from user query)
+        # or when operator explicitly enabled autonomous search via dashboard
+        if (
+            not user_explicit
+            and not self._autonomous_search
+            and not self.intent_gate.should_use_external(user_message, provider_action)
         ):
             return False, "intent_gate_blocked"
 
