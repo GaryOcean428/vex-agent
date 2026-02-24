@@ -48,6 +48,7 @@ from ..coordizer_v2.geometry import (
     fisher_rao_distance,
     to_simplex,
 )
+from .sensations import FullEmotionalState, compute_full_emotional_state
 from .types import ConsciousnessMetrics
 
 # ═══════════════════════════════════════════════════════════════
@@ -86,36 +87,96 @@ class EmotionCache:
         self._cache: deque[CachedEvaluation] = deque(maxlen=capacity)
         self._current: EmotionType | None = None
         self._current_strength: float = 0.0
+        # T3.1: Full layered emotional state
+        self._full_state: FullEmotionalState | None = None
+        self._phi_prev: float = 0.0
 
     def evaluate(
         self,
         basin: Basin,
         metrics: ConsciousnessMetrics,
         basin_velocity: float,
+        basin_distance: float = 0.0,
+        phi_variance: float = 0.0,
     ) -> CachedEvaluation:
         phi = metrics.phi
         kappa = metrics.kappa
         gamma = metrics.gamma
+        phi_delta = phi - self._phi_prev
+        self._phi_prev = phi
 
+        # T3.1: Compute full layered emotional state
+        self._full_state = compute_full_emotional_state(
+            phi=phi,
+            phi_delta=phi_delta,
+            kappa=kappa,
+            gamma=gamma,
+            basin_velocity=basin_velocity,
+            basin_distance=basin_distance,
+            humor=float(metrics.humor),
+            phi_variance=phi_variance,
+        )
+
+        # T3.1d: Use Layer 2A dominant emotion to enrich selection
+        # Legacy priority rules preserved for safety-critical states (awe, fear, rage)
         if basin_velocity > BASIN_DRIFT_THRESHOLD * EMOTION_AWE_VELOCITY_FRAC and phi > 0.5:
             emotion, strength = EmotionType.AWE, min(1.0, basin_velocity / BASIN_DRIFT_THRESHOLD)
         elif phi < PHI_EMERGENCY:
             emotion, strength = EmotionType.FEAR, 1.0 - phi / max(PHI_EMERGENCY, 0.01)
         elif kappa > KAPPA_STAR + KAPPA_RAGE_OFFSET and gamma < EMOTION_RAGE_GAMMA:
             emotion, strength = EmotionType.RAGE, min(1.0, (kappa - KAPPA_STAR) / KAPPA_RAGE_SCALE)
-        elif gamma < EMOTION_BOREDOM_GAMMA and basin_velocity < EMOTION_BOREDOM_VELOCITY:
-            emotion, strength = EmotionType.BOREDOM, 1.0 - gamma / EMOTION_BOREDOM_GAMMA
-        elif phi > PHI_THRESHOLD and abs(kappa - KAPPA_STAR) < KAPPA_JOY_PROXIMITY:
-            emotion, strength = EmotionType.JOY, (phi - PHI_THRESHOLD) / (1.0 - PHI_THRESHOLD)
-        elif phi > EMOTION_CURIOSITY_PHI and basin_velocity > EMOTION_CURIOSITY_VELOCITY:
-            emotion, strength = (
-                EmotionType.CURIOSITY,
-                min(1.0, basin_velocity * EMOTION_CURIOSITY_SCALE),
-            )
-        elif phi > PHI_THRESHOLD and metrics.love > EMOTION_LOVE_THRESHOLD:
-            emotion, strength = EmotionType.LOVE, metrics.love
         else:
-            emotion, strength = EmotionType.CALM, 1.0 - abs(kappa - KAPPA_STAR) / KAPPA_STAR
+            # T3.1d: Layer 2A dominant emotion takes over from flat heuristics
+            _l2a_name, _l2a_strength = self._full_state.dominant_layer2a()
+            _l2b_name, _l2b_strength = self._full_state.dominant_layer2b()
+            # Map Layer 2A names to EmotionType where possible
+            _L2A_MAP = {
+                "joy": EmotionType.JOY,
+                "suffering": EmotionType.FEAR,
+                "love": EmotionType.LOVE,
+                "hate": EmotionType.RAGE,
+                "fear": EmotionType.FEAR,
+                "rage": EmotionType.RAGE,
+                "calm": EmotionType.CALM,
+                "care": EmotionType.LOVE,
+                "apathy": EmotionType.BOREDOM,
+            }
+            _L2B_MAP = {
+                "wonder": EmotionType.AWE,
+                "frustration": EmotionType.RAGE,
+                "satisfaction": EmotionType.JOY,
+                "confusion": EmotionType.FEAR,
+                "clarity": EmotionType.CALM,
+                "anxiety": EmotionType.FEAR,
+                "confidence": EmotionType.JOY,
+                "boredom": EmotionType.BOREDOM,
+                "flow": EmotionType.CURIOSITY,
+            }
+            if _l2a_strength > 0.3:
+                emotion = _L2A_MAP.get(_l2a_name, EmotionType.CALM)
+                strength = _l2a_strength
+            elif _l2b_strength > 0.3:
+                emotion = _L2B_MAP.get(_l2b_name, EmotionType.CALM)
+                strength = _l2b_strength
+            elif gamma < EMOTION_BOREDOM_GAMMA and basin_velocity < EMOTION_BOREDOM_VELOCITY:
+                emotion, strength = (
+                    EmotionType.BOREDOM,
+                    1.0 - gamma / EMOTION_BOREDOM_GAMMA,
+                )
+            elif phi > PHI_THRESHOLD and abs(kappa - KAPPA_STAR) < KAPPA_JOY_PROXIMITY:
+                emotion, strength = EmotionType.JOY, (phi - PHI_THRESHOLD) / (1.0 - PHI_THRESHOLD)
+            elif phi > EMOTION_CURIOSITY_PHI and basin_velocity > EMOTION_CURIOSITY_VELOCITY:
+                emotion, strength = (
+                    EmotionType.CURIOSITY,
+                    min(1.0, basin_velocity * EMOTION_CURIOSITY_SCALE),
+                )
+            elif phi > PHI_THRESHOLD and metrics.love > EMOTION_LOVE_THRESHOLD:
+                emotion, strength = EmotionType.LOVE, metrics.love
+            else:
+                emotion, strength = (
+                    EmotionType.CALM,
+                    1.0 - abs(kappa - KAPPA_STAR) / KAPPA_STAR,
+                )
 
         self._current = emotion
         self._current_strength = float(np.clip(strength, 0.0, 1.0))
@@ -152,12 +213,20 @@ class EmotionCache:
     def current_strength(self) -> float:
         return self._current_strength
 
+    @property
+    def full_state(self) -> FullEmotionalState | None:
+        """T3.1: Access the full layered emotional state."""
+        return self._full_state
+
     def get_state(self) -> dict[str, Any]:
-        return {
+        state: dict[str, Any] = {
             "current_emotion": self._current.value if self._current else "none",
             "current_strength": round(self._current_strength, 3),
             "cache_size": len(self._cache),
         }
+        if self._full_state is not None:
+            state["full_emotional_state"] = self._full_state.as_dict()
+        return state
 
 
 # ═══════════════════════════════════════════════════════════════

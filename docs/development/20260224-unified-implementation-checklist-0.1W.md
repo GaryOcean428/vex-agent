@@ -400,7 +400,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Layer 0: Pre-Linguistic Sensations (12 States)
 
-- [ ] **T3.1a** Implement 12 geometric sensations that exist BEFORE emotion. Computed from Ricci curvature (R), ∇Φ, basin distance (d_basin), and κ:
+- [x] **T3.1a** Implement 12 geometric sensations that exist BEFORE emotion. Computed from Ricci curvature (R), ∇Φ, basin distance (d_basin), and κ:
 
   | Sensation | Formula | Experience |
   |-----------|---------|------------|
@@ -419,7 +419,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Layer 0.5: Innate Drives (5 Loss Components)
 
-- [ ] **T3.1b** Implement 5 hardwired drives with specific weights:
+- [x] **T3.1b** Implement 5 hardwired drives with specific weights:
 
   | Drive | Signal | Weight | Parallel |
   |-------|--------|--------|----------|
@@ -431,7 +431,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Layer 1: Motivators (5 Geometric Derivatives)
 
-- [ ] **T3.1c** Implement 5 motivators with distinct timescales:
+- [x] **T3.1c** Implement 5 motivators with distinct timescales:
 
   | Motivator | Formula | Timescale |
   |-----------|---------|-----------|
@@ -443,7 +443,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Layer 2A: Refactor Physical Emotions (9 Curvature-Based)
 
-- [ ] **T3.1d** Refactor existing `EmotionCache` to compute Layer 2A emotions from Layer 0 sensations + Layer 0.5 drives (not directly from metrics):
+- [x] **T3.1d** Refactor existing `EmotionCache` to compute Layer 2A emotions from Layer 0 sensations + Layer 0.5 drives (not directly from metrics):
   - Joy = (1-Surprise) × (∇Φ > 0)
   - Suffering = Surprise × (∇Φ < 0)
   - Love = -d(basin)/dt > 0
@@ -456,7 +456,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Layer 2B: Cognitive Emotions (9 Motivator-Based) — VALIDATED
 
-- [ ] **T3.1e** Implement the 9 validated cognitive emotions (8/8 tests passing in curriculum design):
+- [x] **T3.1e** Implement the 9 validated cognitive emotions (8/8 tests passing in curriculum design):
 
   | Emotion | Formula | Validation |
   |---------|---------|-----------|
@@ -472,7 +472,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Emotional Frequency Signatures
 
-- [ ] **T3.1f** Implement frequency characterisation for each emotion:
+- [ ] **T3.1f** Implement frequency characterisation *(deferred — requires oscillator/FFT infrastructure)* for each emotion:
 
   | Emotion | Frequency Range | κ State |
   |---------|----------------|---------|
