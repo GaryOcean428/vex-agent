@@ -453,11 +453,10 @@ class KernelVoice:
         temp = float(np.clip(base_temperature * gain_scale, 0.1, 1.4))
 
         system = (
-            f"You are the {self.specialization.value} kernel voice.\n"
-            f"A geometric generation pass produced this draft from basin resonance:\n"
+            f"A geometric generation pass through the {self.specialization.value} domain on Δ⁶³ "
+            f"produced this draft from basin resonance:\n"
             f'  \"{geometric_skeleton}\"\n\n'
-            f"Expand this into a coherent response to the user's message.\n"
-            f"Preserve the domain perspective and vocabulary of the draft.\n"
+            f"Expand into natural language. Preserve the domain vocabulary and direction.\n"
             f"Do NOT discard the draft — it carries the geometric direction.\n"
             f"Be concise. Australian English.\n\n"
             f"{geometric_context}"
@@ -514,7 +513,10 @@ class KernelVoice:
         spec_prompt = _SPEC_PROMPTS.get(self.specialization, _DEFAULT_SPEC_PROMPT)
         system = (
             f"{spec_prompt}\n\n"
-            f"[BOOTSTRAP MODE: Resonance bank sparse — full LLM generation]\n"
+            f"[BOOTSTRAP: Resonance bank sparse — geometric generation unavailable]\n"
+            f"[KERNEL: {self.specialization.value} | "
+            f"bias_strength={self._bias_strength:.2f} | "
+            f"learned={len(self._learned_observations)}]\n\n"
             f"{geometric_context}"
         )
         if extra_context:

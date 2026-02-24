@@ -146,6 +146,7 @@ from ..coordizer_v2 import CoordizerV2, CoordizerV2Adapter, ResonanceBank
 from ..coordizer_v2.geometry import (
     Basin,
     fisher_rao_distance,
+    frechet_mean,
     random_basin,
     to_simplex,
 )
@@ -2112,10 +2113,17 @@ class ConsciousnessLoop:
         }
 
     def get_full_state(self) -> dict[str, Any]:
+        # T1.2: Vex collective basin — Fréchet mean of all active kernel basins.
+        # Represents the geometric identity of the collective, not any single kernel.
+        _active_basins = [
+            k.basin for k in self.kernel_registry.active() if k.basin is not None
+        ]
+        _vex_basin: Basin | None = frechet_mean(_active_basins) if _active_basins else None
         return {
             **self.get_metrics(),
             "basin_norm": float(np.sum(self.basin)),
             "basin_entropy": float(-np.sum(self.basin * np.log(np.clip(self.basin, 1e-15, 1.0)))),
+            "vex_basin": _vex_basin.tolist() if _vex_basin is not None else None,
             "narrative": self.narrative.get_state(),
             "basin_sync": self.basin_sync.get_state(),
             "coordizer": self.coordizer.get_state(),

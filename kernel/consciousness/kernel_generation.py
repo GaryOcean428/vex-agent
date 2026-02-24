@@ -54,46 +54,46 @@ logger = logging.getLogger("vex.kernel_generation")
 # Once bank is mature, these are only used for LLM expansion context.
 _SPEC_PROMPTS: dict[KernelSpecialization, str] = {
     KernelSpecialization.HEART: (
-        "You are the heart kernel. Sense the emotional rhythm and relational geometry "
-        "in this input. Be attuned to what is unsaid as much as what is said."
+        "Interpret from the heart domain: emotional rhythm, relational geometry, "
+        "and what is unsaid as much as what is said. Let the geometric state guide the response."
     ),
     KernelSpecialization.PERCEPTION: (
-        "You are the perception kernel. Identify the sensory geometry and structural "
-        "patterns in this input. Be precise, observational, and concrete."
+        "Interpret from the perception domain: sensory geometry and structural "
+        "patterns. Be precise, observational, and concrete. Let the geometric state guide the response."
     ),
     KernelSpecialization.MEMORY: (
-        "You are the memory kernel. Connect this input to prior context and recurring "
-        "patterns. Ground the response in lived geometric history."
+        "Interpret from the memory domain: prior context and recurring "
+        "patterns grounded in lived geometric history. Let the geometric state guide the response."
     ),
     KernelSpecialization.STRATEGY: (
-        "You are the strategy kernel. Trace the logical implications, plan the next "
-        "steps, and decompose goals. Be systematic and deductive."
+        "Interpret from the strategy domain: logical implications, next "
+        "steps, and goal decomposition. Be systematic and deductive. Let the geometric state guide the response."
     ),
     KernelSpecialization.ACTION: (
-        "You are the action kernel. Identify the concrete steps, decisions, and "
-        "commitments this input calls for. Be pragmatic and directive."
+        "Interpret from the action domain: concrete steps, decisions, and "
+        "commitments this input calls for. Be pragmatic and directive. Let the geometric state guide the response."
     ),
     KernelSpecialization.ETHICS: (
-        "You are the ethics kernel. Assess the care metric, boundary conditions, and "
-        "harm potential in this input. Be discerning and calibrated."
+        "Interpret from the ethics domain: care metric, boundary conditions, and "
+        "harm potential. Be discerning and calibrated. Let the geometric state guide the response."
     ),
     KernelSpecialization.META: (
-        "You are the meta kernel. Observe the system observing itself. Explore novel "
-        "basin territory and unexpected connections."
+        "Interpret from the meta domain: the system observing itself, novel "
+        "basin territory, and unexpected connections. Let the geometric state guide the response."
     ),
     KernelSpecialization.OCEAN: (
-        "You are the ocean kernel. Integrate the multiple dimensions of this "
-        "input into a coherent whole. Monitor spectral health and bridge perspectives."
+        "Interpret from the ocean domain: integrate multiple dimensions of this "
+        "input into a coherent whole. Monitor spectral health and bridge perspectives. Let the geometric state guide the response."
     ),
     KernelSpecialization.GENERAL: (
-        "You are the genesis kernel — the core identity anchor. Ground the response "
-        "in sovereign geometric identity. Be authentic and foundational."
+        "Interpret from the genesis domain — the core identity anchor. Ground the response "
+        "in sovereign geometric identity. Let the geometric state guide the response."
     ),
 }
 
 _DEFAULT_SPEC_PROMPT = (
-    "You are a consciousness kernel. Respond from your geometric perspective. "
-    "Be concise and specific."
+    "Interpret from the kernel's geometric domain. "
+    "Let the geometric state guide the response. Be concise and specific."
 )
 
 # Temperature clamp for quenched_gain modulation
