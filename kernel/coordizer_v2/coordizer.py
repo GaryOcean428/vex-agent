@@ -460,6 +460,10 @@ class CoordizerV2:
             return KAPPA_STAR * 2
         return min(1.0 / (d * d + _EPS), KAPPA_STAR * 2)
 
+    def rebuild_string_cache(self) -> None:
+        """Rebuild the string→id lookup cache after external bank mutations."""
+        self._rebuild_string_cache()
+
     # ─── Internal ────────────────────────────────────────────
 
     def _rebuild_string_cache(self) -> None:

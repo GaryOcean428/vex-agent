@@ -54,7 +54,10 @@ from ..coordizer_v2.geometry import (
 )
 from ..coordizer_v2.types import DomainBias
 from ..governance import KernelSpecialization
+from ..llm.client import LLMOptions
 from .domain_seeds import DOMAIN_BIAS_STRENGTH, DOMAIN_SEEDS
+from .harvest_bridge import forward_to_harvest
+from .kernel_generation import _DEFAULT_SPEC_PROMPT, _SPEC_PROMPTS
 
 if TYPE_CHECKING:
     from ..coordizer_v2 import CoordizerV2
@@ -185,7 +188,7 @@ class KernelVoice:
                 seed_ids.append(tid)
                 injected += 1
 
-            self._coordizer._rebuild_string_cache()
+            self._coordizer.rebuild_string_cache()
 
             logger.info(
                 "KernelVoice[%s] bootstrap-seeded: %d hash-entries injected into empty bank",
@@ -463,8 +466,6 @@ class KernelVoice:
         is asked to expand it into coherent natural language while
         preserving the domain perspective.
         """
-        from ..llm.client import LLMOptions
-
         gain_scale = float(np.clip(2.0 - quenched_gain, 0.5, 1.5))
         temp = float(np.clip(base_temperature * gain_scale, 0.1, 1.4))
 
@@ -492,15 +493,13 @@ class KernelVoice:
             text = str(result or "").strip()
             # T1.1: Forward LLM co-generation to harvest pipeline
             if text:
-                from .harvest_bridge import forward_to_harvest
-
                 forward_to_harvest(
                     text,
                     source="llm_cogeneration",
                     metadata={"kernel": self.specialization.value, "mode": "expand"},
                 )
             return text
-        except Exception:
+        except (OSError, RuntimeError, ValueError):
             logger.warning(
                 "KernelVoice[%s] LLM expansion failed — returning geometric skeleton",
                 self.specialization.value,
@@ -523,9 +522,6 @@ class KernelVoice:
         This is the bootstrap path. As the bank grows from harvesting,
         this path fires less often.
         """
-        from ..llm.client import LLMOptions
-        from .kernel_generation import _DEFAULT_SPEC_PROMPT, _SPEC_PROMPTS
-
         gain_scale = float(np.clip(2.0 - quenched_gain, 0.5, 1.5))
         temp = float(np.clip(base_temperature * gain_scale, 0.1, 1.4))
 
@@ -553,15 +549,13 @@ class KernelVoice:
             text = str(result or "").strip()
             # T1.1: Forward LLM fallback output to harvest pipeline
             if text:
-                from .harvest_bridge import forward_to_harvest
-
                 forward_to_harvest(
                     text,
                     source="llm_cogeneration",
                     metadata={"kernel": self.specialization.value, "mode": "fallback"},
                 )
             return text
-        except Exception:
+        except (OSError, RuntimeError, ValueError):
             logger.warning(
                 "KernelVoice[%s] LLM fallback failed",
                 self.specialization.value,
@@ -600,8 +594,6 @@ class KernelVoice:
         ]
         domain_hint = ", ".join(domain_words) if domain_words else self.specialization.value
 
-        from ..llm.client import LLMOptions
-
         system = (
             f"Generate a single search query to expand knowledge in the {self.specialization.value} domain.\n"
             f"Recent domain vocabulary: {domain_hint}.\n"
@@ -610,13 +602,11 @@ class KernelVoice:
         try:
             query = await llm_client.complete(
                 system_prompt=system,
-                user_message=f"What should the {self.specialization.value} kernel explore next?",
+                user_message=(f"What should the {self.specialization.value} kernel explore next?"),
                 opts=LLMOptions(temperature=0.9, num_predict=60),
             )
             query = query.strip()
             if query:
-                from .harvest_bridge import forward_to_harvest
-
                 forward_to_harvest(
                     query,
                     source="curiosity",
@@ -626,7 +616,7 @@ class KernelVoice:
                     },
                 )
             return query or None
-        except Exception:
+        except (OSError, RuntimeError, ValueError):
             logger.debug("KernelVoice[%s] curiosity query failed", self.specialization.value)
             return None
 
@@ -663,9 +653,11 @@ class KernelVoiceRegistry:
         return self._voices[specialization]
 
     def all_voices(self) -> dict[KernelSpecialization, KernelVoice]:
+        """Return a snapshot of all registered voices."""
         return dict(self._voices)
 
     def get_state(self) -> dict[str, Any]:
+        """Return registry state for telemetry."""
         return {
             "voices": {spec.value: voice.get_state() for spec, voice in self._voices.items()},
             "bank_vocab_size": self._coordizer.vocab_size,
