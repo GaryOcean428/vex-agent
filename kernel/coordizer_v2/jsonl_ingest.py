@@ -8,7 +8,7 @@ backend (Modal GPU for batch, Ollama for real-time fallback).
 
 Schema per line:
     {
-        "source": "curriculum|foraging|conversation|document",
+        "source": "curriculum|foraging|conversation|document|llm_cogeneration",
         "text": "...",
         "metadata": {...},
         "priority": 1-4,
@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 #  CONSTANTS
 # ═══════════════════════════════════════════════════════════════
 
-VALID_SOURCES = frozenset({"curriculum", "foraging", "conversation", "document"})
+VALID_SOURCES = frozenset({"curriculum", "foraging", "conversation", "document", "llm_cogeneration"})
 VALID_PRIORITIES = frozenset({1, 2, 3, 4})
 MAX_TEXT_LENGTH = 100_000  # 100KB per entry — reject larger
 MIN_TEXT_LENGTH = 10  # Reject trivially short entries

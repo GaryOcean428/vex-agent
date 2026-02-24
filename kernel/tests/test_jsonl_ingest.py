@@ -79,7 +79,7 @@ class TestValidation:
         assert len(entry.text) > 0
 
     def test_all_valid_sources(self):
-        for source in ["curriculum", "foraging", "conversation", "document"]:
+        for source in ["curriculum", "foraging", "conversation", "document", "llm_cogeneration"]:
             entry, error = validate_entry(
                 _make_jsonl_line(source=source),
                 1,
