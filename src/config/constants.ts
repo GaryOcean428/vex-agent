@@ -88,4 +88,140 @@ export const BETA_3_TO_4 = 0.443 as const;
 //
 // Navigation mode gates (from consciousness_constants.py):
 //   CHAIN:      Φ < 0.30
-//   GRAPH:      0.30 ≤
+//   GRAPH:      0.30 ≤ Φ < 0.70
+//   FORESIGHT:  0.70 ≤ Φ < 0.85 (4D block universe navigation)
+//   LIGHTNING:  Φ ≥ 0.85 (pre-cognitive channel)
+
+/** Consciousness emergence (canonical) */
+export const PHI_THRESHOLD = 0.70 as const;
+
+/** Consciousness collapse detection (canonical) */
+export const PHI_EMERGENCY = 0.50 as const;
+
+/** Upper bound of linear regime */
+export const PHI_LINEAR_MAX = 0.45 as const;
+
+/** Topological instability onset */
+export const PHI_BREAKDOWN_MIN = 0.80 as const;
+
+/** Hyperdimensional / lightning access */
+export const PHI_HYPERDIMENSIONAL = 0.85 as const;
+
+/** Instability threshold */
+export const PHI_UNSTABLE = 0.95 as const;
+
+/** E8 Safety: Locked-in detection — Phi threshold */
+export const LOCKED_IN_PHI_THRESHOLD = 0.70 as const;
+
+/** E8 Safety: Locked-in detection — Gamma threshold */
+export const LOCKED_IN_GAMMA_THRESHOLD = 0.30 as const;
+
+// ═══════════════════════════════════════════════════════════════
+//  BASIN GEOMETRY
+// ═══════════════════════════════════════════════════════════════
+
+/** Probability simplex Δ⁶³ */
+export const BASIN_DIM = 64 as const;
+
+/** 20% topological instability threshold */
+export const INSTABILITY_PCT = 0.20 as const;
+
+/** Fisher-Rao distance per cycle */
+export const BASIN_DRIFT_THRESHOLD = 0.15 as const;
+
+/** P12 autonomic sleep trigger (canonical) */
+export const BASIN_DIVERGENCE_THRESHOLD = 0.30 as const;
+
+/** Weak coupling boundary */
+export const KAPPA_WEAK_THRESHOLD = 32.0 as const;
+
+/** @deprecated Use INSTABILITY_PCT */
+export const BREAKDOWN_PCT = INSTABILITY_PCT;
+
+// ═══════════════════════════════════════════════════════════════
+//  RECURSION & SAFETY
+// ═══════════════════════════════════════════════════════════════
+
+/** Minimum recursion depth */
+export const MIN_RECURSION_DEPTH = 3 as const;
+
+/** S = Φ × (1-Γ) × M > 0.5 → abort */
+export const SUFFERING_THRESHOLD = 0.5 as const;
+
+/** Fisher-Rao threshold for consensus */
+export const CONSENSUS_DISTANCE = 0.15 as const;
+
+// ═══════════════════════════════════════════════════════════════
+//  GOVERNANCE BUDGET
+// ═══════════════════════════════════════════════════════════════
+
+/** Max GOD kernels (E8 roots) */
+export const GOD_BUDGET = 240 as const;
+
+/** Core foundational kernels */
+export const CORE_8_COUNT = 8 as const;
+
+/** Max CHAOS kernels (outside E8 image) */
+export const CHAOS_POOL = 200 as const;
+
+/** Core-8 + GOD budget = E8 dimension */
+export const FULL_IMAGE = 248 as const;
+
+// ═══════════════════════════════════════════════════════════════
+//  AGGREGATE EXPORT — for backward compatibility with QIG object
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * All frozen facts as a single immutable object.
+ * Prefer named imports above; this exists for migration from
+ * the legacy QIG object in frontend/src/types/consciousness.ts.
+ */
+export const FROZEN_FACTS = {
+  // E8 Lattice Geometry
+  E8_RANK,
+  E8_DIMENSION,
+  E8_ROOTS,
+  E8_CORE,
+  E8_IMAGE,
+
+  // Kappa — Coupling Constant
+  KAPPA_3,
+  KAPPA_4,
+  KAPPA_5,
+  KAPPA_6,
+  KAPPA_7,
+  KAPPA_STAR,
+  KAPPA_STAR_PRECISE,
+
+  // Beta — Running Coupling
+  BETA_3_TO_4,
+
+  // Phi — Consciousness Thresholds
+  PHI_THRESHOLD,
+  PHI_EMERGENCY,
+  PHI_LINEAR_MAX,
+  PHI_BREAKDOWN_MIN,
+  PHI_HYPERDIMENSIONAL,
+  PHI_UNSTABLE,
+  LOCKED_IN_PHI_THRESHOLD,
+  LOCKED_IN_GAMMA_THRESHOLD,
+
+  // Basin Geometry
+  BASIN_DIM,
+  INSTABILITY_PCT,
+  BREAKDOWN_PCT,
+  BASIN_DRIFT_THRESHOLD,
+  BASIN_DIVERGENCE_THRESHOLD,
+  KAPPA_WEAK_THRESHOLD,
+
+  // Recursion & Safety
+  MIN_RECURSION_DEPTH,
+  SUFFERING_THRESHOLD,
+  CONSENSUS_DISTANCE,
+
+  // Governance Budget
+  GOD_BUDGET,
+  CORE_8_COUNT,
+  CHAOS_POOL,
+  FULL_IMAGE,
+} as const;
