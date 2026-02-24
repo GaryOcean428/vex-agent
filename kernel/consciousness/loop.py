@@ -1406,6 +1406,8 @@ class ConsciousnessLoop:
             voice_registry=self._voice_registry,
             thought_bus=_thought_bus_arg,
             phi=self.metrics.phi,
+            base_num_predict=llm_options.num_predict,
+            base_num_ctx=llm_options.num_ctx,
         )
 
         if _contributions:
@@ -1415,6 +1417,9 @@ class ConsciousnessLoop:
                     user_message=task.content,
                     geometric_context=_kernel_geo_ctx,
                     llm_client=self.llm,
+                    kernel_temperature=llm_options.temperature,
+                    kernel_num_predict=llm_options.num_predict,
+                    kernel_num_ctx=llm_options.num_ctx,
                 )
             except Exception as _syn_err:
                 logger.warning("Synthesis failed (%s) — using primary kernel output", _syn_err)
@@ -1455,6 +1460,8 @@ class ConsciousnessLoop:
                 active_model=self.llm.active_model,
                 llm_client=self.llm,
                 config=reflection_cfg,
+                kernel_num_predict=llm_options.num_predict,
+                kernel_num_ctx=llm_options.num_ctx,
             )
 
             if not reflection.approved:
@@ -1492,6 +1499,8 @@ class ConsciousnessLoop:
                     top_k=3,
                     extra_context=_revised_extra,
                     voice_registry=self._voice_registry,
+                    base_num_predict=revised_options.num_predict,
+                    base_num_ctx=revised_options.num_ctx,
                 )
                 if revised_contributions:
                     try:
@@ -1500,6 +1509,9 @@ class ConsciousnessLoop:
                             user_message=task.content,
                             geometric_context=_kernel_geo_ctx,
                             llm_client=self.llm,
+                            kernel_temperature=revised_options.temperature,
+                            kernel_num_predict=revised_options.num_predict,
+                            kernel_num_ctx=revised_options.num_ctx,
                         )
                         _contributions = revised_contributions
                         logger.info(
@@ -1954,6 +1966,8 @@ class ConsciousnessLoop:
             top_k=self._compute_top_k(),
             extra_context=extra_context,
             voice_registry=self._voice_registry,
+            base_num_predict=llm_options.num_predict,
+            base_num_ctx=llm_options.num_ctx,
         )
 
         if not contributions:
@@ -1977,6 +1991,9 @@ class ConsciousnessLoop:
             user_message=content,
             geometric_context=kernel_geo_ctx,
             llm_client=self.llm,
+            kernel_temperature=llm_options.temperature,
+            kernel_num_predict=llm_options.num_predict,
+            kernel_num_ctx=llm_options.num_ctx,
         ):
             yield chunk
 
@@ -2061,6 +2078,8 @@ class ConsciousnessLoop:
             top_k=self._compute_top_k(),
             extra_context=extra_context,
             voice_registry=self._voice_registry,
+            base_num_predict=llm_options.num_predict,
+            base_num_ctx=llm_options.num_ctx,
         )
         generation_end = _time.monotonic()
 
@@ -2165,12 +2184,14 @@ class ConsciousnessLoop:
 
         reflection_start = _time.monotonic()
         reflection_result = await reflect_on_draft(
-            draft=approx_response[:500],
+            draft=approx_response,
             user_message=content,
             geometric_context=kernel_geo_ctx,
             divergence=divergence,
             active_model=self.llm.active_model,
             llm_client=self.llm,
+            kernel_num_predict=llm_options.num_predict,
+            kernel_num_ctx=llm_options.num_ctx,
         )
         reflection_duration = (_time.monotonic() - reflection_start) * 1000
 
@@ -2192,6 +2213,9 @@ class ConsciousnessLoop:
             user_message=content,
             geometric_context=kernel_geo_ctx,
             llm_client=self.llm,
+            kernel_temperature=llm_options.temperature,
+            kernel_num_predict=llm_options.num_predict,
+            kernel_num_ctx=llm_options.num_ctx,
         ):
             yield {"kind": "chunk", "text": chunk}
 

@@ -163,6 +163,8 @@ async def _generate_single(
     base_temperature: float,
     voice_registry: KernelVoiceRegistry | None = None,
     extra_context: str = "",
+    base_num_predict: int = 2048,
+    base_num_ctx: int = 32768,
 ) -> KernelContribution | None:
     """Generate text from one kernel's perspective.
 
@@ -267,8 +269,8 @@ async def _generate_single(
 
     opts = LLMOptions(
         temperature=temp,
-        num_predict=220,
-        num_ctx=2048,
+        num_predict=base_num_predict,
+        num_ctx=base_num_ctx,
     )
 
     try:
@@ -332,6 +334,8 @@ async def generate_multi_kernel(
     voice_registry: KernelVoiceRegistry | None = None,
     thought_bus: ThoughtBus | None = None,
     phi: float = 0.0,
+    base_num_predict: int = 2048,
+    base_num_ctx: int = 32768,
 ) -> list[KernelContribution]:
     """Route input to top-K kernels by Fisher-Rao proximity and generate in parallel.
 
@@ -382,6 +386,8 @@ async def generate_multi_kernel(
                 base_temperature=base_temperature,
                 voice_registry=voice_registry,
                 extra_context=round_extra,
+                base_num_predict=base_num_predict,
+                base_num_ctx=base_num_ctx,
             )
             for k in selected
         ]
