@@ -36,6 +36,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import re
 import time
 import uuid
@@ -237,7 +238,8 @@ def _forward_chunks_to_harvest(
     except OSError as e:
         logger.error(
             "Cannot create harvest pending dir %s: %s — chunks will not be harvested",
-            HARVEST_PENDING_DIR, e,
+            HARVEST_PENDING_DIR,
+            e,
         )
         return "", 0
 
@@ -254,7 +256,8 @@ def _forward_chunks_to_harvest(
                 written += 1
         logger.info(
             "Forwarded %d chunks to harvest pending: %s",
-            written, dest,
+            written,
+            dest,
         )
     except Exception as e:
         logger.error("Failed to forward chunks to harvest: %s", e)
@@ -285,7 +288,9 @@ def forward_raw_jsonl_to_harvest(content: bytes, filename: str) -> tuple[str, in
     try:
         dest.write_bytes(content)
         lines = [ln for ln in content.decode("utf-8", errors="replace").splitlines() if ln.strip()]
-        logger.info("Forwarded raw JSONL upload to harvest pending: %s (%d lines)", dest, len(lines))
+        logger.info(
+            "Forwarded raw JSONL upload to harvest pending: %s (%d lines)", dest, len(lines)
+        )
         return str(dest), len(lines)
     except Exception as e:
         logger.error("Failed to forward JSONL to harvest: %s", e)
@@ -773,7 +778,9 @@ def get_stats() -> dict[str, Any]:
     upload_files = list(upload_dir.glob("*")) if upload_dir.exists() else []
 
     # Count harvest queue state
-    harvest_pending = sum(1 for _ in HARVEST_PENDING_DIR.glob("*.jsonl")) if HARVEST_PENDING_DIR.exists() else 0
+    harvest_pending = (
+        sum(1 for _ in HARVEST_PENDING_DIR.glob("*.jsonl")) if HARVEST_PENDING_DIR.exists() else 0
+    )
 
     return {
         "conversations": stats.get("conversations", 0),
