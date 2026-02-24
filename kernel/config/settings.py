@@ -65,15 +65,16 @@ class GPUHarvestConfig:
 
     IMPORTANT: harvest_model MUST match the active inference model so that
     token IDs in the resonance bank fingerprints map to the same vocabulary
-    as the model doing inference. Primary path: Ollama vex-brain is based on
-    LFM2.5-1.2B-Thinking, so that is the default.
+    as the model doing inference. Primary: GLM-4.7-Flash (Modal GPU).
+    Ollama fallback (vex-brain) is based on LFM2.5-1.2B-Thinking.
     """
 
     enabled: bool = os.environ.get("GPU_HARVEST_ENABLED", "false").lower() == "true"
     # Harvest model MUST match the active inference model.
-    # Was "meta-llama/Llama-3.2-3B" — corrected to match harvest.py's default
-    # and the Ollama primary model (LFM2.5-1.2B-Thinking).
-    model_id: str = os.environ.get("GPU_HARVEST_MODEL", "LiquidAI/LFM2.5-1.2B-Thinking")
+    # Primary: GLM-4.7-Flash (Modal GPU, 30B-A3B MoE).
+    # Ollama fallback uses LFM2.5-1.2B-Thinking (vex-brain base).
+    # Override GPU_HARVEST_MODEL if deploying with a different backend.
+    model_id: str = os.environ.get("GPU_HARVEST_MODEL", "zai-org/GLM-4.7-Flash")
     batch_size: int = int(os.environ.get("GPU_HARVEST_BATCH_SIZE", "32"))
     vocab_target: int = int(os.environ.get("GPU_HARVEST_VOCAB_TARGET", "32768"))
     artifact_dir: str = os.environ.get("GPU_HARVEST_ARTIFACT_DIR", "/data/resonance-bank")

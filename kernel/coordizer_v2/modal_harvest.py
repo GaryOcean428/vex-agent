@@ -38,9 +38,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ModalHarvestConfig:
-    """Configuration for Modal-based harvesting."""
+    """Configuration for Modal-based harvesting.
 
-    model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking"
+    model_id must match the active inference model so resonance bank
+    fingerprints use the same vocabulary as the model doing inference.
+    Primary: GLM-4.7-Flash (Modal GPU). Ollama fallback: LFM2.5-1.2B-Thinking.
+    """
+
+    model_id: str = "zai-org/GLM-4.7-Flash"
     target_tokens: int = 2000
     batch_size: int = 32
     max_length: int = 512
@@ -49,7 +54,7 @@ class ModalHarvestConfig:
 
 
 async def modal_harvest(
-    model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
+    model_id: str = "zai-org/GLM-4.7-Flash",
     _target_tokens: int = 2000,
     corpus_texts: list[str] | None = None,
     timeout: float = 600.0,

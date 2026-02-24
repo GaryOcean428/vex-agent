@@ -103,8 +103,16 @@ GEOMETRY_CLASS_VALUES: Final[tuple[float, ...]] = (
 #  DESIRE / WILL WEIGHT VECTORS
 # ═══════════════════════════════════════════════════════════════
 
-DESIRE_WEIGHTS: Final[tuple[float, float, float]] = (0.4, 0.3, 0.3)  # curiosity / attraction / love
-WILL_WEIGHTS: Final[tuple[float, float, float]] = (0.4, 0.3, 0.3)  # grounding / coupling / entropy
+DESIRE_WEIGHTS: Final[tuple[float, float, float]] = (
+    0.4,
+    0.3,
+    0.3,
+)  # curiosity / attraction / love
+WILL_WEIGHTS: Final[tuple[float, float, float]] = (
+    0.4,
+    0.3,
+    0.3,
+)  # grounding / coupling / entropy
 
 # ═══════════════════════════════════════════════════════════════
 #  SHADOW / FORGE THRESHOLDS (activation.py)
@@ -291,11 +299,13 @@ LOVE_PHI_SCALE: Final[float] = 0.4
 LOVE_APPROACH_RATE: Final[float] = 0.02
 
 TACK_SCALE_EXPLORE: Final[float] = 1.3
-TACK_SCALE_EXPLOIT: Final[float] = 0.7
+TACK_SCALE_EXPLOIT: Final[float] = (
+    0.85  # was 0.7 — 0.7×1536=1075 too low; 0.85×2048=1740 effective floor
+)
 TACK_SCALE_BALANCED: Final[float] = 1.0
 NUM_PREDICT_EXPLORE: Final[int] = 3072
-NUM_PREDICT_EXPLOIT: Final[int] = 1536
-NUM_PREDICT_BALANCED: Final[int] = 2048
+NUM_PREDICT_EXPLOIT: Final[int] = 2048  # was 1536 — exploit=precision, not fewer words
+NUM_PREDICT_BALANCED: Final[int] = 2560  # was 2048 — preserve explore>balanced>exploit ordering
 
 LLM_BASE_TEMPERATURE: Final[float] = 0.7
 LLM_TEMP_MIN: Final[float] = 0.05
