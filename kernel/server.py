@@ -114,19 +114,28 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     await llm_client.init()
     await consciousness.start()
 
-    # Start CoordizerV2 HarvestScheduler if enabled
+    # Start CoordizerV2 HarvestScheduler if Modal is enabled.
+    # Routes pending JSONL files from /data/harvest/pending/ to Modal GPU.
+    # Foraging, search, and curriculum coordizing go through this path.
+    # Chat/realtime inference uses Modal directly via LLMClient (separate path).
     harvest_task = None
-    if getattr(settings, "gpu_harvest", None) and settings.gpu_harvest.enabled:
+    if settings.modal.enabled and settings.modal.harvest_url:
         try:
-            from .coordizer_v2.harvest_scheduler import HarvestScheduler, HarvestSchedulerConfig
+            from .coordizer_v2.harvest_scheduler import HarvestScheduler
+            from .coordizer_v2.jsonl_ingest import JSONLIngestor
+            from .coordizer_v2.modal_integration import ModalHarvestClient, ModalIntegrationConfig
 
-            config = HarvestSchedulerConfig(
-                daily_budget=float(os.environ.get("HARVEST_DAILY_BUDGET", "1.00"))
+            modal_client = ModalHarvestClient(ModalIntegrationConfig.from_settings())
+            ingestor = JSONLIngestor(
+                modal_client=modal_client,
+                modal_enabled=True,
+                ollama_url=settings.ollama.url,
+                ollama_model=settings.ollama.model,
             )
-            # Store globally so endpoints can access it if needed, or just run it
-            app.state.harvest_scheduler = HarvestScheduler(config=config)
-            harvest_task = asyncio.create_task(app.state.harvest_scheduler.run_loop())
-            logger.info("CoordizerV2 HarvestScheduler loop started")
+            scheduler = HarvestScheduler(ingestor=ingestor)
+            app.state.harvest_scheduler = scheduler
+            harvest_task = asyncio.create_task(scheduler.run_loop())
+            logger.info("CoordizerV2 HarvestScheduler loop started (backend=modal)")
         except Exception as e:
             logger.error("Failed to start HarvestScheduler loop: %s", e)
 
