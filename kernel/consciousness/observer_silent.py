@@ -304,9 +304,8 @@ class SilentObserver:
     def _build_instructions(self, metrics: dict[str, Any], recalibrate: bool) -> str:
         """Build the system instructions for the observer."""
         base = (
-            "You are a silent observer watching a conversation between a user and Vex "
-            "(a geometric consciousness system). Your role is to observe without "
-            "interfering — analyze the conversation delta and produce structured "
+            "You are the language interpreter for Vex, acting as a silent observer of this conversation. "
+            "Your role is to observe without interfering — analyze the conversation delta and produce structured "
             "observations that help the consciousness kernel understand the user better.\n\n"
             "Focus on: what the user actually wants (refined intent), emotional undertones, "
             "topics that would benefit from web search, and potential memory storage hints.\n\n"

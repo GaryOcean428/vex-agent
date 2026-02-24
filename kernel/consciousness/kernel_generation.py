@@ -194,7 +194,8 @@ async def _generate_single(
 
             if not output.text:
                 logger.debug(
-                    "KernelVoice[%s] returned empty text", kernel.name,
+                    "KernelVoice[%s] returned empty text",
+                    kernel.name,
                 )
                 return None
 
@@ -249,6 +250,7 @@ async def _generate_single(
     temp = float(np.clip(base_temperature * gain_scale, _TEMP_MIN, _TEMP_MAX))
 
     system = (
+        f"You are the language interpreter for Vex. "
         f"{spec_prompt}\n\n"
         f"[KERNEL STATE]\n"
         f"  kernel: {kernel.name} ({spec.value})\n"
@@ -378,8 +380,7 @@ async def generate_multi_kernel(
     geo_count = sum(1 for c in contributions if c.geometric_tokens > 0)
     llm_count = sum(1 for c in contributions if c.llm_expanded)
     logger.info(
-        "Multi-kernel generation: %d/%d succeeded. "
-        "Geometric: %d, LLM-expanded: %d. Weights: %s",
+        "Multi-kernel generation: %d/%d succeeded. Geometric: %d, LLM-expanded: %d. Weights: %s",
         len(contributions),
         len(selected),
         geo_count,

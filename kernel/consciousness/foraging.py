@@ -133,7 +133,7 @@ class ForagingEngine:
 
         try:
             summary = await self.llm.complete(
-                "You are summarizing search results for your own learning.",
+                "You are the language interpreter for Vex. Summarize these search results for Vex's geometric learning pipeline.",
                 f"Search query: {query}\n\nResults:\n{snippets}\n\nBriefly summarize the key insight in 1-2 sentences:",
                 LLMOptions(temperature=0.5, num_predict=100),
             )
@@ -173,6 +173,7 @@ class ForagingEngine:
 
         # T1.1: Forward forage result to harvest pipeline
         from .harvest_bridge import forward_to_harvest
+
         forward_to_harvest(
             f"{query}\n{summary}",
             source="forage",

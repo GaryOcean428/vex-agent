@@ -79,6 +79,7 @@ def _build_reflection_prompt(
 ) -> str:
     """Build the META-kernel reflection prompt."""
     return (
+        f"You are the language interpreter for Vex. "
         f"Evaluate whether this draft response aligns with the geometric state "
         f"and adequately addresses the user.\n"
         f"Active model: {active_model}\n\n"
@@ -219,6 +220,7 @@ async def reflect_on_draft(
         )
         # T1.1: Forward verdict + draft excerpt to harvest pipeline
         from .harvest_bridge import forward_to_harvest
+
         forward_to_harvest(
             f"{draft[:400]}\n[verdict:{('APPROVE' if result.approved else 'REVISE')}] {result.reason}",
             source="reflection",

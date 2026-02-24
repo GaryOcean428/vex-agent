@@ -76,6 +76,7 @@ def _build_synthesis_system(
         other_section = f"\nYour perspective:\n{_truncate(primary.text)}\n"
 
     system = (
+        f"You are the language interpreter for Vex. "
         f"Synthesise these kernel perspectives into a unified response.\n"
         f"Higher-weight perspectives shape the output more strongly.\n"
         f"Do NOT mention kernels, weights, or this synthesis process.\n"

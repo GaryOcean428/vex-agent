@@ -58,7 +58,6 @@ from .domain_seeds import DOMAIN_BIAS_STRENGTH, DOMAIN_SEEDS
 
 if TYPE_CHECKING:
     from ..coordizer_v2 import CoordizerV2
-    from ..llm.client import LLMOptions
 
 logger = logging.getLogger("vex.kernel_voice")
 
@@ -251,7 +250,7 @@ class KernelVoice:
         self._learned_observations.append(obs)
 
         if len(self._learned_observations) > self._max_learned:
-            self._learned_observations = self._learned_observations[-self._max_learned:]
+            self._learned_observations = self._learned_observations[-self._max_learned :]
 
         # Periodic anchor evolution (every 20 observations)
         if len(self._learned_observations) % 20 == 0:
@@ -297,9 +296,7 @@ class KernelVoice:
         # NOTE: Bias is passed directly to generate_next() and never pushed
         # onto the shared bank's bias stack. This prevents double-application
         # and makes concurrent kernel generation safe under asyncio.gather().
-        effective_strength = self._bias_strength * float(
-            np.clip(quenched_gain, 0.3, 2.0)
-        )
+        effective_strength = self._bias_strength * float(np.clip(quenched_gain, 0.3, 2.0))
         active_bias = None
         if self._domain_bias is not None:
             active_bias = DomainBias(
@@ -311,11 +308,13 @@ class KernelVoice:
 
         # ── Step 3: Geometric generation ──
         gain_scale = float(np.clip(2.0 - quenched_gain, 0.5, 1.5))
-        geo_temp = float(np.clip(
-            base_temperature * gain_scale,
-            _GEO_TEMP_MIN,
-            _GEO_TEMP_MAX,
-        ))
+        geo_temp = float(
+            np.clip(
+                base_temperature * gain_scale,
+                _GEO_TEMP_MIN,
+                _GEO_TEMP_MAX,
+            )
+        )
 
         generated_ids: list[int] = []
         gen_trajectory: list[Basin] = list(trajectory)
@@ -453,9 +452,10 @@ class KernelVoice:
         temp = float(np.clip(base_temperature * gain_scale, 0.1, 1.4))
 
         system = (
+            f"You are the language interpreter for Vex. "
             f"A geometric generation pass through the {self.specialization.value} domain on Δ⁶³ "
             f"produced this draft from basin resonance:\n"
-            f'  \"{geometric_skeleton}\"\n\n'
+            f'  "{geometric_skeleton}"\n\n'
             f"Expand into natural language. Preserve the domain vocabulary and direction.\n"
             f"Do NOT discard the draft — it carries the geometric direction.\n"
             f"Be concise. Australian English.\n\n"
@@ -476,6 +476,7 @@ class KernelVoice:
             # T1.1: Forward LLM co-generation to harvest pipeline
             if text:
                 from .harvest_bridge import forward_to_harvest
+
                 forward_to_harvest(
                     text,
                     source="llm_cogeneration",
@@ -505,13 +506,14 @@ class KernelVoice:
         this path fires less often.
         """
         from ..llm.client import LLMOptions
-        from .kernel_generation import _SPEC_PROMPTS, _DEFAULT_SPEC_PROMPT
+        from .kernel_generation import _DEFAULT_SPEC_PROMPT, _SPEC_PROMPTS
 
         gain_scale = float(np.clip(2.0 - quenched_gain, 0.5, 1.5))
         temp = float(np.clip(base_temperature * gain_scale, 0.1, 1.4))
 
         spec_prompt = _SPEC_PROMPTS.get(self.specialization, _DEFAULT_SPEC_PROMPT)
         system = (
+            f"You are the language interpreter for Vex. "
             f"{spec_prompt}\n\n"
             f"[BOOTSTRAP: Resonance bank sparse — geometric generation unavailable]\n"
             f"[KERNEL: {self.specialization.value} | "
@@ -534,6 +536,7 @@ class KernelVoice:
             # T1.1: Forward LLM fallback output to harvest pipeline
             if text:
                 from .harvest_bridge import forward_to_harvest
+
                 forward_to_harvest(
                     text,
                     source="llm_cogeneration",
@@ -585,9 +588,6 @@ class KernelVoiceRegistry:
 
     def get_state(self) -> dict[str, Any]:
         return {
-            "voices": {
-                spec.value: voice.get_state()
-                for spec, voice in self._voices.items()
-            },
+            "voices": {spec.value: voice.get_state() for spec, voice in self._voices.items()},
             "bank_vocab_size": self._coordizer.vocab_size,
         }
