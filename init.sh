@@ -26,11 +26,21 @@ if [ -d /data ]; then
         chown -h --no-dereference vex:vex /data 2>/dev/null || true
 
         # Create known-safe subdirectories for vex to use.
-        mkdir -p /data/workspace /data/training
+        mkdir -p /data/workspace \
+                 /data/training \
+                 /data/training/curriculum \
+                 /data/training/uploads \
+                 /data/training/exports \
+                 /data/harvest \
+                 /data/harvest/pending \
+                 /data/harvest/processing \
+                 /data/harvest/completed \
+                 /data/harvest/failed \
+                 /data/harvest/output
 
         # Recursively fix ownership only on known-safe, non-symlink subdirs,
         # and do not follow any symlinks inside them.
-        for vex_dir in /data/workspace /data/training; do
+        for vex_dir in /data/workspace /data/training /data/harvest; do
             if [ -d "$vex_dir" ] && [ ! -L "$vex_dir" ]; then
                 chown -R -h --no-dereference vex:vex "$vex_dir" 2>/dev/null || true
             fi
@@ -41,8 +51,25 @@ if [ -d /data ]; then
         echo "[init] /data permissions already set (marker found) — skipping recursive chown"
         # Always re-chown /data itself: Railway re-mounts volumes as root on restart
         chown -h --no-dereference vex:vex /data 2>/dev/null || true
-        mkdir -p /data/workspace /data/training
-        chown -h --no-dereference vex:vex /data/workspace /data/training 2>/dev/null || true
+
+        # Ensure all required dirs exist (may be missing on older volumes)
+        mkdir -p /data/workspace \
+                 /data/training \
+                 /data/training/curriculum \
+                 /data/training/uploads \
+                 /data/training/exports \
+                 /data/harvest \
+                 /data/harvest/pending \
+                 /data/harvest/processing \
+                 /data/harvest/completed \
+                 /data/harvest/failed \
+                 /data/harvest/output
+
+        # Re-chown top-level dirs (Railway remounts as root on restart)
+        chown -h --no-dereference vex:vex \
+            /data/workspace \
+            /data/training \
+            /data/harvest 2>/dev/null || true
     fi
 fi
 
