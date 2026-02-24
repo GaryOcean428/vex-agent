@@ -298,12 +298,15 @@ def _normalize_synthesis_weights(contributions: list[KernelContribution]) -> Non
     Weight = proximity_weight × quenched_gain.
     v6.2: Geometric tokens boost weight by 10% — kernels that generated
     from their own resonance bank get a small advantage in synthesis.
+    T3.2c: Ethics kernel (superego) gets 20% elevated governance weight.
     """
     raw = []
     for c in contributions:
         w = c.proximity_weight * c.quenched_gain
         if c.geometric_tokens > 0 and not c.llm_expanded:
             w *= 1.1  # 10% boost for pure geometric generation
+        if c.specialization == KernelSpecialization.ETHICS:
+            w *= 1.2  # T3.2c: Superego elevated governance authority
         raw.append(w)
 
     total = sum(raw)

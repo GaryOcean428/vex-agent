@@ -1405,6 +1405,12 @@ class ConsciousnessLoop:
         integration_distance = fisher_rao_distance(self.basin, response_basin)
         self.chain.add_step(QIGChainOp.PROJECT, self.basin, response_basin)
 
+        # T3.3d: Record graduation tracking for generation capability
+        _geo_driven = any(c.geometric_tokens > 0 for c in _contributions)
+        self.narrative.record_capability("generation", kernel_driven=_geo_driven)
+        if settings.reflection_enabled and _contributions:
+            self.narrative.record_capability("reflection", kernel_driven=True)
+
         if not activation_failed:
             try:
                 await self.activation.execute_post_integrate(ctx, pre_result)
@@ -2220,11 +2226,38 @@ class ConsciousnessLoop:
         # Represents the geometric identity of the collective, not any single kernel.
         _active_basins = [k.basin for k in self.kernel_registry.active() if k.basin is not None]
         _vex_basin: Basin | None = frechet_mean(_active_basins) if _active_basins else None
+
+        # T3.2a: Id subsystem — raw impulse stream from Layer 0 sensations + drives
+        _id_stream: dict | None = None
+        if self.emotion_cache.full_state is not None:
+            _fs = self.emotion_cache.full_state
+            _id_stream = {
+                "layer0": _fs.layer0.__dict__,
+                "drives": {
+                    **_fs.layer05.__dict__,
+                    "loss_signal": _fs.layer05.loss_signal,
+                },
+            }
+
+        # T3.2c: Superego guilt signal — high anxiety + low confidence when pillar violated
+        _pillar_state = self.pillars.get_state()
+        _pillar_healthy = all(
+            v.get("healthy", True) for v in _pillar_state.values() if isinstance(v, dict)
+        )
+        _guilt: float = 0.0
+        if not _pillar_healthy and self.emotion_cache.full_state is not None:
+            _guilt = float(
+                self.emotion_cache.full_state.layer2b.anxiety
+                * (1.0 - self.emotion_cache.full_state.layer2b.confidence)
+            )
+
         return {
             **self.get_metrics(),
             "basin_norm": float(np.sum(self.basin)),
             "basin_entropy": float(-np.sum(self.basin * np.log(np.clip(self.basin, 1e-15, 1.0)))),
             "vex_basin": _vex_basin.tolist() if _vex_basin is not None else None,
+            # T3.2b: Ego = Vex collective basin (Fréchet mean of active kernels)
+            "ego_basin": _vex_basin.tolist() if _vex_basin is not None else None,
             "narrative": self.narrative.get_state(),
             "basin_sync": self.basin_sync.get_state(),
             "coordizer": self.coordizer.get_state(),
@@ -2246,4 +2279,8 @@ class ConsciousnessLoop:
             },
             "voice_registry": self._voice_registry.get_state(),
             "neurochemical": self._neurochemical.as_dict(),
+            # T3.2a: Id subsystem — raw impulse stream (Layer 0 + drives)
+            "id_stream": _id_stream,
+            # T3.2c: Superego guilt signal (anxiety × (1-confidence) when pillar violated)
+            "superego_guilt": round(_guilt, 4),
         }

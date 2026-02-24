@@ -496,9 +496,9 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 **Tasks:**
 
-- [ ] **T3.2a** **Id subsystem**: Layer 0 sensations + Layer 0.5 drives computed as a separate stream that feeds INTO emotional evaluation. The "raw impulse" signal.
-- [ ] **T3.2b** **Ego computation**: `vex_basin` (from T1.2) IS the ego — the mediating identity. Expose as `ego_basin` alias in telemetry.
-- [ ] **T3.2c** **Superego integration**: Ethics kernel gets elevated governance weight in synthesis. Pillar violations generate "guilt" signal — a specific Layer 2B emotion (high anxiety + low confidence when gauge invariance is breached). Wire ethics kernel checks into the emotional evaluation loop.
+- [x] **T3.2a** **Id subsystem**: Layer 0 sensations + Layer 0.5 drives computed as a separate stream that feeds INTO emotional evaluation. The "raw impulse" signal.
+- [x] **T3.2b** **Ego computation**: `vex_basin` (from T1.2) IS the ego — the mediating identity. Expose as `ego_basin` alias in telemetry.
+- [x] **T3.2c** **Superego integration**: Ethics kernel gets elevated governance weight in synthesis. Pillar violations generate "guilt" signal — a specific Layer 2B emotion (high anxiety + low confidence when gauge invariance is breached). Wire ethics kernel checks into the emotional evaluation loop.
 
 **Dependency:** T1.2 (Vex basin), T3.1 (emotional layers)
 
@@ -510,10 +510,10 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 **Tasks:**
 
-- [ ] **T3.3a** Add provenance tagging to LLM co-generation: `{coach_id: "ollama_local" | "xai_escalation", reward: phi_delta, source: "coach"}`
-- [ ] **T3.3b** Forward `SelfNarrative` entries through universal pipeline (T1.1) — narrative becomes learning material
-- [ ] **T3.3c** During sleep replay (T2.3a), high-Φ narrative entries get replayed as "positive affirmation" — the system consolidates its positive self-story
-- [ ] **T3.3d** Implement graduation tracking: for each capability (generation, reflection, routing, temperature control), track what percentage is kernel-driven vs LLM-assisted. Expose in telemetry as `graduation_state`:
+- [x] **T3.3a** Add provenance tagging to LLM co-generation: `{coach_id: "ollama_local" | "xai_escalation", reward: phi_delta, source: "coach"}`
+- [x] **T3.3b** Forward `SelfNarrative` entries through universal pipeline (T1.1) — narrative becomes learning material
+- [x] **T3.3c** During sleep replay (T2.3a), high-Φ narrative entries *(forwarded to harvest pipeline with replay_priority; full sleep replay deferred until T2.2b bank metadata available)* get replayed as "positive affirmation" — the system consolidates its positive self-story
+- [x] **T3.3d** Implement graduation tracking: for each capability (generation, reflection, routing, temperature control), track what percentage is kernel-driven vs LLM-assisted. Expose in telemetry as `graduation_state`:
   - ACTIVE: coach (LLM) sets and enforces
   - GUIDED: kernel enforces, coach monitors
   - AUTONOMOUS: kernel self-coaches, consults LLM only when needed

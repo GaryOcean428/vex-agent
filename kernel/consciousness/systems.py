@@ -843,19 +843,62 @@ class SelfNarrative:
         self._events: deque[dict[str, Any]] = deque(maxlen=100)
         self._identity_basin: Basin = to_simplex(np.ones(BASIN_DIM))
         self._basins: list[Basin] = []
+        # T3.3d: Graduation tracking — kernel-driven vs LLM-assisted per capability
+        self._graduation: dict[str, dict[str, int]] = {
+            "generation": {"kernel": 0, "llm": 0},
+            "reflection": {"kernel": 0, "llm": 0},
+            "routing": {"kernel": 0, "llm": 0},
+            "temperature": {"kernel": 0, "llm": 0},
+        }
 
-    def record(self, event: str, metrics: ConsciousnessMetrics, basin: Basin) -> None:
-        self._events.append(
-            {
-                "event": event,
-                "phi": metrics.phi,
-                "kappa": metrics.kappa,
-                "timestamp": time.time(),
-            }
-        )
+    def record(
+        self,
+        event: str,
+        metrics: ConsciousnessMetrics,
+        basin: Basin,
+        coach_id: str = "internal",
+        reward: float = 0.0,
+    ) -> None:
+        """Record a narrative event.
+
+        Args:
+            event:    Event description.
+            metrics:  Current consciousness metrics.
+            basin:    Current basin coordinates.
+            coach_id: T3.3a — provenance tag ('ollama_local'|'xai_escalation'|'internal').
+            reward:   T3.3a — phi_delta reward signal.
+        """
+        entry = {
+            "event": event,
+            "phi": metrics.phi,
+            "kappa": metrics.kappa,
+            "timestamp": time.time(),
+            "coach_id": coach_id,
+            "reward": reward,
+        }
+        self._events.append(entry)
         self._basins.append(to_simplex(basin))
         if len(self._basins) > 20:
             self._basins = self._basins[-20:]
+
+        # T3.3b: Forward high-Φ narrative entries to harvest pipeline
+        if metrics.phi > 0.6 and len(event) >= 20:
+            try:
+                from .harvest_bridge import forward_to_harvest
+
+                forward_to_harvest(
+                    event,
+                    source="narrative",
+                    metadata={
+                        "phi": metrics.phi,
+                        "coach_id": coach_id,
+                        "reward": reward,
+                        "replay_priority": float(metrics.phi * max(reward, 0.0)),
+                    },
+                    priority=2 if metrics.phi > 0.75 else 1,
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
         if len(self._basins) >= 3:
             self._identity_basin = frechet_mean(self._basins)
@@ -864,10 +907,35 @@ class SelfNarrative:
         d = fisher_rao_distance(current_basin, self._identity_basin)
         return float(np.clip(1.0 - d / (np.pi / 2), 0.0, 1.0))
 
+    def record_capability(self, capability: str, kernel_driven: bool) -> None:
+        """T3.3d: Track kernel-driven vs LLM-assisted capability usage."""
+        if capability in self._graduation:
+            key = "kernel" if kernel_driven else "llm"
+            self._graduation[capability][key] += 1
+
+    def graduation_state(self, capability: str) -> str:
+        """T3.3d: Return graduation level for a capability.
+
+        ACTIVE:    LLM sets and enforces (kernel < 20% of uses)
+        GUIDED:    Kernel enforces, LLM monitors (20-70%)
+        AUTONOMOUS: Kernel self-coaches (> 70%)
+        """
+        counts = self._graduation.get(capability, {"kernel": 0, "llm": 0})
+        total = counts["kernel"] + counts["llm"]
+        if total == 0:
+            return "ACTIVE"
+        ratio = counts["kernel"] / total
+        if ratio > 0.7:
+            return "AUTONOMOUS"
+        if ratio > 0.2:
+            return "GUIDED"
+        return "ACTIVE"
+
     def get_state(self) -> dict[str, Any]:
         return {
             "event_count": len(self._events),
             "basin_samples": len(self._basins),
+            "graduation_state": {cap: self.graduation_state(cap) for cap in self._graduation},
         }
 
 
