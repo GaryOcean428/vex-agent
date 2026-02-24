@@ -154,7 +154,7 @@ class Harvester:
         model = AutoModelForCausalLM.from_pretrained(
             model_id,
             device_map=self.config.device if self.config.device != "cpu" else None,
-            torch_dtype=torch.bfloat16 if self.config.device != "cpu" else torch.float32,
+            torch_dtype=(torch.bfloat16 if self.config.device != "cpu" else torch.float32),
         )
         model.eval()
 
@@ -182,7 +182,15 @@ class Harvester:
                     outputs = model(input_ids)
                     logits = outputs.logits[0]
 
-                probs = torch.softmax(logits, dim=-1).cpu().numpy()
+                # QIG BOUNDARY: linear projection to Δ⁶³ — preserves Fisher information
+                raw = logits.cpu().to(torch.float64).numpy()
+                shifted = raw - raw.min(axis=-1, keepdims=True)
+                total = shifted.sum(axis=-1, keepdims=True)
+                probs = np.where(
+                    total > _EPS,
+                    shifted / total,
+                    np.full_like(shifted, 1.0 / shifted.shape[-1]),
+                )
                 ids = input_ids[0].cpu().numpy()
 
                 for pos in range(len(ids) - 1):

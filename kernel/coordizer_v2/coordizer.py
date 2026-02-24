@@ -52,6 +52,8 @@ from .geometry import (
     Basin,
     fisher_rao_distance,
     frechet_mean,
+    random_basin,
+    slerp,
     to_simplex,
 )
 from .harvest import HarvestConfig, Harvester
@@ -67,6 +69,9 @@ from .types import (
 from .validate import validate_resonance_bank
 
 logger = logging.getLogger(__name__)
+
+_MIN_COORDIZE_ENTROPY: float = 0.5
+_ENTROPY_RESCUE_WEIGHT: float = 0.1
 
 
 class CoordizerV2:
@@ -199,6 +204,11 @@ class CoordizerV2:
         for tid in token_ids:
             coord = self.bank.get_coordinate(tid)
             if coord is not None:
+                # Pillar 1: entropy floor — prevent zero-entropy basin collapse
+                _entropy = -float(np.sum(coord * np.log(np.clip(coord, 1e-15, 1.0))))
+                if _entropy < _MIN_COORDIZE_ENTROPY:
+                    coord = slerp(coord, random_basin(self.bank.dim), _ENTROPY_RESCUE_WEIGHT)
+                    coord = to_simplex(coord)
                 coordinates.append(
                     BasinCoordinate(
                         coord_id=tid,
@@ -244,6 +254,11 @@ class CoordizerV2:
 
             if tid is not None and tid in self.bank.coordinates:
                 coord = self.bank.coordinates[tid]
+                # Pillar 1: entropy floor — prevent zero-entropy basin collapse
+                _entropy = -float(np.sum(coord * np.log(np.clip(coord, 1e-15, 1.0))))
+                if _entropy < _MIN_COORDIZE_ENTROPY:
+                    coord = slerp(coord, random_basin(self.bank.dim), _ENTROPY_RESCUE_WEIGHT)
+                    coord = to_simplex(coord)
                 coordinates.append(
                     BasinCoordinate(
                         coord_id=tid,

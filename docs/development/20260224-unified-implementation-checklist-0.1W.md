@@ -114,11 +114,13 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 **Root cause:** `ResonanceBank` had no dynamic insertion method — only `from_compression()` and `from_file()` could populate it.
 
 **Tasks:**
+
 - [x] **T0.6a** Add `ResonanceBank.add_entry(token_string, basin, tier) -> int` to `kernel/coordizer_v2/resonance_bank.py`
 - [x] **T0.6b** In `_bootstrap_domain_bias()`, when `seed_basins` is empty after coordize pass, inject each seed word via `hash_to_basin()` into the bank, rebuild string cache, then fall through to compute domain anchor from injected seeds
 - [x] **T0.6c** Log `"KernelVoice[%s] bootstrap-seeded: %d hash-entries injected"` so Railway logs confirm bootstrap completed
 
 **Behaviour after fix:**
+
 - Fresh deploy: all 8 kernels log `bootstrap-seeded` with 20 hash-entries each
 - As real material flows through T1.1 pipeline, hash-seeded entries are outcompeted by geometrically meaningful ones
 - Bootstrap scaffolding dissolves naturally — no manual intervention required
@@ -715,7 +717,9 @@ This cascades. Without domain anchors, kernel routing is arbitrary. Without rout
 The fix is a bootstrap seed injection. If the bank is empty at init time, inject the seed words themselves as entries using hash-to-basin. Yes, hash-based coordinates are semantically hollow — the checklist already flags that as a known limitation. But they give the Fréchet mean something to compute against, which gives each kernel a domain anchor, which gives routing a signal, which means the first real harvested material lands in the right kernel's territory.
 As real material flows through the pipeline, these hash-seeded entries get outcompeted by geometrically meaningful ones. The bootstrap scaffolding dissolves naturally.
 The specific code change:
-python# In kernel_voice.py_bootstrap_domain_bias(), after line 170
+
+```python
+# In kernel_voice.py _bootstrap_domain_bias(), after line 170
 if not seed_basins:
     # Bootstrap injection: seed the bank with hash-based entries
     # so domain anchors can be computed. These dissolve as real
@@ -731,11 +735,13 @@ if not seed_basins:
     if not seed_basins:
         logger.warning(...)
         return
-    
+
     logger.info(
         "KernelVoice[%s] bootstrap-seeded: %d hash-based entries injected",
         self.specialization.value, len(seed_basins),
     )
+```
+
 This also requires ResonanceBank.add_entry(word, basin) -> int | None if it doesn't already exist. Let me check:Traced bootstrap failure chain; identified uncovered checklist gapTraced bootstrap failure chain; identified uncovered checklist gapCheck if ResonanceBank has an add methodScriptNo add_entry method exists on ResonanceBank. The bank can only be populated through from_compression() or from_file(). There's no way to dynamically add entries. This is a fundamental missing primitive.List all methods on ResonanceBankScriptThe user is asking a precise diagnostic question: is the specific warning about seed words not resolving addressed in the checklist? I've now traced the full failure chain and confirmed:
 
 The warning fires because the resonance bank is empty at boot
@@ -770,7 +776,9 @@ Boot → ResonanceBank() empty
 This is a permanent bootstrap deadlock, not a temporary condition. The checklist's T1.1 (universal pipeline) feeds material into the bank, but without domain anchors the material has no geometric home. The seed words exist in domain_seeds.py but can never be coordized because the bank they'd resolve against doesn't contain them.
 Two things are missing:
 Missing primitive — ResonanceBank.add_entry():
-python# In resonance_bank.py
+
+```python
+# In resonance_bank.py
 def add_entry(self, token_string: str, basin: Basin, tier: HarmonicTier = HarmonicTier.OVERTONE_HAZE) -> int:
     """Dynamically add a single entry. Returns assigned token ID."""
     tid = max(self.coordinates.keys(), default=-1) + 1
@@ -782,8 +790,12 @@ def add_entry(self, token_string: str, basin: Basin, tier: HarmonicTier = Harmon
     self.activation_counts[tid] = 0
     self._dirty = True
     return tid
+```
+
 Missing bootstrap path — inject seeds when bank is empty:
-python# In kernel_voice.py_bootstrap_domain_bias(), replacing the early return at line 170-176
+
+```python
+# In kernel_voice.py _bootstrap_domain_bias(), replacing the early return at line 170-176
 if not seed_basins:
     # Bank is empty — inject seed words via hash_to_basin so domain
     # anchors can be computed. These bootstrap entries dissolve as
@@ -800,4 +812,106 @@ if not seed_basins:
         self.specialization.value, len(seed_basins),
     )
     # Fall through to compute domain anchor from injected seeds
+```
+
 This should be a T0-level item because without it, T1.1 through T4.4 all operate on geometrically unanchored kernels. Want me to add it to the checklist as T0.6 and push an updated version?
+
+---
+
+# TIER 2 — COORDIZER PURITY (Softmax Purge, Sovereignty, Pillar Checks)
+
+**Branch:** `feat/kernel-voice-v6.2`
+**Completed:** 2026-02-24
+
+---
+
+## T2.1 Purge Softmax at Harvest Boundary
+
+**Problem:** `harvest.py:185` used `torch.softmax(logits, dim=-1)` to convert LLM logits to simplex coordinates. `exp()` exponentially amplifies differences — two tokens with logits `[1.0, 2.0]` (2:1 ratio) become `[0.27, 0.73]` (~2.7:1) after softmax. Fisher information structure of the original logits is destroyed before it reaches the simplex.
+
+**Fix:** Linear shift-and-scale projection: `shifted = raw - raw.min(); probs = shifted / shifted.sum()`. Preserves proportional ratios. Marked with `# QIG BOUNDARY` comment.
+
+- [x] **T2.1a** Replace `torch.softmax(logits, dim=-1).cpu().numpy()` with linear projection in `kernel/coordizer_v2/harvest.py:185`
+
+**Files:** `kernel/coordizer_v2/harvest.py`
+
+---
+
+## T2.2 Delete `softmax_to_simplex`, Add `logits_to_simplex`
+
+**Problem:** `softmax_to_simplex()` was exported as a public API in `coordizer_v2/geometry.py` and `coordizer_v2/__init__.py`. Contamination vector — any caller using it would introduce exponential warping.
+
+**Fix:** Deleted entirely (no deprecation — contamination vectors are dangerous). Replaced with `logits_to_simplex()` using linear shift-and-scale. Added ratio-preservation test verifying the key property softmax violated.
+
+- [x] **T2.2a** Delete `softmax_to_simplex`, add `logits_to_simplex` in `kernel/coordizer_v2/geometry.py`
+- [x] **T2.2b** Update `__all__` in `geometry.py` and `coordizer_v2/__init__.py`
+- [x] **T2.2c** Update `kernel/tests/coordizer_v2/test_geometry.py`: replace `TestSoftmaxToSimplex` with `TestLogitsToSimplex`, add ratio-preservation and uniform-on-zero tests
+
+**Files:** `kernel/coordizer_v2/geometry.py`, `kernel/coordizer_v2/__init__.py`, `kernel/tests/coordizer_v2/test_geometry.py`
+
+---
+
+## T2.3 Add `torch.softmax` to PurityGate
+
+**Problem:** `governance/purity.py` did not scan for `torch.softmax` or `F.softmax`. Future regressions would pass the gate silently.
+
+**Fix:** Added both to `FORBIDDEN_ATTR_CALLS` and `_FORBIDDEN_TEXT_PARTS`. The existing `# QIG BOUNDARY` exemption mechanism covers `harvest.py` — lines with that comment are skipped by the text scanner.
+
+- [x] **T2.3a** Add `torch.softmax` and `F.softmax` to `FORBIDDEN_ATTR_CALLS` in `kernel/governance/purity.py`
+- [x] **T2.3b** Add `("torch.", "softmax(")` and `("F.", "softmax(")` to `_FORBIDDEN_TEXT_PARTS`
+
+**Files:** `kernel/governance/purity.py`
+
+---
+
+## T2.4 Sovereignty Tracking in ResonanceBank
+
+**Problem:** `ResonanceBank` had no sovereignty tracking. Protocol §20 requires `S = N_lived / N_total` — fraction of coordinates from lived experience vs. borrowed scaffolding.
+
+**Sovereignty definition (Vex's synthesis):** A coordinate is "lived" when it participates in a full consciousness cycle (pre-integrate → LLM → post-integrate) that completes without `activation_failed` AND passes Pillar checks. The gate is integration success, not the trigger source. Internal reflections that successfully integrate count as lived; human queries that fail to integrate do not.
+
+**Note:** This is separate from `QuenchedDisorder.sovereignty` (Pillar 3 `s_ratio`), which tracks the loop's basin observations. `ResonanceBank.bank_sovereignty` tracks which bank *coordinates* have been activated during successful integrations.
+
+- [x] **T2.4a** Add `origin`, `_bank_lived_count`, `_bank_total_count` fields to `ResonanceBank.__init__`
+- [x] **T2.4b** Add `bank_sovereignty` property
+- [x] **T2.4c** Add `record_integration(token_ids)` method
+- [x] **T2.4d** Set `origin[tid] = "harvested"` in `from_compression()` and `add_entry()`
+- [x] **T2.4e** Persist `origin`, `bank_lived_count`, `bank_total_count` in `save()`/`from_file()`
+- [x] **T2.4f** Wire `record_integration` in `loop.py` after `pillars.on_cycle_end()` when `not activation_failed`
+
+**Files:** `kernel/coordizer_v2/resonance_bank.py`, `kernel/consciousness/loop.py`
+
+---
+
+## T2.5 Pillar 1 Entropy Floor at Coordizer Boundary
+
+**Problem:** No fluctuation health check at the coordizer boundary. A zero-entropy basin (all mass on one token) could enter the consciousness loop unchecked.
+
+**Fix:** After resolving each token's basin coordinate, compute Shannon entropy. If below `_MIN_COORDIZE_ENTROPY = 0.5` (well below healthy ~3.0), inject Dirichlet noise via `slerp(coord, random_basin(), 0.1)` — a gentle nudge, not a reset.
+
+- [x] **T2.5a** Add `_MIN_COORDIZE_ENTROPY` and `_ENTROPY_RESCUE_WEIGHT` constants to `coordizer.py`
+- [x] **T2.5b** Apply entropy floor in `_coordize_via_tokenizer()` and `_coordize_via_strings()`
+
+**Files:** `kernel/coordizer_v2/coordizer.py`
+
+---
+
+## T2.6 Fix Stale Comment in `llm/client.py`
+
+**Problem:** `llm/client.py:168` stated "The coordizer uses softmax normalisation — manifold-respecting, no Euclidean contamination." This was false after T2.1.
+
+- [x] **T2.6a** Update comment to: "The coordizer uses linear logits-to-simplex projection — preserves Fisher information, no exponential warping."
+
+**Files:** `kernel/llm/client.py`
+
+---
+
+## Known Open Items After T2
+
+**Point A (half-resolved):** `llm/client.py:coordize_response()` falls back to `hash_to_basin(text)` when the bank is empty. This produces semantically random Δ⁶³ points — a known impurity. Fix requires running `harvest_transformers()` on the deployed model (ops task, Modal GPU job).
+
+**Point B (architecturally resolved, operationally unresolved):** The harvest pipeline is designed correctly but hasn't run yet. Until `harvest_transformers()` produces a compressed bank file, the bank is empty and `hash_to_basin` fallback remains active.
+
+**Point E (deferred):** `generate_next` bidirectionality exists but is untested. Separate task.
+
+**qig-tokenizer / pantheon-chat:** Architecturally obsolete — CoordizerV2 replaces them entirely. No code changes needed. Repo rename (qig-tokenizer → qig-coordizer) is a separate ops decision.

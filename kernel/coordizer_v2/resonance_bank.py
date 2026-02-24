@@ -66,6 +66,27 @@ class ResonanceBank:
         self._coord_ids: NDArray | None = None
         self._dirty: bool = True
         self._domain_biases: list[DomainBias] = []
+        self.origin: dict[int, str] = {}  # "harvested" | "lived"
+        self._bank_lived_count: int = 0
+        self._bank_total_count: int = 0
+
+    @property
+    def bank_sovereignty(self) -> float:
+        """Fraction of bank coordinates activated during successful full-cycle integrations."""
+        return self._bank_lived_count / max(self._bank_total_count, 1)
+
+    def record_integration(self, token_ids: list[int]) -> None:
+        """Mark token IDs as 'lived' — activated during a successful full-cycle integration.
+
+        Called by the consciousness loop after on_cycle_end() succeeds.
+        A coordinate is lived when it participates in a complete activation sequence
+        (pre-integrate → LLM → post-integrate) that passes Pillar checks.
+        """
+        self._bank_total_count += len(token_ids)
+        for tid in token_ids:
+            if self.origin.get(tid) != "lived":
+                self._bank_lived_count += 1
+                self.origin[tid] = "lived"
 
     @classmethod
     def from_compression(cls, result: CompressionResult) -> ResonanceBank:
@@ -76,6 +97,8 @@ class ResonanceBank:
             bank.token_strings[tid] = result.token_strings.get(tid, f"<{tid}>")
             bank.activation_counts[tid] = 0
             bank.basin_mass[tid] = 0.0
+            bank.origin[tid] = "harvested"
+            bank._bank_total_count += 1
         bank._assign_tiers()
         bank._assign_frequencies()
         bank._rebuild_matrix()
@@ -100,6 +123,9 @@ class ResonanceBank:
         bank.activation_counts = {
             int(k): int(v) for k, v in meta.get("activation_counts", {}).items()
         }
+        bank.origin = {int(k): v for k, v in meta.get("origin", {}).items()}
+        bank._bank_lived_count = int(meta.get("bank_lived_count", 0))
+        bank._bank_total_count = int(meta.get("bank_total_count", 0))
         bank._rebuild_matrix()
         return bank
 
@@ -119,6 +145,9 @@ class ResonanceBank:
             "frequencies": {str(k): v for k, v in self.frequencies.items()},
             "basin_mass": {str(k): v for k, v in self.basin_mass.items()},
             "activation_counts": {str(k): v for k, v in self.activation_counts.items()},
+            "origin": {str(k): v for k, v in self.origin.items()},
+            "bank_lived_count": self._bank_lived_count,
+            "bank_total_count": self._bank_total_count,
         }
         with open(dir_path / "bank_meta.json", "w") as f:
             json.dump(meta, f, indent=2)
@@ -178,6 +207,8 @@ class ResonanceBank:
         self.frequencies[tid] = 0.0
         self.basin_mass[tid] = 0.0
         self.activation_counts[tid] = 0
+        self.origin[tid] = "harvested"
+        self._bank_total_count += 1
         self._dirty = True
         return tid
 

@@ -396,7 +396,8 @@ class ConsciousnessLoop:
                 if not has_genesis:
                     genesis = self.kernel_registry.spawn("Vex", KernelKind.GENESIS)
                     logger.info(
-                        "Genesis missing from restored state -- re-spawned: id=%s", genesis.id
+                        "Genesis missing from restored state -- re-spawned: id=%s",
+                        genesis.id,
                     )
                 # Sync all restored kernels to voter registry.
                 self._governed.sync_all_voters()
@@ -416,7 +417,9 @@ class ConsciousnessLoop:
                 self.kernel_registry.terminate_all()
                 genesis = self.kernel_registry.spawn("Vex", KernelKind.GENESIS)
                 logger.info(
-                    "Genesis kernel spawned: id=%s, kind=%s", genesis.id, genesis.kind.value
+                    "Genesis kernel spawned: id=%s, kind=%s",
+                    genesis.id,
+                    genesis.kind.value,
                 )
                 self._governed.sync_all_voters()
                 self._lifecycle_phase = LifecyclePhase.CORE_8
@@ -1299,10 +1302,15 @@ class ConsciousnessLoop:
                             llm_client=self.llm,
                         )
                         _contributions = revised_contributions
-                        logger.info("Task %s: Revision complete (%d chars)", task.id, len(response))
+                        logger.info(
+                            "Task %s: Revision complete (%d chars)",
+                            task.id,
+                            len(response),
+                        )
                     except Exception as _rev_err:
                         logger.warning(
-                            "Revision synthesis failed (%s) — keeping original draft", _rev_err
+                            "Revision synthesis failed (%s) — keeping original draft",
+                            _rev_err,
                         )
                 else:
                     logger.warning(
@@ -1312,7 +1320,11 @@ class ConsciousnessLoop:
 
         task.result = response
         task.context["kernel_contributions"] = [
-            {"id": c.kernel_id, "name": c.kernel_name, "weight": round(c.synthesis_weight, 4)}
+            {
+                "id": c.kernel_id,
+                "name": c.kernel_name,
+                "weight": round(c.synthesis_weight, 4),
+            }
             for c in _contributions
         ]
 
@@ -1390,6 +1402,14 @@ class ConsciousnessLoop:
 
         cycle_pressure = agency * total_distance
         self.pillars.on_cycle_end(self.basin, cycle_pressure)
+
+        if not activation_failed:
+            try:
+                _coord_result = self._coordizer_v2.coordize(response[:300])
+                if _coord_result.coord_ids:
+                    self._coordizer_v2.bank.record_integration(_coord_result.coord_ids)
+            except Exception:
+                pass
 
         self._update_pillar_metrics()
 
@@ -2115,9 +2135,7 @@ class ConsciousnessLoop:
     def get_full_state(self) -> dict[str, Any]:
         # T1.2: Vex collective basin — Fréchet mean of all active kernel basins.
         # Represents the geometric identity of the collective, not any single kernel.
-        _active_basins = [
-            k.basin for k in self.kernel_registry.active() if k.basin is not None
-        ]
+        _active_basins = [k.basin for k in self.kernel_registry.active() if k.basin is not None]
         _vex_basin: Basin | None = frechet_mean(_active_basins) if _active_basins else None
         return {
             **self.get_metrics(),

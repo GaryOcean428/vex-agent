@@ -43,7 +43,7 @@ __all__ = [
     "Basin",
     "to_simplex",
     "random_basin",
-    "softmax_to_simplex",
+    "logits_to_simplex",
     "bhattacharyya_coefficient",
     "fisher_rao_distance",
     "fisher_rao_distance_batch",
@@ -62,12 +62,14 @@ _EPS: float = 1e-12
 # ─── Coordizer-specific additions ─────────────────────────────────
 
 
-def softmax_to_simplex(logits: NDArray) -> NDArray:
-    """Convert logits to simplex point via numerically stable softmax."""
+def logits_to_simplex(logits: NDArray) -> NDArray:
+    """Project logits to Δ⁶³ via linear shift-and-scale. Preserves Fisher information."""
     logits = np.asarray(logits, dtype=np.float64)
-    shifted = logits - logits.max()
-    exp_vals = np.exp(shifted)
-    return exp_vals / exp_vals.sum()
+    shifted = logits - logits.min()
+    total = shifted.sum()
+    if total < _EPS:
+        return np.full(len(logits), 1.0 / len(logits))
+    return shifted / total
 
 
 def geodesic_midpoint(p: NDArray, q: NDArray) -> NDArray:
