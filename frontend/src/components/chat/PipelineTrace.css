@@ -369,3 +369,99 @@
     flex-wrap: wrap;
   }
 }
+/*
+  PATCH F — PipelineTrace.css additions
+  Append these rules to the END of the existing PipelineTrace.css file.
+  Do NOT replace the existing file — these are additive rules only.
+
+  Branch: feat/kernel-voice-v6.2
+  File: frontend/src/components/chat/PipelineTrace.css
+*/
+
+/* ─── v6.2.1 Provenance badge ─── */
+
+.pipeline-provenance-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.pipeline-provenance-badge.geo {
+  background: rgba(34, 211, 238, 0.12);
+  color: var(--phi, #22d3ee);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+}
+
+.pipeline-provenance-badge.llm {
+  background: rgba(139, 92, 246, 0.12);
+  color: var(--kappa, #8b5cf6);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+}
+
+/* ─── v6.2.1 Expanded kernel body ─── */
+
+.pipeline-gen-body {
+  padding: 0 8px 8px 24px;
+}
+
+/* ─── v6.2.1 Hybrid panes (geo raw + LLM interpretation side by side) ─── */
+
+.pipeline-hybrid-panes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+@media (max-width: 560px) {
+  .pipeline-hybrid-panes {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pipeline-pane {
+  border-radius: var(--radius-sm, 4px);
+  padding: 6px 8px;
+}
+
+.pipeline-pane--geo {
+  background: rgba(34, 211, 238, 0.05);
+  border: 1px solid rgba(34, 211, 238, 0.15);
+}
+
+.pipeline-pane--llm {
+  background: rgba(139, 92, 246, 0.05);
+  border: 1px solid rgba(139, 92, 246, 0.15);
+}
+
+.pipeline-pane-label {
+  display: block;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+
+.pipeline-pane--geo .pipeline-pane-label {
+  color: var(--phi, #22d3ee);
+}
+
+.pipeline-pane--llm .pipeline-pane-label {
+  color: var(--kappa, #8b5cf6);
+}
+
+.pipeline-gen-preview--geo {
+  color: rgba(34, 211, 238, 0.75);
+  font-style: italic;
+}
+
+.pipeline-empty {
+  opacity: 0.45;
+  font-style: italic;
+}

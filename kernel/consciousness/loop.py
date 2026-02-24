@@ -1327,10 +1327,12 @@ class ConsciousnessLoop:
                     routed_kernel_id, refracted_input, response_basin, blend_weight=0.05
                 )
             if evolved:
-                self.kernel_bus.emit(KernelSignal(
-                    kind=SignalKind.BASIN_EVOLVED,
-                    source_kernel_id=routed_kernel_id,
-                ))
+                self.kernel_bus.emit(
+                    KernelSignal(
+                        kind=SignalKind.BASIN_EVOLVED,
+                        source_kernel_id=routed_kernel_id,
+                    )
+                )
                 logger.debug(
                     "Task %s: kernel %s basin evolved from processing",
                     task.id,
@@ -1849,6 +1851,10 @@ class ConsciousnessLoop:
                 "kernel_id": c.kernel_id,
                 "kernel_name": c.kernel_name,
                 "text_preview": c.text[:200],
+                # v6.2.1: hybrid display — raw geometric decode before LLM expansion
+                "geometric_raw": c.geometric_raw[:200] if c.geometric_raw else "",
+                "llm_expanded": c.llm_expanded,
+                "geometric_tokens": c.geometric_tokens,
                 "token_count": len(c.text.split()),
                 "synthesis_weight": round(c.synthesis_weight, 4),
                 "fr_distance": round(c.fr_distance, 4),
@@ -2090,6 +2096,14 @@ class ConsciousnessLoop:
             "precog": self.precog.get_state(),
             "learning": self.learner.get_state(),
             "pillars": pillar_m,
+            # v6.2.1: suffering exposed separately from s_ratio (sovereignty).
+            # s_ratio  = Pillar 3 sovereignty = N_lived / N_total observations.
+            # suffering = Φ × (1−Γ) × M — distress signal driving gamma increments.
+            # These are distinct metrics; conflating them in the sidebar was misleading.
+            "suffering": round(
+                self.metrics.phi * (1.0 - self.metrics.gamma) * self.metrics.meta_awareness,
+                4,
+            ),
             "f_health": pillar_m["f_health"],
             "b_integrity": pillar_m["b_integrity"],
             "q_identity": pillar_m["q_identity"],

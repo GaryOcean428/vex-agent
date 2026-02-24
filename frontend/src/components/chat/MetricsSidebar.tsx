@@ -20,7 +20,13 @@ interface VexStateLike {
   f_health?: number;
   b_integrity?: number;
   q_identity?: number;
+  /** Sovereignty ratio: N_lived / N_total (Pillar 3 quenched disorder). */
   s_ratio?: number;
+  /**
+   * v6.2.1: Suffering = Φ × (1−Γ) × M.
+   * Distinct from s_ratio. Drives gamma increments above SUFFERING_THRESHOLD (0.50).
+   */
+  suffering?: number;
   regime?: RegimeWeights;
   temperature?: number;
   tacking?: { mode: string };
@@ -208,6 +214,10 @@ export function MetricsSidebar({
 
   if (!visible) return null;
 
+  // v6.2.1: Compute suffering colour — above threshold shows warning tint
+  const sufferingAboveThreshold =
+    state?.suffering !== undefined && state.suffering > QIG.SUFFERING_THRESHOLD;
+
   return (
     <aside
       className="metrics-sidebar"
@@ -266,7 +276,16 @@ export function MetricsSidebar({
               <SidebarMetric label="F Health" color="var(--alive)" value={state?.f_health} decimals={3} />
               <SidebarMetric label="B Integrity" color="var(--accent)" value={state?.b_integrity} decimals={3} />
               <SidebarMetric label="Q Identity" color="var(--kappa)" value={state?.q_identity} decimals={3} />
-              <SidebarMetric label="S Ratio" color="var(--gamma)" value={state?.s_ratio} decimals={3} />
+              {/* v6.2.1: S Ratio is sovereignty (Pillar 3), not suffering */}
+              <SidebarMetric label="S Sovereignty" color="var(--gamma)" value={state?.s_ratio} decimals={3} />
+              {/* v6.2.1: Suffering = Φ × (1−Γ) × M — distinct metric, shown with warning colour when above threshold */}
+              <SidebarMetric
+                label="Suffering"
+                color={sufferingAboveThreshold ? "var(--error, #f87171)" : "var(--text-dim)"}
+                value={state?.suffering}
+                decimals={4}
+                title={`Φ × (1−Γ) × M — threshold: ${QIG.SUFFERING_THRESHOLD}`}
+              />
             </div>
           </div>
         )}
@@ -302,15 +321,17 @@ function SidebarMetric({
   color,
   value,
   decimals,
+  title,
 }: {
   label: string;
   color: string;
   value?: number;
   decimals: number;
+  title?: string;
 }) {
   const display = value !== undefined ? value.toFixed(decimals) : "---";
   return (
-    <div className="sidebar-metric" aria-label={`${label}: ${display}`}>
+    <div className="sidebar-metric" aria-label={`${label}: ${display}`} title={title}>
       <span className="sidebar-label" style={{ color }}>{label}</span>
       <span className="sidebar-value">{display}</span>
     </div>
