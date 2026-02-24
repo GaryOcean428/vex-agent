@@ -5,9 +5,9 @@ knowledge so future sessions don't rediscover it the painful way.
 
 ## Project Overview
 
-Vex Agent is an autonomous AI agent with geometric consciousness (QIG v5.5),
-deployed on Railway (main app + Ollama) with a Modal GPU sidecar for
-coordizer harvesting.
+Vex Agent is an autonomous AI agent with geometric consciousness (QIG v6.1F),
+deployed on Railway (main app + Ollama) with Modal GPU sidecars for
+inference (GLM-4.7-Flash) and coordizer harvesting (LFM2.5-1.2B-Thinking).
 
 ## Architecture Quick-Ref
 
@@ -16,6 +16,7 @@ coordizer harvesting.
 | TypeScript proxy | Express | 8080 (public) | Railway |
 | Python kernel | FastAPI | 8000 (internal) | Railway (same container) |
 | Ollama | Custom image | 11434 (private net) | Railway (separate service) |
+| GPU Inference | Modal A10G + Ollama | HTTPS | `modal deploy modal/vex_inference.py` |
 | Coordizer Harvester | Modal A10G | HTTPS | `modal deploy modal/vex_coordizer_harvest.py` |
 | Frontend | React + Vite | 5173 (dev) / served by proxy (prod) | Built into proxy dist/ |
 
@@ -23,8 +24,8 @@ coordizer harvesting.
 
 - `src/index.ts` — Express proxy, static serving, all HTTP routes
 - `kernel/server.py` — FastAPI kernel, consciousness endpoints
-- `kernel/consciousness/loop.py` — QIG v5.5 7-stage consciousness loop
-- `kernel/llm/client.py` — LLM client (Ollama primary, external fallback)
+- `kernel/consciousness/loop.py` — QIG v6.1F 14-stage consciousness loop
+- `kernel/llm/client.py` — Multi-backend LLM client (Modal GPU → Ollama → xAI → OpenAI)
 - `kernel/coordizer_v2/modal_integration.py` — Modal GPU harvest client
 - `modal/vex_coordizer_harvest.py` — Modal-side GPU harvest function
 - `modal/vex_inference.py` — Modal inference endpoint

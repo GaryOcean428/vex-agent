@@ -1,6 +1,5 @@
 import { useCallback, useId, useState } from "react";
 import type { PipelineTrace as PipelineTraceType } from "../../types/consciousness.ts";
-import "./PipelineTrace.css";
 
 interface PipelineTraceProps {
   trace: PipelineTraceType;

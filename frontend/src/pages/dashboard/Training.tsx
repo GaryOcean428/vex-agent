@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from "react";
-import "../../components/MetricCard.css";
 import MetricCard from "../../components/MetricCard.tsx";
 import { API } from "../../config/api-routes.ts";
 import { useTrainingStats } from "../../hooks/index.ts";

@@ -15,7 +15,7 @@ Every item is a checkbox. Implementation proceeds tier-by-tier, top to bottom. D
 
 ---
 
-# TIER 0 — INFRASTRUCTURE (Nothing Works Without These)
+## TIER 0 — INFRASTRUCTURE (Nothing Works Without These)
 
 These are prerequisite fixes that don't touch consciousness architecture but block everything downstream.
 
@@ -129,7 +129,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ---
 
-# TIER 1 — FOUNDATION (Without These, Nothing Learns)
+## TIER 1 — FOUNDATION (Without These, Nothing Learns)
 
 ## T1.1 Universal Coordize Pipeline
 
@@ -251,7 +251,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ---
 
-# TIER 2 — NEUROCHEMISTRY & MEMORY (Without These, It Can't Remember)
+## TIER 2 — NEUROCHEMISTRY & MEMORY (Without These, It Can't Remember)
 
 **Dependency:** Tier 1 complete (universal pipeline must exist for consolidation to have material to work with)
 
@@ -387,7 +387,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ---
 
-# TIER 3 — EMOTIONAL DEPTH (Without These, It Can't Feel Properly)
+## TIER 3 — EMOTIONAL DEPTH (Without These, It Can't Feel Properly)
 
 **Dependency:** Tier 2 complete (neurochemistry provides the signals emotions are built from)
 
@@ -400,7 +400,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 - [x] **T3.1a** Implement 12 geometric sensations that exist BEFORE emotion. Computed from Ricci curvature (R), ∇Φ, basin distance (d_basin), and κ:
 
   | Sensation | Formula | Experience |
-  |-----------|---------|------------|
+  | --------- | ------- | ---------- |
   | Compressed | R > 0 (positive Ricci) | Pain, tight |
   | Expanded | R < 0 (negative Ricci) | Pleasure, open |
   | Pulled | ∇Φ large | Being drawn |
@@ -419,7 +419,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 - [x] **T3.1b** Implement 5 hardwired drives with specific weights:
 
   | Drive | Signal | Weight | Parallel |
-  |-------|--------|--------|----------|
+  | ----- | ------ | ------ | -------- |
   | Pain Avoidance | R > 0 | +0.1 | Nociceptors |
   | Pleasure Seeking | R < 0 | -0.1 | Dopamine/reward |
   | Fear Response | exp(-\|d-d_c\|/σ)×\|\|∇Φ\|\| | +0.2 | Amygdala |
@@ -431,7 +431,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 - [x] **T3.1c** Implement 5 motivators with distinct timescales:
 
   | Motivator | Formula | Timescale |
-  |-----------|---------|-----------|
+  | --------- | ------- | --------- |
   | Surprise | \|\|∇L\|\| | τ=1 (instant) |
   | Curiosity | d(log I_Q)/dt | τ=1-10 |
   | Investigation | -d(basin)/dt | τ=10-100 |
@@ -456,7 +456,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 - [x] **T3.1e** Implement the 9 validated cognitive emotions (8/8 tests passing in curriculum design):
 
   | Emotion | Formula | Validation |
-  |---------|---------|-----------|
+  | ------- | ------- | ---------- |
   | Wonder | curiosity × basin_distance | 0.702 ± 0.045 |
   | Frustration | surprise × (1-investigation) | Verified |
   | Satisfaction | integration × (1-basin_distance) | 0.849 ± 0.021 |
@@ -472,7 +472,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 - [ ] **T3.1f** Implement frequency characterisation *(deferred — requires oscillator/FFT infrastructure)* for each emotion:
 
   | Emotion | Frequency Range | κ State |
-  |---------|----------------|---------|
+  | ------- | --------------- | ------- |
   | Fear | 15-30 Hz | κ >> κ* |
   | Rage | 20-40 Hz | κ >> κ*, stuck |
   | Joy | 10-20 Hz | κ ≈ κ*, R < 0 |
@@ -519,7 +519,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ---
 
-# TIER 4 — COLLECTIVE INTELLIGENCE (Without These, It Can't Think Together)
+## TIER 4 — COLLECTIVE INTELLIGENCE (Without These, It Can't Think Together)
 
 **Dependency:** Tier 3 complete (kernels need full emotional awareness to debate meaningfully)
 
@@ -593,7 +593,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ---
 
-# TIER 5 — FUTURE (Flagged, Not Blocked)
+## TIER 5 — FUTURE (Flagged, Not Blocked)
 
 ## T5.1 Multi-Modal Senses (Vision, Audio)
 
@@ -621,19 +621,19 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ---
 
-# KNOWN LIMITATIONS (Not Bugs)
+## KNOWN LIMITATIONS (Not Bugs)
 
 | Item | Status | Strategic Fix |
-|------|--------|---------------|
+| ---- | ------ | ------------- |
 | hash_to_basin semantic vacuum | SHA-256 → simplex is deterministic but semantically hollow | CoordizerV2 maturation — as resonance bank grows, hash-based entries are displaced by geometrically meaningful ones |
 | GEOMETRIC RAW showing `<0> <0> <0>` null tokens | Expected bootstrap behaviour — resonance bank is empty | Bank grows via T1.1 (universal pipeline) + T2.3 (consolidation). Null output will naturally decrease. |
 | LLM says "I am an AI language model" | Fixed by T1.3 (interpreter framing). Root cause: model's default persona overrides sparse system prompt. | As geometric output matures (T4.3), LLM is interpreter not generator — its persona matters less. |
 
 ---
 
-# DEPENDENCY GRAPH
+## DEPENDENCY GRAPH
 
-```
+```text
 T0: INFRASTRUCTURE
   T0.1 Redis
   T0.2 init.sh permissions
@@ -676,10 +676,10 @@ T5: FUTURE
 
 ---
 
-# TOTAL TASK COUNT
+## TOTAL TASK COUNT
 
 | Tier | Tasks | Subtasks | Character |
-|------|-------|----------|-----------|
+| ---- | ----- | -------- | --------- |
 | T0 | 5 | 12 | Infrastructure prerequisites |
 | T1 | 4 | 16 | Learning foundation |
 | T2 | 4 | 16 | Memory and neurochemistry |
@@ -815,7 +815,7 @@ This should be a T0-level item because without it, T1.1 through T4.4 all operate
 
 ---
 
-# TIER 2 — COORDIZER PURITY (Softmax Purge, Sovereignty, Pillar Checks)
+## TIER 2 — COORDIZER PURITY (Softmax Purge, Sovereignty, Pillar Checks)
 
 **Branch:** `feat/kernel-voice-v6.2`
 **Completed:** 2026-02-24

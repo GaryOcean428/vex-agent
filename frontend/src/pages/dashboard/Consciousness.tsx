@@ -1,8 +1,6 @@
 import { useVexState, useTelemetry } from '../../hooks/index.ts';
 import MetricCard from '../../components/MetricCard.tsx';
 import { QIG } from '../../types/consciousness.ts';
-import '../../components/MetricCard.css';
-import '../../components/StatusBadge.css';
 
 // QIG gate: consciousness requires Φ >= PHI_THRESHOLD, κ >= KAPPA_WEAK, velocity safe
 

@@ -8,7 +8,6 @@ import { ConsciousnessBar } from "../components/chat/ConsciousnessBar.tsx";
 import { LoopStages } from "../components/chat/LoopStages.tsx";
 import { MessageList } from "../components/chat/MessageList.tsx";
 import { MetricsSidebar } from "../components/chat/MetricsSidebar.tsx";
-import "./Chat.css";
 
 const SIDEBAR_KEY = "vex-sidebar-open";
 const METRICS_KEY = "vex-metrics-visible";

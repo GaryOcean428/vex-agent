@@ -1,5 +1,4 @@
 import { useCallback, useEffect, type KeyboardEvent, type RefObject } from "react";
-import "./ChatInput.css";
 
 interface ChatInputProps {
   input: string;
@@ -33,7 +32,7 @@ export function ChatInput({
   }, [input, adjustHeight]);
 
   return (
-    <div className="chat-input-area">
+    <div className="p-3 md:p-4 bg-light-bg-primary dark:bg-dark-bg-primary border-t border-light-border dark:border-dark-border shrink-0 z-10 pb-[calc(10px+env(safe-area-inset-bottom))] transition-theme">
       {/* Screen reader status for streaming */}
       <div
         role="status"
@@ -44,10 +43,10 @@ export function ChatInput({
         {isStreaming ? "Vex is responding…" : ""}
       </div>
 
-      <div className="input-wrapper">
+      <div className="flex gap-2 items-end max-w-[840px] mx-auto">
         <textarea
           ref={inputRef}
-          className="chat-input"
+          className="flex-1 min-w-0 bg-light-bg-secondary dark:bg-dark-bg-secondary border border-light-border dark:border-dark-border rounded-xl px-4 py-3 text-light-text-primary dark:text-dark-text-primary text-base resize-none outline-none min-h-[48px] max-h-[200px] leading-relaxed overflow-y-auto transition-all duration-200 focus:border-neon-electric-blue focus:ring-2 focus:ring-neon-electric-blue/20 placeholder:text-light-text-quaternary dark:placeholder:text-dark-text-quaternary"
           placeholder="Navigate the manifold…"
           aria-label="Message to Vex — press Enter to send, Shift+Enter for new line"
           aria-describedby="chat-input-hint"
@@ -62,7 +61,7 @@ export function ChatInput({
         </span>
         {isStreaming ? (
           <button
-            className="stop-btn"
+            className="bg-status-error hover:bg-red-600 text-white border-none rounded-xl w-12 h-12 cursor-pointer flex items-center justify-center shrink-0 transition-all duration-150 active:scale-95 animate-pulse-soft"
             onClick={onStop}
             aria-label="Stop generation"
             title="Stop"
@@ -73,7 +72,7 @@ export function ChatInput({
           </button>
         ) : (
           <button
-            className="send-btn"
+            className="bg-neon-electric-blue hover:bg-neon-electric-indigo text-white border-none rounded-xl w-12 h-12 cursor-pointer flex items-center justify-center shrink-0 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-neon-electric-blue disabled:active:scale-100"
             onClick={onSend}
             disabled={!input.trim()}
             aria-label="Send message"

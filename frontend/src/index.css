@@ -1,66 +1,250 @@
-:root {
-  --bg: #0a0a0f;
-  --surface: #111118;
-  --surface-2: #1a1a24;
-  --surface-3: #22222e;
-  --border: #2e2e40;
-  --border-focus: #6366f1;
-  --text: #ededf0;
-  --text-secondary: #a0a0b8;
-  --text-dim: #70708a;
-  --accent: #6366f1;
-  --accent-hover: #5558e6;
-  --accent-glow: rgba(99, 102, 241, 0.15);
-  --phi: #22d3ee;
-  --kappa: #f59e0b;
-  --love: #ec4899;
-  --alive: #10b981;
-  --error: #ef4444;
-  --warning: #f59e0b;
-  --info: #3b82f6;
-  --gamma: #a78bfa;
-  --emotion: #ec4899;
-  --regime-quantum: #3b82f6;
-  --regime-efficient: #10b981;
-  --regime-equilibrium: #f59e0b;
-  --nav-chain: #94a3b8;
-  --nav-graph: #3b82f6;
-  --nav-foresight: #8b5cf6;
-  --nav-lightning: #f59e0b;
-  --radius: 12px;
-  --radius-sm: 8px;
-  --radius-lg: 16px;
-  /* Layout widths */
-  --nav-rail-width: 64px;
-  --sidebar-width: var(--nav-rail-width);
-  --metrics-panel-width: 300px;
-  --metrics-panel-min: 260px;
-  --metrics-panel-max: 480px;
-  --chat-max-width: 840px;
-  --bottom-bar-height: 56px;
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --safe-top: env(safe-area-inset-top, 0px);
-  --mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace;
-  /* Fluid font scale */
-  --text-xs: clamp(0.6875rem, 0.65rem + 0.2vw, 0.75rem);   /* min 11px */
-  --text-sm: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);    /* 12–14px */
-  --text-base: clamp(0.9375rem, 0.875rem + 0.3vw, 1rem);   /* 15–16px */
+/* ============================================
+   THEME SYSTEM - CSS CUSTOM PROPERTIES
+   ============================================ */
+
+@layer base {
+  :root {
+    /* Neon Electric Colors */
+    --neon-electric-blue: 37 99 235;       /* #2563eb */
+    --neon-electric-cyan: 0 206 201;       /* #00cec9 */
+    --neon-electric-indigo: 79 70 229;     /* #4f46e5 */
+    --neon-electric-purple: 108 92 231;    /* #6c5ce7 */
+    --neon-electric-magenta: 253 121 168;  /* #fd79a8 */
+    --neon-electric-pink: 236 72 153;      /* #ec4899 */
+    --neon-electric-coral: 255 71 87;      /* #ff4757 */
+    --neon-electric-orange: 255 118 117;   /* #ff7675 */
+    --neon-electric-yellow: 253 203 110;   /* #fdcb6e */
+    --neon-electric-green: 34 197 94;      /* #22c55e */
+    --neon-electric-lavender: 162 155 254; /* #a29bfe */
+
+    /* Light Theme */
+    --light-bg-primary: 254 254 254;   /* #fefefe */
+    --light-bg-secondary: 248 249 250; /* #f8f9fa */
+    --light-bg-tertiary: 241 243 244;  /* #f1f3f4 */
+    --light-text-primary: 45 52 54;    /* #2d3436 */
+    --light-text-secondary: 99 110 114;/* #636e72 */
+    --light-border: 233 236 239;       /* #e9ecef */
+
+    /* Dark Theme */
+    --dark-bg-primary: 10 14 26;       /* #0a0e1a */
+    --dark-bg-secondary: 26 31 46;     /* #1a1f2e */
+    --dark-bg-tertiary: 44 52 71;      /* #2c3447 */
+    --dark-text-primary: 248 249 250;  /* #f8f9fa */
+    --dark-text-secondary: 173 181 189;/* #adb5bd */
+    --dark-border: 73 80 87;           /* #495057 */
+
+    /* Semantic Status Colors */
+    --status-success: 0 184 148;       /* #00b894 */
+    --status-warning: 253 203 110;     /* #fdcb6e */
+    --status-error: 255 71 87;         /* #ff4757 */
+    --status-info: 0 206 201;          /* #00cec9 */
+
+    /* Glow/Shadow Effects */
+    --glow-strength: 0.4;
+    --shadow-strength: 1;
+
+    /* Legacy variables for backward compatibility */
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface-2: #1a1a24;
+    --surface-3: #22222e;
+    --border: #2e2e40;
+    --border-focus: #6366f1;
+    --text: #ededf0;
+    --text-secondary: #a0a0b8;
+    --text-dim: #70708a;
+    --accent: #6366f1;
+    --accent-hover: #5558e6;
+    --accent-glow: rgba(99, 102, 241, 0.15);
+    --phi: #22d3ee;
+    --kappa: #f59e0b;
+    --love: #ec4899;
+    --alive: #10b981;
+    --error: #ef4444;
+    --warning: #f59e0b;
+    --info: #3b82f6;
+    --gamma: #a78bfa;
+    --emotion: #ec4899;
+    --regime-quantum: #3b82f6;
+    --regime-efficient: #10b981;
+    --regime-equilibrium: #f59e0b;
+    --nav-chain: #94a3b8;
+    --nav-graph: #3b82f6;
+    --nav-foresight: #8b5cf6;
+    --nav-lightning: #f59e0b;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --radius-lg: 16px;
+    /* Layout widths */
+    --nav-rail-width: 64px;
+    --sidebar-width: var(--nav-rail-width);
+    --metrics-panel-width: 300px;
+    --metrics-panel-min: 260px;
+    --metrics-panel-max: 480px;
+    --chat-max-width: 840px;
+    --bottom-bar-height: 56px;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-top: env(safe-area-inset-top, 0px);
+    --mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace;
+    /* Fluid font scale */
+    --text-xs: clamp(0.6875rem, 0.65rem + 0.2vw, 0.75rem);   /* min 11px */
+    --text-sm: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);    /* 12–14px */
+    --text-base: clamp(0.9375rem, 0.875rem + 0.3vw, 1rem);   /* 15–16px */
+  }
+
+  /* Dark Mode Overrides */
+  .dark {
+    --neon-electric-blue: 37 99 235;
+    --neon-electric-cyan: 0 206 201;
+    --neon-electric-purple: 108 92 231;
+    --neon-electric-pink: 236 72 153;
+    --neon-electric-coral: 255 71 87;
+    --neon-electric-magenta: 253 121 168;
+    --neon-electric-orange: 255 118 117;
+    --neon-electric-yellow: 253 203 110;
+    --neon-electric-green: 34 197 94;
+    --neon-electric-lavender: 162 155 254;
+
+    --glow-strength: 0.6;
+    --shadow-strength: 0.8;
+  }
+
+  /* ============================================
+     TAILWIND DIRECTIVES
+     ============================================ */
+  @tailwind base;
+  @tailwind components;
+  @tailwind utilities;
+
+  /* ============================================
+     BASE STYLES
+     ============================================ */
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    height: 100%;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  body, #root {
+    height: 100%;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif;
+    @apply bg-light-bg-primary text-light-text-primary transition-colors duration-300;
+  }
+
+  .dark body {
+    @apply bg-dark-bg-primary text-dark-text-primary;
+  }
+
+  /* ============================================
+     COLOR UTILITY SHORTCUTS
+     ============================================ */
+  .text-neon-electric {
+    @apply text-neon-electric-blue;
+  }
+
+  .bg-neon-glow-electric {
+    @apply bg-gradient-to-r from-neon-electric-blue to-neon-electric-cyan;
+  }
+
+  .border-neon {
+    @apply border-neon-electric-cyan;
+  }
+
+  /* Glow effect utilities */
+  .glow-electric-blue {
+    box-shadow: 0 0 20px rgba(var(--neon-electric-blue), var(--glow-strength));
+  }
+
+  .glow-electric-cyan {
+    box-shadow: 0 0 20px rgba(var(--neon-electric-cyan), var(--glow-strength));
+  }
+
+  .glow-electric-purple {
+    box-shadow: 0 0 20px rgba(var(--neon-electric-purple), var(--glow-strength));
+  }
+
+  .glow-electric-pink {
+    box-shadow: 0 0 20px rgba(var(--neon-electric-pink), var(--glow-strength));
+  }
+
+  .glow-electric-coral {
+    box-shadow: 0 0 20px rgba(var(--neon-electric-coral), var(--glow-strength));
+  }
+
+  /* Neon text shadow effects */
+  .neon-text-cyan {
+    text-shadow: 0 0 10px rgba(0, 206, 201, 0.5),
+                 0 0 20px rgba(0, 206, 201, 0.3);
+  }
+
+  .neon-text-electric {
+    text-shadow: 0 0 10px rgba(37, 99, 235, 0.5),
+                 0 0 20px rgba(37, 99, 235, 0.3);
+  }
+
+  /* Smooth transitions */
+  .transition-theme {
+    @apply transition-colors duration-300;
+  }
 }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
+/* ============================================
+   COMPONENT-LEVEL STYLES
+   ============================================ */
 
-html, body, #root {
-  height: 100%;
-  height: 100dvh;
-  overflow: hidden;
+/* Form inputs */
+input, textarea, select {
+  @apply bg-light-bg-accent text-light-text-primary border border-light-border rounded-lg px-3 py-2 transition-theme;
+  @apply focus:outline-none focus:ring-2 focus:ring-neon-electric-blue;
 }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+.dark input,
+.dark textarea,
+.dark select {
+  @apply bg-dark-bg-accent text-dark-text-primary border-dark-border;
+}
+
+/* Buttons */
+button {
+  @apply font-medium transition-all duration-200;
+}
+
+/* Links */
+a {
+  @apply text-neon-electric-blue hover:text-neon-electric-cyan transition-theme;
+}
+
+/* Code blocks */
+code, pre {
+  @apply font-mono text-sm;
+}
+
+code {
+  @apply bg-light-bg-secondary text-light-text-primary px-1.5 py-0.5 rounded;
+}
+
+.dark code {
+  @apply bg-dark-bg-secondary text-dark-text-primary;
+}
+
+/* ============================================
+   RESPONSIVE UTILITIES
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ─── Focus Management ─── */
@@ -86,19 +270,6 @@ input:focus-visible,
   border-radius: var(--radius-sm);
 }
 
-/* ─── Reduced Motion ─── */
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-
 /* ─── Scrollbars ─── */
 
 ::-webkit-scrollbar { width: 4px; }
@@ -122,9 +293,6 @@ input:focus-visible,
   white-space: nowrap;
   border-width: 0;
 }
-
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
 
 /* ─── Code-split loading fallback ─── */
 

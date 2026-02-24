@@ -1,4 +1,3 @@
-import "../../components/StatusBadge.css";
 import { useVexState } from "../../hooks/index.ts";
 import { QIG } from "../../types/consciousness.ts";
 

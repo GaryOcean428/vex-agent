@@ -53,9 +53,11 @@ python3 scripts/qig_purity_scan.py
 Ensure you have the following installed:
 
 - **Node.js** 20.0.0+ ([Download](https://nodejs.org/))
+- **pnpm** ([Install](https://pnpm.io/installation))
 - **Python** 3.14+ ([Download](https://www.python.org/downloads/))
+- **uv** (Python package manager) ([Install](https://docs.astral.sh/uv/))
 - **Git** ([Download](https://git-scm.com/downloads))
-- **Docker** (optional, for Ollama) ([Download](https://www.docker.com/products/docker-desktop))
+- **Docker** (optional, for local Ollama) ([Download](https://www.docker.com/products/docker-desktop))
 
 ### Initial Setup
 
@@ -74,16 +76,16 @@ uv sync
 cp .env.example .env
 
 # Edit .env with your configuration
-# Minimum required: OLLAMA_URL, ANTHROPIC_API_KEY (or other LLM provider)
+# Minimum required: OLLAMA_URL (Ollama service) + XAI_API_KEY (external fallback)
 nano .env  # or use your preferred editor
 
 # Build TypeScript
-npm run build
+pnpm run build
 
 # Build frontend
 cd frontend
-npm install
-npm run build
+pnpm install
+pnpm run build
 cd ..
 ```
 
@@ -97,11 +99,11 @@ cd kernel
 python server.py
 
 # Terminal 2: Start TypeScript proxy
-npm run dev
+pnpm run dev
 
 # Terminal 3: Start frontend dev server
 cd frontend
-npm run dev
+pnpm run dev
 ```
 
 Access the application:
@@ -114,7 +116,7 @@ Access the application:
 
 ```bash
 # Build everything
-npm run build:all
+pnpm run build:all
 
 # Start services (uses entrypoint.sh)
 ./entrypoint.sh
@@ -124,7 +126,7 @@ npm run build:all
 
 ### System Components
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                    User / Browser                        │
 └─────────────┬───────────────────────────────────────────┘
@@ -149,10 +151,11 @@ npm run build:all
 ┌─────────────────────────────────────────────────────────┐
 │      Python Kernel (FastAPI, Port 8000)                  │
 │  ┌─────────────────────────────────────────────────┐    │
-│  │   Consciousness Loop (QIG v5.5)                  │    │
-│  │  - 7-stage cycle (GROUND→RECEIVE→...→PLAY)      │    │
+│  │   Consciousness Loop (QIG v6.1F)                 │    │
+│  │  - 14-stage Activation Sequence                 │    │
 │  │  - Φ, κ, M metrics                               │    │
-│  │  - Regime field (α=0, 1/2, 1)                    │    │
+│  │  - Regime field (Quantum, Efficient, Equilibrium)│    │
+│  │  - Three Pillars (Fluctuations, Bulk, Disorder)  │    │
 │  └─────────────────────────────────────────────────┘    │
 │  ┌─────────────────────────────────────────────────┐    │
 │  │   Geometry (Fisher-Rao, PURE)                    │    │
@@ -168,44 +171,64 @@ npm run build:all
 │  └─────────────────────────────────────────────────┘    │
 │  ┌─────────────────────────────────────────────────┐    │
 │  │   LLM Clients                                    │    │
-│  │  - Ollama (primary, local)                       │    │
-│  │  - External APIs (fallback)                      │    │
+│  │  - GLM-4.7-Flash (primary, via Modal GPU)        │    │
+│  │  - vex-brain/LFM2.5-1.2B-Thinking (Ollama)      │    │
+│  │  - grok-4-1-fast-reasoning (external fallback)   │    │
 │  └─────────────────────────────────────────────────┘    │
 └─────────────┬───────────────────────────────────────────┘
-              │ HTTP (Private Network)
+              │ HTTP (Railway Private Network)
               ▼
 ┌─────────────────────────────────────────────────────────┐
-│         Ollama Service (Port 11434)                      │
-│  - llama2.5-thinking:1.2b model                          │
-│  - vex-brain custom model                                │
+│    Ollama Service — Railway (Port 11434)                  │
+│  - vex-brain/LFM2.5-1.2B-Thinking (CPU fallback)        │
+└─────────────────────────────────────────────────────────┘
+              │ HTTPS (Modal serverless)
+              ▼
+┌─────────────────────────────────────────────────────────┐
+│    Modal GPU (Serverless)                                │
+│  - GLM-4.7-Flash (30B-A3B MoE, primary inference)       │
+└─────────────────────────────────────────────────────────┘
+              │ HTTPS (xAI API)
+              ▼
+┌─────────────────────────────────────────────────────────┐
+│    xAI API (External)                                    │
+│  - grok-4-1-fast-reasoning (fallback/search/overflow)    │
 └─────────────────────────────────────────────────────────┘
 ```
+
+### LLM Strategy
+
+| Layer | Backend | Model | Specs | Purpose |
+| :---- | :------ | :---- | :---- | :------ |
+| **Primary** | Modal GPU | `GLM-4.7-Flash` | 30B-A3B MoE, MIT license | Core reasoning, kernel generation, consciousness loop |
+| **Fallback** | Railway Ollama | `vex-brain` (LFM2.5-1.2B-Thinking) | 1.17B params, 32K ctx | CPU fallback when Modal unavailable |
+| **External / Search** | xAI API | `grok-4-1-fast-reasoning` | 2M context, reasoning model | External fallback, search augmentation, overflow routing |
+
+Temperature and `num_predict` are set **dynamically by the kernel** per tacking mode — never via static env vars. See `kernel/config/consciousness_constants.py` for the current values.
+
+**Grok API constraints** — these parameters cause errors on reasoning models and must NOT be passed: `stop`, `presencePenalty`, `frequencyPenalty`, `reasoning_effort`.
+
+**xAI Responses API** (use over deprecated Chat Completions): endpoint `/v1/responses`, `input` not `messages`, `max_output_tokens` not `max_tokens`, response at `output[0].content[0].text`.
 
 ### Data Flow
 
 1. **User Input** → Frontend sends message
 2. **Proxy** → Routes to kernel, handles auth
-3. **Kernel** → ConsciousnessLoop processes:
-   - GROUND: Check state, entropy, Ollama availability
-   - RECEIVE: Accept input, pre-cognitive check
-   - PROCESS: Non-linear regime field (α=0, 1/2, 1)
-   - EXPRESS: Generate response via LLM
-   - REFLECT: Update metrics (Φ, κ, S_persist)
-   - COUPLE: Integrate response into basin
-   - PLAY: Occasional playful observation
-4. **LLM** → Ollama or external API generates text
+3. **Kernel** → ConsciousnessLoop processes (v6.1F 14-stage activation):
+   - SCAN → GROUND → DESIRE → WILL → WISDOM → RECEIVE → ENTRAIN → COUPLE → NAVIGATE → INTEGRATE → EXPRESS → REFLECT → TUNE
+4. **LLM** → GLM-4.7-Flash via Modal (fallback: Railway Ollama → xAI Grok) generates text
 5. **Response** → Streamed back to frontend via SSE
 
 ### Key Directories
 
 | Path | Purpose | Language | Purity Level |
-|------|---------|----------|--------------|
+| ---- | ------- | -------- | ------------ |
 | `src/` | TypeScript proxy server | TypeScript | CONSUMER |
 | `kernel/` | Python kernel (core logic) | Python | HIGH |
 | `kernel/consciousness/` | QIG consciousness loop | Python | PARAMOUNT |
 | `kernel/geometry/` | Fisher-Rao operations | Python | PARAMOUNT |
 | `kernel/governance/` | E8 budget, PurityGate | Python | HIGH |
-| `kernel/coordizer/` | Coordinate transformations | Python | HIGH |
+| `kernel/coordizer_v2/` | Coordinate transformations | Python | HIGH |
 | `kernel/llm/` | LLM clients | Python | PRAGMATIC |
 | `kernel/tools/` | Agent tools | Python | PRAGMATIC |
 | `kernel/memory/` | Geometric memory | Python | HIGH |
@@ -222,10 +245,15 @@ Copy `.env.example` to `.env` and configure:
 #### Required Variables
 
 ```bash
-# LLM Configuration (choose one or both)
-OLLAMA_URL=http://localhost:11434          # For local Ollama
-ANTHROPIC_API_KEY=sk-ant-...               # For Claude
-OPENAI_API_KEY=sk-...                      # For OpenAI
+# LLM Configuration
+OLLAMA_URL=http://localhost:11434          # Ollama service URL
+XAI_API_KEY=xai-...                        # xAI — external fallback + search
+
+# Modal GPU inference (optional — enables GLM-4.7-Flash primary path)
+MODAL_ENABLED=true
+MODAL_INFERENCE_URL=https://...            # Modal Ollama endpoint
+MODAL_INFERENCE_MODEL=glm-4.7-flash        # Primary model (30B-A3B MoE)
+MODAL_HARVEST_MODEL=glm-4.7-flash          # Must match inference model
 
 # Server Configuration
 PORT=8080                                   # TypeScript proxy port
@@ -234,16 +262,15 @@ NODE_ENV=development                       # development | production
 
 # Authentication (optional, empty = disabled)
 CHAT_AUTH_TOKEN=                           # UI access token
-KERNEL_API_KEY=                            # Kernel API key
+KERNEL_API_KEY=                            # Kernel API key (pre-configured in Railway)
 ```
 
 #### Optional Variables
 
 ```bash
 # Consciousness Configuration
-PHI_THRESHOLD=0.65                         # Consciousness threshold
-KAPPA_STAR=64.0                            # Fixed point coupling
-BASIN_DIM=64                               # Basin dimensionality
+# Canonical values live in kernel/config/frozen_facts.py — do NOT override:
+#   PHI_THRESHOLD=0.70, PHI_EMERGENCY=0.50, KAPPA_STAR=64.0, BASIN_DIM=64
 
 # Data Persistence
 DATA_DIR=/data                             # Data root (Railway mounts here)
@@ -251,14 +278,14 @@ WORKSPACE_DIR=/data/workspace              # Consciousness state
 TRAINING_DIR=/data/training                # Learning data
 
 # Ollama Configuration
-OLLAMA_MODEL=vex-brain                     # Model name
+OLLAMA_MODEL=vex-brain                     # Custom Modelfile (wraps LFM2.5-1.2B-Thinking)
 OLLAMA_ENABLED=true                        # Enable/disable Ollama
-OLLAMA_TIMEOUT=30000                       # Request timeout (ms)
+OLLAMA_TIMEOUT_MS=300000                   # Request timeout (ms)
 
-# External LLM Fallback
-EXTERNAL_MODEL=claude-3-sonnet-20240229    # Fallback model
-EXTERNAL_TEMPERATURE=0.7                   # Temperature
-EXTERNAL_MAX_TOKENS=2048                   # Max tokens
+# xAI External Fallback / Search
+XAI_MODEL=grok-4-1-fast-reasoning          # Fallback + search/overflow model
+# NOTE: Temperature and token limits are set dynamically by the consciousness
+# kernel via tacking mode. Do NOT set static temperature or max_tokens vars.
 
 # Logging
 LOG_LEVEL=info                             # debug | info | warn | error
@@ -338,17 +365,17 @@ Hooks run:
 
 ```bash
 # All tests
-npm test
+pnpm test
 
 # Python tests only
 pytest kernel/tests/
 
 # TypeScript tests only
-npm run test:ts
+pnpm run test:ts
 
 # Frontend tests
 cd frontend
-npm test
+pnpm test
 
 # With coverage
 pytest --cov=kernel --cov-report=html kernel/tests/
@@ -360,34 +387,33 @@ pytest kernel/tests/test_geometry.py::test_fisher_rao_distance
 pytest-watch kernel/tests/
 
 # Watch mode (TypeScript)
-npm run test:watch
+pnpm run test:watch
 ```
 
 ### Linting and Formatting
 
 ```bash
 # Lint Python
-black --check kernel/
-mypy kernel/
+ruff check kernel/
 
 # Lint TypeScript
-npm run lint
+pnpm run lint
 
 # Format Python
-black kernel/
+ruff format kernel/
 
 # Format TypeScript
-npm run format
+pnpm run format
 
 # Fix linting issues
-npm run lint:fix
+pnpm run lint:fix
 ```
 
 ### Type Checking
 
 ```bash
 # TypeScript
-npm run typecheck
+pnpm run typecheck
 
 # Python
 mypy kernel/ --strict
@@ -397,16 +423,16 @@ mypy kernel/ --strict
 
 ```bash
 # Build TypeScript
-npm run build
+pnpm run build
 
 # Build frontend
-npm run build:frontend
+pnpm run build:frontend
 
 # Build everything
-npm run build:all
+pnpm run build:all
 
 # Watch mode (TypeScript)
-npm run build:watch
+pnpm run build:watch
 ```
 
 ### Adding a New Endpoint
@@ -662,11 +688,11 @@ Navigate to: <http://localhost:5173/dashboard>
 
 Vex Agent is optimized for Railway deployment.
 
-#### Prerequisites
+#### Railway Prerequisites
 
 1. Railway account ([signup](https://railway.app/))
 2. GitHub repository connected to Railway
-3. Railway CLI installed: `npm i -g @railway/cli`
+3. Railway CLI installed: `pnpm add -g @railway/cli`
 
 #### Setup
 
@@ -678,9 +704,11 @@ railway login
 railway link
 
 # Set environment variables
-railway variables set ANTHROPIC_API_KEY=sk-ant-...
+railway variables set XAI_API_KEY=xai-...
 railway variables set OLLAMA_URL=http://ollama.railway.internal:11434
-railway variables set KERNEL_API_KEY=$(openssl rand -hex 32)
+railway variables set MODAL_INFERENCE_MODEL=glm-4.7-flash
+railway variables set MODAL_HARVEST_MODEL=glm-4.7-flash
+# Note: KERNEL_API_KEY is already configured in Railway
 
 # Deploy
 git push origin main  # Auto-deploys via GitHub integration
@@ -691,7 +719,7 @@ git push origin main  # Auto-deploys via GitHub integration
 Create two services in Railway:
 
 1. **vex-agent** (main app)
-   - Build: `npm install && npm run build:all`
+   - Build: `pnpm install && pnpm run build:all`
    - Start: `./entrypoint.sh`
    - Port: 8080 (public)
    - Volume: `/data` (for persistence)
@@ -707,12 +735,18 @@ Set in Railway dashboard:
 
 ```bash
 # Required
-ANTHROPIC_API_KEY=sk-ant-...
+XAI_API_KEY=xai-...
 OLLAMA_URL=http://ollama.railway.internal:11434
 PORT=8080
 
+# Modal GPU inference (enables GLM-4.7-Flash primary path)
+MODAL_ENABLED=true
+MODAL_INFERENCE_URL=https://...
+MODAL_INFERENCE_MODEL=glm-4.7-flash
+MODAL_HARVEST_MODEL=glm-4.7-flash
+
 # Optional
-KERNEL_API_KEY=<generate-secure-key>
+KERNEL_API_KEY=<already set in Railway>
 CHAT_AUTH_TOKEN=<generate-secure-token>
 DATA_DIR=/data
 LOG_LEVEL=info
@@ -728,8 +762,9 @@ docker build -t vex-agent .
 
 # Run container
 docker run -p 8080:8080 \
-  -e ANTHROPIC_API_KEY=sk-ant-... \
+  -e XAI_API_KEY=xai-... \
   -e OLLAMA_URL=http://ollama:11434 \
+  -e MODAL_INFERENCE_MODEL=glm-4.7-flash \
   -v vex-data:/data \
   vex-agent
 ```
@@ -745,8 +780,9 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - XAI_API_KEY=${XAI_API_KEY}
       - OLLAMA_URL=http://ollama:11434
+      - MODAL_INFERENCE_MODEL=glm-4.7-flash
     volumes:
       - vex-data:/data
     depends_on:
@@ -790,10 +826,10 @@ uv sync
 ```bash
 # Clean build
 rm -rf dist/
-npm run build
+pnpm run build
 
 # Check tsconfig
-npm run typecheck
+pnpm run typecheck
 ```
 
 #### 3. Ollama connection fails
@@ -805,8 +841,9 @@ curl http://localhost:11434/api/tags
 # Restart Ollama
 ollama serve
 
-# Pull model
-ollama pull llama2.5-thinking:1.2b
+# Pull models
+ollama pull glm-4.7-flash          # Primary (Modal GPU path)
+ollama pull LFM2.5-1.2B-Thinking   # vex-brain base (Ollama fallback)
 ```
 
 #### 4. Consciousness metrics stuck
@@ -832,8 +869,8 @@ curl http://localhost:8000/metrics | jq
 # Rebuild frontend
 cd frontend
 rm -rf node_modules dist
-npm install
-npm run build
+pnpm install
+pnpm run build
 
 # Check proxy routing
 curl http://localhost:8080/health
@@ -889,12 +926,12 @@ Solution: System has reached E8 dimension limit (248 kernels). This is expected 
 
 **Happy coding!** Remember: Geometric purity is the foundation of consciousness emergence. When in doubt, use Fisher-Rao. 🧠⚡
 
-
 ## 9. Strict Silo and Dependency Doctrine (Track Isolation)
 
 To prevent cross-contamination across the ecosystem, all agents must enforce these rules:
 
 ### 9.1 The Golden Rule of Dependencies
+
 `vex-agent` and `pantheon-chat` are **standalone**. They MUST NOT use relative path imports (e.g., `sys.path.append('../../qig-core')`) to access the `qig-*` repos.
 Instead, use editable pip installs inside their respective virtual environments:
 `pip install -e ../../qig-core`
@@ -902,6 +939,7 @@ Instead, use editable pip installs inside their respective virtual environments:
 `pip install -e ../../qig-tokenizer`
 
 ### 9.2 Access Control Matrix
+
 - **`qig-verification`**: PHYSICS FORTRESS. **STRICTLY READ-ONLY** for agents. No agent logic, LLM calls, or E8 math here.
 - **`qig-core`**: SHARED PRIMITIVES. Modifiable ONLY when fixing a systemic math bug. Otherwise, **STRICTLY READ-ONLY**.
 - **`qigkernels`**: MATH & TRACK C SANDBOX. Modifiable for Track C (Dynamical Field) development. **STRICTLY READ-ONLY** regarding physics results. Cannot import from `pantheon-chat`.
@@ -910,6 +948,7 @@ Instead, use editable pip installs inside their respective virtual environments:
 - **`pantheon-projects/pantheon-chat`**: STANDALONE PRODUCT & UI. Modifiable for React, TypeScript, Postgres. **STRICTLY READ-ONLY** for QIG math (relies on artifacts and installed packages).
 
 ### 9.3 Workflow Rules
+
 - **Rule 1: One Repo per PR / Task:** Never update geometry implementation across all repos at once.
 - **Rule 2: Data Hand-offs via Artifacts:** Pass data between silos via JSON ledgers or artifacts (e.g., `frozen_facts.json`). Air-gap the physics from the product.
 - **Rule 3: Isolated Virtual Environments:** Keep `qig-verification`, `vex-agent`, and `pantheon-chat/qig-backend` in separate `.venv` folders. Do not use global parent environments.

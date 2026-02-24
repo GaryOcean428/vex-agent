@@ -3,7 +3,6 @@ import MetricCard from '../../components/MetricCard.tsx';
 import BetaTracker from '../../components/BetaTracker.tsx';
 import { QIG } from '../../types/consciousness.ts';
 import type { FullConsciousnessMetrics } from '../../types/consciousness.ts';
-import '../../components/MetricCard.css';
 
 /** Metric definition for grouped display. */
 interface MetricDef {

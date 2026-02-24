@@ -2,7 +2,6 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/useAuth.ts";
 import { API } from "../config/api-routes.ts";
-import "./Login.css";
 
 export default function Login() {
   const [token, setToken] = useState("");

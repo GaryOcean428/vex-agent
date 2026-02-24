@@ -25,6 +25,11 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+try:
+    import redis  # type: ignore[import-untyped]
+except ImportError:
+    redis = None  # type: ignore[assignment]
+
 from ..config.settings import settings
 
 logger = logging.getLogger("vex.chat.store")
@@ -54,10 +59,12 @@ class Message:
     token_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize message to a plain dict."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Message:
+        """Deserialize a message from a plain dict."""
         return cls(
             id=data.get("id", str(uuid.uuid4())),
             role=data.get("role", "user"),
@@ -86,10 +93,12 @@ class Conversation:
     total_tokens: int = 0
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize conversation metadata to a plain dict."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Conversation:
+        """Deserialize conversation metadata from a plain dict."""
         return cls(
             id=data["id"],
             title=data.get("title", "Untitled"),
@@ -116,7 +125,9 @@ class ConversationStore:
             # Volume not writable — fall back to /tmp (ephemeral but functional)
             self._base_dir = Path("/tmp/vex-conversations")
             self._base_dir.mkdir(parents=True, exist_ok=True)
-            logger.warning("Data volume not writable — using ephemeral %s", self._base_dir)
+            logger.warning(
+                "Data volume not writable — using ephemeral %s", self._base_dir
+            )
         self._index_path = self._base_dir / "_index.json"
         self._index: dict[str, Conversation] = {}
         self._load_index()
@@ -155,12 +166,16 @@ class ConversationStore:
                 self._index[conv_id] = Conversation(
                     id=conv_id,
                     title=title,
-                    created_at=float(messages[0].timestamp)
-                    if messages[0].timestamp.replace(".", "").isdigit()
-                    else time.time(),
-                    updated_at=float(messages[-1].timestamp)
-                    if messages[-1].timestamp.replace(".", "").isdigit()
-                    else time.time(),
+                    created_at=(
+                        float(messages[0].timestamp)
+                        if messages[0].timestamp.replace(".", "").isdigit()
+                        else time.time()
+                    ),
+                    updated_at=(
+                        float(messages[-1].timestamp)
+                        if messages[-1].timestamp.replace(".", "").isdigit()
+                        else time.time()
+                    ),
                     message_count=len(messages),
                     preview=messages[-1].content[:100],
                 )
@@ -268,7 +283,9 @@ class ConversationStore:
         messages = self._read_messages(conv_id)
         return {
             **conv.to_dict(),
-            "messages": [m.to_dict() for m in messages[-MAX_MESSAGES_PER_CONVERSATION:]],
+            "messages": [
+                m.to_dict() for m in messages[-MAX_MESSAGES_PER_CONVERSATION:]
+            ],
         }
 
     def list_conversations(self, limit: int = 50) -> list[dict[str, Any]]:
@@ -291,7 +308,9 @@ class ConversationStore:
         self._save_index()
         return True
 
-    def get_llm_messages(self, conv_id: str, max_tokens: int = 28000) -> list[dict[str, str]]:
+    def get_llm_messages(
+        self, conv_id: str, max_tokens: int = 28000
+    ) -> list[dict[str, str]]:
         """Get conversation messages formatted for LLM, truncated to fit token budget.
 
         Returns oldest-first messages as [{role, content}]. Drops oldest
@@ -350,20 +369,24 @@ class RedisConversationStore:
     _INDEX_KEY = "vex:convs"
 
     def __init__(self, url: str, ttl_days: int = 90) -> None:
-        import redis  # type: ignore[import-untyped]
-
+        """Connect to Redis. Raises if redis package is missing or server unreachable."""
+        if redis is None:
+            raise ImportError("redis package is not installed")
         self._ttl = ttl_days * 86400
         self._r = redis.from_url(url, decode_responses=True)
         # Probe connection immediately so failure is caught at init time
         self._r.ping()
 
     def _meta_key(self, conv_id: str) -> str:
+        """Return the Redis hash key for conversation metadata."""
         return f"{self._KEY_PREFIX}{conv_id}"
 
     def _msgs_key(self, conv_id: str) -> str:
+        """Return the Redis list key for conversation messages."""
         return f"{self._KEY_PREFIX}{conv_id}:msgs"
 
     def create_conversation(self, conv_id: str | None = None) -> str:
+        """Create a new conversation in Redis and return its id."""
         cid = conv_id or str(uuid.uuid4())
         now = time.time()
         self._r.hset(
@@ -383,6 +406,7 @@ class RedisConversationStore:
         return cid
 
     def append_message(self, conv_id: str, message: Message) -> None:
+        """Append a message to a Redis-backed conversation."""
         if not self._r.exists(self._meta_key(conv_id)):
             self.create_conversation(conv_id)
         if message.token_count == 0:
@@ -413,6 +437,7 @@ class RedisConversationStore:
         pipe.execute()
 
     def get_conversation(self, conv_id: str) -> dict[str, Any] | None:
+        """Retrieve a conversation with its messages from Redis."""
         meta = self._r.hgetall(self._meta_key(conv_id))
         if not meta:
             return None
@@ -426,6 +451,7 @@ class RedisConversationStore:
         return {**meta, "messages": messages}
 
     def list_conversations(self, limit: int = 50) -> list[dict[str, Any]]:
+        """List recent conversations by descending update time."""
         ids = self._r.zrevrange(self._INDEX_KEY, 0, limit - 1)
         result = []
         for cid in ids:
@@ -435,13 +461,17 @@ class RedisConversationStore:
         return result
 
     def delete_conversation(self, conv_id: str) -> bool:
+        """Delete a conversation and its messages from Redis."""
         if not self._r.exists(self._meta_key(conv_id)):
             return False
         self._r.delete(self._meta_key(conv_id), self._msgs_key(conv_id))
         self._r.zrem(self._INDEX_KEY, conv_id)
         return True
 
-    def get_llm_messages(self, conv_id: str, max_tokens: int = 28000) -> list[dict[str, str]]:
+    def get_llm_messages(
+        self, conv_id: str, max_tokens: int = 28000
+    ) -> list[dict[str, str]]:
+        """Return recent messages in LLM format, capped by token budget."""
         raw_msgs = self._r.lrange(self._msgs_key(conv_id), 0, -1)
         messages = []
         for raw in raw_msgs:
@@ -461,6 +491,7 @@ class RedisConversationStore:
         return result
 
     def get_token_count(self, conv_id: str) -> int:
+        """Return total token count for a conversation."""
         val = self._r.hget(self._meta_key(conv_id), "total_tokens")
         return int(float(val)) if val else 0
 
@@ -473,7 +504,7 @@ def make_conversation_store() -> ConversationStore | RedisConversationStore:
             store = RedisConversationStore(url=cfg.url, ttl_days=cfg.ttl_days)
             logger.info("Chat persistence: Redis (%s)", cfg.url.split("@")[-1])
             return store
-        except Exception as exc:
+        except (ConnectionError, OSError, RuntimeError) as exc:
             logger.warning("Redis unavailable (%s) — falling back to JSONL store", exc)
     logger.info("Chat persistence: JSONL (/data/conversations)")
     return ConversationStore()

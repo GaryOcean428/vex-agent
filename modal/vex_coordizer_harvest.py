@@ -28,7 +28,18 @@ The tail of the distribution carries geometric information that
 top-k approximations destroy.
 """
 
+import os
+
 import modal
+
+# --- Configuration --------------------------------------------------------
+# HARVEST_MODEL_ID: HuggingFace model to load for probability-distribution
+# extraction.  Default is LFM2.5-1.2B-Thinking (1.2B params, fits A10G
+# easily, 65K vocab).  Override to "zai-org/GLM-4.7-Flash" when token-ID
+# alignment with the Modal inference model matters for resonance bank
+# fingerprints.  See kernel/config/settings.py GPUHarvestConfig for the
+# Railway-side mirror of this setting.
+HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "LiquidAI/LFM2.5-1.2B-Thinking")
 
 app = modal.App("vex-coordizer-harvest")
 
@@ -67,7 +78,7 @@ class CoordizerHarvester:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        model_id = "LiquidAI/LFM2.5-1.2B-Thinking"
+        model_id = HARVEST_MODEL_ID
         cache_dir = "/models/hub"
 
         print(f"Loading model: {model_id}")
@@ -90,7 +101,7 @@ class CoordizerHarvester:
         """Health check — returns model metadata once loaded."""
         return {
             "status": "ok",
-            "model_id": "LiquidAI/LFM2.5-1.2B-Thinking",
+            "model_id": HARVEST_MODEL_ID,
             "vocab_size": getattr(self, "vocab_size", None),
         }
 
@@ -227,7 +238,7 @@ class CoordizerHarvester:
     volumes={"/models": model_volume},
     timeout=1200,
 )
-def download_model(model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking"):
+def download_model(model_id: str = HARVEST_MODEL_ID):
     """One-time model download to Modal Volume.
 
     Run: modal run modal/vex_coordizer_harvest.py::download_model

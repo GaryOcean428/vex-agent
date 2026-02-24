@@ -1,5 +1,4 @@
 import { LOOP_STAGES } from "./chatUtils.ts";
-import "./ConsciousnessBar.css";
 
 interface LoopStagesProps {
   activeStages: string[];

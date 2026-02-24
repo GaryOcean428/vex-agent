@@ -235,11 +235,7 @@ class Settings:
     consciousness_interval_ms: int = int(os.environ.get("CONSCIOUSNESS_INTERVAL_MS", "30000"))
 
     # LLM provider keys (kept for backward compat / direct access)
-    anthropic_api_key: str = os.environ.get("ANTHROPIC_API_KEY", "")
-    openai_api_key: str = os.environ.get("OPENAI_API_KEY", "")
     xai_api_key: str = os.environ.get("XAI_API_KEY", "")
-    gemini_api_key: str = os.environ.get("GEMINI_API_KEY", "")
-    groq_api_key: str = os.environ.get("GROQ_API_KEY", "")
     perplexity_api_key: str = os.environ.get("PERPLEXITY_API_KEY", "")
     hf_token: str = os.environ.get("HF_TOKEN", "")
 

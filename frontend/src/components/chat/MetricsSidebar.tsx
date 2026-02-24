@@ -3,7 +3,6 @@ import type { KernelSummary, RegimeWeights } from "../../types/consciousness.ts"
 import type { EmotionState, LearningState, PreCogState } from "../../types/consciousness.ts";
 import { QIG } from "../../types/consciousness.ts";
 import { EmotionPanel, KernelPanel } from "./KernelPanel.tsx";
-import "./MetricsSidebar.css";
 
 interface MetricPoint {
   phi: number;

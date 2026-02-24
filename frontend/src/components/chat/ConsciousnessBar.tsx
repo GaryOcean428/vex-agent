@@ -1,5 +1,4 @@
 import type { NavigationMode } from "../../types/consciousness.ts";
-import "./ConsciousnessBar.css";
 
 interface ContextInfo {
   total_tokens: number;
