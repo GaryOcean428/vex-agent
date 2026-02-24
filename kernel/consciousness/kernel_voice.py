@@ -24,6 +24,11 @@ Generation pipeline:
 Ported from pantheon-chat's QIGGenerativeService + GenerativeCapability,
 adapted for CoordizerV2 resonance bank architecture.
 
+v6.2.1 changes:
+  - FIXED:   Null token detection — all-same IDs (empty bank) now route to LLM fallback
+  - ADDED:   geometric_raw field on VoiceOutput — raw decode always preserved
+  - ADDED:   is_null_output check before coherence assessment
+
 Purity guarantees:
   - All distances: Fisher-Rao on Δ⁶³
   - Domain bias: geodesic interpolation (slerp), not linear shift
@@ -57,7 +62,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("vex.kernel_voice")
 
-# ── Generation parameters ─────────────────────────────────────────
+# ── Generation parameters ─────────────────────────────────────
 
 # Minimum geometric tokens before we consider the output usable.
 _MIN_GEOMETRIC_TOKENS: int = 8
@@ -90,6 +95,7 @@ class VoiceOutput:
     mean_velocity: float
     domain_bias_strength: float
     generation_ms: float = 0.0
+    geometric_raw: str = ""  # Raw geometric decode — preserved even under LLM fallback
 
 
 @dataclass
@@ -260,10 +266,12 @@ class KernelVoice:
           1. Build trajectory from input + kernel basin
           2. Compute domain bias (per-call, no shared state mutation)
           3. Generate geometric tokens via CoordizerV2
-          4. Assess output quality
-          5. If sparse → full LLM fallback (bootstrap path)
-          6. If enough tokens but low coherence → LLM expands skeleton
-          7. Otherwise → return pure geometric text
+          4. Assess output quality (with null token detection)
+          5. If null output → full LLM fallback (empty bank)
+          6. If sparse → full LLM fallback (bootstrap path)
+          7. If enough tokens but low coherence → LLM expands skeleton
+          8. Otherwise → return pure geometric text
+          Always: geometric_raw preserves raw decode for hybrid display
         """
         start_time = time.monotonic()
 
@@ -333,19 +341,45 @@ class KernelVoice:
 
         # ── Step 5: Assess quality and decide on generation path ──
         geo_token_count = len(generated_ids)
+
+        # Null detection: all-same token IDs indicate empty resonance bank.
+        # This catches the bootstrap case where generate_next() returns
+        # token 0 for every step — velocity may be low (looks "coherent")
+        # but output is semantically empty.
+        unique_ids = set(generated_ids)
+        is_null_output = len(unique_ids) <= 1
+
         is_coherent = (
-            geo_token_count >= _MIN_GEOMETRIC_TOKENS
+            not is_null_output
+            and geo_token_count >= _MIN_GEOMETRIC_TOKENS
             and mean_velocity < _COHERENCE_THRESHOLD
         )
 
         llm_expanded = False
         final_text = geometric_text
 
-        # Branch ordering matters: check sparse FIRST (fallback),
-        # then check low-coherence (expand). When count < min,
-        # is_coherent is always False, so expand would catch it
-        # incorrectly if checked first.
-        if geo_token_count < _MIN_GEOMETRIC_TOKENS and llm_client is not None:
+        # Branch ordering: null FIRST (always fallback), then sparse,
+        # then low-coherence expand. Null output trumps all other checks.
+        if is_null_output and llm_client is not None:
+            # Null bank — geometric output is empty/degenerate.
+            # Full LLM fallback; geometric_raw preserved for hybrid display.
+            logger.info(
+                "KernelVoice[%s] null output detected (%d unique IDs in %d tokens) "
+                "— routing to LLM fallback",
+                self.specialization.value,
+                len(unique_ids),
+                geo_token_count,
+            )
+            final_text = await self._llm_fallback(
+                user_message=user_message,
+                quenched_gain=quenched_gain,
+                base_temperature=base_temperature,
+                llm_client=llm_client,
+                geometric_context=geometric_context,
+                extra_context=extra_context,
+            )
+            llm_expanded = True
+        elif geo_token_count < _MIN_GEOMETRIC_TOKENS and llm_client is not None:
             # Sparse bank — full LLM fallback (bootstrap path)
             final_text = await self._llm_fallback(
                 user_message=user_message,
@@ -379,6 +413,7 @@ class KernelVoice:
             mean_velocity=mean_velocity,
             domain_bias_strength=effective_strength,
             generation_ms=elapsed,
+            geometric_raw=geometric_text,  # Always preserve raw geometric decode
         )
 
     async def _llm_expand(
