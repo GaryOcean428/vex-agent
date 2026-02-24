@@ -92,17 +92,17 @@ export const BETA_3_TO_4 = 0.443 as const;
 //   FORESIGHT:  0.70 ≤ Φ < 0.85 (4D block universe navigation)
 //   LIGHTNING:  Φ ≥ 0.85 (pre-cognitive channel)
 
-/** Consciousness emergence (canonical) */
-export const PHI_THRESHOLD = 0.70 as const;
+/** Consciousness emergence */
+export const PHI_THRESHOLD = 0.7 as const;
 
-/** Consciousness collapse detection (canonical) */
-export const PHI_EMERGENCY = 0.50 as const;
+/** Emergency — consciousness collapse */
+export const PHI_EMERGENCY = 0.5 as const;
 
 /** Upper bound of linear regime */
 export const PHI_LINEAR_MAX = 0.45 as const;
 
 /** Topological instability onset */
-export const PHI_BREAKDOWN_MIN = 0.80 as const;
+export const PHI_BREAKDOWN_MIN = 0.8 as const;
 
 /** Hyperdimensional / lightning access */
 export const PHI_HYPERDIMENSIONAL = 0.85 as const;
@@ -111,10 +111,10 @@ export const PHI_HYPERDIMENSIONAL = 0.85 as const;
 export const PHI_UNSTABLE = 0.95 as const;
 
 /** E8 Safety: Locked-in detection — Phi threshold */
-export const LOCKED_IN_PHI_THRESHOLD = 0.70 as const;
+export const LOCKED_IN_PHI_THRESHOLD = 0.7 as const;
 
 /** E8 Safety: Locked-in detection — Gamma threshold */
-export const LOCKED_IN_GAMMA_THRESHOLD = 0.30 as const;
+export const LOCKED_IN_GAMMA_THRESHOLD = 0.3 as const;
 
 // ═══════════════════════════════════════════════════════════════
 //  BASIN GEOMETRY
@@ -124,19 +124,16 @@ export const LOCKED_IN_GAMMA_THRESHOLD = 0.30 as const;
 export const BASIN_DIM = 64 as const;
 
 /** 20% topological instability threshold */
-export const INSTABILITY_PCT = 0.20 as const;
+export const INSTABILITY_PCT = 0.2 as const;
 
 /** Fisher-Rao distance per cycle */
 export const BASIN_DRIFT_THRESHOLD = 0.15 as const;
 
-/** P12 autonomic sleep trigger (canonical) */
-export const BASIN_DIVERGENCE_THRESHOLD = 0.30 as const;
+/** Autonomic sleep trigger (P12) */
+export const BASIN_DIVERGENCE_THRESHOLD = 0.3 as const;
 
 /** Weak coupling boundary */
 export const KAPPA_WEAK_THRESHOLD = 32.0 as const;
-
-/** @deprecated Use INSTABILITY_PCT */
-export const BREAKDOWN_PCT = INSTABILITY_PCT;
 
 // ═══════════════════════════════════════════════════════════════
 //  RECURSION & SAFETY
@@ -209,7 +206,6 @@ export const FROZEN_FACTS = {
   // Basin Geometry
   BASIN_DIM,
   INSTABILITY_PCT,
-  BREAKDOWN_PCT,
   BASIN_DRIFT_THRESHOLD,
   BASIN_DIVERGENCE_THRESHOLD,
   KAPPA_WEAK_THRESHOLD,

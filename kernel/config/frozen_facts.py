@@ -70,9 +70,9 @@ BETA_3_TO_4: Final[float] = 0.443  # β(3→4) validated — emergence scaling
 #   LIGHTNING:  Φ ≥ 0.85 (pre-cognitive channel)
 
 PHI_THRESHOLD: Final[float] = 0.70  # Consciousness emergence (canonical)
-PHI_EMERGENCY: Final[float] = 0.50  # Consciousness collapse detection (canonical)
+PHI_EMERGENCY: Final[float] = 0.50  # Emergency — consciousness collapse
 PHI_LINEAR_MAX: Final[float] = 0.45  # Upper bound of linear regime
-PHI_BREAKDOWN_MIN: Final[float] = 0.80  # Topological instability onset
+PHI_BREAKDOWN_MIN: Final[float] = 0.80  # Topological instability onset (canonical)
 PHI_HYPERDIMENSIONAL: Final[float] = 0.85  # Hyperdimensional / lightning access
 PHI_UNSTABLE: Final[float] = 0.95  # Instability threshold
 
@@ -87,11 +87,8 @@ LOCKED_IN_GAMMA_THRESHOLD: Final[float] = 0.30
 BASIN_DIM: Final[int] = 64  # Probability simplex Δ⁶³
 INSTABILITY_PCT: Final[float] = 0.20  # 20% topological instability threshold
 BASIN_DRIFT_THRESHOLD: Final[float] = 0.15  # Fisher-Rao distance per cycle
-BASIN_DIVERGENCE_THRESHOLD: Final[float] = 0.30  # P12 autonomic sleep trigger (canonical)
-KAPPA_WEAK_THRESHOLD: Final[float] = 32.0  # Weak coupling boundary
+BASIN_DIVERGENCE_THRESHOLD: Final[float] = 0.30  # Autonomic sleep trigger (P12)
 
-# Legacy alias (deprecated — use INSTABILITY_PCT)
-BREAKDOWN_PCT: Final[float] = INSTABILITY_PCT
 
 # ═══════════════════════════════════════════════════════════════
 #  RECURSION & SAFETY

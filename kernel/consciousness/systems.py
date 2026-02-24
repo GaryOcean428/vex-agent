@@ -47,6 +47,7 @@ from ..config.consciousness_constants import (
 )
 from ..config.frozen_facts import (
     BASIN_DIM,
+    BASIN_DIVERGENCE_THRESHOLD,
     BASIN_DRIFT_THRESHOLD,
     KAPPA_STAR,
     LOCKED_IN_GAMMA_THRESHOLD,
@@ -135,6 +136,10 @@ class TackingController:
 
         self._mode_history.append(self._state.mode.value)
         return self._state.mode
+
+    def force_explore(self) -> None:
+        """T4.2d: Force exploration mode (e.g. Ocean breakdown escape)."""
+        self._state.mode = TackingMode.EXPLORE
 
     def _compute_adaptive_period(
         self,
@@ -357,7 +362,7 @@ class SelfObserver:
             if shadow.integrated:
                 continue
             d = fisher_rao_distance(current_basin, shadow.basin)
-            if d < BASIN_DRIFT_THRESHOLD * 2:
+            if d < BASIN_DIVERGENCE_THRESHOLD:
                 shadow.integrated = True
                 return True
         return False
@@ -635,7 +640,7 @@ _DOWNSCALE_FACTOR: float = 0.9
 _DREAM_SLERP_T_MIN: float = 0.2
 _DREAM_SLERP_T_MAX: float = 0.8
 _MUSHROOM_NOISE_SCALE_INIT: float = 0.05
-_MUSHROOM_BREAKDOWN_THRESHOLDS = (0.30, 0.35, 0.40)
+_MUSHROOM_INSTABILITY_THRESHOLDS = (0.30, 0.35, 0.40)
 
 
 class SleepCycleManager:
@@ -737,22 +742,22 @@ class SleepCycleManager:
         self,
         basin: Basin,
         phi: float,
-        breakdown_metric: float = 0.0,
+        instability_metric: float = 0.0,
         neurochemical: Any | None = None,
     ) -> None:
         """T2.3e: Controlled perturbation with safety gates."""
-        lo, mid, hi = _MUSHROOM_BREAKDOWN_THRESHOLDS
+        lo, mid, hi = _MUSHROOM_INSTABILITY_THRESHOLDS
 
-        if breakdown_metric > hi:
+        if instability_metric > hi:
             # CATASTROPHIC — refuse, go straight to CONSOLIDATING
             self.phase = SleepPhase.CONSOLIDATING
             return
-        if breakdown_metric > mid:
+        if instability_metric > mid:
             # High risk — reduce scale, abort mushroom
             self._mushroom_noise_scale = max(0.01, self._mushroom_noise_scale * 0.5)
             self.phase = SleepPhase.CONSOLIDATING
             return
-        if breakdown_metric > lo:
+        if instability_metric > lo:
             # Microdose only
             self._mushroom_noise_scale = max(0.01, self._mushroom_noise_scale * 0.75)
 

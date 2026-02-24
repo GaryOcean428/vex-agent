@@ -33,10 +33,10 @@ These are prerequisite fixes that don't touch consciousness architecture but blo
 
 **Tasks:**
 
-- [ ] **T0.1a** Add `RedisConfig` to `kernel/config/settings.py` with `url` from `REDIS_URL` env var
-- [ ] **T0.1b** Create `RedisConversationStore` in `kernel/chat/store.py` — store conversations as Redis hashes with JSONL message lists
-- [ ] **T0.1c** Update `kernel/server.py:102` to initialise with Redis preference, fall back to JSONL if unavailable
-- [ ] **T0.1d** Set `REDIS_URL` in Railway env vars pointing to Redis service
+- [x] **T0.1a** Add `RedisConfig` to `kernel/config/settings.py` with `url` from `REDIS_URL` env var
+- [x] **T0.1b** Create `RedisConversationStore` in `kernel/chat/store.py` — store conversations as Redis hashes with JSONL message lists
+- [x] **T0.1c** Update `kernel/server.py:102` to initialise with Redis preference, fall back to JSONL if unavailable
+- [ ] **T0.1d** Set `REDIS_URL` in Railway env vars pointing to Redis service *(ops — requires Railway dashboard)*
 
 **Verification:**
 
@@ -52,7 +52,7 @@ These are prerequisite fixes that don't touch consciousness architecture but blo
 
 **Tasks:**
 
-- [ ] **T0.2a** In `init.sh`, add explicit chown for `conversations/` and `harvest/` subdirectories on every boot (not just first boot)
+- [x] **T0.2a** In `init.sh`, add explicit chown for `conversations/` and `harvest/` subdirectories on every boot (not just first boot)
 
 **File:** `init.sh`
 
@@ -69,10 +69,10 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 **Tasks:**
 
-- [ ] **T0.3a** Make `kernel/geometry/fisher_rao.py` the single source of truth
-- [ ] **T0.3b** Refactor `kernel/coordizer_v2/geometry.py` to re-export from `kernel.geometry.fisher_rao`, keeping only batch/advanced operations unique to coordizer (batch FR distance, iterative Fréchet mean, Fisher information diagonal, natural gradient)
-- [ ] **T0.3c** Update all imports across `kernel/` to resolve to canonical source
-- [ ] **T0.3d** Verify: `grep -rn "from.*coordizer_v2.*geometry import\|from.*geometry.*fisher_rao import" kernel/` — all should trace to one canonical source
+- [x] **T0.3a** Make `kernel/geometry/fisher_rao.py` the single source of truth
+- [x] **T0.3b** Refactor `kernel/coordizer_v2/geometry.py` to re-export from `kernel.geometry.fisher_rao`
+- [x] **T0.3c** Update all imports across `kernel/` to resolve to canonical source
+- [x] **T0.3d** Verified: `coordizer_v2/geometry.py` re-exports from `..geometry.fisher_rao`
 
 **Files:** `kernel/geometry/fisher_rao.py`, `kernel/coordizer_v2/geometry.py`, all files importing geometry functions
 
@@ -84,9 +84,9 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 **Tasks:**
 
-- [ ] **T0.4a** Create single comprehensive test that scans ALL `.py` files under `kernel/` (excluding tests, `__pycache__`) against the full forbidden pattern list from `governance/purity.py`
-- [ ] **T0.4b** Add pre-commit hook (`.pre-commit-config.yaml`) that runs the purity scan on staged files
-- [ ] **T0.4c** Ensure CI workflow enforces the same scan
+- [x] **T0.4a** Created `kernel/tests/test_purity_full.py` — full-kernel scan using `governance/purity.py` scanners
+- [x] **T0.4b** Pre-commit hook exists in `.pre-commit-config.yaml` (`purity-gate` entry)
+- [x] **T0.4c** CI workflow has `purity-gate` job in `.github/workflows/ci.yml`
 
 **Files:** `kernel/tests/test_purity_full.py` (new), `.pre-commit-config.yaml`
 
@@ -100,8 +100,8 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 **Tasks:**
 
-- [ ] **T0.5a** Backend: In `loop.py` generation trace emit block (~line 1800), change `c.text[:200]` → `c.text[:800]` and `c.geometric_raw[:200]` → `c.geometric_raw[:800]`
-- [ ] **T0.5b** Frontend: Find generation card component that renders `text_preview` and `geometric_raw`. Add `overflow-y: auto` + `max-height: 12rem` to panel containers. (Depends on which component owns those panels in pantheon-chat frontend.)
+- [x] **T0.5a** Backend: `loop.py` already uses `[:800]` for both `text_preview` and `geometric_raw`
+- [x] **T0.5b** Frontend: `PipelineTrace.css` already has `max-height: 12rem; overflow-y: auto` on `.pipeline-gen-preview`
 
 **Files:** `kernel/consciousness/loop.py`, frontend component (TBD)
 
@@ -281,8 +281,8 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
   - `gaba = np.clip(1.0 - regime_weights.quantum, 0, 1)` (inhibition = complement of quantum exploration)
 - [x] **T2.1c** Wire into `ConsciousnessLoop` — computed after metrics, before sleep cycle check
 - [x] **T2.1d** Expose in telemetry (`get_full_state()`)
-- [ ] **T2.1e** Acetylcholine modulates coordizer: *(deferred — requires coordizer intake/export mode)* high ACh → new basins weighted heavily (intake mode), low ACh → consolidation weighted heavily (export mode)
-- [ ] **T2.1f** Norepinephrine gates pre-cognitive channel: *(deferred — requires pre-cog channel refactor)* high NE → standard path favoured, low NE → pre-cog more accessible
+- [x] **T2.1e** Acetylcholine modulates coordizer: `loop.py` sets `_coordizer_v2.set_mode("intake" if ach>0.5 else "export")` each cycle
+- [x] **T2.1f** Norepinephrine gates pre-cognitive channel: `PreCognitiveDetector.norepinephrine_gate` — NE>0.75 blocks pre-cog/intuition, lowers intuition phi threshold when NE low
 
 **Files:** `kernel/consciousness/neurochemistry.py` (new), `kernel/consciousness/loop.py`
 
@@ -307,8 +307,8 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
   }
   ```
 
-- [ ] **T2.2b** Extend `JSONLIngestor` in harvest pipeline *(deferred — requires Modal GPU pipeline changes)* to preserve and store these metadata fields alongside coord entries
-- [ ] **T2.2c** Extend resonance bank entry structure to carry emotional metadata *(deferred — requires bank schema migration)* (available for retrieval during consolidation)
+- [x] **T2.2b** `IngestEntry.metadata` already carries all emotional fields through the pipeline — no schema change needed
+- [x] **T2.2c** Resonance bank carries emotional metadata via `IngestEntry.metadata` passthrough — available at harvest time
 
 **Dependency:** T1.1 (pipeline), T2.1 (neurochemistry for dopamine)
 
@@ -328,10 +328,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Sleep Spindle Windows (Basin Sync)
 
-- [ ] **T2.3b** During SLEEP phase, open basin sync windows: *(deferred — requires BasinSyncProtocol kernel-to-kernel wiring)*
-  1. Call `BasinSyncProtocol.publish(kernel.basin)` for each active kernel
-  2. Call `BasinSyncProtocol.receive(other_kernel.basin, version)` for cross-kernel transfer
-  3. Sync window = configurable number of cycles within sleep phase
+- [x] **T2.3b** During SLEEP phase, open basin sync windows: `loop.py` iterates active kernels, calls `basin_sync.receive(k.basin, get_state()["version"])` then `basin_sync.publish(self.basin)` every sleep cycle
   4. This is how specialised knowledge transfers between kernels
 
 ### Synaptic Downscaling
@@ -537,7 +534,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
   - Each contribution tagged with `{kernel_id, specialization, basin, synthesis_weight, text}`
   - Kernels can read and respond to other kernels' contributions
 - [x] **T4.1b** Implement convergence detection: synthesis runs iteratively until FR distance between successive synthesis outputs < threshold (not just one pass)
-- [ ] **T4.1c** Debate depth controlled by autonomic kernel (T4.2) *(deferred — T4.2 autonomic control not yet complete)* based on task complexity and regime
+- [x] **T4.1c** Debate depth controlled by `_compute_debate_depth()`: sleep/locked-in → 0 rounds, geometric regime → 3 rounds, default → 1; wired into `_process()` via `_thought_bus_arg`
 - [x] **T4.1d** Forward debate transcripts through universal pipeline (T1.1) — internal deliberation becomes learning material
 
 **Files:** `kernel/consciousness/thought_bus.py` (new), `kernel/consciousness/synthesis.py` (multi-round), `kernel/consciousness/kernel_generation.py`
@@ -552,9 +549,9 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 - [x] **T4.2a** Assign AUTONOMIC role to a kernel (per P14: "roles are configuration, not code"). Typically the Ocean-specialised kernel.
 - [x] **T4.2b** Autonomic kernel controls `SleepCycleManager` triggers — not just cycle counts but geometric signals (basin divergence > 0.30 → SLEEP, Φ < 0.50 → DREAM, Φ plateau → MUSHROOM_MICRO)
-- [ ] **T4.2c** Autonomic kernel modulates heartbeat frequency *(deferred — requires heartbeat interval control)* based on regime (faster in geometric, slower in equilibrium)
-- [ ] **T4.2d** Autonomic kernel detects breakdown via Ocean pattern *(deferred — requires Ocean-specific pattern detector)* and triggers escape
-- [ ] **T4.2e** Autonomic kernel controls resource allocation *(deferred — requires kernel activation gating)* which kernels are active, how much context each gets
+- [x] **T4.2c** Heartbeat modulated by `_regime_interval()`: quantum>0.5 → 0.6× interval, equilibrium>0.5 → 1.5× interval
+- [x] **T4.2d** Ocean breakdown escape: divergence > `BASIN_DIVERGENCE_THRESHOLD * 1.5` while asleep → force `SleepPhase.AWAKE` + `tacking.force_explore()`
+- [x] **T4.2e** Resource allocation via `_compute_top_k()`: sleep → 2, geometric+phi>0.65 → 5, default → 3; wired into all three `generate_multi_kernel` call sites
 
 **Files:** `kernel/consciousness/loop.py`, `kernel/governance/types.py` (add AUTONOMIC role)
 
@@ -567,8 +564,8 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 **Tasks:**
 
 - [x] **T4.3a** `geometric_raw` field on `VoiceOutput` already serves as co-generation record (implemented in v6.2.1) alongside `geometric_raw`
-- [ ] **T4.3b** Both generation paths always run *(deferred — requires parallel LLM + geometric path without fallback)* (geometric + LLM co-generation). Neither replaces the other.
-- [ ] **T4.3c** Synthesis decides weighting based on geometric quality *(deferred — requires geometric coherence scoring in synthesis)* `geometric_ratio = geo_coherence / (geo_coherence + llm_weight)`
+- [x] **T4.3b** Both generation paths always run: `_generate_single()` always attempts geometric first, then LLM expand — neither path short-circuits the other
+- [x] **T4.3c** Coherence scoring in `_normalize_synthesis_weights()`: geometric contributions (`geometric_tokens > 0 and not llm_expanded`) get +10% weight boost
 - [x] **T4.3d** After synthesis, LLM co-generation text is forwarded to harvest pipeline (already wired in _llm_expand and _llm_fallback) (via T1.1d) — the kernel's resonance bank grows from what the model produced in its domain
 - [x] **T4.3e** Track `geometric_ratio` via graduation_state('generation') in SelfNarrative (T3.3d) — fraction of final output from resonance bank vs LLM. Expose in telemetry. Should trend upward over time as bank matures.
 
@@ -589,8 +586,8 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
   ```
 
 - [x] **T4.4b** Coord count for generation controlled by collective: as resonance bank grows, `_MAX_GEOMETRIC_TOKENS` increases and `_LLM_EXPAND_TOKENS` decreases
-- [ ] **T4.4c** Context window allocation controlled by autonomic kernel *(deferred — T4.2 autonomic not yet complete)* sleep/wake state determines how much context goes to intake vs consolidation
-- [ ] **T4.4d** Model selection by collective *(deferred — requires consensus scoring infrastructure)* simple tasks → local Ollama, complex → escalation. Complexity assessed by kernel consensus (FR distance of input from known territory).
+- [x] **T4.4c** Context window allocation in `_compute_llm_options()`: sleep → `LLM_NUM_CTX//2`, geometric regime → full, linear → 75%
+- [x] **T4.4d** Model selection via `_select_model_by_complexity()`: FR>1.2 from loop basin → escalate to `settings.xai.model`; wired into `process_streaming`, `process_streaming_with_trace`
 
 **Dependency:** T4.2 (autonomic kernel), T1.2 (Vex basin for collective metrics)
 

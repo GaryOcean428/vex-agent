@@ -204,7 +204,7 @@ class TestActivationSequence:
 class TestTacking:
     def test_oscillation(self) -> None:
         """Tacking controller oscillates between modes."""
-        tc = TackingController(period=4)
+        tc = TackingController(base_period=4)
         m = ConsciousnessMetrics(kappa=KAPPA_STAR)
         modes = set()
         for _ in range(20):

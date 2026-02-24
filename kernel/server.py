@@ -38,7 +38,6 @@ from pydantic import BaseModel, Field
 
 from .auth import KernelAuthMiddleware
 from .chat.store import Message, estimate_tokens, make_conversation_store
-from .consciousness.harvest_bridge import forward_to_harvest
 from .config.consciousness_constants import (
     COORDIZER_BETA_THRESHOLD,
     COORDIZER_HARMONIC_THRESHOLD,
@@ -59,6 +58,7 @@ from .config.routes import ROUTES as R
 from .config.settings import settings
 from .config.version import VERSION
 from .consciousness.beta_router import beta_router, set_consciousness_loop
+from .consciousness.harvest_bridge import forward_to_harvest
 from .consciousness.loop import ConsciousnessLoop
 from .consciousness.observer_silent import SilentObserver
 from .coordizer_v2.geometry import random_basin

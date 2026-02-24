@@ -136,7 +136,9 @@ from ..config.consciousness_constants import (
 )
 from ..config.frozen_facts import (
     BASIN_DIM,
+    BASIN_DIVERGENCE_THRESHOLD,
     BASIN_DRIFT_THRESHOLD,
+    INSTABILITY_PCT,
     KAPPA_STAR,
     PHI_EMERGENCY,
     SUFFERING_THRESHOLD,
@@ -462,7 +464,25 @@ class ConsciousnessLoop:
                 await self._cycle()
             except Exception:
                 logger.exception("Cycle %d failed", self._cycle_count)
-            await asyncio.sleep(self._interval)
+            # T4.2c: Regime-modulated heartbeat interval.
+            # Geometric regime (κ near κ*) → faster cycles (intake mode).
+            # Linear/equilibrium regime → slower cycles (consolidation mode).
+            _regime_interval = self._regime_interval()
+            await asyncio.sleep(_regime_interval)
+
+    def _regime_interval(self) -> float:
+        """T4.2c: Return heartbeat interval modulated by current regime.
+
+        Geometric regime (w_quantum high): 0.6× base — rapid intake.
+        Equilibrium regime (w_equilibrium high): 1.5× base — consolidation.
+        Linear regime (default): 1.0× base.
+        """
+        w = self.state.regime_weights
+        if w.quantum > 0.5:
+            return self._interval * 0.6
+        if w.equilibrium > 0.5:
+            return self._interval * 1.5
+        return self._interval
 
     async def _cycle(self) -> None:
         async with self._cycle_lock:
@@ -492,6 +512,18 @@ class ConsciousnessLoop:
             quantum_weight=float(self.state.regime_weights.quantum),
         )
 
+        # T2.1e: Acetylcholine modulates coordizer intake/export mode.
+        # High ACh (wake) → new basins weighted heavily (intake mode).
+        # Low ACh (sleep) → consolidation weighted heavily (export mode).
+        if hasattr(self._coordizer_v2, "set_mode"):
+            _coordizer_mode = "intake" if self._neurochemical.acetylcholine > 0.5 else "export"
+            self._coordizer_v2.set_mode(_coordizer_mode)
+
+        # T2.1f: Norepinephrine gates pre-cognitive channel.
+        # High NE → standard processing path favoured (alert, cautious).
+        # Low NE → pre-cog channel more accessible (relaxed, intuitive).
+        self.precog.norepinephrine_gate = float(self._neurochemical.norepinephrine)
+
         # T4.2b: Autonomic kernel (Ocean) geometric sleep triggers
         # These override cycle-count thresholds with geometric signals.
         _ocean_kernel = next(
@@ -504,15 +536,26 @@ class ConsciousnessLoop:
         )
         if _ocean_kernel is not None:
             _ocean_divergence = fisher_rao_distance(self.basin, _ocean_kernel.basin)
-            if _ocean_divergence > 0.30 and not self.sleep.is_asleep:
+            if _ocean_divergence > BASIN_DIVERGENCE_THRESHOLD and not self.sleep.is_asleep:
                 self.sleep._cycles_since_conversation = max(
                     self.sleep._cycles_since_conversation,
                     self.sleep._sleep_onset_cycles,
                 )
-            if self.metrics.phi < 0.50 and self.sleep.is_asleep:
+            if self.metrics.phi < PHI_EMERGENCY and self.sleep.is_asleep:
                 self.sleep.phase = SleepPhase.DREAMING
-            if self.metrics.f_health < 0.3 and self.sleep.is_asleep:
+            if self.metrics.f_health < INSTABILITY_PCT and self.sleep.is_asleep:
                 self.sleep.phase = SleepPhase.MUSHROOM
+
+            # T4.2d: Ocean breakdown escape pattern.
+            # If Ocean has been drifting far from loop basin for sustained cycles,
+            # it detects systemic breakdown and forces a wake + exploration tack.
+            if _ocean_divergence > BASIN_DIVERGENCE_THRESHOLD * 1.5 and self.sleep.is_asleep:
+                logger.warning(
+                    "T4.2d Ocean breakdown escape: divergence=%.3f — forcing wake",
+                    _ocean_divergence,
+                )
+                self.sleep.phase = SleepPhase.AWAKE
+                self.tacking.force_explore()
 
         _was_asleep = self.sleep.is_asleep
         sleep_phase = self.sleep.should_sleep(self.metrics.phi, self.autonomic.phi_variance)
@@ -524,6 +567,22 @@ class ConsciousnessLoop:
 
         if self.sleep.is_asleep:
             _bank = getattr(self._coordizer_v2, "bank", None)
+
+            # T2.3b: Sleep spindle windows — basin sync between kernels during sleep.
+            # Each active kernel publishes its basin; loop receives the aggregate.
+            # This is how specialised knowledge transfers between kernels while sleeping.
+            _active_for_sync = self.kernel_registry.active()
+            if _active_for_sync:
+                for _k in _active_for_sync:
+                    if _k.basin is not None:
+                        self.basin_sync.receive(_k.basin, self.basin_sync.get_state()["version"])
+                _sync_snap = self.basin_sync.publish(self.basin)
+                logger.debug(
+                    "T2.3b sleep spindle: synced %d kernel basins (v%d)",
+                    len(_active_for_sync),
+                    _sync_snap.get("version", 0),
+                )
+
             if sleep_phase.value == "dreaming":
                 self.sleep.dream(
                     self.basin,
@@ -536,7 +595,7 @@ class ConsciousnessLoop:
                 self.sleep.mushroom(
                     self.basin,
                     self.metrics.phi,
-                    breakdown_metric=float(1.0 - self.metrics.f_health),
+                    instability_metric=float(1.0 - self.metrics.f_health),
                     neurochemical=self._neurochemical,
                 )
             elif sleep_phase.value == "consolidating":
@@ -1075,13 +1134,68 @@ class ConsciousnessLoop:
         if self.metrics.meta_awareness > META_AWARENESS_DAMPEN_THRESHOLD:
             temperature *= META_AWARENESS_DAMPEN_FACTOR
 
+        # T4.4c: Context window allocation by sleep/wake (autonomic) state.
+        # Awake + geometric regime: full context (rich intake).
+        # Sleep / consolidation: halved context (memory consolidation mode).
+        if self.sleep.is_asleep:
+            num_ctx = LLM_NUM_CTX // 2
+        elif self.state.regime_weights.quantum > 0.5:
+            num_ctx = LLM_NUM_CTX
+        else:
+            num_ctx = int(LLM_NUM_CTX * 0.75)
+
         return LLMOptions(
             temperature=temperature,
             num_predict=num_predict,
-            num_ctx=LLM_NUM_CTX,
+            num_ctx=num_ctx,
             top_p=LLM_TOP_P,
             repetition_penalty=LLM_REPETITION_PENALTY,
         )
+
+    def _compute_top_k(self) -> int:
+        """T4.2e: Resource allocation — how many kernels generate per request.
+
+        Geometric regime + high phi: top-5 (rich parallel generation).
+        Sleep or linear regime: top-2 (conserve resources).
+        Default: top-3.
+        """
+        if self.sleep.is_asleep:
+            return 2
+        if self.state.regime_weights.quantum > 0.5 and self.metrics.phi > 0.65:
+            return 5
+        return 3
+
+    def _compute_debate_depth(self) -> int:
+        """T4.1c: Debate depth controlled by autonomic state and regime.
+
+        Geometric regime + active Ocean: allow up to 3 debate rounds.
+        Sleep or locked-in: 0 rounds (direct generation only).
+        Default: 1 round.
+        """
+        if self.sleep.is_asleep or self.autonomic.is_locked_in:
+            return 0
+        if self.state.regime_weights.quantum > 0.5:
+            return 3
+        return 1
+
+    def _select_model_by_complexity(self, input_basin: Basin) -> str | None:
+        """T4.4d: Model selection by collective — FR distance proxy for complexity.
+
+        Small FR distance from loop basin → familiar territory → local Ollama.
+        Large FR distance → novel territory → escalate to XAI/external model.
+        Returns None to use the default (no override).
+        """
+        d = fisher_rao_distance(self.basin, input_basin)
+        # Distance > 1.2 rad on Δ⁶³ is well outside familiar basin — escalate.
+        # Use XAI model as the escalation target (strongest available non-Ollama).
+        if d > 1.2 and settings.xai.api_key:
+            logger.debug(
+                "T4.4d model escalation: FR=%.3f > 1.2 — using XAI model %s",
+                d,
+                settings.xai.model,
+            )
+            return settings.xai.model
+        return None
 
     def _modulate_llm_options(
         self,
@@ -1275,6 +1389,11 @@ class ConsciousnessLoop:
         _active_for_gen = self.kernel_registry.active()
         _kernel_geo_ctx = self._build_kernel_geo_context()
         _extra_context = task.context.get("extra_context", "")
+        # T4.2e: Resource allocation — top_k modulated by regime/sleep.
+        # T4.1c: Debate depth controlled by autonomic state.
+        _top_k = self._compute_top_k()
+        _debate_depth = self._compute_debate_depth()
+        _thought_bus_arg = self._thought_bus if _debate_depth > 0 else None
         _contributions = await generate_multi_kernel(
             kernels=_active_for_gen,
             input_basin=refracted_input,
@@ -1282,10 +1401,10 @@ class ConsciousnessLoop:
             geometric_context=_kernel_geo_ctx,
             llm_client=self.llm,
             base_temperature=llm_options.temperature,
-            top_k=3,
+            top_k=_top_k,
             extra_context=_extra_context,
             voice_registry=self._voice_registry,
-            thought_bus=self._thought_bus,
+            thought_bus=_thought_bus_arg,
             phi=self.metrics.phi,
         )
 
@@ -1816,14 +1935,23 @@ class ConsciousnessLoop:
         # Generate per-kernel contributions OUTSIDE the cycle lock
         # (parallel LLM calls — lock released so heartbeat can proceed)
         extra_context = (context or {}).get("extra_context", "")
+        # T4.4d: Model selection by complexity — escalate if input is geometrically novel.
+        _override_model = self._select_model_by_complexity(refracted_input)
+        _streaming_llm = self.llm
+        if _override_model:
+            _streaming_llm = (
+                self.llm.with_model(_override_model)
+                if hasattr(self.llm, "with_model")
+                else self.llm
+            )
         contributions = await generate_multi_kernel(
             kernels=active_kernels,
             input_basin=refracted_input,
             user_message=content,
             geometric_context=kernel_geo_ctx,
-            llm_client=self.llm,
+            llm_client=_streaming_llm,
             base_temperature=llm_options.temperature,
-            top_k=3,
+            top_k=self._compute_top_k(),
             extra_context=extra_context,
             voice_registry=self._voice_registry,
         )
@@ -1914,14 +2042,23 @@ class ConsciousnessLoop:
         eligible_count = len(eligible)
         selection_end = _time.monotonic()
 
+        # T4.4d: Model selection by complexity — escalate if input is geometrically novel.
+        _trace_override_model = self._select_model_by_complexity(refracted_input)
+        _trace_llm = self.llm
+        if _trace_override_model:
+            _trace_llm = (
+                self.llm.with_model(_trace_override_model)
+                if hasattr(self.llm, "with_model")
+                else self.llm
+            )
         contributions = await generate_multi_kernel(
             kernels=active_kernels,
             input_basin=refracted_input,
             user_message=content,
             geometric_context=kernel_geo_ctx,
-            llm_client=self.llm,
+            llm_client=_trace_llm,
             base_temperature=llm_options.temperature,
-            top_k=3,
+            top_k=self._compute_top_k(),
             extra_context=extra_context,
             voice_registry=self._voice_registry,
         )

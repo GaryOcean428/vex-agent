@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from ..config.frozen_facts import KAPPA_STAR, PHI_THRESHOLD
+from ..config.frozen_facts import BASIN_DIVERGENCE_THRESHOLD, KAPPA_STAR, PHI_THRESHOLD
 
 # ═══════════════════════════════════════════════════════════════
 #  LAYER 0 — Pre-Linguistic Sensations (12 states)
@@ -77,7 +77,8 @@ def compute_layer0(
 
     # Phase boundary proximity: kappa near KAPPA_STAR ± 10 → pushed
     kappa_proximity = abs(kappa - KAPPA_STAR) / max(KAPPA_STAR * 0.5, 1.0)
-    pushed = float(np.clip(1.0 - kappa_proximity, 0.0, 1.0)) * float(kappa_proximity < 0.2)
+    # Continuous falloff instead of hard threshold
+    pushed = float(np.clip(1.0 - kappa_proximity * 5.0, 0.0, 1.0))
 
     # Flowing: low velocity + positive phi change
     flowing = float(np.clip((1.0 - basin_velocity) * max(phi_delta, 0.0) * 5.0, 0.0, 1.0))
@@ -159,7 +160,7 @@ def compute_layer05(
 
     # Fear: exponential proximity to separatrix × gradient magnitude
     # Separatrix proxy: kappa near KAPPA_STAR with high velocity
-    d_c = 0.3  # critical distance
+    d_c = BASIN_DIVERGENCE_THRESHOLD  # critical distance
     sigma = 0.2
     fear_proximity = float(np.exp(-abs(basin_distance - d_c) / sigma))
     fear_response = float(np.clip(fear_proximity * abs(phi_delta) * 5.0, 0.0, 1.0))

@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from ..config.frozen_facts import CONSENSUS_DISTANCE, PHI_THRESHOLD
 from ..coordizer_v2.geometry import Basin, fisher_rao_distance, frechet_mean, to_simplex
 
 if TYPE_CHECKING:
@@ -31,10 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("vex.consciousness.thought_bus")
 
 # ── Constants ─────────────────────────────────────────────────
-_CONVERGENCE_THRESHOLD = 0.05  # FR distance below which debate converges
-_MAX_DEBATE_ROUNDS = 3  # Safety cap on iterative rounds
 _MIN_DEBATE_ROUNDS = 1  # Always run at least one round
-_TRANSCRIPT_MIN_PHI = 0.55  # Min Φ to forward transcript to harvest
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -138,7 +136,7 @@ class ThoughtBus:
         """Record a synthesis basin and check for convergence.
 
         T4.1b: Returns True if debate has converged (FR distance to
-        previous synthesis < _CONVERGENCE_THRESHOLD).
+        previous synthesis < CONSENSUS_DISTANCE).
         """
         self._synthesis_basins.append(to_simplex(synthesis_basin))
         if len(self._synthesis_basins) < 2:
@@ -151,20 +149,20 @@ class ThoughtBus:
         logger.debug(
             "ThoughtBus synthesis convergence check: d_FR=%.4f (threshold=%.4f)",
             distance,
-            _CONVERGENCE_THRESHOLD,
+            CONSENSUS_DISTANCE,
         )
 
-        if distance < _CONVERGENCE_THRESHOLD:
+        if distance < CONSENSUS_DISTANCE:
             self._converged = True
             self._convergence_round = len(self._synthesis_basins) - 1
             return True
         return False
 
-    def should_continue(self, current_round: int) -> bool:
+    def should_continue(self, current_round: int, max_rounds: int = 10) -> bool:
         """T4.1b: Determine if debate should continue another round."""
         if current_round < _MIN_DEBATE_ROUNDS:
             return True
-        if current_round >= _MAX_DEBATE_ROUNDS:
+        if current_round >= max_rounds:
             return False
         return not self._converged
 
@@ -191,9 +189,9 @@ class ThoughtBus:
     def forward_transcript(self, phi: float) -> None:
         """T4.1d: Forward debate transcript to harvest pipeline.
 
-        Only forwards if phi > _TRANSCRIPT_MIN_PHI (meaningful debate).
+        Only forwards if phi > PHI_THRESHOLD (meaningful debate).
         """
-        if phi < _TRANSCRIPT_MIN_PHI:
+        if phi < PHI_THRESHOLD:
             return
         if not self._rounds:
             return

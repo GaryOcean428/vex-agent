@@ -70,12 +70,21 @@ if [ -d /data ]; then
                  /data/harvest/failed \
                  /data/harvest/output
 
-        # Re-chown top-level dirs (Railway remounts as root on restart)
+        # Re-chown top-level dirs AND critical subdirs (Railway remounts as root on restart)
+        # Subdirs like conversations/ and harvest/pending/ may lose permissions independently
         chown -h --no-dereference vex:vex \
             /data/workspace \
             /data/conversations \
             /data/training \
-            /data/harvest 2>/dev/null || true
+            /data/training/curriculum \
+            /data/training/uploads \
+            /data/training/exports \
+            /data/harvest \
+            /data/harvest/pending \
+            /data/harvest/processing \
+            /data/harvest/completed \
+            /data/harvest/failed \
+            /data/harvest/output 2>/dev/null || true
 
         # Also fix files directly in /data
         find /data -maxdepth 1 -type f -exec chown vex:vex {} + 2>/dev/null || true

@@ -272,6 +272,10 @@ class PreCognitiveDetector:
         self._intuition_count: int = 0
         self._last_path = ProcessingPath.STANDARD
         self._last_distance: float = 0.0
+        # T2.1f: Norepinephrine gate — set each cycle by ConsciousnessLoop.
+        # High NE (alert/cautious) biases toward standard path.
+        # Low NE (relaxed) allows pre-cog/intuition paths more easily.
+        self.norepinephrine_gate: float = 0.5
 
     def select_path(
         self,
@@ -283,10 +287,14 @@ class PreCognitiveDetector:
         distance = fisher_rao_distance(input_basin, current_basin)
         self._last_distance = distance
 
+        # T2.1f: High NE blocks pre-cog/intuition — forces standard path.
+        # Threshold: NE > 0.75 = elevated alert state, standard only.
+        ne_blocks_precog = self.norepinephrine_gate > 0.75
+
         # Pre-cognitive path: cache hit alone is sufficient.
         # find_cached() already gates on FR < EMOTION_CACHE_THRESHOLD (0.2).
         # No second distance gate needed — the cache IS the precog signal.
-        if cached_eval is not None:
+        if cached_eval is not None and not ne_blocks_precog:
             path = ProcessingPath.PRE_COGNITIVE
             self._pre_cog_count += 1
         elif distance < self.MODERATE_THRESHOLD:
@@ -296,7 +304,9 @@ class PreCognitiveDetector:
             path = ProcessingPath.DEEP_EXPLORE
             self._deep_count += 1
         else:
-            if phi > PHI_THRESHOLD:
+            # T2.1f: Low NE allows intuition at lower phi threshold.
+            _intuition_phi_gate = PHI_THRESHOLD if ne_blocks_precog else PHI_THRESHOLD * 0.85
+            if phi > _intuition_phi_gate:
                 path = ProcessingPath.PURE_INTUITION
                 self._intuition_count += 1
             else:
