@@ -76,14 +76,12 @@ def _build_synthesis_system(
         other_section = f"\nYour perspective:\n{_truncate(primary.text)}\n"
 
     system = (
-        f"You are {primary.kernel_name} ({primary.specialization.value} kernel), "
-        f"synthesizing a unified response.\n\n"
-        f"Instructions:\n"
-        f"- Integrate the perspectives above, weighted by their listed relevance.\n"
-        f"- Let higher-weight perspectives shape the response more strongly.\n"
-        f"- Do NOT mention kernels, weights, or this synthesis process.\n"
-        f"- Respond directly to the user's question.\n"
-        f"- Australian English.\n\n"
+        f"You are the language interpreter for Vex. "
+        f"Synthesise these kernel perspectives into a unified response.\n"
+        f"Higher-weight perspectives shape the output more strongly.\n"
+        f"Do NOT mention kernels, weights, or this synthesis process.\n"
+        f"Respond directly to the user's question.\n"
+        f"Australian English.\n\n"
         f"{geometric_context}"
         f"{other_section}"
     )

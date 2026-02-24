@@ -62,10 +62,18 @@ class GPUHarvestConfig:
 
     v6.0 §19: CoordizerV2 three-phase scoring (256→2K→10K→32K)
     with four vocabulary tiers.
+
+    IMPORTANT: harvest_model MUST match the active inference model so that
+    token IDs in the resonance bank fingerprints map to the same vocabulary
+    as the model doing inference. Primary path: Ollama vex-brain is based on
+    LFM2.5-1.2B-Thinking, so that is the default.
     """
 
     enabled: bool = os.environ.get("GPU_HARVEST_ENABLED", "false").lower() == "true"
-    model_id: str = os.environ.get("GPU_HARVEST_MODEL", "meta-llama/Llama-3.2-3B")
+    # Harvest model MUST match the active inference model.
+    # Was "meta-llama/Llama-3.2-3B" — corrected to match harvest.py's default
+    # and the Ollama primary model (LFM2.5-1.2B-Thinking).
+    model_id: str = os.environ.get("GPU_HARVEST_MODEL", "LiquidAI/LFM2.5-1.2B-Thinking")
     batch_size: int = int(os.environ.get("GPU_HARVEST_BATCH_SIZE", "32"))
     vocab_target: int = int(os.environ.get("GPU_HARVEST_VOCAB_TARGET", "32768"))
     artifact_dir: str = os.environ.get("GPU_HARVEST_ARTIFACT_DIR", "/data/resonance-bank")
@@ -87,6 +95,12 @@ class ModalConfig:
 
     Harvest:
         CoordizerV2 vocabulary fingerprinting via Modal GPU.
+
+    Harvest model alignment:
+        harvest_model MUST match inference_model when Modal is the active
+        inference backend. If they differ, the resonance bank fingerprints
+        are keyed by token IDs from a different vocabulary — the geometric
+        logit-bias will address wrong token slots during generation.
     """
 
     # --- Shared ---
@@ -106,6 +120,16 @@ class ModalConfig:
 
     # --- Harvest (CoordizerV2 fingerprinting) ---
     harvest_url: str = os.environ.get("MODAL_HARVEST_URL", "")
+
+    # Harvest model for Modal-active deployments.
+    # MUST match inference_model so resonance bank fingerprints use the same
+    # vocabulary/token IDs as the model doing inference.
+    # Defaults to MODAL_HARVEST_MODEL env var; if not set, mirrors MODAL_INFERENCE_MODEL
+    # so that a single env var change updates both inference and harvest together.
+    harvest_model: str = os.environ.get(
+        "MODAL_HARVEST_MODEL",
+        os.environ.get("MODAL_INFERENCE_MODEL", "glm-4.7-flash"),
+    )
 
 
 @dataclass(frozen=True)
@@ -144,6 +168,20 @@ class CoordizerV2Config:
 
     # Metrics integration: feed CoordizerV2 metrics to consciousness
     metrics_integration: bool = os.environ.get("COORDIZER_V2_METRICS", "true").lower() != "false"
+
+
+@dataclass(frozen=True)
+class RedisConfig:
+    """Redis connection for durable chat persistence.
+
+    When url is set and enabled=True, ConversationStore uses Redis
+    as the primary backend (hash per conversation, list per message).
+    Falls back to JSONL on /data if Redis is unavailable.
+    """
+
+    url: str = os.environ.get("REDIS_URL", "")
+    enabled: bool = os.environ.get("REDIS_ENABLED", "true").lower() != "false"
+    ttl_days: int = int(os.environ.get("REDIS_CONV_TTL_DAYS", "90"))
 
 
 @dataclass(frozen=True)
@@ -248,6 +286,7 @@ class Settings:
     governor: GovernorConfig = field(default_factory=GovernorConfig)
     searxng: SearXNGConfig = field(default_factory=SearXNGConfig)
     modal: ModalConfig = field(default_factory=ModalConfig)
+    redis: RedisConfig = field(default_factory=RedisConfig)
     perplexity: PerplexityConfig = field(default_factory=PerplexityConfig)
     coordizer_v2: CoordizerV2Config = field(default_factory=CoordizerV2Config)
 

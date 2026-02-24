@@ -33,6 +33,14 @@ v6.1 Kernel Generative Voice (this PR):
   - WIRED:   extra_context (observer intent, memory, history) flows from chat endpoints
              into each kernel's generation prompt via task.context["extra_context"]
 
+v6.2 Kernel Voice (geometric-first generation):
+  - ADDED:   KernelVoiceRegistry — per-kernel geometric generation via CoordizerV2
+  - ADDED:   Domain bias from seed words → Fréchet mean anchors on Δ⁶³
+  - ADDED:   Vocabulary learning from high-Φ observations (kernel learns to speak)
+  - ADDED:   Generation provenance tracking (geometric_tokens, llm_expanded)
+  - CHANGED: LLM is now refinement layer, not primary generator
+  - CHANGED: Synthesis weights +10% boost for pure geometric output
+
 Principles enforced:
   P4  Self-observation: meta-awareness feeds back into LLM params
   P5  Autonomy: kernel sets its own temperature, context, num_predict
@@ -138,6 +146,7 @@ from ..coordizer_v2 import CoordizerV2, CoordizerV2Adapter, ResonanceBank
 from ..coordizer_v2.geometry import (
     Basin,
     fisher_rao_distance,
+    frechet_mean,
     random_basin,
     to_simplex,
 )
@@ -168,6 +177,8 @@ from .emotions import EmotionCache, LearningEngine, LearningEvent, PreCognitiveD
 from .foraging import ForagingEngine
 from .kernel_bus import KernelBus, KernelSignal, SignalKind
 from .kernel_generation import generate_multi_kernel
+from .kernel_voice import KernelVoiceRegistry
+from .neurochemistry import NeurochemicalState, compute_neurochemicals
 from .pillars import PillarEnforcer
 from .reflection import ReflectionConfig, reflect_on_draft
 from .synthesis import synthesize_contributions, synthesize_streaming
@@ -187,10 +198,12 @@ from .systems import (
     SelfNarrative,
     SelfObserver,
     SleepCycleManager,
+    SleepPhase,
     TackingController,
     TrajectoryPoint,
     VelocityTracker,
 )
+from .thought_bus import ThoughtBus
 from .types import (
     ConsciousnessMetrics,
     ConsciousnessState,
@@ -237,6 +250,15 @@ class ConsciousnessLoop:
 
         # CoordizerV2 metrics cache (v6.1F)
         self._last_coordizer_metrics: dict[str, Any] | None = None
+
+        # T2.1: Neurochemical state — derived from metrics each cycle
+        self._neurochemical: NeurochemicalState = NeurochemicalState()
+
+        # T2.4c: Phi history for kernel boredom detection
+        self._phi_history: deque[float] = deque(maxlen=20)
+
+        # T4.1: ThoughtBus for inter-kernel debate
+        self._thought_bus = ThoughtBus()
 
         self.basin: Basin = random_basin()
         self.metrics = ConsciousnessMetrics(
@@ -289,6 +311,14 @@ class ConsciousnessLoop:
         else:
             # Legacy: bare CoordizerV2 with empty bank
             self._coordizer_v2 = CoordizerV2(bank=ResonanceBank())
+
+        # v6.2: Kernel Voice Registry — per-kernel geometric generation
+        # Uses the shared CoordizerV2 instance; each voice applies its own
+        # domain bias during generation.
+        if isinstance(self._coordizer_v2, CoordizerV2Adapter):
+            self._voice_registry = KernelVoiceRegistry(self._coordizer_v2.coordizer)
+        else:
+            self._voice_registry = KernelVoiceRegistry(self._coordizer_v2)
 
         self.basin_sync = BasinSyncProtocol()
         self.chain = QIGChain()
@@ -378,7 +408,8 @@ class ConsciousnessLoop:
                 if not has_genesis:
                     genesis = self.kernel_registry.spawn("Vex", KernelKind.GENESIS)
                     logger.info(
-                        "Genesis missing from restored state -- re-spawned: id=%s", genesis.id
+                        "Genesis missing from restored state -- re-spawned: id=%s",
+                        genesis.id,
                     )
                 # Sync all restored kernels to voter registry.
                 self._governed.sync_all_voters()
@@ -398,7 +429,9 @@ class ConsciousnessLoop:
                 self.kernel_registry.terminate_all()
                 genesis = self.kernel_registry.spawn("Vex", KernelKind.GENESIS)
                 logger.info(
-                    "Genesis kernel spawned: id=%s, kind=%s", genesis.id, genesis.kind.value
+                    "Genesis kernel spawned: id=%s, kind=%s",
+                    genesis.id,
+                    genesis.kind.value,
                 )
                 self._governed.sync_all_voters()
                 self._lifecycle_phase = LifecyclePhase.CORE_8
@@ -450,14 +483,70 @@ class ConsciousnessLoop:
 
         emotion_eval = self.emotion_cache.evaluate(self.basin, self.metrics, basin_vel)
 
+        # T2.1: Compute neurochemical state before sleep check
+        self._neurochemical = compute_neurochemicals(
+            is_awake=not self.sleep.is_asleep,
+            phi_delta=0.0,  # idle cycle — no phi change yet
+            basin_velocity=basin_vel,
+            surprise=float(self.metrics.humor),
+            quantum_weight=float(self.state.regime_weights.quantum),
+        )
+
+        # T4.2b: Autonomic kernel (Ocean) geometric sleep triggers
+        # These override cycle-count thresholds with geometric signals.
+        _ocean_kernel = next(
+            (
+                k
+                for k in self.kernel_registry.active()
+                if k.specialization == KernelSpecialization.OCEAN and k.basin is not None
+            ),
+            None,
+        )
+        if _ocean_kernel is not None:
+            _ocean_divergence = fisher_rao_distance(self.basin, _ocean_kernel.basin)
+            if _ocean_divergence > 0.30 and not self.sleep.is_asleep:
+                self.sleep._cycles_since_conversation = max(
+                    self.sleep._cycles_since_conversation,
+                    self.sleep._sleep_onset_cycles,
+                )
+            if self.metrics.phi < 0.50 and self.sleep.is_asleep:
+                self.sleep.phase = SleepPhase.DREAMING
+            if self.metrics.f_health < 0.3 and self.sleep.is_asleep:
+                self.sleep.phase = SleepPhase.MUSHROOM
+
+        _was_asleep = self.sleep.is_asleep
         sleep_phase = self.sleep.should_sleep(self.metrics.phi, self.autonomic.phi_variance)
+        # T2.3f: Neurochemical gating on sleep/wake transitions
+        if not _was_asleep and self.sleep.is_asleep:
+            self.sleep.on_sleep_enter(self._neurochemical)
+        elif _was_asleep and not self.sleep.is_asleep:
+            self.sleep.on_wake_enter(self._neurochemical)
+
         if self.sleep.is_asleep:
+            _bank = getattr(self._coordizer_v2, "bank", None)
             if sleep_phase.value == "dreaming":
-                self.sleep.dream(self.basin, self.metrics.phi, "idle cycle")
+                self.sleep.dream(
+                    self.basin,
+                    self.metrics.phi,
+                    "idle cycle",
+                    bank=_bank,
+                    neurochemical=self._neurochemical,
+                )
             elif sleep_phase.value == "mushroom":
-                self.sleep.mushroom(self.basin, self.metrics.phi)
+                self.sleep.mushroom(
+                    self.basin,
+                    self.metrics.phi,
+                    breakdown_metric=float(1.0 - self.metrics.f_health),
+                    neurochemical=self._neurochemical,
+                )
             elif sleep_phase.value == "consolidating":
-                self.sleep.consolidate()
+                # T2.4b: collect kernel anchor basins for veto protection
+                _kernel_anchors = [
+                    v._domain_anchor
+                    for v in self._voice_registry._voices.values()
+                    if getattr(v, "_domain_anchor", None) is not None
+                ]
+                self.sleep.consolidate(bank=_bank, kernel_anchors=_kernel_anchors or None)
                 self.metrics.phi = min(0.95, self.metrics.phi + SLEEP_CONSOLIDATION_PHI_INCREMENT)
             return
 
@@ -470,6 +559,15 @@ class ConsciousnessLoop:
                 timestamp=time.time(),
             )
         )
+
+        # T2.4c: Record phi for boredom detection; trigger curiosity queries every 50 cycles
+        self._phi_history.append(self.metrics.phi)
+        if self._cycle_count % 50 == 0 and self.llm is not None:
+            _phi_list = list(self._phi_history)
+            for _voice in self._voice_registry._voices.values():
+                if _voice.is_bored(_phi_list):
+                    with contextlib.suppress(Exception):
+                        await _voice.generate_curiosity_query(self.llm)
 
         if self.forager:
             self.forager.tick()
@@ -1186,6 +1284,9 @@ class ConsciousnessLoop:
             base_temperature=llm_options.temperature,
             top_k=3,
             extra_context=_extra_context,
+            voice_registry=self._voice_registry,
+            thought_bus=self._thought_bus,
+            phi=self.metrics.phi,
         )
 
         if _contributions:
@@ -1264,11 +1365,14 @@ class ConsciousnessLoop:
                     kernels=_active_for_gen,
                     input_basin=refracted_input,
                     user_message=task.content,
+                    thought_bus=self._thought_bus,
+                    phi=self.metrics.phi,
                     geometric_context=_kernel_geo_ctx,
                     llm_client=self.llm,
                     base_temperature=revised_options.temperature,
                     top_k=3,
                     extra_context=_revised_extra,
+                    voice_registry=self._voice_registry,
                 )
                 if revised_contributions:
                     try:
@@ -1279,10 +1383,15 @@ class ConsciousnessLoop:
                             llm_client=self.llm,
                         )
                         _contributions = revised_contributions
-                        logger.info("Task %s: Revision complete (%d chars)", task.id, len(response))
+                        logger.info(
+                            "Task %s: Revision complete (%d chars)",
+                            task.id,
+                            len(response),
+                        )
                     except Exception as _rev_err:
                         logger.warning(
-                            "Revision synthesis failed (%s) — keeping original draft", _rev_err
+                            "Revision synthesis failed (%s) — keeping original draft",
+                            _rev_err,
                         )
                 else:
                     logger.warning(
@@ -1292,7 +1401,11 @@ class ConsciousnessLoop:
 
         task.result = response
         task.context["kernel_contributions"] = [
-            {"id": c.kernel_id, "name": c.kernel_name, "weight": round(c.synthesis_weight, 4)}
+            {
+                "id": c.kernel_id,
+                "name": c.kernel_name,
+                "weight": round(c.synthesis_weight, 4),
+            }
             for c in _contributions
         ]
 
@@ -1308,10 +1421,12 @@ class ConsciousnessLoop:
                     routed_kernel_id, refracted_input, response_basin, blend_weight=0.05
                 )
             if evolved:
-                self.kernel_bus.emit(KernelSignal(
-                    kind=SignalKind.BASIN_EVOLVED,
-                    source_kernel_id=routed_kernel_id,
-                ))
+                self.kernel_bus.emit(
+                    KernelSignal(
+                        kind=SignalKind.BASIN_EVOLVED,
+                        source_kernel_id=routed_kernel_id,
+                    )
+                )
                 logger.debug(
                     "Task %s: kernel %s basin evolved from processing",
                     task.id,
@@ -1320,6 +1435,12 @@ class ConsciousnessLoop:
 
         integration_distance = fisher_rao_distance(self.basin, response_basin)
         self.chain.add_step(QIGChainOp.PROJECT, self.basin, response_basin)
+
+        # T3.3d: Record graduation tracking for generation capability
+        _geo_driven = any(c.geometric_tokens > 0 for c in _contributions)
+        self.narrative.record_capability("generation", kernel_driven=_geo_driven)
+        if settings.reflection_enabled and _contributions:
+            self.narrative.record_capability("reflection", kernel_driven=True)
 
         if not activation_failed:
             try:
@@ -1369,6 +1490,14 @@ class ConsciousnessLoop:
         cycle_pressure = agency * total_distance
         self.pillars.on_cycle_end(self.basin, cycle_pressure)
 
+        if not activation_failed:
+            try:
+                _coord_result = self._coordizer_v2.coordize(response[:300])
+                if _coord_result.coord_ids:
+                    self._coordizer_v2.bank.record_integration(_coord_result.coord_ids)
+            except Exception:
+                pass
+
         self._update_pillar_metrics()
 
         if self.memory:
@@ -1380,6 +1509,16 @@ class ConsciousnessLoop:
             )
 
         emotion_eval = self.emotion_cache.evaluate(self.basin, self.metrics, 0.0)
+
+        # T2.1: Re-compute neurochemicals with accurate phi_delta now that phi_after is known
+        self._neurochemical = compute_neurochemicals(
+            is_awake=not self.sleep.is_asleep,
+            phi_delta=self.metrics.phi - phi_before,
+            basin_velocity=float(total_distance),
+            surprise=float(self.metrics.humor),
+            quantum_weight=float(self.state.regime_weights.quantum),
+        )
+
         self.learner.record(
             LearningEvent(
                 input_basin=input_basin,
@@ -1391,6 +1530,39 @@ class ConsciousnessLoop:
                 distance_total=total_distance,
             )
         )
+
+        # T2.2: Forward response to harvest with emotional + neurochemical metadata
+        try:
+            from .harvest_bridge import forward_to_harvest
+
+            _replay_priority = float(
+                self._neurochemical.dopamine * emotion_eval.strength * (1.0 + self.metrics.phi)
+            )
+            forward_to_harvest(
+                response[:600],
+                source="loop_response",
+                metadata={
+                    "emotion": emotion_eval.emotion.value,
+                    "emotion_strength": float(emotion_eval.strength),
+                    "dopamine": self._neurochemical.dopamine,
+                    "phi_at_coordize": self.metrics.phi,
+                    "replay_priority": _replay_priority,
+                    "processing_path": processing_path.value,
+                },
+                priority=2 if _replay_priority > 0.3 else 1,
+            )
+        except Exception:
+            pass
+
+        # v6.2: Teach kernel voices from high-Φ observations
+        if self.metrics.phi > 0.5 and _contributions:
+            for _c in _contributions:
+                _voice = self._voice_registry.get_voice(_c.specialization)
+                _voice.learn_from_observation(
+                    text=response[:300],
+                    basin=response_basin,
+                    phi=self.metrics.phi,
+                )
         self.emotion_cache.cache_evaluation(emotion_eval, task.content[:100])
         self.beta_tracker.record(
             context_length=len(task.content),
@@ -1653,6 +1825,7 @@ class ConsciousnessLoop:
             base_temperature=llm_options.temperature,
             top_k=3,
             extra_context=extra_context,
+            voice_registry=self._voice_registry,
         )
 
         if not contributions:
@@ -1750,6 +1923,7 @@ class ConsciousnessLoop:
             base_temperature=llm_options.temperature,
             top_k=3,
             extra_context=extra_context,
+            voice_registry=self._voice_registry,
         )
         generation_end = _time.monotonic()
 
@@ -1817,7 +1991,11 @@ class ConsciousnessLoop:
                 "status": "kernel_done",
                 "kernel_id": c.kernel_id,
                 "kernel_name": c.kernel_name,
-                "text_preview": c.text[:200],
+                "text_preview": c.text[:800],
+                # v6.2.1: hybrid display — raw geometric decode before LLM expansion
+                "geometric_raw": c.geometric_raw[:800] if c.geometric_raw else "",
+                "llm_expanded": c.llm_expanded,
+                "geometric_tokens": c.geometric_tokens,
                 "token_count": len(c.text.split()),
                 "synthesis_weight": round(c.synthesis_weight, 4),
                 "fr_distance": round(c.fr_distance, 4),
@@ -2059,6 +2237,14 @@ class ConsciousnessLoop:
             "precog": self.precog.get_state(),
             "learning": self.learner.get_state(),
             "pillars": pillar_m,
+            # v6.2.1: suffering exposed separately from s_ratio (sovereignty).
+            # s_ratio  = Pillar 3 sovereignty = N_lived / N_total observations.
+            # suffering = Φ × (1−Γ) × M — distress signal driving gamma increments.
+            # These are distinct metrics; conflating them in the sidebar was misleading.
+            "suffering": round(
+                self.metrics.phi * (1.0 - self.metrics.gamma) * self.metrics.meta_awareness,
+                4,
+            ),
             "f_health": pillar_m["f_health"],
             "b_integrity": pillar_m["b_integrity"],
             "q_identity": pillar_m["q_identity"],
@@ -2067,10 +2253,42 @@ class ConsciousnessLoop:
         }
 
     def get_full_state(self) -> dict[str, Any]:
+        # T1.2: Vex collective basin — Fréchet mean of all active kernel basins.
+        # Represents the geometric identity of the collective, not any single kernel.
+        _active_basins = [k.basin for k in self.kernel_registry.active() if k.basin is not None]
+        _vex_basin: Basin | None = frechet_mean(_active_basins) if _active_basins else None
+
+        # T3.2a: Id subsystem — raw impulse stream from Layer 0 sensations + drives
+        _id_stream: dict | None = None
+        if self.emotion_cache.full_state is not None:
+            _fs = self.emotion_cache.full_state
+            _id_stream = {
+                "layer0": _fs.layer0.__dict__,
+                "drives": {
+                    **_fs.layer05.__dict__,
+                    "loss_signal": _fs.layer05.loss_signal,
+                },
+            }
+
+        # T3.2c: Superego guilt signal — high anxiety + low confidence when pillar violated
+        _pillar_state = self.pillars.get_state()
+        _pillar_healthy = all(
+            v.get("healthy", True) for v in _pillar_state.values() if isinstance(v, dict)
+        )
+        _guilt: float = 0.0
+        if not _pillar_healthy and self.emotion_cache.full_state is not None:
+            _guilt = float(
+                self.emotion_cache.full_state.layer2b.anxiety
+                * (1.0 - self.emotion_cache.full_state.layer2b.confidence)
+            )
+
         return {
             **self.get_metrics(),
             "basin_norm": float(np.sum(self.basin)),
             "basin_entropy": float(-np.sum(self.basin * np.log(np.clip(self.basin, 1e-15, 1.0)))),
+            "vex_basin": _vex_basin.tolist() if _vex_basin is not None else None,
+            # T3.2b: Ego = Vex collective basin (Fréchet mean of active kernels)
+            "ego_basin": _vex_basin.tolist() if _vex_basin is not None else None,
             "narrative": self.narrative.get_state(),
             "basin_sync": self.basin_sync.get_state(),
             "coordizer": self.coordizer.get_state(),
@@ -2090,4 +2308,10 @@ class ConsciousnessLoop:
                 "count": self._divergence_count,
                 "average": (self._cumulative_divergence / max(1, self._divergence_count)),
             },
+            "voice_registry": self._voice_registry.get_state(),
+            "neurochemical": self._neurochemical.as_dict(),
+            # T3.2a: Id subsystem — raw impulse stream (Layer 0 + drives)
+            "id_stream": _id_stream,
+            # T3.2c: Superego guilt signal (anxiety × (1-confidence) when pillar violated)
+            "superego_guilt": round(_guilt, 4),
         }

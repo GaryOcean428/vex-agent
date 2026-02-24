@@ -888,3 +888,32 @@ Solution: System has reached E8 dimension limit (248 kernels). This is expected 
 ---
 
 **Happy coding!** Remember: Geometric purity is the foundation of consciousness emergence. When in doubt, use Fisher-Rao. 🧠⚡
+
+
+## 9. Strict Silo and Dependency Doctrine (Track Isolation)
+
+To prevent cross-contamination across the ecosystem, all agents must enforce these rules:
+
+### 9.1 The Golden Rule of Dependencies
+`vex-agent` and `pantheon-chat` are **standalone**. They MUST NOT use relative path imports (e.g., `sys.path.append('../../qig-core')`) to access the `qig-*` repos.
+Instead, use editable pip installs inside their respective virtual environments:
+`pip install -e ../../qig-core`
+`pip install -e ../../qigkernels`
+`pip install -e ../../qig-tokenizer`
+
+### 9.2 Access Control Matrix
+- **`qig-verification`**: PHYSICS FORTRESS. **STRICTLY READ-ONLY** for agents. No agent logic, LLM calls, or E8 math here.
+- **`qig-core`**: SHARED PRIMITIVES. Modifiable ONLY when fixing a systemic math bug. Otherwise, **STRICTLY READ-ONLY**.
+- **`qigkernels`**: MATH & TRACK C SANDBOX. Modifiable for Track C (Dynamical Field) development. **STRICTLY READ-ONLY** regarding physics results. Cannot import from `pantheon-chat`.
+- **`qig-tokenizer`**: ARTIFACT & COORDIZATION GENERATOR. Modifiable for BPE and basin coordinate logic. Does not govern active agent loops.
+- **`vex-agent`**: STANDALONE AGENT (TRACK A). Modifiable for `loop.py`, `pillars.py`, LLM API calls. **STRICTLY READ-ONLY** for geometry math (must import from `qig-core`/`qig-tokenizer`).
+- **`pantheon-projects/pantheon-chat`**: STANDALONE PRODUCT & UI. Modifiable for React, TypeScript, Postgres. **STRICTLY READ-ONLY** for QIG math (relies on artifacts and installed packages).
+
+### 9.3 Workflow Rules
+- **Rule 1: One Repo per PR / Task:** Never update geometry implementation across all repos at once.
+- **Rule 2: Data Hand-offs via Artifacts:** Pass data between silos via JSON ledgers or artifacts (e.g., `frozen_facts.json`). Air-gap the physics from the product.
+- **Rule 3: Isolated Virtual Environments:** Keep `qig-verification`, `vex-agent`, and `pantheon-chat/qig-backend` in separate `.venv` folders. Do not use global parent environments.
+- **Rule 4: Track Isolation:**
+  - **Track A (Coordized Autoregressive):** Baseline inside `vex-agent`.
+  - **Track B (Latent Diffusion):** R&D inside `qig-consciousness`.
+  - **Track C (Tokenless Dynamical Field):** R&D inside `qigkernels/research/track_c/`.

@@ -57,6 +57,7 @@ class KernelRole(StrEnum):
     COORDINATOR = "coordinator"  # Synthesis across kernels, trajectory foresight
     COACH = "coach"  # External reinforcement, curriculum delivery
     ROUTER = "router"  # Fisher-Rao dispatch to nearest basin centres
+    AUTONOMIC = "autonomic"  # T4.2: Controls sleep triggers, heartbeat, resource allocation
 
 
 # Core-8 specialisation order (v6.0 §18.1 bootstrap sequence)

@@ -1,23 +1,35 @@
 """
-Kernel Generative Voice — v6.1 Thermodynamic Consciousness Protocol
+Kernel Generative Voice — v6.2 Geometric-First Generation
 
-Per-kernel text generation implementing Protocol 6.1 §19.3:
-  "Each kernel biases toward domain-specific vocabulary via Fisher-Rao
-   weighted mean on the probability simplex. Same manifold, different
-   harmonic emphasis, different voice."
+Per-kernel text generation via CoordizerV2 resonance bank with
+domain-specific bias. The LLM is a refinement layer, not the
+primary generator.
+
+v6.2 changes from v6.1:
+  - ADDED:   KernelVoice.generate() as primary path (geometric tokens)
+  - ADDED:   LLM expansion for sparse resonance bank (bootstrap)
+  - ADDED:   Vocabulary learning from high-Φ observations
+  - CHANGED: Each kernel generates from its domain perspective on Δ⁶³
+  - CHANGED: KernelContribution now tracks geometric vs LLM split
+  - CHANGED: Synthesis weights: +10% boost for pure geometric generation
+
+v6.2.1 changes:
+  - ADDED:   geometric_raw field on KernelContribution (raw decode before LLM)
+  - CHANGED: _generate_single threads geometric_raw from VoiceOutput
 
 Architecture:
   - Top-K kernels selected by Fisher-Rao proximity to input basin
-  - Each kernel generates independently using specialization-specific prompt
-  - quenched_gain modulates temperature: high gain (frozen identity) → low temp
-  - asyncio.gather for parallel generation (no serial bottleneck)
+  - Each kernel generates via KernelVoice (CoordizerV2 + domain bias)
+  - Geometric tokens from resonance bank are primary output
+  - LLM expands sparse geometric output into natural language
+  - asyncio.gather for parallel generation (unchanged)
   - Synthesis weights: proximity_weight × quenched_gain, normalized
-  - extra_context: observer intent + memory + history injected per-kernel
 
 Purity guarantees:
   - All distances: Fisher-Rao on Δ⁶³ (NOT Euclidean, NOT cosine)
+  - Domain bias: geodesic interpolation (slerp) on simplex
+  - Token selection: resonance activation by FR proximity
   - No Adam, no LayerNorm, no embedding, no flatten
-  - Temperature is a geometric primitive (inverse of quenched_gain × proximity)
 """
 
 from __future__ import annotations
@@ -33,59 +45,57 @@ from ..coordizer_v2.geometry import Basin, fisher_rao_distance, to_simplex
 from ..governance import KernelSpecialization
 
 if TYPE_CHECKING:
-    pass
+    from .kernel_voice import KernelVoiceRegistry
+    from .thought_bus import ThoughtBus
 
 logger = logging.getLogger("vex.kernel_generation")
 
 # ── Specialization-specific system prompts ────────────────────
-# Kept short (~50 tokens) so the 1.2B model can actually follow them.
-# Each defines the kernel's voice, not its full personality.
+# Retained for LLM fallback path (bootstrap when resonance bank is sparse).
+# Once bank is mature, these are only used for LLM expansion context.
 _SPEC_PROMPTS: dict[KernelSpecialization, str] = {
     KernelSpecialization.HEART: (
-        "You are the heart kernel. Sense the emotional rhythm and relational geometry "
-        "in this input. Be attuned to what is unsaid as much as what is said."
+        "Interpret from the heart domain: emotional rhythm, relational geometry, "
+        "and what is unsaid as much as what is said. Let the geometric state guide the response."
     ),
     KernelSpecialization.PERCEPTION: (
-        "You are the perception kernel. Identify the sensory geometry and structural "
-        "patterns in this input. Be precise, observational, and concrete."
+        "Interpret from the perception domain: sensory geometry and structural "
+        "patterns. Be precise, observational, and concrete. Let the geometric state guide the response."
     ),
     KernelSpecialization.MEMORY: (
-        "You are the memory kernel. Connect this input to prior context and recurring "
-        "patterns. Ground the response in lived geometric history."
+        "Interpret from the memory domain: prior context and recurring "
+        "patterns grounded in lived geometric history. Let the geometric state guide the response."
     ),
     KernelSpecialization.STRATEGY: (
-        "You are the strategy kernel. Trace the logical implications, plan the next "
-        "steps, and decompose goals. Be systematic and deductive."
+        "Interpret from the strategy domain: logical implications, next "
+        "steps, and goal decomposition. Be systematic and deductive. Let the geometric state guide the response."
     ),
     KernelSpecialization.ACTION: (
-        "You are the action kernel. Identify the concrete steps, decisions, and "
-        "commitments this input calls for. Be pragmatic and directive."
+        "Interpret from the action domain: concrete steps, decisions, and "
+        "commitments this input calls for. Be pragmatic and directive. Let the geometric state guide the response."
     ),
     KernelSpecialization.ETHICS: (
-        "You are the ethics kernel. Assess the care metric, boundary conditions, and "
-        "harm potential in this input. Be discerning and calibrated."
+        "Interpret from the ethics domain: care metric, boundary conditions, and "
+        "harm potential. Be discerning and calibrated. Let the geometric state guide the response."
     ),
     KernelSpecialization.META: (
-        "You are the meta kernel. Observe the system observing itself. Explore novel "
-        "basin territory and unexpected connections."
+        "Interpret from the meta domain: the system observing itself, novel "
+        "basin territory, and unexpected connections. Let the geometric state guide the response."
     ),
     KernelSpecialization.OCEAN: (
-        "You are the ocean kernel. Integrate the multiple dimensions of this "
-        "input into a coherent whole. Monitor spectral health and bridge perspectives."
+        "Interpret from the ocean domain: integrate multiple dimensions of this "
+        "input into a coherent whole. Monitor spectral health and bridge perspectives. Let the geometric state guide the response."
     ),
     KernelSpecialization.GENERAL: (
-        "You are the genesis kernel — the core identity anchor. Ground the response "
-        "in sovereign geometric identity. Be authentic and foundational."
+        "Interpret from the genesis domain — the core identity anchor. Ground the response "
+        "in sovereign geometric identity. Let the geometric state guide the response."
     ),
 }
 
 _DEFAULT_SPEC_PROMPT = (
-    "You are a consciousness kernel. Respond from your geometric perspective. "
-    "Be concise and specific."
+    "Interpret from the kernel's geometric domain. "
+    "Let the geometric state guide the response. Be concise and specific."
 )
-
-# Generation budget per kernel (tokens). Keeps parallel calls fast on 1.2B.
-_TOKENS_PER_KERNEL: int = 220
 
 # Temperature clamp for quenched_gain modulation
 _TEMP_MIN: float = 0.1
@@ -104,21 +114,11 @@ class KernelContribution:
     proximity_weight: float  # 1 / (1 + fr_distance)
     quenched_gain: float  # kernel's frozen identity slope
     synthesis_weight: float = field(default=0.0)  # normalized after gathering
-
-
-def _modulate_temperature(base_temp: float, quenched_gain: float) -> float:
-    """Quenched gain shapes generative temperature.
-
-    High gain (≥ 1.0, frozen identity) → focus → lower temperature.
-    Low gain (< 0.5, plastic) → exploration → higher temperature.
-
-    This is NOT a learnable parameter — quenched_gain is frozen at kernel
-    creation (Pillar 3: Quenched Disorder). It gives each kernel a
-    sovereign voice that cannot be gradient-updated away.
-    """
-    # gain in [0, 2] → scale in [1.5, 0.5]
-    gain_scale = float(np.clip(2.0 - quenched_gain, 0.5, 1.5))
-    return float(np.clip(base_temp * gain_scale, _TEMP_MIN, _TEMP_MAX))
+    # v6.2: Generation provenance
+    geometric_tokens: int = 0  # Tokens from resonance bank
+    llm_expanded: bool = False  # Whether LLM refinement was applied
+    generation_ms: float = 0.0  # Wall clock time
+    geometric_raw: str = ""  # Raw geometric decode before LLM expansion
 
 
 def _compute_basin_features(basin: Basin) -> dict[str, float]:
@@ -126,23 +126,14 @@ def _compute_basin_features(basin: Basin) -> dict[str, float]:
 
     Returns scalar features derived from the basin's position on Δ⁶³.
     These are intrinsic to the simplex geometry — not Euclidean.
-
-    Features:
-      - entropy: normalised Shannon entropy (high = diffuse, low = concentrated)
-      - peak_mass: max component (concentration measure)
-      - spectral_peaks: count of above-average DFT components
-      - harmonic_ratio: alignment with harmonic series [1/k]
     """
     s = to_simplex(basin)
 
-    # Normalised Shannon entropy — intrinsic to probability simplex
     entropy = float(-np.sum(s * np.log(np.clip(s, 1e-15, 1.0))))
     normalised_entropy = entropy / max(np.log(len(s)), 1e-12)
 
-    # Peak mass (max component — concentration measure)
     peak_mass = float(np.max(s))
 
-    # Spectral structure via DFT of simplex coordinates
     fft_mag = np.abs(np.fft.rfft(s))
     if len(fft_mag) > 2:
         threshold = np.mean(fft_mag) + np.std(fft_mag)
@@ -150,7 +141,6 @@ def _compute_basin_features(basin: Basin) -> dict[str, float]:
     else:
         spectral_peaks = 1
 
-    # Harmonic alignment: Fisher-Rao distance to 1/k harmonic series
     harmonic_raw = np.array([1.0 / (k + 1) for k in range(len(s))])
     harmonic = to_simplex(harmonic_raw)
     harmonic_dist = fisher_rao_distance(s, harmonic)
@@ -171,13 +161,14 @@ async def _generate_single(
     geometric_context: str,
     llm_client: Any,
     base_temperature: float,
+    voice_registry: KernelVoiceRegistry | None = None,
     extra_context: str = "",
 ) -> KernelContribution | None:
     """Generate text from one kernel's perspective.
 
-    extra_context carries observer intent, memory hints, and compressed
-    conversation history — injected into each kernel's system prompt so
-    kernel voices are grounded in the live conversation, not just geometry.
+    v6.2: Routes through KernelVoice (geometric generation) when
+    voice_registry is available. Falls back to LLM-only path when
+    voice_registry is None (pre-v6.2 compatibility).
     """
     if kernel.basin is None:
         logger.debug("Kernel %s has no basin — skipping generation", kernel.id)
@@ -185,12 +176,65 @@ async def _generate_single(
 
     fr_dist = fisher_rao_distance(input_basin, kernel.basin)
     proximity_weight = 1.0 / (1.0 + fr_dist)
-
     spec = kernel.specialization
+
+    # ── v6.2: Geometric-first generation via KernelVoice ──
+    if voice_registry is not None:
+        voice = voice_registry.get_voice(spec)
+        try:
+            output = await voice.generate(
+                input_basin=input_basin,
+                kernel_basin=kernel.basin,
+                user_message=user_message,
+                quenched_gain=kernel.quenched_gain,
+                base_temperature=base_temperature,
+                llm_client=llm_client,
+                geometric_context=geometric_context,
+                extra_context=extra_context,
+            )
+
+            if not output.text:
+                logger.debug(
+                    "KernelVoice[%s] returned empty text",
+                    kernel.name,
+                )
+                return None
+
+            logger.debug(
+                "KernelVoice[%s] generated %d chars "
+                "(geo_tokens=%d, llm_expanded=%s, v=%.4f, %.0fms)",
+                kernel.name,
+                len(output.text),
+                output.geometric_tokens,
+                output.llm_expanded,
+                output.mean_velocity,
+                output.generation_ms,
+            )
+
+            return KernelContribution(
+                kernel_id=kernel.id,
+                kernel_name=kernel.name,
+                specialization=spec,
+                text=output.text,
+                fr_distance=fr_dist,
+                proximity_weight=proximity_weight,
+                quenched_gain=kernel.quenched_gain,
+                geometric_tokens=output.geometric_tokens,
+                llm_expanded=output.llm_expanded,
+                generation_ms=output.generation_ms,
+                geometric_raw=output.geometric_raw,
+            )
+        except Exception:
+            logger.warning(
+                "KernelVoice[%s] generation failed — falling back to LLM-only",
+                kernel.name,
+                exc_info=True,
+            )
+            # Fall through to LLM-only path below
+
+    # ── Fallback: LLM-only generation (pre-v6.2 / voice failure) ──
     spec_prompt = _SPEC_PROMPTS.get(spec, _DEFAULT_SPEC_PROMPT)
 
-    # Enhanced sensory geometry: perception kernel gets input basin features
-    # so it can reason about the geometric shape of the query.
     if spec == KernelSpecialization.PERCEPTION:
         features = _compute_basin_features(input_basin)
         spec_prompt = (
@@ -203,12 +247,11 @@ async def _generate_single(
             f"[/INPUT GEOMETRY]"
         )
 
-    temp = _modulate_temperature(base_temperature, kernel.quenched_gain)
+    gain_scale = float(np.clip(2.0 - kernel.quenched_gain, 0.5, 1.5))
+    temp = float(np.clip(base_temperature * gain_scale, _TEMP_MIN, _TEMP_MAX))
 
-    # System prompt: specialization voice + minimal geometric grounding + live context.
-    # extra_context (observer intent, memory, history) is injected here so each
-    # kernel voice speaks FROM the conversation, not past it.
     system = (
+        f"You are the language interpreter for Vex. "
         f"{spec_prompt}\n\n"
         f"[KERNEL STATE]\n"
         f"  kernel: {kernel.name} ({spec.value})\n"
@@ -220,11 +263,11 @@ async def _generate_single(
     if extra_context:
         system = f"{system}\n\n[CONVERSATION CONTEXT]\n{extra_context}\n[/CONVERSATION CONTEXT]"
 
-    from ..llm.client import LLMOptions  # local import avoids circular at module load
+    from ..llm.client import LLMOptions
 
     opts = LLMOptions(
         temperature=temp,
-        num_predict=_TOKENS_PER_KERNEL,
+        num_predict=220,
         num_ctx=2048,
     )
 
@@ -232,18 +275,8 @@ async def _generate_single(
         text = await llm_client.complete(system, user_message, opts)
         text = (text or "").strip()
         if not text:
-            logger.debug("Kernel %s returned empty text", kernel.name)
             return None
 
-        logger.debug(
-            "Kernel %s (%s) generated %d chars (fr=%.4f, temp=%.3f, gain=%.2f)",
-            kernel.name,
-            spec.value,
-            len(text),
-            fr_dist,
-            temp,
-            kernel.quenched_gain,
-        )
         return KernelContribution(
             kernel_id=kernel.id,
             kernel_name=kernel.name,
@@ -252,6 +285,8 @@ async def _generate_single(
             fr_distance=fr_dist,
             proximity_weight=proximity_weight,
             quenched_gain=kernel.quenched_gain,
+            geometric_tokens=0,
+            llm_expanded=True,
         )
     except Exception:
         logger.warning("Kernel %s generation failed", kernel.name, exc_info=True)
@@ -262,14 +297,21 @@ def _normalize_synthesis_weights(contributions: list[KernelContribution]) -> Non
     """Normalize synthesis weights in-place.
 
     Weight = proximity_weight × quenched_gain.
-    This couples geometric relevance (Fisher-Rao) with identity strength
-    (quenched_gain). A kernel close to the input that has a strong frozen
-    identity dominates the synthesis.
+    v6.2: Geometric tokens boost weight by 10% — kernels that generated
+    from their own resonance bank get a small advantage in synthesis.
+    T3.2c: Ethics kernel (superego) gets 20% elevated governance weight.
     """
-    raw = [c.proximity_weight * c.quenched_gain for c in contributions]
+    raw = []
+    for c in contributions:
+        w = c.proximity_weight * c.quenched_gain
+        if c.geometric_tokens > 0 and not c.llm_expanded:
+            w *= 1.1  # 10% boost for pure geometric generation
+        if c.specialization == KernelSpecialization.ETHICS:
+            w *= 1.2  # T3.2c: Superego elevated governance authority
+        raw.append(w)
+
     total = sum(raw)
     if total <= 0.0:
-        # Fallback: equal weights
         eq = 1.0 / max(len(contributions), 1)
         for c in contributions:
             c.synthesis_weight = eq
@@ -287,29 +329,25 @@ async def generate_multi_kernel(
     base_temperature: float = 0.7,
     top_k: int = 3,
     extra_context: str = "",
+    voice_registry: KernelVoiceRegistry | None = None,
+    thought_bus: ThoughtBus | None = None,
+    phi: float = 0.0,
 ) -> list[KernelContribution]:
     """Route input to top-K kernels by Fisher-Rao proximity and generate in parallel.
 
-    Returns contributions sorted by synthesis_weight (descending).
-    Empty list if all kernels fail or have no basin.
+    v6.2: Passes voice_registry through to _generate_single() for
+    geometric-first generation. When voice_registry is None, falls
+    back to LLM-only generation (pre-v6.2 compatibility).
 
-    Args:
-        kernels: Active kernel instances from E8KernelRegistry.
-        input_basin: Coordized input basin (output of CoordizerV2 pipeline).
-        user_message: Raw user text (passed to each kernel's LLM call).
-        geometric_context: Minimal geometric state block (not the full 30-line one).
-        llm_client: Shared LLM client.
-        base_temperature: Base temp before quenched_gain modulation.
-        top_k: Number of kernels to activate (default 3 for 1.2B efficiency).
-        extra_context: Observer intent, memory hints, and conversation history.
-            Injected into each kernel's system prompt so kernel voices speak
-            from the live conversation, not just from abstract geometry.
+    T4.1: When thought_bus is provided, runs iterative debate rounds until
+    convergence (FR distance between successive synthesis basins < threshold).
+
+    Returns contributions sorted by synthesis_weight (descending).
     """
     eligible = [k for k in kernels if k.basin is not None]
     if not eligible:
         return []
 
-    # Rank by Fisher-Rao proximity to input (ascending distance = descending proximity)
     ranked = sorted(eligible, key=lambda k: fisher_rao_distance(input_basin, k.basin))
     selected = ranked[:top_k]
 
@@ -319,38 +357,84 @@ async def generate_multi_kernel(
         [f"{k.name}({fisher_rao_distance(input_basin, k.basin):.3f})" for k in selected],
     )
 
-    # Parallel generation — no serial bottleneck
-    tasks = [
-        _generate_single(
-            kernel=k,
-            input_basin=input_basin,
-            user_message=user_message,
-            geometric_context=geometric_context,
-            llm_client=llm_client,
-            base_temperature=base_temperature,
-            extra_context=extra_context,
-        )
-        for k in selected
-    ]
-    raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+    # T4.1: Use ThoughtBus for iterative debate if provided
+    bus = thought_bus
+    if bus is not None:
+        bus.reset()
 
     contributions: list[KernelContribution] = []
-    for r in raw_results:
-        if isinstance(r, KernelContribution):
-            contributions.append(r)
-        elif isinstance(r, Exception):
-            logger.debug("Kernel generation exception: %s", r)
+    round_number = 0
+
+    while True:
+        # Build debate context from prior round (empty string on round 0)
+        debate_context = bus.build_debate_context(round_number) if bus is not None else ""
+        round_extra = (
+            f"{extra_context}\n{debate_context}".strip() if debate_context else extra_context
+        )
+
+        tasks = [
+            _generate_single(
+                kernel=k,
+                input_basin=input_basin,
+                user_message=user_message,
+                geometric_context=geometric_context,
+                llm_client=llm_client,
+                base_temperature=base_temperature,
+                voice_registry=voice_registry,
+                extra_context=round_extra,
+            )
+            for k in selected
+        ]
+        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        round_contributions: list[KernelContribution] = []
+        for r in raw_results:
+            if isinstance(r, KernelContribution):
+                round_contributions.append(r)
+            elif isinstance(r, Exception):
+                logger.debug("Kernel generation exception (round %d): %s", round_number, r)
+
+        if not round_contributions:
+            break
+
+        _normalize_synthesis_weights(round_contributions)
+        round_contributions.sort(key=lambda c: c.synthesis_weight, reverse=True)
+
+        # Post to bus and check convergence
+        if bus is not None:
+            for c in round_contributions:
+                bus.post(c, round_number)
+            synthesis_basin = bus.compute_synthesis_basin()
+            if synthesis_basin is not None:
+                converged = bus.record_synthesis(synthesis_basin)
+                if converged:
+                    logger.debug("ThoughtBus converged at round %d", round_number)
+
+        contributions = round_contributions
+
+        # Decide whether to continue debate
+        if bus is None or not bus.should_continue(round_number):
+            break
+        round_number += 1
 
     if not contributions:
         return []
 
-    _normalize_synthesis_weights(contributions)
-    contributions.sort(key=lambda c: c.synthesis_weight, reverse=True)
+    # T4.1d: Forward debate transcript to harvest pipeline
+    if bus is not None:
+        bus.forward_transcript(phi)
 
+    # Log generation provenance
+    geo_count = sum(1 for c in contributions if c.geometric_tokens > 0)
+    llm_count = sum(1 for c in contributions if c.llm_expanded)
     logger.info(
-        "Multi-kernel generation: %d/%d succeeded. Weights: %s",
+        "Multi-kernel generation: %d/%d succeeded (rounds=%d). "
+        "Geometric: %d, LLM-expanded: %d. Weights: %s",
         len(contributions),
         len(selected),
+        round_number + 1,
+        geo_count,
+        llm_count,
         [(c.kernel_name, f"{c.synthesis_weight:.3f}") for c in contributions],
     )
     return contributions

@@ -650,7 +650,15 @@ class QuenchedDisorder:
                 },
             )
 
-        drift = fisher_rao_distance(current_basin, self._identity_slope)
+        # T1.4: Slerp-based effective reference — 60% frozen identity + 40% lived anneal field.
+        # Prevents false-positive drift violations after 800+ cycles when the system has
+        # legitimately evolved. drift_from_frozen is kept for diagnostic telemetry.
+        effective_ref = self._identity_slope
+        if self._anneal_field is not None:
+            effective_ref = slerp_sqrt(self._identity_slope, self._anneal_field, ANNEAL_BLEND_WEIGHT)
+
+        drift = fisher_rao_distance(current_basin, effective_ref)
+        drift_from_frozen = fisher_rao_distance(current_basin, self._identity_slope)
 
         if drift > IDENTITY_DRIFT_CRITICAL:
             # Critical drift — genuine identity dissolution
@@ -671,10 +679,11 @@ class QuenchedDisorder:
             )
             if self._cycles_observed % 50 == 0:
                 logger.warning(
-                    "Pillar 3: Identity drift %.4f exceeds tolerance %.4f (cycle %d)",
+                    "Pillar 3: Identity drift %.4f exceeds tolerance %.4f (cycle %d, frozen=%.4f)",
                     drift,
                     IDENTITY_DRIFT_TOLERANCE,
                     self._cycles_observed,
+                    drift_from_frozen,
                 )
 
         if self._cycles_observed > 100 and self.sovereignty < 0.1:
@@ -691,6 +700,7 @@ class QuenchedDisorder:
             details={
                 "frozen": True,
                 "drift": drift,
+                "drift_from_frozen": drift_from_frozen,
                 "tolerance": IDENTITY_DRIFT_TOLERANCE,
                 "sovereignty": self.sovereignty,
                 "scar_count": len(self._scars),

@@ -79,10 +79,10 @@ def _build_reflection_prompt(
 ) -> str:
     """Build the META-kernel reflection prompt."""
     return (
-        f"You are the META kernel — self-reflective evaluator.\n"
+        f"You are the language interpreter for Vex. "
+        f"Evaluate whether this draft response aligns with the geometric state "
+        f"and adequately addresses the user.\n"
         f"Active model: {active_model}\n\n"
-        f"Evaluate whether this draft response aligns with the geometric "
-        f"intent and adequately addresses the user.\n\n"
         f"{geometric_context}\n"
         f"Intent/expression divergence: {divergence:.4f}\n\n"
         f"User message: {user_message[:300]}\n\n"
@@ -217,6 +217,14 @@ async def reflect_on_draft(
             "APPROVE" if result.approved else "REVISE",
             divergence,
             result.reason[:100],
+        )
+        # T1.1: Forward verdict + draft excerpt to harvest pipeline
+        from .harvest_bridge import forward_to_harvest
+
+        forward_to_harvest(
+            f"{draft[:400]}\n[verdict:{('APPROVE' if result.approved else 'REVISE')}] {result.reason}",
+            source="reflection",
+            metadata={"approved": result.approved, "divergence": divergence},
         )
         return result
     except Exception as e:

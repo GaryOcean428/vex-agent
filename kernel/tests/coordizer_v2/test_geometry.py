@@ -24,10 +24,10 @@ from kernel.coordizer_v2.geometry import (
     frechet_mean,
     geodesic_midpoint,
     log_map,
+    logits_to_simplex,
     natural_gradient,
     random_basin,
     slerp,
-    softmax_to_simplex,
     to_simplex,
 )
 
@@ -127,20 +127,32 @@ class TestRandomBasin:
         assert not np.allclose(b1, b2)
 
 
-class TestSoftmaxToSimplex:
-    """Test softmax projection."""
+class TestLogitsToSimplex:
+    """Test linear logits-to-simplex projection."""
 
     def test_output_on_simplex(self):
         logits = np.random.randn(BASIN_DIM)
-        p = softmax_to_simplex(logits)
+        p = logits_to_simplex(logits)
         assert abs(p.sum() - 1.0) < 1e-10
-        assert np.all(p > 0)
+        assert np.all(p >= 0)
 
     def test_large_logits_stable(self):
         logits = np.random.randn(BASIN_DIM) * 1000
-        p = softmax_to_simplex(logits)
+        p = logits_to_simplex(logits)
         assert np.all(np.isfinite(p))
         assert abs(p.sum() - 1.0) < 1e-8
+
+    def test_ratio_preservation(self):
+        """Linear projection preserves proportional ratios — the key property softmax violated."""
+        logits = np.array([1.0, 2.0] + [0.0] * (BASIN_DIM - 2))
+        p = logits_to_simplex(logits)
+        assert abs(p[1] / p[0] - 2.0) < 1e-10, "2:1 logit ratio must be preserved"
+
+    def test_uniform_on_all_zero(self):
+        logits = np.zeros(BASIN_DIM)
+        p = logits_to_simplex(logits)
+        assert abs(p.sum() - 1.0) < 1e-10
+        assert np.allclose(p, 1.0 / BASIN_DIM)
 
 
 # ═══════════════════════════════════════════════════════════════

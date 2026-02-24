@@ -27,11 +27,18 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
   const totalDuration = trace.selection_duration_ms + trace.generation_duration_ms
     + (trace.reflection?.duration_ms ?? 0);
 
+  // v6.2.1: count geometric vs LLM kernels for summary line
+  const geoCount = trace.kernel_outputs.filter((k) => !k.llm_expanded && k.geometric_tokens > 0).length;
+  const llmCount = trace.kernel_outputs.filter((k) => k.llm_expanded).length;
+  const provenance = geoCount > 0 || llmCount > 0
+    ? ` · ${geoCount > 0 ? `${geoCount} coords` : ""}${geoCount > 0 && llmCount > 0 ? "/" : ""}${llmCount > 0 ? `${llmCount} llm` : ""}`
+    : "";
+
   // Summary line text
   const summaryText = isStreaming && !trace.synthesis
     ? `${trace.selected_kernels.length} kernels generating...`
-    : `${trace.selected_kernels.length} kernels \u2192 synthesised in ${(totalDuration / 1000).toFixed(1)}s \u00b7 ${totalTokens} tok`
-      + (trace.reflection ? ` \u00b7 divergence: ${trace.reflection.divergence.toFixed(2)}` : "");
+    : `${trace.selected_kernels.length} kernels → synthesised in ${(totalDuration / 1000).toFixed(1)}s · ${totalTokens} coords${provenance}`
+      + (trace.reflection ? ` · divergence: ${trace.reflection.divergence.toFixed(2)}` : "");
 
   return (
     <div className="pipeline-trace" role="region" aria-label="Kernel pipeline trace">
@@ -103,6 +110,15 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
                         &#x25B6;
                       </span>
                       <span className="pipeline-kernel-name">{k.kernel_name}</span>
+                      {/* v6.2.1: provenance badge */}
+                      <span
+                        className={`pipeline-provenance-badge ${k.llm_expanded ? "llm" : "geo"}`}
+                        title={k.llm_expanded
+                          ? "LLM generated (resonance bank sparse or null)"
+                          : `Geometric: ${k.geometric_tokens} coordinates from resonance bank`}
+                      >
+                        {k.llm_expanded ? "LLM" : `coords·${k.geometric_tokens}`}
+                      </span>
                       <span className="pipeline-weight-bar-container">
                         <span
                           className="pipeline-weight-bar"
@@ -112,11 +128,36 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
                       <span className="pipeline-kernel-stat">
                         w={k.synthesis_weight.toFixed(3)}
                       </span>
-                      <span className="pipeline-kernel-stat">{k.token_count} tok</span>
+                      <span className="pipeline-kernel-stat">{k.token_count} coords</span>
                     </button>
-                    {expandedKernels[k.kernel_id] && k.text_preview && (
-                      <div className="pipeline-gen-preview">
-                        {k.text_preview}
+
+                    {expandedKernels[k.kernel_id] && (
+                      <div className="pipeline-gen-body">
+                        {/* v6.2.1: hybrid output display
+                            - When llm_expanded=true AND geometric_raw exists: show both panes
+                            - When pure geometric: just show the text (text_preview = geometric)
+                            - When pure LLM (no geometric_raw): just show LLM output
+                        */}
+                        {k.llm_expanded && k.geometric_raw ? (
+                          <div className="pipeline-hybrid-panes">
+                            <div className="pipeline-pane pipeline-pane--geo">
+                              <span className="pipeline-pane-label">Coordinate sequence</span>
+                              <p className="pipeline-gen-preview pipeline-gen-preview--geo">
+                                {k.geometric_raw || <em className="pipeline-empty">empty bank</em>}
+                              </p>
+                            </div>
+                            <div className="pipeline-pane pipeline-pane--llm">
+                              <span className="pipeline-pane-label">LLM interpretation</span>
+                              <p className="pipeline-gen-preview">
+                                {k.text_preview}
+                              </p>
+                            </div>
+                          </div>
+                        ) : k.text_preview ? (
+                          <p className="pipeline-gen-preview">
+                            {k.text_preview}
+                          </p>
+                        ) : null}
                       </div>
                     )}
                   </div>

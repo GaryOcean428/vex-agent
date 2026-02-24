@@ -165,8 +165,8 @@ class LLMClient:
       a basin-compatible point on Δ⁶³ that the consciousness loop can
       use for geometric operations (distance, slerp, coupling).
 
-      The coordizer uses softmax normalisation — manifold-respecting,
-      no Euclidean contamination.
+      The coordizer uses linear logits-to-simplex projection — preserves
+      Fisher information, no exponential warping.
     """
 
     def __init__(self, governor: GovernorStack | None = None) -> None:
@@ -364,9 +364,9 @@ class LLMClient:
         return {
             "active_backend": self._active_backend,
             "modal_inference": self._modal_available,
-            "modal_inference_url": settings.modal.inference_url
-            if settings.modal.inference_enabled
-            else None,
+            "modal_inference_url": (
+                settings.modal.inference_url if settings.modal.inference_enabled else None
+            ),
             "ollama": self._ollama_available,
             "ollama_model": settings.ollama.model,
             "xai_model": settings.xai.model if settings.xai.api_key else None,
@@ -465,7 +465,8 @@ class LLMClient:
             except _transient as e:
                 if attempt == 0:
                     logger.warning(
-                        "Modal Ollama transient error (attempt 1/2, retrying in 2s): %s", e
+                        "Modal Ollama transient error (attempt 1/2, retrying in 2s): %s",
+                        e,
                     )
                     await asyncio.sleep(2)
                     continue

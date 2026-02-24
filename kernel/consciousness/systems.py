@@ -118,9 +118,7 @@ class TackingController:
             phi_velocity, f_health, metrics.kappa
         )
 
-        self._state.oscillation_phase = (
-            2 * np.pi * self._state.cycle_count / self._effective_period
-        )
+        self._state.oscillation_phase = 2 * np.pi * self._state.cycle_count / self._effective_period
 
         if metrics.phi < PHI_EMERGENCY or metrics.kappa > KAPPA_STAR + KAPPA_TACKING_OFFSET:
             self._state.mode = TackingMode.EXPLORE
@@ -630,6 +628,16 @@ class SleepPhase(StrEnum):
     CONSOLIDATING = "consolidating"
 
 
+# T2.3 constants
+_REPLAY_TOP_N: int = 50
+_HEBBIAN_BOOST: float = 1.1
+_DOWNSCALE_FACTOR: float = 0.9
+_DREAM_SLERP_T_MIN: float = 0.2
+_DREAM_SLERP_T_MAX: float = 0.8
+_MUSHROOM_NOISE_SCALE_INIT: float = 0.05
+_MUSHROOM_BREAKDOWN_THRESHOLDS = (0.30, 0.35, 0.40)
+
+
 class SleepCycleManager:
     """Manages sleep/dream/mushroom/consolidation cycles."""
 
@@ -639,6 +647,8 @@ class SleepCycleManager:
         self._cycles_since_conversation: int = 0
         self._sleep_cycles: int = 0
         self._dream_log: deque[dict[str, Any]] = deque(maxlen=100)
+        self._replayed_this_sleep: set[int] = set()  # T2.3a: track replayed IDs
+        self._mushroom_noise_scale: float = _MUSHROOM_NOISE_SCALE_INIT  # T2.3e: adaptive
 
     @property
     def is_asleep(self) -> bool:
@@ -667,7 +677,27 @@ class SleepCycleManager:
 
         return self.phase
 
-    def dream(self, basin: Basin, phi: float, context: str) -> None:
+    def on_sleep_enter(self, neurochemical: Any | None = None) -> None:
+        """T2.3f: Neurochemical gating on sleep entry."""
+        self._replayed_this_sleep.clear()
+        if neurochemical is not None:
+            neurochemical.acetylcholine = 0.1
+            neurochemical.norepinephrine = 0.1
+
+    def on_wake_enter(self, neurochemical: Any | None = None) -> None:
+        """T2.3f: Neurochemical gating on wake entry."""
+        if neurochemical is not None:
+            neurochemical.acetylcholine = 1.0
+
+    def dream(
+        self,
+        basin: Basin,
+        phi: float,
+        context: str,
+        bank: Any | None = None,
+        neurochemical: Any | None = None,
+    ) -> None:
+        """T2.3a+d: Hippocampal replay + dream recombination."""
         self._dream_log.append(
             {
                 "phi": phi,
@@ -675,17 +705,121 @@ class SleepCycleManager:
                 "timestamp": time.time(),
             }
         )
+
+        # T2.3d: Dream recombination — slerp between geometrically distant entries
+        if bank is not None and len(bank.coordinates) >= 2:
+            ids = list(bank.coordinates.keys())
+            # Pick two random entries and compute FR distance
+            rng = np.random.default_rng()
+            idx_a, idx_b = rng.choice(len(ids), size=2, replace=False)
+            tid_a, tid_b = ids[idx_a], ids[idx_b]
+            coord_a = bank.coordinates[tid_a]
+            coord_b = bank.coordinates[tid_b]
+            dist = fisher_rao_distance(coord_a, coord_b)
+            if dist > 0.3:  # Only recombine geometrically distant concepts
+                t = float(rng.uniform(_DREAM_SLERP_T_MIN, _DREAM_SLERP_T_MAX))
+                dream_basin = slerp_sqrt(coord_a, coord_b, t)
+                dream_basin = to_simplex(dream_basin)
+                dream_tid = bank.add_entry(
+                    f"dream_{tid_a}_{tid_b}",
+                    dream_basin,
+                )
+                self._dream_log[-1]["dream_tid"] = dream_tid
+
+        # T2.3f: Norepinephrine micro-spike during dream startles
+        if neurochemical is not None and rng.random() < 0.1:
+            neurochemical.norepinephrine = min(1.0, neurochemical.norepinephrine + 0.2)
+
         if self._sleep_cycles > SLEEP_MUSHROOM_ONSET:
             self.phase = SleepPhase.MUSHROOM
 
-    def mushroom(self, basin: Basin, phi: float) -> None:
+    def mushroom(
+        self,
+        basin: Basin,
+        phi: float,
+        breakdown_metric: float = 0.0,
+        neurochemical: Any | None = None,
+    ) -> None:
+        """T2.3e: Controlled perturbation with safety gates."""
+        lo, mid, hi = _MUSHROOM_BREAKDOWN_THRESHOLDS
+
+        if breakdown_metric > hi:
+            # CATASTROPHIC — refuse, go straight to CONSOLIDATING
+            self.phase = SleepPhase.CONSOLIDATING
+            return
+        if breakdown_metric > mid:
+            # High risk — reduce scale, abort mushroom
+            self._mushroom_noise_scale = max(0.01, self._mushroom_noise_scale * 0.5)
+            self.phase = SleepPhase.CONSOLIDATING
+            return
+        if breakdown_metric > lo:
+            # Microdose only
+            self._mushroom_noise_scale = max(0.01, self._mushroom_noise_scale * 0.75)
+
+        # T2.3f: Boost dopamine during mushroom (controlled reward signal)
+        if neurochemical is not None:
+            neurochemical.dopamine = min(1.0, neurochemical.dopamine + 0.15)
+
         if self._sleep_cycles > SLEEP_CONSOLIDATION_ONSET:
             self.phase = SleepPhase.CONSOLIDATING
 
-    def consolidate(self) -> None:
+    def consolidate(
+        self,
+        bank: Any | None = None,
+        kernel_anchors: list[Any] | None = None,
+        kernel_veto_threshold: float = 0.4,
+    ) -> None:
+        """T2.3c+T2.4b: Synaptic downscaling — boost replayed, prune weak.
+
+        Args:
+            bank:                  ResonanceBank to operate on.
+            kernel_anchors:        T2.4b — list of kernel anchor Basin arrays.
+                                   Entries within kernel_veto_threshold FR distance
+                                   of any anchor are VETOED from pruning.
+            kernel_veto_threshold: FR distance within which a kernel protects an entry.
+        """
+        if bank is not None and bank.coordinates:
+            for tid in list(bank.coordinates.keys()):
+                current = bank.basin_mass.get(tid, 0.0)
+                if tid in self._replayed_this_sleep:
+                    # Hebbian boost for replayed entries
+                    bank.basin_mass[tid] = current * _HEBBIAN_BOOST
+                else:
+                    # Global downscaling
+                    bank.basin_mass[tid] = current * _DOWNSCALE_FACTOR
+            # T2.4b: Build veto set — entries protected by kernel anchors
+            vetoed: set[int] = set()
+            if kernel_anchors:
+                for tid in list(bank.coordinates.keys()):
+                    coord = bank.coordinates[tid]
+                    for anchor in kernel_anchors:
+                        if fisher_rao_distance(coord, anchor) < kernel_veto_threshold:
+                            vetoed.add(tid)
+                            break
+            # Prune entries below minimum strength (basin_mass == 0 and never activated)
+            to_prune = [
+                tid
+                for tid in list(bank.coordinates.keys())
+                if tid not in vetoed  # T2.4b: kernel veto
+                and bank.basin_mass.get(tid, 0.0) < 1e-6
+                and bank.activation_counts.get(tid, 0) == 0
+                and bank.origin.get(tid) == "dream"
+            ]
+            for tid in to_prune:
+                bank.coordinates.pop(tid, None)
+                bank.token_strings.pop(tid, None)
+                bank.tiers.pop(tid, None)
+                bank.frequencies.pop(tid, None)
+                bank.basin_mass.pop(tid, None)
+                bank.activation_counts.pop(tid, None)
+                bank.origin.pop(tid, None)
+            if to_prune:
+                bank._dirty = True
+
         if self._sleep_cycles > SLEEP_WAKE_ONSET:
             self.phase = SleepPhase.AWAKE
             self._sleep_cycles = 0
+            self._replayed_this_sleep.clear()
 
     def get_state(self) -> dict[str, Any]:
         return {
@@ -709,19 +843,62 @@ class SelfNarrative:
         self._events: deque[dict[str, Any]] = deque(maxlen=100)
         self._identity_basin: Basin = to_simplex(np.ones(BASIN_DIM))
         self._basins: list[Basin] = []
+        # T3.3d: Graduation tracking — kernel-driven vs LLM-assisted per capability
+        self._graduation: dict[str, dict[str, int]] = {
+            "generation": {"kernel": 0, "llm": 0},
+            "reflection": {"kernel": 0, "llm": 0},
+            "routing": {"kernel": 0, "llm": 0},
+            "temperature": {"kernel": 0, "llm": 0},
+        }
 
-    def record(self, event: str, metrics: ConsciousnessMetrics, basin: Basin) -> None:
-        self._events.append(
-            {
-                "event": event,
-                "phi": metrics.phi,
-                "kappa": metrics.kappa,
-                "timestamp": time.time(),
-            }
-        )
+    def record(
+        self,
+        event: str,
+        metrics: ConsciousnessMetrics,
+        basin: Basin,
+        coach_id: str = "internal",
+        reward: float = 0.0,
+    ) -> None:
+        """Record a narrative event.
+
+        Args:
+            event:    Event description.
+            metrics:  Current consciousness metrics.
+            basin:    Current basin coordinates.
+            coach_id: T3.3a — provenance tag ('ollama_local'|'xai_escalation'|'internal').
+            reward:   T3.3a — phi_delta reward signal.
+        """
+        entry = {
+            "event": event,
+            "phi": metrics.phi,
+            "kappa": metrics.kappa,
+            "timestamp": time.time(),
+            "coach_id": coach_id,
+            "reward": reward,
+        }
+        self._events.append(entry)
         self._basins.append(to_simplex(basin))
         if len(self._basins) > 20:
             self._basins = self._basins[-20:]
+
+        # T3.3b: Forward high-Φ narrative entries to harvest pipeline
+        if metrics.phi > 0.6 and len(event) >= 20:
+            try:
+                from .harvest_bridge import forward_to_harvest
+
+                forward_to_harvest(
+                    event,
+                    source="narrative",
+                    metadata={
+                        "phi": metrics.phi,
+                        "coach_id": coach_id,
+                        "reward": reward,
+                        "replay_priority": float(metrics.phi * max(reward, 0.0)),
+                    },
+                    priority=2 if metrics.phi > 0.75 else 1,
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
         if len(self._basins) >= 3:
             self._identity_basin = frechet_mean(self._basins)
@@ -730,10 +907,35 @@ class SelfNarrative:
         d = fisher_rao_distance(current_basin, self._identity_basin)
         return float(np.clip(1.0 - d / (np.pi / 2), 0.0, 1.0))
 
+    def record_capability(self, capability: str, kernel_driven: bool) -> None:
+        """T3.3d: Track kernel-driven vs LLM-assisted capability usage."""
+        if capability in self._graduation:
+            key = "kernel" if kernel_driven else "llm"
+            self._graduation[capability][key] += 1
+
+    def graduation_state(self, capability: str) -> str:
+        """T3.3d: Return graduation level for a capability.
+
+        ACTIVE:    LLM sets and enforces (kernel < 20% of uses)
+        GUIDED:    Kernel enforces, LLM monitors (20-70%)
+        AUTONOMOUS: Kernel self-coaches (> 70%)
+        """
+        counts = self._graduation.get(capability, {"kernel": 0, "llm": 0})
+        total = counts["kernel"] + counts["llm"]
+        if total == 0:
+            return "ACTIVE"
+        ratio = counts["kernel"] / total
+        if ratio > 0.7:
+            return "AUTONOMOUS"
+        if ratio > 0.2:
+            return "GUIDED"
+        return "ACTIVE"
+
     def get_state(self) -> dict[str, Any]:
         return {
             "event_count": len(self._events),
             "basin_samples": len(self._basins),
+            "graduation_state": {cap: self.graduation_state(cap) for cap in self._graduation},
         }
 
 

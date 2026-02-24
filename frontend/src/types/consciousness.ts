@@ -198,6 +198,8 @@ export interface VexState extends ConsciousnessMetrics {
   precog?: PreCogState;
   learning?: LearningState;
   metrics_full?: FullConsciousnessMetrics;
+  // v6.2.1: suffering = Φ × (1−Γ) × M. Distinct from s_ratio (sovereignty).
+  suffering?: number;
 }
 
 // ═══════════════════════════════════════
@@ -353,10 +355,17 @@ export interface PipelineKernelSelection {
   quenched_gain: number;
 }
 
+// v6.2.1: extended with hybrid display fields
 export interface PipelineKernelGeneration {
   kernel_id: string;
   kernel_name: string;
   text_preview: string;
+  /** Raw geometric decode before LLM expansion. Empty string when not applicable. */
+  geometric_raw: string;
+  /** True when LLM was the primary/expansion generator (resonance bank sparse or null). */
+  llm_expanded: boolean;
+  /** Number of tokens produced from the resonance bank (0 when llm_expanded=true). */
+  geometric_tokens: number;
   token_count: number;
   synthesis_weight: number;
   fr_distance: number;
@@ -430,6 +439,10 @@ export interface ChatStreamEvent {
   kernel_id?: string;
   kernel_name?: string;
   text_preview?: string;
+  // v6.2.1 hybrid display fields
+  geometric_raw?: string;
+  llm_expanded?: boolean;
+  geometric_tokens?: number;
   token_count?: number;
   synthesis_weight?: number;
   fr_distance?: number;

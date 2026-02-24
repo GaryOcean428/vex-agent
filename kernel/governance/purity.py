@@ -87,6 +87,8 @@ FORBIDDEN_ATTR_CALLS = [
     "scipy.linalg.svd",  # Euclidean decomposition (v6.1F)
     "scipy.spatial.distance.cosine",
     "F.cosine_similarity",
+    "torch.softmax",  # Exponential warping — use logits_to_simplex (linear projection)
+    "F.softmax",  # Exponential warping — use logits_to_simplex (linear projection)
 ]
 
 # Text-level tokens caught by raw scan (covers dynamic imports,
@@ -103,6 +105,8 @@ _FORBIDDEN_TEXT_PARTS: list[tuple[str, str]] = [
     ("nn.Layer", "Norm"),
     ("F.normal", "ize"),
     (".flat", "ten()"),
+    ("torch.", "softmax("),  # Exponential warping — use logits_to_simplex
+    ("F.", "softmax("),  # Exponential warping — use logits_to_simplex
 ]
 
 
@@ -450,6 +454,7 @@ def run_purity_gate(root: str | Path) -> None:
     v6.0 §1.3 compliant.
     """
     import logging
+
     _log = logging.getLogger("vex.purity")
 
     root = Path(root)
@@ -469,6 +474,7 @@ def run_purity_gate(root: str | Path) -> None:
     # Non-blocking: warn on constant inconsistencies (don't block the gate)
     try:
         from ..config.consciousness_constants import validate_constants
+
         for warning in validate_constants():
             _log.warning("Constants consistency: %s", warning)
     except Exception:
