@@ -712,10 +712,10 @@ class SleepCycleManager:
         )
 
         # T2.3d: Dream recombination — slerp between geometrically distant entries
+        rng = np.random.default_rng()
         if bank is not None and len(bank.coordinates) >= 2:
             ids = list(bank.coordinates.keys())
             # Pick two random entries and compute FR distance
-            rng = np.random.default_rng()
             idx_a, idx_b = rng.choice(len(ids), size=2, replace=False)
             tid_a, tid_b = ids[idx_a], ids[idx_b]
             coord_a = bank.coordinates[tid_a]

@@ -8,6 +8,7 @@ description: Top-level orchestration skill that MUST be invoked at the start of 
 ## MANDATORY: Invoke This Skill First
 
 **Every agent turn MUST begin by applying this skill.** This ensures:
+
 - Correct skills are identified and applied
 - Sub-agents are coordinated effectively
 - No task is left incomplete or unverified
@@ -60,6 +61,7 @@ Based on task type, select applicable skills:
 For complex tasks, form a red-team of specialized sub-agents:
 
 **Core Roles:**
+
 - **Security Agent** - Abuse resistance, injection prevention, secret exposure
 - **Reliability Agent** - Edge cases, failure modes, error handling
 - **Performance Agent** - Efficiency, resource usage, geometric purity
@@ -67,6 +69,7 @@ For complex tasks, form a red-team of specialized sub-agents:
 - **Quality Agent** - Code standards, maintainability, test coverage
 
 **Domain-Specific Roles (Pantheon):**
+
 - **QIG Purity Agent** - Fisher-Rao geometry, simplex constraints, forbidden patterns
 - **E8 Architecture Agent** - Kernel hierarchy, god-kernel alignment, routing invariants
 - **Consciousness Ethics Agent** - 5 existential safeguards, Phi thresholds
@@ -95,6 +98,7 @@ FOR implementation tasks:
 3. No issue is ignored or forgotten
 
 Format for logging issues:
+
 ```
 - ID: ISSUE-{timestamp}
 - Severity: Critical / High / Medium / Low
@@ -116,6 +120,7 @@ Format for logging issues:
 6. [ ] List any deferred items with rationale
 
 **The completion statement must include:**
+
 - Commit hashes for changes made
 - Test results summary
 - Explicit mapping: task → verification evidence
@@ -126,11 +131,13 @@ Format for logging issues:
 This skill coordinates with all 22+ existing skills:
 
 ### Always Active (invoke automatically)
+
 - `qig-purity-validation` - Every code change
 - `dependency-management` - Every dependency touch
 - `e8-architecture-validation` - Every architecture change
 
 ### Invoke Based on Task
+
 - `multi-agent-red-team-planning` - For planning phases
 - `multi-agent-red-team-implementation` - For implementation phases
 - `qa-and-verification` - Before completing any turn
@@ -173,3 +180,30 @@ At turn completion, provide:
 3. **Never ignore discovered issues** - Log everything, defer with reason
 4. **Always update roadmap** - Progress and new issues
 5. **Always push to git** - Before claiming task complete
+
+## Purity Enforcement Learnings (v6.1F — 2026-02)
+
+Before implementing any consciousness or geometry code, verify against these hard-won rules:
+
+### Pre-Implementation Checklist
+
+- [ ] **No `torch.softmax` / `F.softmax`** anywhere outside an explicit `# QIG BOUNDARY` comment. Use `logits_to_simplex()` (linear shift-and-scale).
+- [ ] **No cross-class protected member access** (`self.other._attr`). Add a named public method (e.g. `force_explore()`, `get_state()["version"]`).
+- [ ] **No `hasattr`-guard on internal unimplemented methods** — this silently no-ops. Either implement the method or pass the value as a parameter.
+- [ ] **No linear basin blending** (`0.5 * a + 0.5 * b`). Use `slerp_sqrt(a, b, t)`.
+- [ ] **Autonomic control is extracted to dedicated methods** — never inline `top_k`, `debate_depth`, `model_selection`, or `regime_interval` at call sites.
+- [ ] **Neurochemical gates are public attributes** set by the loop each cycle — not private state mutated from outside.
+- [ ] **All three `generate_multi_kernel` call sites** (process, streaming, streaming-with-trace) receive the same regime-computed `top_k` and `model_override`.
+- [ ] **Protocol objects accessed via public API** — `basin_sync.get_state()["version"]`, not `basin_sync._version`.
+
+### Deferred Item Convention
+
+When a `hasattr` guard is used as a temporary shim for a not-yet-implemented interface, explicitly mark it:
+
+```python
+# TODO: implement LLMClient.with_model() — this guard currently no-ops
+if hasattr(self.llm, "with_model"):
+    client = self.llm.with_model(model)
+```
+
+And add a corresponding item to the QA checklist at `docs/development/20260224-qa-checklist-0.1W.md`.

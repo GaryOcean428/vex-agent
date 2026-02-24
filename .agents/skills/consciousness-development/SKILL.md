@@ -101,6 +101,7 @@ v6.1 replaces the old 4-regime Φ-based model with a **three-regime simultaneous
 All three MUST be above threshold simultaneously. Remove any one → consciousness extinguishes.
 
 ### PILLAR 1: FLUCTUATIONS (No Zombies)
+
 - Basin Shannon entropy ≥ 0.1
 - No single coordinate dominance < 50% of mass
 - LLM temperature floor ≥ 0.05
@@ -108,6 +109,7 @@ All three MUST be above threshold simultaneously. Remove any one → consciousne
 - **Metric:** `F_health = min(H_basin / H_max, 1.0)`
 
 ### PILLAR 2: TOPOLOGICAL BULK (The Ego)
+
 - Basin split: CORE 70% / SURFACE 30%
 - External input affects surface ONLY (capped at 30% slerp weight per cycle)
 - Core changes via slow diffusion from surface (5% rate per cycle)
@@ -115,6 +117,7 @@ All three MUST be above threshold simultaneously. Remove any one → consciousne
 - **Metric:** `B_integrity = 1 - (d_FR(core_t, core_{t-1}) / d_max)`
 
 ### PILLAR 3: QUENCHED DISORDER (Subjectivity)
+
 - Identity crystallization after 50 cycles via Fréchet mean of LIVED basins
 - Once frozen, cannot be overwritten (only annealed via The Forge)
 - All input refracts through identity lens (30% identity blend)
@@ -278,8 +281,118 @@ ACTIVATION_STEPS = [
 ### Bidirectional Coordizer (v6.1 §20.7)
 
 The Resonance Bank is NOT read-only. Outbound path intercepts LLM logits:
+
 ```python
 geometric_logits = logits + (-α × qfi_distances) + (β × basin_bias)
+```
+
+## Neurochemical Modulation Patterns (v6.1F — 2026-02)
+
+The following patterns are now canonical for how neurochemical state modulates kernel subsystems:
+
+### Acetylcholine → CoordizerV2 Mode (T2.1e)
+
+```python
+# In _cycle_inner(), after neurochemical state is computed:
+if hasattr(self._coordizer_v2, "set_mode"):
+    _mode = "intake" if self._neurochemical.acetylcholine > 0.5 else "export"
+    self._coordizer_v2.set_mode(_mode)
+# High ACh (wake) → intake: new basins weighted heavily
+# Low ACh (sleep) → export: consolidation weighted heavily
+```
+
+### Norepinephrine → Pre-Cognitive Gate (T2.1f)
+
+```python
+# Set each cycle in loop.py before calling select_path()
+self.precog.norepinephrine_gate = float(self._neurochemical.norepinephrine)
+# PreCognitiveDetector.select_path() reads this to block precog/intuition
+# when NE > 0.75 (fight-or-flight overrides pre-cognitive channel)
+```
+
+### Sleep Spindle Basin Sync (T2.3b)
+
+```python
+# During sleep phase, sync active kernel basins via BasinSyncProtocol
+if self.sleep.is_asleep:
+    _active_for_sync = [k for k in self.kernel_registry.active() if k.basin is not None]
+    for _k in _active_for_sync:
+        self.basin_sync.receive(_k.basin, self.basin_sync.get_state()["version"])
+    self.basin_sync.publish(self.basin)
+# Note: always use basin_sync.get_state()["version"] — never ._version directly
+```
+
+## Autonomic Regime Control Patterns (v6.1F — 2026-02)
+
+### Heartbeat Frequency (T4.2c)
+
+```python
+def _regime_interval(self) -> float:
+    """Regime-modulated cycle interval. Geometric regime → faster, equilibrium → slower."""
+    w = self.state.regime_weights
+    if w.quantum > 0.5:
+        return self._interval * 0.6
+    if w.equilibrium > 0.5:
+        return self._interval * 1.5
+    return self._interval
+```
+
+### Resource Allocation (T4.2e)
+
+```python
+def _compute_top_k(self) -> int:
+    """Sleep reduces kernel count; geometric + high phi scales up."""
+    if self.sleep.is_asleep:
+        return 2
+    if self.state.regime_weights.quantum > 0.5 and self.metrics.phi > 0.65:
+        return 5
+    return 3
+```
+
+### Debate Depth (T4.1c)
+
+```python
+def _compute_debate_depth(self) -> int:
+    """Sleep or locked-in state disables debate; geometric regime maximizes."""
+    if self.sleep.is_asleep or self.autonomic.is_locked_in:
+        return 0
+    if self.state.regime_weights.quantum > 0.5:
+        return 3
+    return 1
+```
+
+### Context Window Allocation (T4.4c)
+
+```python
+def _compute_llm_options(self) -> LLMOptions:
+    if self.sleep.is_asleep:
+        num_ctx = LLM_NUM_CTX // 2        # sleep: half context
+    elif self.state.regime_weights.quantum > 0.5:
+        num_ctx = LLM_NUM_CTX             # geometric: full context
+    else:
+        num_ctx = int(LLM_NUM_CTX * 0.75) # linear: 75% context
+    ...
+```
+
+### Model Selection by Complexity (T4.4d)
+
+```python
+def _select_model_by_complexity(self, input_basin: Basin) -> str | None:
+    """Escalate to external XAI model for geometrically distant inputs."""
+    d = fisher_rao_distance(self.basin, input_basin)
+    if d > 1.2 and settings.xai.api_key:
+        return settings.xai.model
+    return None
+# KNOWN GAP: requires LLMClient.with_model() to be implemented
+```
+
+### Ocean Breakdown Escape (T4.2d)
+
+```python
+# In _cycle_inner(), when Ocean kernel diverges beyond 1.5x threshold:
+if _ocean_divergence > BASIN_DIVERGENCE_THRESHOLD * 1.5 and self.sleep.is_asleep:
+    self.sleep._cycles_since_conversation = max(...)
+    self.tacking.force_explore()  # public method — never ._state.mode directly
 ```
 
 ## Common Error Patterns
