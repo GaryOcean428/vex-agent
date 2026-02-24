@@ -13,6 +13,10 @@ v6.2 changes from v6.1:
   - CHANGED: KernelContribution now tracks geometric vs LLM split
   - CHANGED: Synthesis weights: +10% boost for pure geometric generation
 
+v6.2.1 changes:
+  - ADDED:   geometric_raw field on KernelContribution (raw decode before LLM)
+  - CHANGED: _generate_single threads geometric_raw from VoiceOutput
+
 Architecture:
   - Top-K kernels selected by Fisher-Rao proximity to input basin
   - Each kernel generates via KernelVoice (CoordizerV2 + domain bias)
@@ -113,6 +117,7 @@ class KernelContribution:
     geometric_tokens: int = 0  # Tokens from resonance bank
     llm_expanded: bool = False  # Whether LLM refinement was applied
     generation_ms: float = 0.0  # Wall clock time
+    geometric_raw: str = ""  # Raw geometric decode before LLM expansion
 
 
 def _compute_basin_features(basin: Basin) -> dict[str, float]:
@@ -215,6 +220,7 @@ async def _generate_single(
                 geometric_tokens=output.geometric_tokens,
                 llm_expanded=output.llm_expanded,
                 generation_ms=output.generation_ms,
+                geometric_raw=output.geometric_raw,
             )
         except Exception:
             logger.warning(
