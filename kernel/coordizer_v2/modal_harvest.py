@@ -5,7 +5,7 @@ This module calls the Modal serverless endpoint to run LLM forward
 passes on GPU, capturing full probability distributions for the
 CoordizerV2 pipeline.
 
-Critical design choice: we request FULL softmax distributions, not
+Critical design choice: we request FULL logit distributions, not
 top-k approximations. The tail of the distribution carries geometric
 information — a token that is specifically suppressed in a context
 looks different from one that is uniformly unlikely. Top-k throws
@@ -13,7 +13,8 @@ this away.
 
 Flow:
     Railway → HTTP POST → Modal GPU endpoint → full logits
-    → Railway transforms logits → basin coordinates via compress.py
+    → Railway transforms logits via logits_to_simplex (linear projection)
+    → basin coordinates via compress.py
 
 Auth: Modal Proxy Auth Tokens (wk-*/ws-* headers)
 """

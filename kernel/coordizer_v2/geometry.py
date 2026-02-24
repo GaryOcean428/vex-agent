@@ -3,7 +3,7 @@ Coordizer Geometry — Simplex-Native Operations on Δ⁶³
 
 Re-exports shared geometry from the canonical source
 (kernel.geometry.fisher_rao) and adds coordizer-specific
-extensions: batch Fisher-Rao distance, softmax projection,
+extensions: batch Fisher-Rao distance, logits-to-simplex projection,
 Fisher information diagonal, and natural gradient.
 
 Canonical source: kernel/geometry/fisher_rao.py

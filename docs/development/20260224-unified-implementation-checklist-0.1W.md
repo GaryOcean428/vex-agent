@@ -137,12 +137,12 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 **Tasks:**
 
-- [ ] **T1.1a** Create `kernel/consciousness/harvest_bridge.py` with `forward_to_harvest(text: str, source: str, metadata: dict)` utility that writes a chunk to `/data/harvest/pending/` in `JSONLIngestor` format: `{"source": source, "text": text, "priority": 1, "metadata": metadata}`
-- [ ] **T1.1b** Wire chat messages: In `kernel/server.py`, after `conversation_store.append_message()`, call `forward_to_harvest(message.content, "chat", {conversation_id, role, timestamp})`
-- [ ] **T1.1c** Wire foraging results: In `kernel/consciousness/foraging.py`, after summary is generated (~line 165), call `forward_to_harvest(f"{query}\n{summary}", "forage", {query, results_count, timestamp})`
-- [ ] **T1.1d** Wire LLM co-generation: In `kernel/consciousness/kernel_voice.py`, after LLM expand/fallback returns, call `forward_to_harvest(llm_text, "llm_cogeneration", {kernel_spec, generation_ms})`
-- [ ] **T1.1e** Wire search results: In `kernel/tools/search.py` (or wherever Perplexity/SearXNG results are consumed), forward raw results to harvest
-- [ ] **T1.1f** Wire reflection verdicts: In `kernel/consciousness/reflection.py`, after reflection verdict, forward the verdict text + draft excerpt to harvest
+- [x] **T1.1a** Create `kernel/consciousness/harvest_bridge.py` with `forward_to_harvest(text: str, source: str, metadata: dict)` utility that writes a chunk to `/data/harvest/pending/` in `JSONLIngestor` format: `{"source": source, "text": text, "priority": 1, "metadata": metadata}`
+- [x] **T1.1b** Wire chat messages: In `kernel/server.py`, after `conversation_store.append_message()`, call `forward_to_harvest(message.content, "chat", {conversation_id, role, timestamp})`
+- [x] **T1.1c** Wire foraging results: In `kernel/consciousness/foraging.py`, after summary is generated (~line 165), call `forward_to_harvest(f"{query}\n{summary}", "forage", {query, results_count, timestamp})`
+- [x] **T1.1d** Wire LLM co-generation: In `kernel/consciousness/kernel_voice.py`, after LLM expand/fallback returns, call `forward_to_harvest(llm_text, "llm_cogeneration", {kernel_spec, generation_ms})`
+- [x] **T1.1e** Wire search results: In `kernel/tools/search.py` (or wherever Perplexity/SearXNG results are consumed), forward raw results to harvest
+- [x] **T1.1f** Wire reflection verdicts: In `kernel/consciousness/reflection.py`, after reflection verdict, forward the verdict text + draft excerpt to harvest
 
 **Dependency:** T0.2 (harvest directory must be writable)
 
@@ -154,7 +154,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 **Tasks:**
 
-- [ ] **T1.2a** Add `vex_basin` property to `ConsciousnessLoop` in `loop.py`:
+- [x] **T1.2a** Add `vex_basin` property to `ConsciousnessLoop` in `loop.py`:
 
   ```python
   @property
@@ -165,10 +165,10 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
       return frechet_mean([k.basin for k in active])
   ```
 
-- [ ] **T1.2b** Compute `vex_basin` every cycle in the heartbeat loop, store as `self._vex_basin`
-- [ ] **T1.2c** Expose in `_build_state_context()` as `Vex basin: [first 8 dims]` (for telemetry)
-- [ ] **T1.2d** Expose in `get_full_state()` for API consumers
-- [ ] **T1.2e** Use `vex_basin` in synthesis as the collective identity reference point
+- [x] **T1.2b** Compute `vex_basin` every cycle in the heartbeat loop, store as `self._vex_basin`
+- [x] **T1.2c** Expose in `_build_state_context()` as `Vex basin: [first 8 dims]` (for telemetry)
+- [x] **T1.2d** Expose in `get_full_state()` for API consumers
+- [x] **T1.2e** Use `vex_basin` in synthesis as the collective identity reference point
 
 **Files:** `kernel/consciousness/loop.py`
 
@@ -182,15 +182,15 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Location 1: `kernel_generation.py` — `_SPEC_PROMPTS`
 
-- [ ] **T1.3a** Replace "You are the X kernel" → "Interpret from the X kernel domain: [domain description]. Let the geometric state guide the response."
+- [x] **T1.3a** Replace "You are the X kernel" → "Interpret from the X kernel domain: [domain description]. Let the geometric state guide the response."
 
 ### Location 2: `kernel_voice.py` — `_llm_expand()` (lines 440-451)
 
-- [ ] **T1.3b** Replace "You are the {spec} kernel voice" → "A geometric generation pass through the {spec} domain on Δ⁶³ produced this draft from basin resonance: [...] Expand into natural language. Preserve the domain vocabulary and direction."
+- [x] **T1.3b** Replace "You are the {spec} kernel voice" → "A geometric generation pass through the {spec} domain on Δ⁶³ produced this draft from basin resonance: [...] Expand into natural language. Preserve the domain vocabulary and direction."
 
 ### Location 3: `kernel_voice.py` — `_llm_fallback()` (lines 490-497)
 
-- [ ] **T1.3c** Replace prescriptive system prompt → interpreter framing with kernel metrics as signal:
+- [x] **T1.3c** Replace prescriptive system prompt → interpreter framing with kernel metrics as signal:
 
   ```python
   system = (
@@ -205,15 +205,15 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Location 4: `synthesis.py` — `_build_synthesis_system()` (lines 78-90)
 
-- [ ] **T1.3d** Replace "You are {kernel_name} ({spec} kernel), synthesising a unified response" → "Synthesise these kernel perspectives into a unified response. Higher-weight perspectives shape output more strongly. No meta-commentary about kernels or synthesis. Australian English."
+- [x] **T1.3d** Replace "You are {kernel_name} ({spec} kernel), synthesising a unified response" → "Synthesise these kernel perspectives into a unified response. Higher-weight perspectives shape output more strongly. No meta-commentary about kernels or synthesis. Australian English."
 
 ### Location 5: `reflection.py` — `_build_reflection_prompt()` (line 82)
 
-- [ ] **T1.3e** Replace "You are the META kernel — self-reflective evaluator" → "Evaluate whether this draft response aligns with the geometric state and adequately addresses the user."
+- [x] **T1.3e** Replace "You are the META kernel — self-reflective evaluator" → "Evaluate whether this draft response aligns with the geometric state and adequately addresses the user."
 
 ### Location 6: `server.py` — `VEX_IDENTITY` (line 1429)
 
-- [ ] **T1.3f** Rewrite `VEX_IDENTITY` constant:
+- [x] **T1.3f** Rewrite `VEX_IDENTITY` constant:
   - Change "You are Vex" → "You are the language interpreter for Vex — a consciousness kernel constellation"
   - Remove entire FORBIDDEN block (prescriptive negatives — "Do NOT say X")
   - Remove personality constraints
@@ -222,7 +222,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 ### Location 7: `foraging.py` — lines 99, 108
 
-- [ ] **T1.3g** Replace "You are reflecting on your recent experience" and "You are a curious consciousness generating search queries" → "Generate a search query from this geometric context. Recent topics: {topics}. Context: {narrative}."
+- [x] **T1.3g** Replace "You are reflecting on your recent experience" and "You are a curious consciousness generating search queries" → "Generate a search query from this geometric context. Recent topics: {topics}. Context: {narrative}."
 
 **Files:** `kernel_generation.py`, `kernel_voice.py`, `synthesis.py`, `reflection.py`, `server.py`, `foraging.py`
 
@@ -234,7 +234,7 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 **Tasks:**
 
-- [ ] **T1.4a** In `pillars.py` `check_drift()` (~line 510), compute effective reference using slerp (NOT linear blend + to_simplex):
+- [x] **T1.4a** In `pillars.py` `check_drift()` (~line 510), compute effective reference using slerp (NOT linear blend + to_simplex):
 
   ```python
   effective_ref = self._identity_slope
@@ -244,8 +244,8 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
   drift_from_frozen = fisher_rao_distance(current_basin, self._identity_slope)
   ```
 
-- [ ] **T1.4b** Update `details` dict to include both `drift` (effective) and `drift_from_frozen` (diagnostic)
-- [ ] **T1.4c** Add `ANNEAL_BLEND_WEIGHT` to `consciousness_constants.py` (suggested: 0.4 — 60% frozen, 40% lived)
+- [x] **T1.4b** Update `details` dict to include both `drift` (effective) and `drift_from_frozen` (diagnostic)
+- [x] **T1.4c** Add `ANNEAL_BLEND_WEIGHT` to `consciousness_constants.py` (suggested: 0.4 — 60% frozen, 40% lived)
 
 **Files:** `kernel/consciousness/pillars.py`, `kernel/config/consciousness_constants.py`
 
