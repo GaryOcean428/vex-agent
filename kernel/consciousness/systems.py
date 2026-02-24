@@ -763,8 +763,21 @@ class SleepCycleManager:
         if self._sleep_cycles > SLEEP_CONSOLIDATION_ONSET:
             self.phase = SleepPhase.CONSOLIDATING
 
-    def consolidate(self, bank: Any | None = None) -> None:
-        """T2.3c: Synaptic downscaling — boost replayed, prune weak."""
+    def consolidate(
+        self,
+        bank: Any | None = None,
+        kernel_anchors: list[Any] | None = None,
+        kernel_veto_threshold: float = 0.4,
+    ) -> None:
+        """T2.3c+T2.4b: Synaptic downscaling — boost replayed, prune weak.
+
+        Args:
+            bank:                  ResonanceBank to operate on.
+            kernel_anchors:        T2.4b — list of kernel anchor Basin arrays.
+                                   Entries within kernel_veto_threshold FR distance
+                                   of any anchor are VETOED from pruning.
+            kernel_veto_threshold: FR distance within which a kernel protects an entry.
+        """
         if bank is not None and bank.coordinates:
             for tid in list(bank.coordinates.keys()):
                 current = bank.basin_mass.get(tid, 0.0)
@@ -774,11 +787,21 @@ class SleepCycleManager:
                 else:
                     # Global downscaling
                     bank.basin_mass[tid] = current * _DOWNSCALE_FACTOR
+            # T2.4b: Build veto set — entries protected by kernel anchors
+            vetoed: set[int] = set()
+            if kernel_anchors:
+                for tid in list(bank.coordinates.keys()):
+                    coord = bank.coordinates[tid]
+                    for anchor in kernel_anchors:
+                        if fisher_rao_distance(coord, anchor) < kernel_veto_threshold:
+                            vetoed.add(tid)
+                            break
             # Prune entries below minimum strength (basin_mass == 0 and never activated)
             to_prune = [
                 tid
                 for tid in list(bank.coordinates.keys())
-                if bank.basin_mass.get(tid, 0.0) < 1e-6
+                if tid not in vetoed  # T2.4b: kernel veto
+                and bank.basin_mass.get(tid, 0.0) < 1e-6
                 and bank.activation_counts.get(tid, 0) == 0
                 and bank.origin.get(tid) == "dream"
             ]

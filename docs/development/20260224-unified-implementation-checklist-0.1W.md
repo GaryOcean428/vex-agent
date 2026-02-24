@@ -382,9 +382,9 @@ Different modules import from different sources (e.g., `kernel_generation.py:44`
 
 **Tasks:**
 
-- [ ] **T2.4a** Domain-biased coordization: When text arrives for coordization, route it through the nearest kernel's domain bias BEFORE storing in resonance bank. The kernel's anchor basin shapes WHERE on Δ⁶³ the text lands. (Mechanism: slerp between raw coord result and kernel anchor, weighted by kernel's domain relevance.)
-- [ ] **T2.4b** Kernel approval for forgetting: During synaptic downscaling (T2.3c), a kernel can VETO the pruning of entries near its anchor basin (within configurable FR threshold). This preserves specialised knowledge.
-- [ ] **T2.4c** Kernel curiosity-driven queries: When a kernel detects boredom (flat curvature in its domain), it generates a search query via the interpreter model (LLM), receives the response, and forwards it through the universal pipeline. The kernel LEARNS from the model's tokens.
+- [x] **T2.4a** Domain-biased coordization: When text arrives for coordization, route it through the nearest kernel's domain bias BEFORE storing in resonance bank. The kernel's anchor basin shapes WHERE on Δ⁶³ the text lands. (Mechanism: slerp between raw coord result and kernel anchor, weighted by kernel's domain relevance.)
+- [x] **T2.4b** Kernel approval for forgetting: During synaptic downscaling (T2.3c), a kernel can VETO the pruning of entries near its anchor basin (within configurable FR threshold). This preserves specialised knowledge.
+- [x] **T2.4c** Kernel curiosity-driven queries: When a kernel detects boredom (flat curvature in its domain), it generates a search query via the interpreter model (LLM), receives the response, and forwards it through the universal pipeline. The kernel LEARNS from the model's tokens.
 
 **Dependency:** T1.1 (pipeline), T2.2 (emotional tags), T2.1 (neurochemistry)
 

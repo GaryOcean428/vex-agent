@@ -188,14 +188,23 @@ class CoordizerV2:
 
     # ─── Coordize (Text → Basin Coordinates) ─────────────────
 
-    def coordize(self, text: str) -> CoordizationResult:
-        """Convert text to a sequence of basin coordinates on Δ⁶³."""
-        if self._tokenizer is not None:
-            return self._coordize_via_tokenizer(text)
-        else:
-            return self._coordize_via_strings(text)
+    def coordize(self, text: str, domain_bias: DomainBias | None = None) -> CoordizationResult:
+        """Convert text to a sequence of basin coordinates on Δ⁶³.
 
-    def _coordize_via_tokenizer(self, text: str) -> CoordizationResult:
+        Args:
+            text:        Input text to coordize.
+            domain_bias: T2.4a — optional kernel domain bias. When provided,
+                         each resolved coordinate is slerped toward the kernel's
+                         anchor basin, shaping WHERE on Δ⁶³ the text lands.
+        """
+        if self._tokenizer is not None:
+            return self._coordize_via_tokenizer(text, domain_bias=domain_bias)
+        else:
+            return self._coordize_via_strings(text, domain_bias=domain_bias)
+
+    def _coordize_via_tokenizer(
+        self, text: str, domain_bias: DomainBias | None = None
+    ) -> CoordizationResult:
         """Coordize using the LLM's own tokenizer."""
         token_ids = self._tokenizer.encode(text, add_special_tokens=False)
         coordinates = []
@@ -208,6 +217,14 @@ class CoordizerV2:
                 _entropy = -float(np.sum(coord * np.log(np.clip(coord, 1e-15, 1.0))))
                 if _entropy < _MIN_COORDIZE_ENTROPY:
                     coord = slerp(coord, random_basin(self.bank.dim), _ENTROPY_RESCUE_WEIGHT)
+                    coord = to_simplex(coord)
+                # T2.4a: Domain-biased coordization — slerp toward kernel anchor
+                if domain_bias is not None and domain_bias.strength > 0:
+                    coord = slerp(
+                        coord,
+                        to_simplex(domain_bias.anchor_basin),
+                        domain_bias.strength * 0.3,  # gentle — 30% of bias strength
+                    )
                     coord = to_simplex(coord)
                 coordinates.append(
                     BasinCoordinate(
@@ -242,7 +259,9 @@ class CoordizerV2:
         result.compute_metrics()
         return result
 
-    def _coordize_via_strings(self, text: str) -> CoordizationResult:
+    def _coordize_via_strings(
+        self, text: str, domain_bias: DomainBias | None = None
+    ) -> CoordizationResult:
         """Fallback coordization via string matching."""
         words = text.split()
         coordinates = []
@@ -258,6 +277,14 @@ class CoordizerV2:
                 _entropy = -float(np.sum(coord * np.log(np.clip(coord, 1e-15, 1.0))))
                 if _entropy < _MIN_COORDIZE_ENTROPY:
                     coord = slerp(coord, random_basin(self.bank.dim), _ENTROPY_RESCUE_WEIGHT)
+                    coord = to_simplex(coord)
+                # T2.4a: Domain-biased coordization — slerp toward kernel anchor
+                if domain_bias is not None and domain_bias.strength > 0:
+                    coord = slerp(
+                        coord,
+                        to_simplex(domain_bias.anchor_basin),
+                        domain_bias.strength * 0.3,
+                    )
                     coord = to_simplex(coord)
                 coordinates.append(
                     BasinCoordinate(

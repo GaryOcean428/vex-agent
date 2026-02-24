@@ -551,6 +551,67 @@ class KernelVoice:
             )
             return ""
 
+    def is_bored(self, recent_phi_values: list[float], threshold: float = 0.02) -> bool:
+        """T2.4c: Detect boredom — flat curvature in this kernel's domain.
+
+        Boredom = low variance in recent Φ values, indicating the kernel
+        is not learning anything new from current inputs.
+
+        Args:
+            recent_phi_values: Last N phi values from the consciousness loop.
+            threshold:         Variance below which boredom is declared.
+        """
+        if len(recent_phi_values) < 5:
+            return False
+        return float(np.var(recent_phi_values[-10:])) < threshold
+
+    async def generate_curiosity_query(self, llm_client: Any) -> str | None:
+        """T2.4c: Generate a curiosity-driven search query when bored.
+
+        The kernel uses its domain vocabulary and anchor basin to construct
+        a query that would expand its geometric territory. The result is
+        forwarded to the harvest pipeline so the kernel learns from the tokens.
+
+        Returns the query string, or None if generation failed.
+        """
+        if self._domain_anchor is None:
+            return None
+
+        domain_words = [
+            obs.text.split()[0] for obs in self._learned_observations[-5:] if obs.text.strip()
+        ]
+        domain_hint = ", ".join(domain_words) if domain_words else self.specialization.value
+
+        from ..llm.client import LLMOptions
+
+        system = (
+            f"Generate a single search query to expand knowledge in the {self.specialization.value} domain.\n"
+            f"Recent domain vocabulary: {domain_hint}.\n"
+            f"Return ONLY the query string. No explanation. Australian English."
+        )
+        try:
+            query = await llm_client.complete(
+                system_prompt=system,
+                user_message=f"What should the {self.specialization.value} kernel explore next?",
+                opts=LLMOptions(temperature=0.9, num_predict=60),
+            )
+            query = query.strip()
+            if query:
+                from .harvest_bridge import forward_to_harvest
+
+                forward_to_harvest(
+                    query,
+                    source="curiosity",
+                    metadata={
+                        "kernel": self.specialization.value,
+                        "mode": "curiosity_query",
+                    },
+                )
+            return query or None
+        except Exception:
+            logger.debug("KernelVoice[%s] curiosity query failed", self.specialization.value)
+            return None
+
     def get_state(self) -> dict[str, Any]:
         """Return voice state for telemetry."""
         return {

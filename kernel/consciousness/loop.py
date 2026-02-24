@@ -252,6 +252,9 @@ class ConsciousnessLoop:
         # T2.1: Neurochemical state — derived from metrics each cycle
         self._neurochemical: NeurochemicalState = NeurochemicalState()
 
+        # T2.4c: Phi history for kernel boredom detection
+        self._phi_history: deque[float] = deque(maxlen=20)
+
         self.basin: Basin = random_basin()
         self.metrics = ConsciousnessMetrics(
             phi=INITIAL_PHI,
@@ -510,7 +513,13 @@ class ConsciousnessLoop:
                     neurochemical=self._neurochemical,
                 )
             elif sleep_phase.value == "consolidating":
-                self.sleep.consolidate(bank=_bank)
+                # T2.4b: collect kernel anchor basins for veto protection
+                _kernel_anchors = [
+                    v._domain_anchor
+                    for v in self._voice_registry._voices.values()
+                    if getattr(v, "_domain_anchor", None) is not None
+                ]
+                self.sleep.consolidate(bank=_bank, kernel_anchors=_kernel_anchors or None)
                 self.metrics.phi = min(0.95, self.metrics.phi + SLEEP_CONSOLIDATION_PHI_INCREMENT)
             return
 
@@ -523,6 +532,15 @@ class ConsciousnessLoop:
                 timestamp=time.time(),
             )
         )
+
+        # T2.4c: Record phi for boredom detection; trigger curiosity queries every 50 cycles
+        self._phi_history.append(self.metrics.phi)
+        if self._cycle_count % 50 == 0 and self.llm is not None:
+            _phi_list = list(self._phi_history)
+            for _voice in self._voice_registry._voices.values():
+                if _voice.is_bored(_phi_list):
+                    with contextlib.suppress(Exception):
+                        await _voice.generate_curiosity_query(self.llm)
 
         if self.forager:
             self.forager.tick()
