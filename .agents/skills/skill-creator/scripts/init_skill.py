@@ -15,7 +15,6 @@ Skills are created at /home/ubuntu/skills/<skill-name>/
 import sys
 from pathlib import Path
 
-
 SKILL_TEMPLATE = """---
 name: {skill_name}
 description: [TODO: Complete and informative explanation of what the skill does and when to use it. Include WHEN to use this skill - specific scenarios, file types, or tasks that trigger it.]
@@ -189,7 +188,7 @@ Note: This is a text placeholder. Actual templates can be any file type.
 
 def title_case_skill_name(skill_name):
     """Convert hyphenated skill name to Title Case for display."""
-    return ' '.join(word.capitalize() for word in skill_name.split('-'))
+    return " ".join(word.capitalize() for word in skill_name.split("-"))
 
 
 SKILLS_BASE_PATH = "/home/ubuntu/skills"
@@ -223,12 +222,9 @@ def init_skill(skill_name):
 
     # Create SKILL.md from template
     skill_title = title_case_skill_name(skill_name)
-    skill_content = SKILL_TEMPLATE.format(
-        skill_name=skill_name,
-        skill_title=skill_title
-    )
+    skill_content = SKILL_TEMPLATE.format(skill_name=skill_name, skill_title=skill_title)
 
-    skill_md_path = skill_dir / 'SKILL.md'
+    skill_md_path = skill_dir / "SKILL.md"
     try:
         skill_md_path.write_text(skill_content)
         print("✅ Created SKILL.md")
@@ -239,24 +235,24 @@ def init_skill(skill_name):
     # Create resource directories with example files
     try:
         # Create scripts/ directory with example script
-        scripts_dir = skill_dir / 'scripts'
+        scripts_dir = skill_dir / "scripts"
         scripts_dir.mkdir(exist_ok=True)
-        example_script = scripts_dir / 'example.py'
+        example_script = scripts_dir / "example.py"
         example_script.write_text(EXAMPLE_SCRIPT.format(skill_name=skill_name))
         example_script.chmod(0o755)
         print("✅ Created scripts/example.py")
 
         # Create references/ directory with example reference doc
-        references_dir = skill_dir / 'references'
+        references_dir = skill_dir / "references"
         references_dir.mkdir(exist_ok=True)
-        example_reference = references_dir / 'api_reference.md'
+        example_reference = references_dir / "api_reference.md"
         example_reference.write_text(EXAMPLE_REFERENCE.format(skill_title=skill_title))
         print("✅ Created references/api_reference.md")
 
         # Create templates/ directory with example template placeholder
-        templates_dir = skill_dir / 'templates'
+        templates_dir = skill_dir / "templates"
         templates_dir.mkdir(exist_ok=True)
-        example_template = templates_dir / 'example_template.txt'
+        example_template = templates_dir / "example_template.txt"
         example_template.write_text(EXAMPLE_TEMPLATE)
         print("✅ Created templates/example_template.txt")
     except Exception as e:

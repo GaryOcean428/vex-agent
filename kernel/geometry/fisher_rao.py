@@ -56,7 +56,7 @@ def to_simplex(v: Basin) -> Basin:
     """
     v = np.asarray(v, dtype=np.float64)
     v = np.maximum(v, _EPS)
-    return v / v.sum()
+    return np.asarray(v / v.sum(), dtype=np.float64)
 
 
 def random_basin(dim: int = BASIN_DIM) -> Basin:
@@ -76,7 +76,7 @@ def _to_sqrt(p: Basin) -> Basin:
 def _from_sqrt(s: Basin) -> Basin:
     """Sqrt-coordinates back to simplex: p_i = s_i², then normalise."""
     p = s * s
-    return p / p.sum()
+    return np.asarray(p / p.sum(), dtype=np.float64)
 
 
 # ─── Distance and overlap ─────────────────────────────────────
@@ -182,7 +182,7 @@ def log_map(base: Basin, target: Basin) -> Basin:
     if norm < _EPS:
         return np.zeros_like(sb)
 
-    return (d / norm) * tangent
+    return np.asarray((d / norm) * tangent, dtype=np.float64)
 
 
 def exp_map(base: Basin, tangent: Basin) -> Basin:

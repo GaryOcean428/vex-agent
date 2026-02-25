@@ -22,6 +22,7 @@ except ImportError:
 # Load environment variables from .env
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
@@ -40,16 +41,16 @@ def url_to_filename(url: str) -> str:
         https://docs.example.com/api/users -> docs_example_com_api_users.md
     """
     # Remove protocol
-    url_clean = re.sub(r'^https?://', '', url)
+    url_clean = re.sub(r"^https?://", "", url)
 
     # Remove trailing slash
-    url_clean = url_clean.rstrip('/')
+    url_clean = url_clean.rstrip("/")
 
     # Replace special characters with underscores
-    url_clean = re.sub(r'[^\w\-]', '_', url_clean)
+    url_clean = re.sub(r"[^\w\-]", "_", url_clean)
 
     # Remove duplicate underscores
-    url_clean = re.sub(r'_+', '_', url_clean)
+    url_clean = re.sub(r"_+", "_", url_clean)
 
     # Limit length to avoid filesystem issues
     if len(url_clean) > 200:
@@ -133,7 +134,7 @@ crawled_at: {datetime.now().isoformat()}
 """
 
         # Save file
-        with open(filepath, 'w', encoding='utf-8') as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             f.write(markdown_output)
 
         print(f"  [{idx}/{len(results)}] {filename}")
@@ -165,45 +166,33 @@ Examples:
 
   # Control crawl depth and breadth
   python crawl_url.py https://nextjs.org/docs --depth 3 --limit 100
-        """
+        """,
+    )
+
+    parser.add_argument("url", help="URL to crawl (e.g., https://docs.example.com)")
+
+    parser.add_argument(
+        "--instruction",
+        "-i",
+        help="Natural language guidance for the crawler (e.g., 'Focus on API endpoints')",
     )
 
     parser.add_argument(
-        "url",
-        help="URL to crawl (e.g., https://docs.example.com)"
-    )
-
-    parser.add_argument(
-        "--instruction", "-i",
-        help="Natural language guidance for the crawler (e.g., 'Focus on API endpoints')"
-    )
-
-    parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         type=Path,
-        help="Output directory (default: <repo_root>/crawled_context/<domain>)"
+        help="Output directory (default: <repo_root>/crawled_context/<domain>)",
     )
 
     parser.add_argument(
-        "--depth", "-d",
-        type=int,
-        default=2,
-        help="Max crawl depth (default: 2, range: 1-5)"
+        "--depth", "-d", type=int, default=2, help="Max crawl depth (default: 2, range: 1-5)"
     )
 
     parser.add_argument(
-        "--breadth", "-b",
-        type=int,
-        default=50,
-        help="Max links per level (default: 50)"
+        "--breadth", "-b", type=int, default=50, help="Max links per level (default: 50)"
     )
 
-    parser.add_argument(
-        "--limit", "-l",
-        type=int,
-        default=50,
-        help="Max total pages (default: 50)"
-    )
+    parser.add_argument("--limit", "-l", type=int, default=50, help="Max total pages (default: 50)")
 
     args = parser.parse_args()
 
@@ -227,9 +216,9 @@ Examples:
             limit=args.limit,
         )
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("✨ Crawl complete!")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"📁 Output: {result['output_dir']}")
         print(f"📄 Files: {result['pages_saved']}")
 

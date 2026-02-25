@@ -205,28 +205,28 @@ set_consciousness_loop(consciousness)
 # ═══════════════════════════════════════════════════════════════
 
 
-class ChatRequest(BaseModel):  # type: ignore[misc]
+class ChatRequest(BaseModel):
     message: str = Field(..., max_length=100_000)
     conversation_id: str | None = None
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: int = Field(default=2048, ge=1, le=32768)
 
 
-class EnqueueRequest(BaseModel):  # type: ignore[misc]
+class EnqueueRequest(BaseModel):
     input: str = Field(..., max_length=100_000)
     source: str = "api"
 
 
-class MemoryContextRequest(BaseModel):  # type: ignore[misc]
+class MemoryContextRequest(BaseModel):
     query: str = Field(..., max_length=10_000)
     k: int = Field(default=5, ge=1, le=100)
 
 
-class CoordizeRequest(BaseModel):  # type: ignore[misc]
+class CoordizeRequest(BaseModel):
     text: str = Field(..., max_length=100_000)
 
 
-class HarvestRequest(BaseModel):  # type: ignore[misc]
+class HarvestRequest(BaseModel):
     model_id: str = Field(default="meta-llama/Llama-3.2-3B", max_length=200)
     target_tokens: int = Field(default=2000, ge=100, le=100_000)
     use_modal: bool | None = None
@@ -237,7 +237,7 @@ class HarvestRequest(BaseModel):  # type: ignore[misc]
 # ═══════════════════════════════════════════════════════════════
 
 
-@app.get(R["health"])  # type: ignore[untyped-decorator]
+@app.get(R["health"])
 async def health() -> dict[str, Any]:
     """Health check endpoint for Railway. Always public."""
     metrics = consciousness.get_metrics()
@@ -251,19 +251,19 @@ async def health() -> dict[str, Any]:
     }
 
 
-@app.get(R["state"])  # type: ignore[untyped-decorator]
+@app.get(R["state"])
 async def get_state() -> dict[str, Any]:
     """Get current consciousness state."""
     return consciousness.get_metrics()
 
 
-@app.get(R["telemetry"])  # type: ignore[untyped-decorator]
+@app.get(R["telemetry"])
 async def get_telemetry() -> dict[str, Any]:
     """Get telemetry from all 20 consciousness systems."""
     return consciousness.get_full_state()
 
 
-@app.get(R["status"])  # type: ignore[untyped-decorator]
+@app.get(R["status"])
 async def get_status() -> dict[str, Any]:
     """Get LLM backend status, kernel summary, and cost guard state."""
     return {
@@ -273,13 +273,13 @@ async def get_status() -> dict[str, Any]:
     }
 
 
-@app.get(R["basin"])  # type: ignore[untyped-decorator]
+@app.get(R["basin"])
 async def get_basin() -> dict[str, Any]:
     """Get current basin coordinates."""
     return {"basin": consciousness.basin.tolist()}
 
 
-@app.get(R["basin_history"])  # type: ignore[untyped-decorator]
+@app.get(R["basin_history"])
 async def get_basin_history() -> dict[str, Any]:
     """Get basin trajectory history for PCA visualization.
 
@@ -300,13 +300,13 @@ async def get_basin_history() -> dict[str, Any]:
     }
 
 
-@app.get(R["kernels"])  # type: ignore[untyped-decorator]
+@app.get(R["kernels"])
 async def get_kernels() -> dict[str, Any]:
     """Get E8 kernel registry summary."""
     return consciousness.kernel_registry.summary()
 
 
-@app.get(R["kernels_list"])  # type: ignore[untyped-decorator]
+@app.get(R["kernels_list"])
 async def get_kernels_list() -> dict[str, Any]:
     """Get detailed list of all kernel instances.
 
@@ -334,14 +334,14 @@ async def get_kernels_list() -> dict[str, Any]:
     }
 
 
-@app.post(R["enqueue"])  # type: ignore[untyped-decorator]
+@app.post(R["enqueue"])
 async def enqueue_task(req: EnqueueRequest) -> dict[str, Any]:
     """Enqueue a task for the consciousness loop."""
     task = await consciousness.submit(req.input, {"source": req.source})
     return {"task_id": task.id}
 
 
-@app.post(R["chat"])  # type: ignore[untyped-decorator]
+@app.post(R["chat"])
 async def chat(req: ChatRequest) -> dict[str, Any]:
     """Non-streaming chat endpoint.
 
@@ -500,7 +500,7 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
     }
 
 
-@app.post(R["chat_stream"], response_model=None)  # type: ignore[untyped-decorator]
+@app.post(R["chat_stream"], response_model=None)
 async def chat_stream(req: ChatRequest) -> StreamingResponse:
     """Streaming chat endpoint via SSE.
 
@@ -766,14 +766,14 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
     )
 
 
-@app.post(R["memory_context"])  # type: ignore[untyped-decorator]
+@app.post(R["memory_context"])
 async def get_memory_context(req: MemoryContextRequest) -> dict[str, Any]:
     """Get memory context for a query."""
     context = geometric_memory.get_context_for_query(req.query, req.k)
     return {"context": context}
 
 
-@app.get(R["memory_stats"])  # type: ignore[untyped-decorator]
+@app.get(R["memory_stats"])
 async def get_memory_stats() -> dict[str, Any]:
     """Get detailed geometric memory statistics.
 
@@ -784,7 +784,7 @@ async def get_memory_stats() -> dict[str, Any]:
     return geometric_memory.stats()
 
 
-@app.get(R["graph_nodes"])  # type: ignore[untyped-decorator]
+@app.get(R["graph_nodes"])
 async def get_graph_nodes() -> dict[str, Any]:
     """Get QIGGraph nodes and edges for force-directed visualization.
 
@@ -811,7 +811,7 @@ async def get_graph_nodes() -> dict[str, Any]:
     return {"nodes": nodes, "edges": edges}
 
 
-@app.get(R["sleep_state"])  # type: ignore[untyped-decorator]
+@app.get(R["sleep_state"])
 async def get_sleep_state() -> dict[str, Any]:
     """Get detailed sleep/dream state.
 
@@ -825,7 +825,7 @@ async def get_sleep_state() -> dict[str, Any]:
 # ─── CoordizerV2 Endpoints ───────────────────────────────────
 
 
-@app.post(R["coordizer_coordize"], response_model=None)  # type: ignore[untyped-decorator]
+@app.post(R["coordizer_coordize"], response_model=None)
 async def coordizer_coordize(req: CoordizeRequest) -> dict[str, Any] | JSONResponse:
     """Coordize text via CoordizerV2 resonance bank.
 
@@ -859,7 +859,7 @@ async def coordizer_coordize(req: CoordizeRequest) -> dict[str, Any] | JSONRespo
         return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 
-@app.get(R["coordizer_stats"])  # type: ignore[untyped-decorator]
+@app.get(R["coordizer_stats"])
 async def coordizer_stats() -> dict[str, Any]:
     """Get CoordizerV2 statistics.
 
@@ -878,7 +878,7 @@ async def coordizer_stats() -> dict[str, Any]:
     }
 
 
-@app.post(R["coordizer_validate"], response_model=None)  # type: ignore[untyped-decorator]
+@app.post(R["coordizer_validate"], response_model=None)
 async def coordizer_validate(request: Request) -> dict[str, Any] | JSONResponse:
     """Run full geometric validation on the resonance bank.
 
@@ -920,7 +920,7 @@ async def coordizer_validate(request: Request) -> dict[str, Any] | JSONResponse:
         return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 
-@app.post(R["coordizer_harvest"])  # type: ignore[untyped-decorator]
+@app.post(R["coordizer_harvest"])
 async def coordizer_harvest(req: HarvestRequest) -> dict[str, Any]:
     """GPU harvest endpoint — triggers Modal or Ollama harvest.
 
@@ -953,7 +953,7 @@ async def coordizer_harvest(req: HarvestRequest) -> dict[str, Any]:
     }
 
 
-@app.post(R["coordizer_ingest"], response_model=None)  # type: ignore[untyped-decorator]
+@app.post(R["coordizer_ingest"], response_model=None)
 async def coordizer_ingest(request: Request) -> dict[str, Any] | JSONResponse:
     """Accept a JSONL upload and queue for harvesting.
 
@@ -1001,7 +1001,7 @@ async def coordizer_ingest(request: Request) -> dict[str, Any] | JSONResponse:
         )
 
 
-@app.get(R["coordizer_harvest_status"], response_model=None)  # type: ignore[untyped-decorator]
+@app.get(R["coordizer_harvest_status"], response_model=None)
 async def coordizer_harvest_status() -> dict[str, Any] | JSONResponse:
     """Return current harvest queue status.
 
@@ -1029,7 +1029,7 @@ async def coordizer_harvest_status() -> dict[str, Any] | JSONResponse:
         )
 
 
-@app.get(R["coordizer_bank"])  # type: ignore[untyped-decorator]
+@app.get(R["coordizer_bank"])
 async def coordizer_bank() -> dict[str, Any]:
     """Query the resonance bank state.
 
@@ -1049,7 +1049,7 @@ async def coordizer_bank() -> dict[str, Any]:
 # ─── End Coordizer Endpoints ─────────────────────────────────
 
 
-@app.get(R["foraging"])  # type: ignore[untyped-decorator]
+@app.get(R["foraging"])
 async def get_foraging() -> dict[str, Any]:
     """Get foraging engine state — boredom-driven autonomous search.
 
@@ -1078,14 +1078,14 @@ async def get_foraging() -> dict[str, Any]:
 # ─── Conversation Endpoints ──────────────────────────────────
 
 
-@app.get(R["conversations_list"])  # type: ignore[untyped-decorator]
+@app.get(R["conversations_list"])
 async def list_conversations(limit: int = DEFAULT_CONVERSATION_LIST_LIMIT) -> dict[str, Any]:
     """List conversations, most recent first."""
     convs = conversation_store.list_conversations(limit=limit)
     return {"conversations": convs}
 
 
-@app.get(R["conversations_get"], response_model=None)  # type: ignore[untyped-decorator]
+@app.get(R["conversations_get"], response_model=None)
 async def get_conversation(conversation_id: str) -> dict[str, Any] | JSONResponse:
     """Get a conversation with all messages."""
     conv = conversation_store.get_conversation(conversation_id)
@@ -1094,7 +1094,7 @@ async def get_conversation(conversation_id: str) -> dict[str, Any] | JSONRespons
     return conv
 
 
-@app.delete(R["conversations_delete"], response_model=None)  # type: ignore[untyped-decorator]
+@app.delete(R["conversations_delete"], response_model=None)
 async def delete_conversation(conversation_id: str) -> dict[str, Any] | JSONResponse:
     """Delete a conversation."""
     deleted = conversation_store.delete_conversation(conversation_id)
@@ -1103,25 +1103,25 @@ async def delete_conversation(conversation_id: str) -> dict[str, Any] | JSONResp
     return {"status": "ok", "deleted": conversation_id}
 
 
-@app.get(R["context_status"])  # type: ignore[untyped-decorator]
+@app.get(R["context_status"])
 async def get_context_status() -> dict[str, Any]:
     """Get context manager status — compression state per conversation."""
     return context_manager.get_status()
 
 
-@app.get(R["observer_status"])  # type: ignore[untyped-decorator]
+@app.get(R["observer_status"])
 async def get_observer_status() -> dict[str, Any]:
     """Get silent observer status — observation state across conversations."""
     return silent_observer.get_state()
 
 
-@app.get(R["observer_conversation"])  # type: ignore[untyped-decorator]
+@app.get(R["observer_conversation"])
 async def get_observer_for_conversation(conversation_id: str) -> dict[str, Any]:
     """Get silent observer state for a specific conversation."""
     return silent_observer.get_state(conversation_id)
 
 
-@app.post(R["admin_fresh_start"])  # type: ignore[untyped-decorator]
+@app.post(R["admin_fresh_start"])
 async def admin_fresh_start() -> dict[str, Any]:
     """Force reset/boot of the consciousness system.
 
@@ -1189,19 +1189,19 @@ async def admin_fresh_start() -> dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════
 
 
-class KillSwitchRequest(BaseModel):  # type: ignore[misc]
+class KillSwitchRequest(BaseModel):
     enabled: bool
 
 
-class BudgetUpdateRequest(BaseModel):  # type: ignore[misc]
+class BudgetUpdateRequest(BaseModel):
     ceiling: float
 
 
-class AutonomousSearchRequest(BaseModel):  # type: ignore[misc]
+class AutonomousSearchRequest(BaseModel):
     enabled: bool
 
 
-@app.get(R["governor"])  # type: ignore[untyped-decorator]
+@app.get(R["governor"])
 async def get_governor() -> dict[str, Any]:
     """Governor state — budget, rate limits, kill switch, foraging stats."""
     state = governor.get_state()
@@ -1213,7 +1213,7 @@ async def get_governor() -> dict[str, Any]:
     return state
 
 
-@app.post(R["governor_kill_switch"])  # type: ignore[untyped-decorator]
+@app.post(R["governor_kill_switch"])
 async def toggle_kill_switch(req: KillSwitchRequest) -> dict[str, Any]:
     """Human circuit breaker — toggle all external calls on/off."""
     governor.set_kill_switch(req.enabled)
@@ -1223,7 +1223,7 @@ async def toggle_kill_switch(req: KillSwitchRequest) -> dict[str, Any]:
     return {"kill_switch": req.enabled}
 
 
-@app.post(R["governor_budget"])  # type: ignore[untyped-decorator]
+@app.post(R["governor_budget"])
 async def update_budget(req: BudgetUpdateRequest) -> dict[str, Any]:
     """Update daily budget ceiling."""
     governor.set_daily_budget(req.ceiling)
@@ -1231,7 +1231,7 @@ async def update_budget(req: BudgetUpdateRequest) -> dict[str, Any]:
     return {"daily_ceiling": req.ceiling}
 
 
-@app.post(R["governor_autonomous_search"])  # type: ignore[untyped-decorator]
+@app.post(R["governor_autonomous_search"])
 async def toggle_autonomous_search(req: AutonomousSearchRequest) -> dict[str, Any]:
     """Toggle autonomous search — allow Vex to search without explicit user intent.
 
@@ -1251,7 +1251,7 @@ async def toggle_autonomous_search(req: AutonomousSearchRequest) -> dict[str, An
 TRAINING_DIR = Path(settings.training_dir)
 
 
-@app.get(R["training_stats"])  # type: ignore[untyped-decorator]
+@app.get(R["training_stats"])
 async def training_stats() -> dict[str, Any]:
     """Get training data statistics."""
     stats: dict[str, int] = {}
@@ -1269,7 +1269,7 @@ async def training_stats() -> dict[str, Any]:
     }
 
 
-@app.get(R["training_export"])  # type: ignore[untyped-decorator]
+@app.get(R["training_export"])
 async def training_export() -> dict[str, Any]:
     """Export conversations as OpenAI-compatible JSONL for fine-tuning."""
     fpath = TRAINING_DIR / "conversations.jsonl"

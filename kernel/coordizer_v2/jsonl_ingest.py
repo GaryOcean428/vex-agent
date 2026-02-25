@@ -8,7 +8,7 @@ backend (Modal GPU for batch, Ollama for real-time fallback).
 
 Schema per line:
     {
-        "source": "curriculum|foraging|conversation|document",
+        "source": "curriculum|foraging|conversation|document|llm_cogeneration",
         "text": "...",
         "metadata": {...},
         "priority": 1-4,
@@ -61,7 +61,9 @@ logger = logging.getLogger(__name__)
 #  CONSTANTS
 # ═══════════════════════════════════════════════════════════════
 
-VALID_SOURCES = frozenset({"curriculum", "foraging", "conversation", "document"})
+VALID_SOURCES = frozenset(
+    {"curriculum", "foraging", "conversation", "document", "llm_cogeneration"}
+)
 VALID_PRIORITIES = frozenset({1, 2, 3, 4})
 MAX_TEXT_LENGTH = 100_000  # 100KB per entry — reject larger
 MIN_TEXT_LENGTH = 10  # Reject trivially short entries
@@ -334,7 +336,7 @@ def batch_entries(
 def write_coordized_jsonl(
     output_path: str,
     entries: list[IngestEntry],
-    basin_coordinates: list[NDArray | None],
+    basin_coordinates: list[NDArray[np.float64] | None],
 ) -> int:
     """Write coordized entries back as JSONL with basin coordinates appended.
 
@@ -522,7 +524,7 @@ class JSONLIngestor:
         """Use the local CoordizerV2 to coordize entries directly."""
         for batch in batches:
             try:
-                basins: list[NDArray | None] = []
+                basins: list[NDArray[np.float64] | None] = []
                 for entry in batch.entries:
                     cr = self.coordizer.coordize(entry.text)
                     if cr.coordinates:
@@ -558,7 +560,7 @@ class JSONLIngestor:
         import httpx
 
         for batch in batches:
-            basins: list[NDArray | None] = []
+            basins: list[NDArray[np.float64] | None] = []
             for entry in batch.entries:
                 try:
                     async with httpx.AsyncClient(timeout=30) as client:
@@ -618,13 +620,13 @@ class JSONLIngestor:
     def _logits_to_basins(
         self,
         raw: dict[str, Any],
-    ) -> list[NDArray | None]:
+    ) -> list[NDArray[np.float64] | None]:
         """Convert raw Modal harvest response to basin coordinates.
 
         Takes the raw logits from each result entry and projects
         them onto the probability simplex Δ⁶³.
         """
-        basins: list[NDArray | None] = []
+        basins: list[NDArray[np.float64] | None] = []
         results = raw.get("results", [])
 
         for entry in results:

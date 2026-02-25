@@ -122,7 +122,7 @@ class SpectrumAnalysis:
 def _to_simplex(v: Basin) -> Basin:
     """Project vector onto probability simplex."""
     v = np.maximum(np.asarray(v, dtype=np.float64), _EPS)
-    return v / v.sum()
+    return np.asarray(v / v.sum(), dtype=np.float64)
 
 
 def _fisher_rao_distance(p: Basin, q: Basin) -> float:
@@ -152,8 +152,8 @@ def _slerp(p: Basin, q: Basin, t: float) -> Basin:
     p_out = result * result
     total = p_out.sum()
     if total < _EPS:
-        return np.ones_like(p_out) / len(p_out)
-    return p_out / total
+        return np.asarray(np.ones_like(p_out) / len(p_out), dtype=np.float64)
+    return np.asarray(p_out / total, dtype=np.float64)
 
 
 # ═══════════════════════════════════════════════════════════════

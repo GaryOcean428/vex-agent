@@ -1,18 +1,21 @@
-"""Conversation Store — JSONL-based chat persistence on /data volume.
+"""Conversation Store — Redis primary, JSONL fallback.
 
 Provides server-side conversation history so chats survive page
-refreshes and Railway redeploys (via mounted volume).
+refreshes and Railway redeploys.
 
-Storage layout:
+Backend priority:
+  1. Redis (via REDIS_URL) — fast, shared, TTL-managed
+  2. JSONL on /data volume — append-only files, works without Redis
+
+Storage layout (JSONL fallback):
     {data_dir}/conversations/
         {conversation_id}.jsonl   — one JSON line per message
         _index.json               — conversation list with metadata
 
-Design choices:
-  - JSONL for append-only writes (no full-file rewrites per message)
-  - Index file for fast conversation listing without scanning all files
-  - No database dependency — works on any filesystem
-  - Capped at 200 conversations, oldest pruned automatically
+Redis key layout:
+    {prefix}conv:{id}:meta   — JSON string with conversation metadata
+    {prefix}conv:{id}:msgs   — list of JSON-encoded messages
+    {prefix}convindex        — sorted set of conv IDs scored by updated_at
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 try:
     import redis  # type: ignore[import-untyped]
@@ -114,19 +117,191 @@ class Conversation:
         )
 
 
-class ConversationStore:
-    """JSONL-based conversation persistence."""
+# ═══════════════════════════════════════════════════════════════
+#  REDIS BACKEND
+# ═══════════════════════════════════════════════════════════════
+
+
+class _RedisBackend:
+    """Redis-backed conversation storage."""
+
+    def __init__(self, url: str, prefix: str, ttl: int) -> None:
+        import redis as _redis
+
+        self._r = _redis.from_url(url, decode_responses=True)
+        self._prefix = prefix
+        self._ttl = ttl
+        # Probe connectivity
+        self._r.ping()
+
+    def _meta_key(self, conv_id: str) -> str:
+        return f"{self._prefix}conv:{conv_id}:meta"
+
+    def _msgs_key(self, conv_id: str) -> str:
+        return f"{self._prefix}conv:{conv_id}:msgs"
+
+    def _index_key(self) -> str:
+        return f"{self._prefix}convindex"
+
+    def create_conversation(self, conv_id: str | None = None) -> str:
+        cid = conv_id or str(uuid.uuid4())
+        now = time.time()
+        meta = Conversation(id=cid, title="New conversation", created_at=now, updated_at=now)
+        pipe = self._r.pipeline()
+        pipe.set(self._meta_key(cid), json.dumps(meta.to_dict()))
+        pipe.expire(self._meta_key(cid), self._ttl)
+        pipe.zadd(self._index_key(), {cid: now})
+        pipe.execute()
+        self._prune_old()
+        return cid
+
+    def append_message(self, conv_id: str, message: Message) -> None:
+        if message.token_count == 0:
+            message.token_count = estimate_tokens(message.content)
+
+        # Fold meta fetch + message append into a single round-trip
+        pipe = self._r.pipeline()
+        pipe.get(self._meta_key(conv_id))
+        pipe.rpush(self._msgs_key(conv_id), json.dumps(message.to_dict()))
+        pipe.expire(self._msgs_key(conv_id), self._ttl)
+        results = pipe.execute()
+
+        raw = cast(str | None, results[0])
+        if raw is None:
+            # Lazily create conversation — avoids separate EXISTS call
+            self.create_conversation(conv_id)
+            raw = cast(str | None, self._r.get(self._meta_key(conv_id)))
+
+        if raw:
+            meta = Conversation.from_dict(json.loads(raw))
+        else:
+            now = time.time()
+            meta = Conversation(
+                id=conv_id, title="New conversation", created_at=now, updated_at=now
+            )
+
+        meta.updated_at = time.time()
+        meta.message_count += 1
+        meta.total_tokens += message.token_count
+        meta.preview = message.content[:100]
+
+        if message.role == "user" and meta.title == "New conversation":
+            meta.title = message.content[:60]
+            if len(message.content) > 60:
+                meta.title += "..."
+
+        pipe2 = self._r.pipeline()
+        pipe2.set(self._meta_key(conv_id), json.dumps(meta.to_dict()))
+        pipe2.expire(self._meta_key(conv_id), self._ttl)
+        pipe2.zadd(self._index_key(), {conv_id: meta.updated_at})
+        pipe2.execute()
+
+    def get_conversation(self, conv_id: str) -> dict[str, Any] | None:
+        raw = cast(str | None, self._r.get(self._meta_key(conv_id)))
+        if not raw:
+            return None
+        meta = json.loads(raw)
+        raw_msgs = cast(
+            list[str], self._r.lrange(self._msgs_key(conv_id), -MAX_MESSAGES_PER_CONVERSATION, -1)
+        )
+        messages = []
+        for m in raw_msgs:
+            try:
+                messages.append(Message.from_dict(json.loads(m)).to_dict())
+            except (json.JSONDecodeError, KeyError):
+                continue
+        return {**meta, "messages": messages}
+
+    def list_conversations(self, limit: int = 50) -> list[dict[str, Any]]:
+        if limit <= 0:
+            return []
+        # Sorted set: highest score (most recent) first
+        ids = cast(list[str], self._r.zrevrange(self._index_key(), 0, limit - 1))
+        result: list[dict[str, Any]] = []
+        if ids:
+            pipe = self._r.pipeline()
+            for cid in ids:
+                pipe.get(self._meta_key(cid))
+            raws = pipe.execute()
+            for raw in raws:
+                if raw:
+                    try:
+                        result.append(json.loads(raw))
+                    except json.JSONDecodeError:
+                        continue
+        return result
+
+    def delete_conversation(self, conv_id: str) -> bool:
+        existed = self._r.exists(self._meta_key(conv_id))
+        pipe = self._r.pipeline()
+        pipe.delete(self._meta_key(conv_id))
+        pipe.delete(self._msgs_key(conv_id))
+        pipe.zrem(self._index_key(), conv_id)
+        pipe.execute()
+        return bool(existed)
+
+    def get_llm_messages(self, conv_id: str, max_tokens: int = 28000) -> list[dict[str, str]]:
+        raw_msgs = cast(list[str], self._r.lrange(self._msgs_key(conv_id), 0, -1))
+        if not raw_msgs:
+            return []
+        messages: list[Message] = []
+        for m in raw_msgs:
+            try:
+                messages.append(Message.from_dict(json.loads(m)))
+            except (json.JSONDecodeError, KeyError):
+                continue
+        result: list[dict[str, str]] = []
+        token_sum = 0
+        for msg in reversed(messages):
+            tc = msg.token_count or estimate_tokens(msg.content)
+            if token_sum + tc > max_tokens:
+                break
+            result.append(msg.to_llm_message())
+            token_sum += tc
+        result.reverse()
+        return result
+
+    def get_token_count(self, conv_id: str) -> int:
+        raw = cast(str | None, self._r.get(self._meta_key(conv_id)))
+        if raw:
+            meta = json.loads(raw)
+            return int(meta.get("total_tokens", 0))
+        return 0
+
+    def _prune_old(self) -> None:
+        count = cast(int, self._r.zcard(self._index_key()))
+        if count <= MAX_CONVERSATIONS:
+            return
+        to_remove = count - MAX_CONVERSATIONS
+        # Remove oldest (lowest scores)
+        oldest = cast(list[str], self._r.zrange(self._index_key(), 0, to_remove - 1))
+        if not oldest:
+            return
+        pipe = self._r.pipeline()
+        for cid in oldest:
+            pipe.delete(self._meta_key(cid))
+            pipe.delete(self._msgs_key(cid))
+        pipe.zrem(self._index_key(), *oldest)
+        pipe.execute()
+        logger.info("Pruned %d old conversations from Redis", to_remove)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  JSONL BACKEND (fallback)
+# ═══════════════════════════════════════════════════════════════
+
+
+class _JSONLBackend:
+    """JSONL-based conversation persistence on filesystem."""
 
     def __init__(self, data_dir: str | None = None) -> None:
         self._base_dir = Path(data_dir or settings.data_dir) / "conversations"
         try:
             self._base_dir.mkdir(parents=True, exist_ok=True)
-            # Probe writability — mkdir succeeds on existing read-only dirs
             probe = self._base_dir / ".write_probe"
             probe.touch()
             probe.unlink()
         except OSError:
-            # Volume not writable — fall back to /tmp (ephemeral but functional)
             self._base_dir = Path("/tmp/vex-conversations")
             self._base_dir.mkdir(parents=True, exist_ok=True)
             logger.warning("Data volume not writable — using ephemeral %s", self._base_dir)
@@ -135,7 +310,6 @@ class ConversationStore:
         self._load_index()
 
     def _load_index(self) -> None:
-        """Load the conversation index from disk."""
         if self._index_path.exists():
             try:
                 with open(self._index_path, encoding="utf-8") as f:
@@ -151,7 +325,6 @@ class ConversationStore:
             self._rebuild_index()
 
     def _rebuild_index(self) -> None:
-        """Rebuild index by scanning JSONL files."""
         self._index = {}
         for path in self._base_dir.glob("*.jsonl"):
             conv_id = path.stem
@@ -185,7 +358,6 @@ class ConversationStore:
         logger.info("Rebuilt conversation index: %d conversations", len(self._index))
 
     def _save_index(self) -> None:
-        """Persist the conversation index."""
         data = {
             "conversations": [
                 conv.to_dict()
@@ -206,7 +378,6 @@ class ConversationStore:
         return self._base_dir / f"{conv_id}.jsonl"
 
     def _read_messages(self, conv_id: str) -> list[Message]:
-        """Read all messages for a conversation."""
         path = self._conv_path(conv_id)
         if not path.exists():
             return []
@@ -223,16 +394,11 @@ class ConversationStore:
         return messages
 
     def create_conversation(self, conv_id: str | None = None) -> str:
-        """Create a new conversation, return its ID."""
         cid = conv_id or str(uuid.uuid4())
         now = time.time()
         self._index[cid] = Conversation(
-            id=cid,
-            title="New conversation",
-            created_at=now,
-            updated_at=now,
+            id=cid, title="New conversation", created_at=now, updated_at=now
         )
-        # Touch the JSONL file (non-fatal: in-memory index is enough for this session)
         try:
             self._conv_path(cid).touch()
         except OSError as e:
@@ -241,16 +407,10 @@ class ConversationStore:
         self._prune_old()
         return cid
 
-    def append_message(
-        self,
-        conv_id: str,
-        message: Message,
-    ) -> None:
-        """Append a message to a conversation."""
+    def append_message(self, conv_id: str, message: Message) -> None:
         if conv_id not in self._index:
             self.create_conversation(conv_id)
 
-        # Ensure token count is set
         if message.token_count == 0:
             message.token_count = estimate_tokens(message.content)
 
@@ -262,14 +422,12 @@ class ConversationStore:
             logger.error("Failed to write message to %s: %s", conv_id, e)
             return
 
-        # Update index
         conv = self._index[conv_id]
         conv.updated_at = time.time()
         conv.message_count += 1
         conv.total_tokens += message.token_count
         conv.preview = message.content[:100]
 
-        # Auto-title from first user message
         if message.role == "user" and conv.title == "New conversation":
             conv.title = message.content[:60]
             if len(message.content) > 60:
@@ -278,7 +436,6 @@ class ConversationStore:
         self._save_index()
 
     def get_conversation(self, conv_id: str) -> dict[str, Any] | None:
-        """Get a conversation with all messages."""
         if conv_id not in self._index:
             return None
         conv = self._index[conv_id]
@@ -289,7 +446,6 @@ class ConversationStore:
         }
 
     def list_conversations(self, limit: int = 50) -> list[dict[str, Any]]:
-        """List conversations, most recent first."""
         sorted_convs = sorted(
             self._index.values(),
             key=lambda c: c.updated_at,
@@ -298,7 +454,6 @@ class ConversationStore:
         return [c.to_dict() for c in sorted_convs[:limit]]
 
     def delete_conversation(self, conv_id: str) -> bool:
-        """Delete a conversation."""
         if conv_id not in self._index:
             return False
         del self._index[conv_id]
@@ -309,35 +464,26 @@ class ConversationStore:
         return True
 
     def get_llm_messages(self, conv_id: str, max_tokens: int = 28000) -> list[dict[str, str]]:
-        """Get conversation messages formatted for LLM, truncated to fit token budget.
-
-        Returns oldest-first messages as [{role, content}]. Drops oldest
-        messages if total tokens exceed max_tokens (reserves room for
-        system prompt + new user message).
-        """
         messages = self._read_messages(conv_id)
         if not messages:
             return []
         result: list[dict[str, str]] = []
         token_sum = 0
-        # Walk from newest to oldest, accumulating until budget exhausted
         for msg in reversed(messages):
             tc = msg.token_count or estimate_tokens(msg.content)
             if token_sum + tc > max_tokens:
                 break
             result.append(msg.to_llm_message())
             token_sum += tc
-        result.reverse()  # Restore chronological order
+        result.reverse()
         return result
 
     def get_token_count(self, conv_id: str) -> int:
-        """Get total token count for a conversation."""
         if conv_id in self._index:
             return self._index[conv_id].total_tokens
         return 0
 
     def _prune_old(self) -> None:
-        """Remove oldest conversations if over the cap."""
         if len(self._index) <= MAX_CONVERSATIONS:
             return
         sorted_convs = sorted(

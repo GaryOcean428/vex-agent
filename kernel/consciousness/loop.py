@@ -648,7 +648,7 @@ class ConsciousnessLoop:
                             ),
                             None,
                         )
-                        if perception is not None:
+                        if perception is not None and perception.basin is not None:
                             info_basin = self._coordize_text_via_pipeline(
                                 forage_result.get("summary", "")
                             )

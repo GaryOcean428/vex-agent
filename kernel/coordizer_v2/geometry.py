@@ -91,7 +91,7 @@ def fisher_rao_distance_batch(p: NDArray, bank: NDArray) -> NDArray:
     p = to_simplex(p)
     bcs = np.sum(np.sqrt(p[np.newaxis, :] * bank), axis=1)
     bcs = np.clip(bcs, -1.0, 1.0)
-    return np.arccos(bcs)
+    return np.asarray(np.arccos(bcs), dtype=np.float64)
 
 
 def fisher_information_diagonal(p: NDArray) -> NDArray:

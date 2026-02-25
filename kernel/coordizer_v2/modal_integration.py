@@ -116,8 +116,7 @@ class ModalHarvestClient:
                     data = resp.json()
                     self._healthy = data.get("status") == "ok"
                     logger.info(
-                        f"Modal health: {data.get('status')} "
-                        f"(vocab={data.get('vocab_size')})"
+                        f"Modal health: {data.get('status')} (vocab={data.get('vocab_size')})"
                     )
                 else:
                     self._healthy = False
@@ -210,7 +209,7 @@ class ModalHarvestClient:
         _EPS = 1e-12
 
         # Accumulate in sqrt-space for Fréchet mean
-        dist_sums_sqrt: dict[int, NDArray] = {}
+        dist_sums_sqrt: dict[int, NDArray[np.float64]] = {}
         dist_counts: dict[int, int] = {}
 
         for entry in raw["results"]:
@@ -239,7 +238,7 @@ class ModalHarvestClient:
                     dist_counts[token_id] += 1
 
         # Compute Fréchet means
-        fingerprints: dict[int, NDArray] = {}
+        fingerprints: dict[int, NDArray[np.float64]] = {}
         for token_id, sqrt_sum in dist_sums_sqrt.items():
             count = dist_counts[token_id]
             if count < min_contexts:
@@ -331,7 +330,7 @@ def generate_synthetic_harvest(
     )
 
     rng = np.random.default_rng(42)
-    fingerprints: dict[int, NDArray] = {}
+    fingerprints: dict[int, NDArray[np.float64]] = {}
     context_counts: dict[int, int] = {}
 
     for i in range(n_tokens):
@@ -340,7 +339,7 @@ def generate_synthetic_harvest(
         alpha = rng.uniform(0.1, 2.0)
         fp = rng.dirichlet(np.ones(vocab_size) * alpha)
         fingerprints[i] = fp.astype(np.float64)
-        context_counts[i] = rng.integers(10, 500)
+        context_counts[i] = int(rng.integers(10, 500))
 
     return {
         "fingerprints": fingerprints,

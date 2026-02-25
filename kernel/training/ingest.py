@@ -158,7 +158,7 @@ class IngestionResult:
     errors: list[str] = field(default_factory=list)
 
 
-class FeedbackRequest(BaseModel):  # type: ignore[misc]
+class FeedbackRequest(BaseModel):
     conversation_id: str
     rating: int
     comment: str = ""
@@ -1011,13 +1011,13 @@ async def _run_ingestion_job(
 training_router = APIRouter()
 
 
-@training_router.get("/training/stats")  # type: ignore[untyped-decorator]
+@training_router.get("/training/stats")
 async def training_stats_endpoint() -> dict[str, Any]:
     """Get training data statistics."""
     return get_stats()
 
 
-@training_router.get("/training/export")  # type: ignore[untyped-decorator]
+@training_router.get("/training/export")
 async def training_export_endpoint(fmt: str = "openai") -> dict[str, Any]:
     """Export training data.
 
@@ -1029,7 +1029,7 @@ async def training_export_endpoint(fmt: str = "openai") -> dict[str, Any]:
     return export_openai_format()
 
 
-@training_router.post("/training/upload")  # type: ignore[untyped-decorator]
+@training_router.post("/training/upload")
 async def training_upload_endpoint(
     file: UploadFile = File(...),
     category: str = Form(default="curriculum"),
@@ -1104,7 +1104,7 @@ async def training_upload_endpoint(
     return {"status": "processing", "job_id": job_id, "filename": filename}
 
 
-@training_router.get("/training/upload/status/{job_id}")  # type: ignore[untyped-decorator]
+@training_router.get("/training/upload/status/{job_id}")
 async def training_upload_status(job_id: str) -> dict[str, Any]:
     """Poll ingestion job status. Returns full result when complete."""
     job = _jobs.get(job_id)
@@ -1113,7 +1113,7 @@ async def training_upload_status(job_id: str) -> dict[str, Any]:
     return job
 
 
-@training_router.post("/training/feedback")  # type: ignore[untyped-decorator]
+@training_router.post("/training/feedback")
 async def training_feedback_endpoint(req: FeedbackRequest) -> dict[str, str]:
     """Submit feedback on a response."""
     await _log_feedback(req.conversation_id, req.rating, req.comment)

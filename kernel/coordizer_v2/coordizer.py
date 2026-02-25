@@ -306,12 +306,12 @@ class CoordizerV2:
                 if char_basins:
                     composed = frechet_mean(char_basins)
                     nearest_tid, _ = self.bank.nearest_token(composed)
-                    coord = self.bank.get_coordinate(nearest_tid)
-                    if coord is not None:
+                    fallback_coord = self.bank.get_coordinate(nearest_tid)
+                    if fallback_coord is not None:
                         coordinates.append(
                             BasinCoordinate(
                                 coord_id=nearest_tid,
-                                vector=coord,
+                                vector=fallback_coord,
                                 name=word,
                                 scale=GranularityScale.WORD,
                             )
