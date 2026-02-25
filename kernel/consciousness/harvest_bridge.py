@@ -32,7 +32,7 @@ import json
 import logging
 import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -87,7 +87,7 @@ def forward_to_harvest(
         "source": source,
         "text": text.strip(),
         "priority": priority,
-        "timestamp": datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "metadata": metadata or {},
     }
 

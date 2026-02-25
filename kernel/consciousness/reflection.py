@@ -234,8 +234,12 @@ async def reflect_on_draft(
 
         forward_to_harvest(
             f"{draft[:400]}\n[verdict:{('APPROVE' if result.approved else 'REVISE')}] {result.reason}",
-            source="reflection",
-            metadata={"approved": result.approved, "divergence": divergence},
+            source="conversation",
+            metadata={
+                "origin": "reflection",
+                "approved": result.approved,
+                "divergence": divergence,
+            },
         )
         return result
     except Exception as e:
