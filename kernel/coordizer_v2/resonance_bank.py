@@ -63,7 +63,7 @@ class ResonanceBank:
         self.basin_mass: dict[int, float] = {}
         self.activation_counts: dict[int, int] = {}
         self._coord_matrix: NDArray[np.float64] | None = None
-        self._coord_ids: NDArray[np.float64] | None = None
+        self._coord_ids: NDArray[np.int64] | None = None
         self._dirty: bool = True
         self._domain_biases: list[DomainBias] = []
 

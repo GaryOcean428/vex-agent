@@ -164,8 +164,8 @@ class PerplexityConfig:
 class RedisConfig:
     """Redis configuration for conversation persistence.
 
-    Reads REDIS_URL (full connection string) as primary.
-    Falls back to component env vars from Railway Redis plugin.
+    Reads REDIS_URL (full connection string). If not set, Redis is disabled
+    and the chat store falls back to JSONL persistence.
     """
 
     url: str = os.environ.get("REDIS_URL", "")
