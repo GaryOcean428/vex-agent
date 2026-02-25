@@ -159,6 +159,15 @@ export default function Chat() {
           }}
         />
 
+        {/* Tablet: scrim behind metrics overlay */}
+        {metricsVisible && (
+          <div
+            className="metrics-scrim"
+            onClick={toggleMetrics}
+            aria-hidden="true"
+          />
+        )}
+
         <MetricsSidebar
           state={state ?? null}
           history={history}

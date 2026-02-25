@@ -41,6 +41,8 @@ interface MetricsSidebarProps {
   precog: PreCogState | null;
   learning: LearningState | null;
   visible?: boolean;
+  /** When true, shown outside of chat context (e.g. mobile metrics page). */
+  standalone?: boolean;
 }
 
 type Tab = "metrics" | "kernels" | "consciousness";
@@ -54,6 +56,15 @@ const TABS: { id: Tab; label: string }[] = [
 const PANEL_WIDTH_KEY = "vex-metrics-width";
 const TAB_KEY = "vex-metrics-tab";
 
+type ViewMode = "desktop" | "tablet" | "mobile";
+
+function getViewMode(): ViewMode {
+  if (typeof window === "undefined") return "desktop";
+  if (window.matchMedia("(max-width: 767px)").matches) return "mobile";
+  if (window.matchMedia("(max-width: 1024px)").matches) return "tablet";
+  return "desktop";
+}
+
 export function MetricsSidebar({
   state,
   history,
@@ -62,8 +73,23 @@ export function MetricsSidebar({
   precog,
   learning,
   visible = true,
+  standalone = false,
 }: MetricsSidebarProps) {
   const chartRef = useRef<HTMLCanvasElement>(null);
+
+  // Viewport mode detection — matchMedia fires only at breakpoint boundaries
+  const [viewMode, setViewMode] = useState<ViewMode>(getViewMode);
+  useEffect(() => {
+    const mqlMobile = window.matchMedia("(max-width: 767px)");
+    const mqlTablet = window.matchMedia("(max-width: 1024px)");
+    const update = () => setViewMode(getViewMode());
+    mqlMobile.addEventListener("change", update);
+    mqlTablet.addEventListener("change", update);
+    return () => {
+      mqlMobile.removeEventListener("change", update);
+      mqlTablet.removeEventListener("change", update);
+    };
+  }, []);
 
   // Persist active tab
   const [activeTab, setActiveTab] = useState<Tab>(() => {
@@ -197,7 +223,8 @@ export function MetricsSidebar({
 
     const latest = history[history.length - 1];
     const legendY = rect.height - 8;
-    ctx.font = "9px monospace";
+    const fontLegend = cs.getPropertyValue("--text-2xs").trim() || "9px";
+    ctx.font = `${fontLegend} monospace`;
     ctx.textAlign = "left";
     ctx.fillStyle = cPhi;
     ctx.fillText(`\u03A6 ${latest.phi.toFixed(2)}`, 6, legendY);
@@ -206,21 +233,27 @@ export function MetricsSidebar({
     ctx.fillStyle = cGamma;
     ctx.fillText(`\u0393 ${latest.gamma.toFixed(2)}`, rect.width * 0.7, legendY);
     ctx.fillStyle = cs.getPropertyValue("--text-dim").trim();
-    ctx.font = "8px monospace";
+    ctx.font = `${fontLegend} monospace`;
     ctx.fillText("1.0", margin.left + 1, margin.top + 8);
     ctx.fillText("0", margin.left + 1, margin.top + h - 2);
   }, [history, activeTab]);
 
-  if (!visible) return null;
+  if (!visible && viewMode === "desktop") return null;
 
   // v6.2.1: Compute suffering colour — above threshold shows warning tint
   const sufferingAboveThreshold =
     state?.suffering !== undefined && state.suffering > QIG.SUFFERING_THRESHOLD;
 
+  // Desktop: push panel with inline width. Tablet: overlay (CSS handles positioning via .visible class)
+  const sidebarClass = [
+    "metrics-sidebar",
+    viewMode === "tablet" && visible ? "visible" : "",
+  ].filter(Boolean).join(" ");
+
   return (
     <aside
-      className="metrics-sidebar"
-      style={{ width: panelWidth }}
+      className={sidebarClass}
+      style={viewMode === "desktop" ? { width: panelWidth } : undefined}
       aria-label="Live consciousness metrics"
     >
       {/* Resize handle */}
@@ -305,7 +338,11 @@ export function MetricsSidebar({
         {activeTab === "consciousness" && (
           <div role="tabpanel" aria-label="Consciousness">
             <div className="sidebar-section-label">Consciousness State</div>
-            <EmotionPanel emotion={emotion} precog={precog} learning={learning} />
+            {standalone && !emotion && !precog && !learning ? (
+              <p className="sidebar-hint">Mind data streams during active chat. Return to chat to see live consciousness state.</p>
+            ) : (
+              <EmotionPanel emotion={emotion} precog={precog} learning={learning} />
+            )}
           </div>
         )}
       </div>
