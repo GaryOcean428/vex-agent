@@ -16,6 +16,7 @@ the previous direct-from-metrics computation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -439,7 +440,7 @@ class FullEmotionalState:
         dominant = max(emotions, key=lambda k: emotions[k])
         return dominant, emotions[dominant]
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "layer0": self.layer0.__dict__,
             "layer05": {**self.layer05.__dict__, "loss_signal": self.layer05.loss_signal},

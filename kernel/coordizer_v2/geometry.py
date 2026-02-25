@@ -62,22 +62,22 @@ _EPS: float = 1e-12
 # ─── Coordizer-specific additions ─────────────────────────────────
 
 
-def logits_to_simplex(logits: NDArray) -> NDArray:
+def logits_to_simplex(logits: NDArray[np.float64]) -> NDArray[np.float64]:
     """Project logits to Δ⁶³ via linear shift-and-scale. Preserves Fisher information."""
     logits = np.asarray(logits, dtype=np.float64)
     shifted = logits - logits.min()
     total = shifted.sum()
     if total < _EPS:
         return np.full(len(logits), 1.0 / len(logits))
-    return shifted / total
+    return np.asarray(shifted / total, dtype=np.float64)
 
 
-def geodesic_midpoint(p: NDArray, q: NDArray) -> NDArray:
+def geodesic_midpoint(p: NDArray[np.float64], q: NDArray[np.float64]) -> NDArray[np.float64]:
     """Fréchet midpoint of two simplex points."""
     return slerp(p, q, 0.5)
 
 
-def fisher_rao_distance_batch(p: NDArray, bank: NDArray) -> NDArray:
+def fisher_rao_distance_batch(p: NDArray[np.float64], bank: NDArray[np.float64]) -> NDArray[np.float64]:
     """
     Batch Fisher-Rao distance: one point against N points.
 
@@ -94,21 +94,21 @@ def fisher_rao_distance_batch(p: NDArray, bank: NDArray) -> NDArray:
     return np.asarray(np.arccos(bcs), dtype=np.float64)
 
 
-def fisher_information_diagonal(p: NDArray) -> NDArray:
+def fisher_information_diagonal(p: NDArray[np.float64]) -> NDArray[np.float64]:
     """
     Diagonal of the Fisher Information Matrix at point p on Δ⁶³.
 
     FIM_ii = 1 / p_i  (for the categorical distribution)
     """
     p = to_simplex(p)
-    return 1.0 / np.maximum(p, _EPS)
+    return np.asarray(1.0 / np.maximum(p, _EPS), dtype=np.float64)
 
 
-def natural_gradient(p: NDArray, euclidean_grad: NDArray) -> NDArray:
+def natural_gradient(p: NDArray[np.float64], euclidean_grad: NDArray[np.float64]) -> NDArray[np.float64]:
     """
     Natural gradient: F⁻¹ ∇L = p_i × ∂L/∂p_i
 
     For diagonal FIM of categorical distribution.
     """
     p = to_simplex(p)
-    return p * euclidean_grad
+    return np.asarray(p * euclidean_grad, dtype=np.float64)

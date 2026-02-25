@@ -124,7 +124,7 @@ async def modal_harvest(
         raise RuntimeError(f"Modal harvest failed: {error_msg}")
 
     # Parse response into HarvestResult
-    result = _parse_modal_response(data, model_id, elapsed)
+    result = _parse_modal_response(data, resolved_model, elapsed)
 
     logger.info(
         "Received %d token fingerprints from Modal (vocab_size=%d)",

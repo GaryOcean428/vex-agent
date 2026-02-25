@@ -415,7 +415,7 @@ async def harvest_model_auto(
         logger.info("Modal enabled — delegating harvest to Modal GPU")
         result = await modal_harvest(
             model_id=model_id,
-            target_tokens=target_tokens,
+            _target_tokens=target_tokens,
         )
         return {
             "success": True,

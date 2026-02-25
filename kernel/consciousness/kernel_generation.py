@@ -119,6 +119,7 @@ class KernelContribution:
     llm_expanded: bool = False  # Whether LLM refinement was applied
     generation_ms: float = 0.0  # Wall clock time
     geometric_raw: str = ""  # Raw geometric decode before LLM expansion
+    basin: Basin | None = None  # Kernel basin for synthesis (used by ThoughtBus)
 
 
 def _compute_basin_features(basin: Basin) -> dict[str, float]:
