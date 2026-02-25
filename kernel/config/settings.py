@@ -161,6 +161,22 @@ class PerplexityConfig:
 
 
 @dataclass(frozen=True)
+class RedisConfig:
+    """Redis configuration for conversation persistence.
+
+    Reads REDIS_URL (full connection string) as primary.
+    Falls back to component env vars from Railway Redis plugin.
+    """
+
+    url: str = os.environ.get("REDIS_URL", "")
+    enabled: bool = bool(os.environ.get("REDIS_URL", ""))
+    key_prefix: str = os.environ.get("REDIS_KEY_PREFIX", "vex:")
+    conversation_ttl: int = int(
+        os.environ.get("REDIS_CONVERSATION_TTL", str(60 * 60 * 24 * 30))  # 30 days
+    )
+
+
+@dataclass(frozen=True)
 class GovernorConfig:
     """Governance stack configuration — 5-layer protection against runaway costs."""
 
@@ -250,6 +266,7 @@ class Settings:
     modal: ModalConfig = field(default_factory=ModalConfig)
     perplexity: PerplexityConfig = field(default_factory=PerplexityConfig)
     coordizer_v2: CoordizerV2Config = field(default_factory=CoordizerV2Config)
+    redis: RedisConfig = field(default_factory=RedisConfig)
 
 
 settings = Settings()
