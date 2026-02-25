@@ -258,6 +258,10 @@ class Settings:
     # Safety
     safety_mode: str = os.environ.get("SAFETY_MODE", "standard")
 
+    # Foraging — boredom-driven curiosity (requires SearXNG + local LLM)
+    # Set to 'false' to disable foraging entirely (stops autonomous LLM calls)
+    foraging_enabled: bool = os.environ.get("FORAGING_ENABLED", "true").lower() != "false"
+
     # v6.1: Feature flags
     use_activation_sequence: bool = (
         os.environ.get("USE_ACTIVATION_SEQUENCE", "true").lower() != "false"

@@ -282,6 +282,23 @@ class LLMClient:
             self._active_backend = "none"
             logger.warning("No LLM backend available")
 
+        # Emit loud cost warning when falling through to paid backends
+        if self._active_backend in ("xai", "external"):
+            _configured_local = []
+            if settings.modal.inference_enabled:
+                _configured_local.append("Modal")
+            if settings.ollama.enabled:
+                _configured_local.append("Ollama")
+            if _configured_local:
+                logger.warning(
+                    "LLM COST WARNING: active_backend='%s' — local backends %s were "
+                    "configured but unreachable. Every LLM call (chat, foraging, "
+                    "reflection, synthesis) costs real money. Fix local backends or "
+                    "set FORAGING_ENABLED=false to reduce exposure.",
+                    self._active_backend,
+                    _configured_local,
+                )
+
     async def check_modal_ollama(self) -> bool:
         """Check if Modal Ollama inference endpoint is reachable."""
         if not settings.modal.inference_enabled or not settings.modal.inference_url:
@@ -351,8 +368,6 @@ class LLMClient:
             return await self._modal_complete(system_prompt, user_message, opts, messages, tools)
         elif backend == "ollama":
             return await self._ollama_complete(system_prompt, user_message, opts, messages, tools)
-        elif backend == "xai":
-            return await self._xai_complete(system_prompt, user_message, opts, messages)
         elif backend == "external":
             return await self._external_complete(system_prompt, user_message, opts, messages)
         return "No LLM backend available"
@@ -378,9 +393,6 @@ class LLMClient:
                 yield chunk
         elif backend == "ollama":
             async for chunk in self._ollama_stream(messages, opts):
-                yield chunk
-        elif backend == "xai":
-            async for chunk in self._xai_stream(messages, opts):
                 yield chunk
         elif backend == "external":
             async for chunk in self._external_stream(messages, opts):

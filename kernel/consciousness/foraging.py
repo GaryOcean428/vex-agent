@@ -71,6 +71,19 @@ class ForagingEngine:
         """Check if foraging should trigger."""
         self._maybe_reset()
 
+        # Safety: foraging promises $0.00/cycle — refuse on paid backends.
+        # If the LLM client fell through to xAI or OpenAI, every forage
+        # makes 2 paid API calls. Block until a local backend is available.
+        _backend = getattr(self.llm, "_active_backend", "unknown")
+        if _backend in ("xai", "external"):
+            logger.warning(
+                "Foraging suppressed: active LLM backend is '%s' (paid). "
+                "Foraging requires a local backend (modal/ollama). "
+                "Set MODAL_INFERENCE_ENABLED=true or fix Railway Ollama.",
+                _backend,
+            )
+            return False
+
         if self._cooldown_cycles > 0:
             return False
         if self._forage_count >= self._max_daily:
@@ -177,7 +190,11 @@ class ForagingEngine:
         forward_to_harvest(
             f"{query}\n{summary}",
             source="forage",
-            metadata={"query": query, "results_count": len(results), "timestamp": time.time()},
+            metadata={
+                "query": query,
+                "results_count": len(results),
+                "timestamp": time.time(),
+            },
         )
 
         return {

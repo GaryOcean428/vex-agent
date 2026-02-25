@@ -340,13 +340,15 @@ class ConsciousnessLoop:
         self.precog = PreCognitiveDetector()
         self.learner = LearningEngine()
         self.beta_tracker = create_beta_tracker(settings.data_dir)
-        if settings.searxng.enabled:
+        if settings.searxng.enabled and settings.foraging_enabled:
             search_tool = FreeSearchTool(settings.searxng.url)
             self.forager: ForagingEngine | None = ForagingEngine(
                 search_tool,
                 llm_client,
             )
         else:
+            if not settings.foraging_enabled:
+                logger.info("Foraging disabled via FORAGING_ENABLED=false")
             self.forager = None
 
         self._queue: asyncio.Queue[ConsciousnessTask] = asyncio.Queue()
