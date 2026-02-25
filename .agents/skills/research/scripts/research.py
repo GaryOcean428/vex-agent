@@ -18,7 +18,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -98,9 +98,7 @@ def validate_schema(schema: dict) -> None:
             prop_path = f"{path}.{name}" if path else name
 
             if "type" not in prop:
-                raise ValueError(
-                    f"Property '{prop_path}' missing required 'type' field"
-                )
+                raise ValueError(f"Property '{prop_path}' missing required 'type' field")
 
             if "description" not in prop:
                 raise ValueError(
@@ -122,11 +120,7 @@ def validate_schema(schema: dict) -> None:
 
 
 def format_output(
-    topic: str,
-    model: str,
-    content: Any,
-    sources: list[dict],
-    response_time: float | None = None
+    topic: str, model: str, content: Any, sources: list[dict], response_time: float | None = None
 ) -> dict:
     """
     Format research results into standardized output structure.
@@ -145,11 +139,11 @@ def format_output(
         "meta": {
             "topic": topic,
             "model": model,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-            "response_time_seconds": response_time
+            "completed_at": datetime.now(UTC).isoformat(),
+            "response_time_seconds": response_time,
         },
         "content": content,
-        "sources": sources
+        "sources": sources,
     }
 
 
@@ -166,7 +160,7 @@ def research_streaming(
     schema: dict | None,
     model: str,
     citation_format: str,
-    quiet: bool
+    quiet: bool,
 ) -> dict:
     """
     Execute research using streaming mode (SSE events).
@@ -190,7 +184,7 @@ def research_streaming(
         stream=True,
         output_schema=schema,
         citation_format=citation_format,
-        timeout=MAX_POLL_TIME
+        timeout=MAX_POLL_TIME,
     )
 
     content_chunks = []
@@ -199,48 +193,48 @@ def research_streaming(
 
     for chunk in stream:
         try:
-            data = chunk.decode('utf-8')
+            data = chunk.decode("utf-8")
 
             # Skip empty lines and SSE prefixes
-            if not data.strip() or data.startswith(':'):
+            if not data.strip() or data.startswith(":"):
                 continue
 
             # Parse SSE data lines
-            for line in data.split('\n'):
-                if line.startswith('data: '):
+            for line in data.split("\n"):
+                if line.startswith("data: "):
                     json_str = line[6:]  # Remove 'data: ' prefix
 
-                    if json_str.strip() == '[DONE]':
+                    if json_str.strip() == "[DONE]":
                         continue
 
                     try:
                         event = json.loads(json_str)
 
                         # Handle different event types
-                        choices = event.get('choices', [])
+                        choices = event.get("choices", [])
                         for choice in choices:
-                            delta = choice.get('delta', {})
+                            delta = choice.get("delta", {})
 
                             # Tool calls (progress indicators)
-                            if 'tool_calls' in delta:
-                                for tool_call in delta['tool_calls']:
-                                    func = tool_call.get('function', {})
-                                    tool_name = func.get('name')
+                            if "tool_calls" in delta:
+                                for tool_call in delta["tool_calls"]:
+                                    func = tool_call.get("function", {})
+                                    tool_name = func.get("name")
                                     if tool_name and not quiet:
                                         current_tool = tool_name
-                                        print(f"[{tool_name}]", end=' ', flush=True)
+                                        print(f"[{tool_name}]", end=" ", flush=True)
 
                             # Content chunks
-                            if 'content' in delta and delta['content']:
-                                content_chunks.append(delta['content'])
+                            if "content" in delta and delta["content"]:
+                                content_chunks.append(delta["content"])
 
                             # Sources in finish metadata
-                            if 'sources' in delta:
-                                sources = delta['sources']
+                            if "sources" in delta:
+                                sources = delta["sources"]
 
                         # Check for sources at top level
-                        if 'sources' in event:
-                            sources = event['sources']
+                        if "sources" in event:
+                            sources = event["sources"]
 
                     except json.JSONDecodeError:
                         continue
@@ -256,18 +250,14 @@ def research_streaming(
     response_time = time.time() - start_time
 
     # Parse content if schema was provided (expects JSON)
-    content = ''.join(content_chunks)
+    content = "".join(content_chunks)
     if schema and content:
         try:
             content = json.loads(content)
         except json.JSONDecodeError:
             pass  # Keep as string if not valid JSON
 
-    return {
-        "content": content,
-        "sources": sources,
-        "response_time": response_time
-    }
+    return {"content": content, "sources": sources, "response_time": response_time}
 
 
 def research_polling(
@@ -277,7 +267,7 @@ def research_polling(
     model: str,
     citation_format: str,
     poll_interval: int,
-    quiet: bool
+    quiet: bool,
 ) -> dict:
     """
     Execute research using polling mode (two-step async pattern).
@@ -307,7 +297,7 @@ def research_polling(
         model=model,
         output_schema=schema,
         citation_format=citation_format,
-        timeout=MAX_POLL_TIME
+        timeout=MAX_POLL_TIME,
     )
 
     request_id = result.get("request_id")
@@ -327,7 +317,7 @@ def research_polling(
             return {
                 "content": response.get("content"),
                 "sources": response.get("sources", []),
-                "response_time": response.get("response_time")
+                "response_time": response.get("response_time"),
             }
         elif status == "failed":
             error = response.get("error", "Unknown error")
@@ -350,7 +340,7 @@ def research(
     citation_format: str = DEFAULT_CITATION_FORMAT,
     output: str | None = None,
     poll_interval: int = DEFAULT_POLL_INTERVAL,
-    quiet: bool = False
+    quiet: bool = False,
 ) -> dict:
     """
     Main research orchestration function.
@@ -372,8 +362,7 @@ def research(
     api_key = os.environ.get("TAVILY_API_KEY")
     if not api_key:
         raise ValueError(
-            "TAVILY_API_KEY environment variable not set. "
-            "Get your key at https://tavily.com"
+            "TAVILY_API_KEY environment variable not set. Get your key at https://tavily.com"
         )
 
     # Validate model
@@ -383,8 +372,7 @@ def research(
     # Validate citation format
     if citation_format not in VALID_CITATION_FORMATS:
         raise ValueError(
-            f"Invalid citation format '{citation_format}'. "
-            f"Must be one of: {VALID_CITATION_FORMATS}"
+            f"Invalid citation format '{citation_format}'. Must be one of: {VALID_CITATION_FORMATS}"
         )
 
     # Load and validate schema
@@ -402,9 +390,7 @@ def research(
     if stream:
         if not quiet:
             print("Starting research (streaming mode)...")
-        result = research_streaming(
-            client, topic, schema, model, citation_format, quiet
-        )
+        result = research_streaming(client, topic, schema, model, citation_format, quiet)
     else:
         if not quiet:
             print("Starting research (polling mode)...")
@@ -418,7 +404,7 @@ def research(
         model=model,
         content=result["content"],
         sources=result["sources"],
-        response_time=result.get("response_time")
+        response_time=result.get("response_time"),
     )
 
     # Save or return
@@ -442,58 +428,49 @@ Examples:
   %(prog)s "AI market analysis" --schema ./market_schema.json --model pro
   %(prog)s "Compare React vs Vue" --stream --output ./report.json
   %(prog)s "Quick overview of RAG" --model mini --quiet
-        """
+        """,
     )
 
-    parser.add_argument(
-        "topic",
-        help="Research topic or question"
-    )
+    parser.add_argument("topic", help="Research topic or question")
 
     parser.add_argument(
-        "--schema", "-s",
+        "--schema",
+        "-s",
         metavar="PATH_OR_JSON",
-        help="Path to JSON schema file or inline JSON string for structured output"
+        help="Path to JSON schema file or inline JSON string for structured output",
     )
 
     parser.add_argument(
-        "--stream",
-        action="store_true",
-        help="Enable streaming mode (real-time progress)"
+        "--stream", action="store_true", help="Enable streaming mode (real-time progress)"
     )
 
     parser.add_argument(
-        "--model", "-m",
+        "--model",
+        "-m",
         choices=VALID_MODELS,
         default=DEFAULT_MODEL,
-        help=f"Research model (default: {DEFAULT_MODEL})"
+        help=f"Research model (default: {DEFAULT_MODEL})",
     )
 
     parser.add_argument(
-        "--citation", "-c",
+        "--citation",
+        "-c",
         choices=VALID_CITATION_FORMATS,
         default=DEFAULT_CITATION_FORMAT,
-        help=f"Citation format (default: {DEFAULT_CITATION_FORMAT})"
+        help=f"Citation format (default: {DEFAULT_CITATION_FORMAT})",
     )
 
-    parser.add_argument(
-        "--output", "-o",
-        metavar="PATH",
-        help="Output file path (default: stdout)"
-    )
+    parser.add_argument("--output", "-o", metavar="PATH", help="Output file path (default: stdout)")
 
     parser.add_argument(
-        "--poll-interval", "-p",
+        "--poll-interval",
+        "-p",
         type=int,
         default=DEFAULT_POLL_INTERVAL,
-        help=f"Seconds between status polls (default: {DEFAULT_POLL_INTERVAL})"
+        help=f"Seconds between status polls (default: {DEFAULT_POLL_INTERVAL})",
     )
 
-    parser.add_argument(
-        "--quiet", "-q",
-        action="store_true",
-        help="Suppress progress output"
-    )
+    parser.add_argument("--quiet", "-q", action="store_true", help="Suppress progress output")
 
     args = parser.parse_args()
 
@@ -506,7 +483,7 @@ Examples:
             citation_format=args.citation,
             output=args.output,
             poll_interval=args.poll_interval,
-            quiet=args.quiet
+            quiet=args.quiet,
         )
 
         # Print to stdout if no output file specified

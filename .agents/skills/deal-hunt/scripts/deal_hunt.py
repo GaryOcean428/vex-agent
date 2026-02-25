@@ -30,7 +30,7 @@ import asyncio
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 try:
     from tavily import AsyncTavilyClient
@@ -129,8 +129,7 @@ async def deal_hunt(
 
     # Run searches in parallel
     tasks = [
-        search(client, q, domains, max_results, time_range, search_depth)
-        for q in search_queries
+        search(client, q, domains, max_results, time_range, search_depth) for q in search_queries
     ]
     results_lists = await asyncio.gather(*tasks)
 
@@ -151,7 +150,7 @@ async def deal_hunt(
             "queries": search_queries,
             "domains": domains,
             "time_range": time_range,
-            "search_time": datetime.now(timezone.utc).isoformat(),
+            "search_time": datetime.now(UTC).isoformat(),
             "total_results": len(final_results),
         },
         "results": final_results,
@@ -165,10 +164,15 @@ def main():
     parser.add_argument("--queries", help="Comma-separated queries (max 3) for parallel search")
     parser.add_argument("--domains", "-d", help="Comma-separated domains to search")
     parser.add_argument("--max-results", "-n", type=int, default=10)
-    parser.add_argument("--time-range", "-t", default="week",
-                        choices=["day", "week", "month", "year", "none"])
-    parser.add_argument("--search-depth", "-s", default="advanced",
-                        choices=["basic", "advanced", "fast", "ultrafast"])
+    parser.add_argument(
+        "--time-range", "-t", default="week", choices=["day", "week", "month", "year", "none"]
+    )
+    parser.add_argument(
+        "--search-depth",
+        "-s",
+        default="advanced",
+        choices=["basic", "advanced", "fast", "ultrafast"],
+    )
 
     args = parser.parse_args()
 
@@ -183,15 +187,17 @@ def main():
     time_range = args.time_range if args.time_range != "none" else None
 
     try:
-        result = asyncio.run(deal_hunt(
-            product=args.product,
-            query=args.query,
-            queries=queries,
-            domains=domains,
-            max_results=args.max_results,
-            time_range=time_range,
-            search_depth=args.search_depth,
-        ))
+        result = asyncio.run(
+            deal_hunt(
+                product=args.product,
+                query=args.query,
+                queries=queries,
+                domains=domains,
+                max_results=args.max_results,
+                time_range=time_range,
+                search_depth=args.search_depth,
+            )
+        )
         print(json.dumps(result, indent=2))
 
     except Exception as e:
