@@ -60,7 +60,7 @@ def to_simplex(v: Basin) -> Basin:
     """Project any vector onto Δ⁶³. Non-negative, sums to 1."""
     v = np.asarray(v, dtype=np.float64)
     v = np.maximum(v, _EPS)
-    return v / v.sum()
+    return np.asarray(v / v.sum(), dtype=np.float64)
 
 
 def random_basin(dim: int = BASIN_DIM) -> Basin:
@@ -76,7 +76,7 @@ def softmax_to_simplex(logits: Basin) -> Basin:
     logits = np.asarray(logits, dtype=np.float64)
     shifted = logits - logits.max()
     exp_vals = np.exp(shifted)
-    return exp_vals / exp_vals.sum()
+    return np.asarray(exp_vals / exp_vals.sum(), dtype=np.float64)
 
 
 # ─── Sqrt-Space (Internal Computational Device) ────────────────
@@ -92,8 +92,8 @@ def _from_sqrt(s: Basin) -> Basin:
     p = s * s
     total = p.sum()
     if total < _EPS:
-        return np.ones_like(p) / len(p)
-    return p / total
+        return np.asarray(np.ones_like(p) / len(p), dtype=np.float64)
+    return np.asarray(p / total, dtype=np.float64)
 
 
 # ─── Bhattacharyya Coefficient ───────────────────────────────────
@@ -120,7 +120,7 @@ def fisher_rao_distance(p: Basin, q: Basin) -> float:
     return float(np.arccos(bc))
 
 
-def fisher_rao_distance_batch(p: Basin, bank: NDArray) -> NDArray:
+def fisher_rao_distance_batch(p: Basin, bank: NDArray[np.float64]) -> NDArray[np.float64]:
     """
     Batch Fisher-Rao distance: one point against N points.
 
@@ -135,7 +135,7 @@ def fisher_rao_distance_batch(p: Basin, bank: NDArray) -> NDArray:
     # Bhattacharyya coefficients for all pairs
     bcs = np.sum(np.sqrt(p[np.newaxis, :] * bank), axis=1)
     bcs = np.clip(bcs, -1.0, 1.0)
-    return np.arccos(bcs)
+    return np.asarray(np.arccos(bcs), dtype=np.float64)
 
 
 # ─── Geodesic Interpolation (SLERP on Simplex) ─────────────────
@@ -174,8 +174,8 @@ def geodesic_midpoint(p: Basin, q: Basin) -> Basin:
 
 
 def frechet_mean(
-    points: list[Basin] | NDArray,
-    weights: list[float] | NDArray | None = None,
+    points: list[Basin] | NDArray[np.float64],
+    weights: list[float] | NDArray[np.float64] | None = None,
     max_iter: int = 50,
     tol: float = 1e-8,
 ) -> Basin:
@@ -260,7 +260,7 @@ def log_map(base: Basin, target: Basin) -> Basin:
     if norm < _EPS:
         return np.zeros_like(sb)
 
-    return (d / norm) * tangent
+    return np.asarray((d / norm) * tangent, dtype=np.float64)
 
 
 def exp_map(base: Basin, tangent: Basin) -> Basin:

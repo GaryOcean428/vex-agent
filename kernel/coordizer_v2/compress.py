@@ -46,11 +46,11 @@ class CompressionResult:
 
     compressed: dict[int, Basin] = field(default_factory=dict)
     token_strings: dict[int, str] = field(default_factory=dict)
-    eigenvalues: NDArray | None = None
-    explained_variance_ratio: NDArray | None = None
+    eigenvalues: NDArray[np.float64] | None = None
+    explained_variance_ratio: NDArray[np.float64] | None = None
     e8_rank_variance: float = 0.0
     total_geodesic_variance: float = 0.0
-    frechet_mean_full: NDArray | None = None
+    frechet_mean_full: NDArray[np.float64] | None = None
     source_dim: int = 0
     target_dim: int = BASIN_DIM
     n_tokens: int = 0

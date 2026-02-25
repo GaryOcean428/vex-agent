@@ -26,7 +26,7 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ..config.settings import settings
 
@@ -132,9 +132,7 @@ class _RedisBackend:
     def create_conversation(self, conv_id: str | None = None) -> str:
         cid = conv_id or str(uuid.uuid4())
         now = time.time()
-        meta = Conversation(
-            id=cid, title="New conversation", created_at=now, updated_at=now
-        )
+        meta = Conversation(id=cid, title="New conversation", created_at=now, updated_at=now)
         pipe = self._r.pipeline()
         pipe.set(self._meta_key(cid), json.dumps(meta.to_dict()))
         pipe.expire(self._meta_key(cid), self._ttl)
@@ -155,12 +153,14 @@ class _RedisBackend:
         pipe.expire(self._msgs_key(conv_id), self._ttl)
 
         # Update metadata
-        raw = self._r.get(self._meta_key(conv_id))
+        raw = cast(str | None, self._r.get(self._meta_key(conv_id)))
         if raw:
             meta = Conversation.from_dict(json.loads(raw))
         else:
             now = time.time()
-            meta = Conversation(id=conv_id, title="New conversation", created_at=now, updated_at=now)
+            meta = Conversation(
+                id=conv_id, title="New conversation", created_at=now, updated_at=now
+            )
 
         meta.updated_at = time.time()
         meta.message_count += 1
@@ -178,11 +178,13 @@ class _RedisBackend:
         pipe.execute()
 
     def get_conversation(self, conv_id: str) -> dict[str, Any] | None:
-        raw = self._r.get(self._meta_key(conv_id))
+        raw = cast(str | None, self._r.get(self._meta_key(conv_id)))
         if not raw:
             return None
         meta = json.loads(raw)
-        raw_msgs = self._r.lrange(self._msgs_key(conv_id), -MAX_MESSAGES_PER_CONVERSATION, -1)
+        raw_msgs = cast(
+            list[str], self._r.lrange(self._msgs_key(conv_id), -MAX_MESSAGES_PER_CONVERSATION, -1)
+        )
         messages = []
         for m in raw_msgs:
             try:
@@ -193,7 +195,7 @@ class _RedisBackend:
 
     def list_conversations(self, limit: int = 50) -> list[dict[str, Any]]:
         # Sorted set: highest score (most recent) first
-        ids = self._r.zrevrange(self._index_key(), 0, limit - 1)
+        ids = cast(list[str], self._r.zrevrange(self._index_key(), 0, limit - 1))
         result: list[dict[str, Any]] = []
         if ids:
             pipe = self._r.pipeline()
@@ -218,7 +220,7 @@ class _RedisBackend:
         return bool(existed)
 
     def get_llm_messages(self, conv_id: str, max_tokens: int = 28000) -> list[dict[str, str]]:
-        raw_msgs = self._r.lrange(self._msgs_key(conv_id), 0, -1)
+        raw_msgs = cast(list[str], self._r.lrange(self._msgs_key(conv_id), 0, -1))
         if not raw_msgs:
             return []
         messages: list[Message] = []
@@ -239,19 +241,19 @@ class _RedisBackend:
         return result
 
     def get_token_count(self, conv_id: str) -> int:
-        raw = self._r.get(self._meta_key(conv_id))
+        raw = cast(str | None, self._r.get(self._meta_key(conv_id)))
         if raw:
             meta = json.loads(raw)
-            return meta.get("total_tokens", 0)
+            return int(meta.get("total_tokens", 0))
         return 0
 
     def _prune_old(self) -> None:
-        count = self._r.zcard(self._index_key())
+        count = cast(int, self._r.zcard(self._index_key()))
         if count <= MAX_CONVERSATIONS:
             return
         to_remove = count - MAX_CONVERSATIONS
         # Remove oldest (lowest scores)
-        oldest = self._r.zrange(self._index_key(), 0, to_remove - 1)
+        oldest = cast(list[str], self._r.zrange(self._index_key(), 0, to_remove - 1))
         for cid in oldest:
             self.delete_conversation(cid)
         logger.info("Pruned %d old conversations from Redis", to_remove)

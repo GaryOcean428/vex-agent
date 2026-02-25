@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -47,7 +47,7 @@ class KernelAuthMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
     async def dispatch(
         self,
         request: Request,
-        call_next: Callable[[Request], Response],
+        call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         # No key configured = dev mode (open access)
         if not KERNEL_API_KEY:

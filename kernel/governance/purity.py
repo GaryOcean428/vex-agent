@@ -450,6 +450,7 @@ def run_purity_gate(root: str | Path) -> None:
     v6.0 §1.3 compliant.
     """
     import logging
+
     _log = logging.getLogger("vex.purity")
 
     root = Path(root)
@@ -469,6 +470,7 @@ def run_purity_gate(root: str | Path) -> None:
     # Non-blocking: warn on constant inconsistencies (don't block the gate)
     try:
         from ..config.consciousness_constants import validate_constants
+
         for warning in validate_constants():
             _log.warning("Constants consistency: %s", warning)
     except Exception:

@@ -70,7 +70,7 @@ SEMANTIC_TEST_PAIRS = [
 
 def validate_resonance_bank(
     bank: ResonanceBank,
-    eigenvalues: NDArray | None = None,
+    eigenvalues: NDArray[np.float64] | None = None,
     verbose: bool = True,
 ) -> ValidationResult:
     """Full validation suite for a resonance bank."""
