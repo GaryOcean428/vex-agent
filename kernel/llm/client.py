@@ -247,7 +247,7 @@ class LLMClient:
                 self._active_backend = "modal"
                 logger.info(
                     "LLM backend: Modal GPU Ollama (%s) at %s",
-                    settings.ollama.model,
+                    settings.modal.inference_model,
                     settings.modal.inference_url,
                 )
             else:
@@ -257,6 +257,10 @@ class LLMClient:
                 # Still set as primary — _modal_complete will retry and fallback
                 self._active_backend = "modal"
                 logger.info("LLM backend: Modal GPU Ollama (deferred, will retry)")
+                # Fire background warm-up to trigger Modal cold start.
+                # By the time the first real request arrives, the container
+                # should be warm (A10G cold start ~90-120s with cached model).
+                asyncio.create_task(self._warm_up_modal())
         # Check Railway Ollama (CPU fallback)
         elif settings.ollama.enabled:
             self._ollama_available = await self.check_ollama()
@@ -299,6 +303,22 @@ class LLMClient:
                     _configured_local,
                 )
 
+    async def _warm_up_modal(self) -> None:
+        """Background task: trigger Modal cold start so container is warm for first request."""
+        try:
+            logger.info("Warming up Modal GPU container (background, up to 5min)...")
+            resp = await self._modal_http.get(
+                f"{settings.modal.inference_url}/api/tags",
+                timeout=300.0,  # Allow full cold start (container + model load)
+            )
+            if resp.status_code == 200:
+                self._modal_available = True
+                logger.info("Modal GPU container is warm and ready")
+            else:
+                logger.warning("Modal warm-up returned HTTP %d", resp.status_code)
+        except Exception as e:
+            logger.warning("Modal warm-up failed (will retry on first request): %s", e)
+
     async def check_modal_ollama(self) -> bool:
         """Check if Modal Ollama inference endpoint is reachable."""
         if not settings.modal.inference_enabled or not settings.modal.inference_url:
@@ -306,7 +326,7 @@ class LLMClient:
         try:
             resp = await self._modal_http.get(
                 f"{settings.modal.inference_url}/api/tags",
-                timeout=15.0,  # Quick health check, don't wait for cold start
+                timeout=60.0,  # Allow warm containers; cold starts handled by _warm_up_modal
             )
             self._modal_available = resp.status_code == 200
             if self._modal_available:
