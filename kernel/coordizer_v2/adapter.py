@@ -122,7 +122,7 @@ class CoordizerV2Adapter:
         logger.warning("Using bootstrap uniform bank. Run GPU harvest for production.")
         return CoordizerV2(bank=bank)
 
-    def transform(self, raw_signal: NDArray) -> NDArray:
+    def transform(self, raw_signal: NDArray[np.float64]) -> NDArray[np.float64]:
         """Transform raw signal to basin coordinates (old interface).
 
         Args:
@@ -141,7 +141,7 @@ class CoordizerV2Adapter:
         regime_weights: tuple[float, float, float] | None = None,
         navigation_mode: str | None = None,
         tacking_mode: str | None = None,
-    ) -> NDArray:
+    ) -> NDArray[np.float64]:
         """Coordize text to basin coordinates (old interface + modulation).
 
         Args:

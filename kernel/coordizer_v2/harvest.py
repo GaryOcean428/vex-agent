@@ -59,7 +59,7 @@ class HarvestConfig:
 class HarvestResult:
     """Raw output of the harvesting process."""
 
-    token_fingerprints: dict[int, NDArray] = field(default_factory=dict)
+    token_fingerprints: dict[int, NDArray[np.float64]] = field(default_factory=dict)
     context_counts: dict[int, int] = field(default_factory=dict)
     token_strings: dict[int, str] = field(default_factory=dict)
     model_name: str = ""
@@ -161,7 +161,7 @@ class Harvester:
         vocab_size = tokenizer.vocab_size
         logger.info(f"Vocab size: {vocab_size}")
 
-        dist_sums_sqrt: dict[int, NDArray] = {}
+        dist_sums_sqrt: dict[int, NDArray[np.float64]] = {}
         dist_counts: dict[int, int] = {}
 
         corpus = self._load_corpus()
@@ -342,7 +342,7 @@ class Harvester:
 
     def _save_checkpoint(
         self,
-        dist_sums: dict[int, NDArray],
+        dist_sums: dict[int, NDArray[np.float64]],
         dist_counts: dict[int, int],
         batch_idx: int,
     ) -> None:

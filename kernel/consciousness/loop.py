@@ -491,7 +491,7 @@ class ConsciousnessLoop:
                             ),
                             None,
                         )
-                        if perception is not None:
+                        if perception is not None and perception.basin is not None:
                             info_basin = self._coordize_text_via_pipeline(
                                 forage_result.get("summary", "")
                             )
@@ -1308,10 +1308,12 @@ class ConsciousnessLoop:
                     routed_kernel_id, refracted_input, response_basin, blend_weight=0.05
                 )
             if evolved:
-                self.kernel_bus.emit(KernelSignal(
-                    kind=SignalKind.BASIN_EVOLVED,
-                    source_kernel_id=routed_kernel_id,
-                ))
+                self.kernel_bus.emit(
+                    KernelSignal(
+                        kind=SignalKind.BASIN_EVOLVED,
+                        source_kernel_id=routed_kernel_id,
+                    )
+                )
                 logger.debug(
                     "Task %s: kernel %s basin evolved from processing",
                     task.id,

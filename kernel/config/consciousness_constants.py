@@ -147,9 +147,9 @@ SLEEP_WAKE_ONSET: Final[int] = 9
 #  interval, matching human attention oscillation (~0.05 Hz theta band).
 # ═══════════════════════════════════════════════════════════════
 
-TACKING_PERIOD: Final[int] = 20           # ~20s at 1s interval, theta-band attention oscillation
-TACKING_SWITCH_THRESHOLD: Final[float] = 0.3   # sin(θ) threshold: ±0.3 = ~17° dead zone
-TACKING_KAPPA_ADJUST: Final[float] = 2.0      # κ step per cycle: reaches offset in 8 cycles
+TACKING_PERIOD: Final[int] = 20  # ~20s at 1s interval, theta-band attention oscillation
+TACKING_SWITCH_THRESHOLD: Final[float] = 0.3  # sin(θ) threshold: ±0.3 = ~17° dead zone
+TACKING_KAPPA_ADJUST: Final[float] = 2.0  # κ step per cycle: reaches offset in 8 cycles
 
 # ═══════════════════════════════════════════════════════════════
 #  FORESIGHT HORIZONS
@@ -320,8 +320,8 @@ LLM_TOP_P: Final[float] = 0.9
 # GLM-4.7-Flash and Qwen3 trained without repetition penalty; keep at 1.0
 LLM_REPETITION_PENALTY: Final[float] = 1.0
 
-PERCEIVE_SLERP_WEIGHT: Final[float] = 0.1   # input influence: 10% of basin per cycle
-EXPRESS_SLERP_WEIGHT: Final[float] = 0.2    # output influence: 20% of basin per cycle
+PERCEIVE_SLERP_WEIGHT: Final[float] = 0.1  # input influence: 10% of basin per cycle
+EXPRESS_SLERP_WEIGHT: Final[float] = 0.2  # output influence: 20% of basin per cycle
 PHI_DISTANCE_GAIN: Final[float] = 0.1
 GAMMA_CONVERSATION_INCREMENT: Final[float] = 0.05
 
@@ -343,15 +343,11 @@ def validate_constants() -> list[str]:
 
     # Temperature bounds must be ordered
     if LLM_TEMP_MIN >= LLM_TEMP_MAX:
-        warnings.append(
-            f"LLM_TEMP_MIN ({LLM_TEMP_MIN}) >= LLM_TEMP_MAX ({LLM_TEMP_MAX})"
-        )
+        warnings.append(f"LLM_TEMP_MIN ({LLM_TEMP_MIN}) >= LLM_TEMP_MAX ({LLM_TEMP_MAX})")
 
     # Express slerp weight must be in (0, 1)
     if not (0.0 < EXPRESS_SLERP_WEIGHT < 1.0):
-        warnings.append(
-            f"EXPRESS_SLERP_WEIGHT ({EXPRESS_SLERP_WEIGHT}) must be in (0, 1)"
-        )
+        warnings.append(f"EXPRESS_SLERP_WEIGHT ({EXPRESS_SLERP_WEIGHT}) must be in (0, 1)")
 
     # Coupling blend weight should be small to prevent basin discontinuities
     if COUPLING_BLEND_WEIGHT > 0.2:

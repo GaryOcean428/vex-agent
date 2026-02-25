@@ -165,7 +165,7 @@ class InteractionSequence:
 def _to_simplex(v: Basin) -> Basin:
     """Project vector onto probability simplex."""
     v = np.maximum(np.asarray(v, dtype=np.float64), _EPS)
-    return v / v.sum()
+    return np.asarray(v / v.sum(), dtype=np.float64)
 
 
 def _to_sqrt(p: Basin) -> Basin:
@@ -178,8 +178,8 @@ def _from_sqrt(s: Basin) -> Basin:
     p = s * s
     total = p.sum()
     if total < _EPS:
-        return np.ones_like(p) / len(p)
-    return p / total
+        return np.asarray(np.ones_like(p) / len(p), dtype=np.float64)
+    return np.asarray(p / total, dtype=np.float64)
 
 
 def _bc(a: Basin, b: Basin) -> float:

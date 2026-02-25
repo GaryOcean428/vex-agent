@@ -118,9 +118,7 @@ class TackingController:
             phi_velocity, f_health, metrics.kappa
         )
 
-        self._state.oscillation_phase = (
-            2 * np.pi * self._state.cycle_count / self._effective_period
-        )
+        self._state.oscillation_phase = 2 * np.pi * self._state.cycle_count / self._effective_period
 
         if metrics.phi < PHI_EMERGENCY or metrics.kappa > KAPPA_STAR + KAPPA_TACKING_OFFSET:
             self._state.mode = TackingMode.EXPLORE

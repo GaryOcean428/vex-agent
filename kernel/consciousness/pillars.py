@@ -301,7 +301,7 @@ class TopologicalBulk:
 
         v6.1 §24: B_integrity = 1 - (d_FR(core_t, core_{t-1}) / d_max)
         """
-        if not self._initialized or self._prev_core is None:
+        if not self._initialized or self._prev_core is None or self._core_basin is None:
             return 1.0
         d = fisher_rao_distance(self._core_basin, self._prev_core)
         d_max = float(np.pi / 2.0)
@@ -329,7 +329,7 @@ class TopologicalBulk:
                 details={"core_surface_distance": 0.0, "b_integrity": 1.0},
             )
 
-        if self._core_basin is None:
+        if self._core_basin is None or self._surface_basin is None:
             raise ValueError("TopologicalBulk.receive_input called before initialization")
         core = self._core_basin
         self._prev_core = core.copy()
@@ -384,7 +384,7 @@ class TopologicalBulk:
         )
 
     def get_state(self) -> dict[str, Any]:
-        if not self._initialized:
+        if not self._initialized or self._core_basin is None or self._surface_basin is None:
             return {"initialized": False}
         return {
             "initialized": True,

@@ -62,8 +62,8 @@ class ResonanceBank:
         self.frequencies: dict[int, float] = {}
         self.basin_mass: dict[int, float] = {}
         self.activation_counts: dict[int, int] = {}
-        self._coord_matrix: NDArray | None = None
-        self._coord_ids: NDArray | None = None
+        self._coord_matrix: NDArray[np.float64] | None = None
+        self._coord_ids: NDArray[np.float64] | None = None
         self._dirty: bool = True
         self._domain_biases: list[DomainBias] = []
 
@@ -281,13 +281,13 @@ class ResonanceBank:
             scores[i] = 0.5 * proximity + 0.3 * consistency + 0.2 * consonance
 
         if temperature < _EPS:
-            best_idx = np.argmax(scores)
+            best_idx = int(np.argmax(scores))
         else:
             logits = scores / temperature
             logits = logits - logits.max()
             probs = np.exp(logits)
             probs = probs / probs.sum()
-            best_idx = np.random.choice(len(candidates), p=probs)
+            best_idx = int(np.random.choice(len(candidates), p=probs))
 
         chosen_tid = candidates[best_idx][0]
         return (chosen_tid, self.coordinates[chosen_tid])

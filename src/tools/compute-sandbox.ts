@@ -41,7 +41,10 @@ export interface VexTool {
 /** Minimal interface for ComputeSDK sandbox operations */
 interface ComputeSdkSandbox {
   sandboxId: string;
-  runCode(code: string, language?: string): Promise<{ exitCode: number; output: string }>;
+  runCode(
+    code: string,
+    language?: string,
+  ): Promise<{ exitCode: number; output: string }>;
   runCommand(
     command: string,
     options?: { cwd?: string; timeout?: number },
@@ -84,7 +87,9 @@ export class SandboxManager {
     if (this.initialised) return;
 
     try {
-      const { compute } = await import("computesdk") as { compute: ComputeSdkClient };
+      const { compute } = (await import("computesdk")) as {
+        compute: ComputeSdkClient;
+      };
       this.compute = compute;
 
       // ComputeSDK auto-detects Railway from env vars:
