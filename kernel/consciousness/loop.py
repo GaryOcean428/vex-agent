@@ -1956,6 +1956,9 @@ class ConsciousnessLoop:
         # Generate per-kernel contributions OUTSIDE the cycle lock
         # (parallel LLM calls — lock released so heartbeat can proceed)
         extra_context = (context or {}).get("extra_context", "")
+        # T4.1c: Debate depth controlled by autonomic state.
+        _debate_depth = self._compute_debate_depth()
+        _thought_bus_arg = self._thought_bus if _debate_depth > 0 else None
         # T4.4d: Model selection by complexity — escalate if input is geometrically novel.
         _override_model = self._select_model_by_complexity(refracted_input)
         _streaming_llm = self.llm
@@ -1975,9 +1978,14 @@ class ConsciousnessLoop:
             top_k=self._compute_top_k(),
             extra_context=extra_context,
             voice_registry=self._voice_registry,
+            thought_bus=_thought_bus_arg,
+            phi=self.metrics.phi,
             base_num_predict=llm_options.num_predict,
             base_num_ctx=llm_options.num_ctx,
         )
+
+        if _thought_bus_arg is not None:
+            _thought_bus_arg.forward_transcript(phi=self.metrics.phi)
 
         if not contributions:
             # No kernels — stream direct LLM call
@@ -2068,6 +2076,9 @@ class ConsciousnessLoop:
         eligible_count = len(eligible)
         selection_end = _time.monotonic()
 
+        # T4.1c: Debate depth controlled by autonomic state.
+        _debate_depth = self._compute_debate_depth()
+        _thought_bus_arg = self._thought_bus if _debate_depth > 0 else None
         # T4.4d: Model selection by complexity — escalate if input is geometrically novel.
         _trace_override_model = self._select_model_by_complexity(refracted_input)
         _trace_llm = self.llm
@@ -2087,10 +2098,15 @@ class ConsciousnessLoop:
             top_k=self._compute_top_k(),
             extra_context=extra_context,
             voice_registry=self._voice_registry,
+            thought_bus=_thought_bus_arg,
+            phi=self.metrics.phi,
             base_num_predict=llm_options.num_predict,
             base_num_ctx=llm_options.num_ctx,
         )
         generation_end = _time.monotonic()
+
+        if _thought_bus_arg is not None:
+            _thought_bus_arg.forward_transcript(phi=self.metrics.phi)
 
         if not contributions:
             # No kernels — bypass trace, stream direct LLM

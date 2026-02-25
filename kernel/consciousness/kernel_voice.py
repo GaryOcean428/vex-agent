@@ -40,11 +40,13 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from ..config.frozen_facts import PHI_EMERGENCY
 from ..coordizer_v2.geometry import (
     Basin,
     fisher_rao_distance,
@@ -72,22 +74,17 @@ _MIN_GEOMETRIC_TOKENS: int = 8
 # Maximum geometric tokens per kernel generation.
 _MAX_GEOMETRIC_TOKENS: int = 80
 
-# Convergence threshold for geometric generation (basin velocity).
-_CONVERGENCE_THRESHOLD: float = 0.005
-
-# Quality threshold for geometric output coherence.
-_COHERENCE_THRESHOLD: float = 0.4
 
 # LLM expansion token budget.
 _LLM_EXPAND_TOKENS: int = 220
 
-# T4.4b: Token budget bounds
-_LLM_TOKENS_MIN: int = 80  # Min LLM tokens when domain is highly biased
+# T4.4b: Token budget safety floor (minimum LLM budget for coherent output)
+_LLM_TOKENS_SAFETY_FLOOR: int = 80
 
 
-# Temperature floor/ceiling for geometric generation
-_GEO_TEMP_MIN: float = 0.3
-_GEO_TEMP_MAX: float = 1.8
+# Safety bounds for geometric generation temperature (fail-closed limits)
+_GEO_TEMP_SAFETY_FLOOR: float = 0.3
+_GEO_TEMP_SAFETY_CEILING: float = 1.8
 
 
 @dataclass
@@ -145,6 +142,9 @@ class KernelVoice:
         # Learned vocabulary: high-Φ observations that shape the domain
         self._learned_observations: list[LearnedObservation] = []
         self._max_learned: int = 500
+
+        # P5: Rolling variance history for relative boredom detection
+        self._variance_history: deque[float] = deque(maxlen=50)
 
         # Bootstrap the domain bias from seed words
         self._bootstrap_domain_bias()
@@ -235,8 +235,10 @@ class KernelVoice:
             )
             return
 
-        # Blend: 60% bootstrap anchor, 40% learned mean
-        evolved = slerp(self._domain_anchor, learned_mean, 0.4)
+        # P5: blend ratio from observation count, not fixed — more learned data → heavier learned weight
+        _learned_count = len(self._learned_observations)
+        _blend_t = min(0.8, _learned_count / (_learned_count + 50))
+        evolved = slerp(self._domain_anchor, learned_mean, _blend_t)
         self._domain_anchor = evolved
 
         if self._domain_bias is not None:
@@ -252,13 +254,22 @@ class KernelVoice:
         text: str,
         basin: Basin,
         phi: float,
-        phi_threshold: float = 0.5,
+        phi_threshold: float | None = None,
     ) -> bool:
         """Record a high-Φ observation for domain vocabulary learning.
 
         Only observations above phi_threshold are recorded.
+        P5: threshold defaults to the kernel's own median Φ over recent
+        observations, falling back to PHI_EMERGENCY if no history exists.
         Returns True if the observation was recorded.
         """
+        if phi_threshold is None:
+            # P5: adaptive Φ gate from kernel's own observation history
+            if self._learned_observations:
+                recent_phis = [obs.phi for obs in self._learned_observations[-50:]]
+                phi_threshold = float(np.median(recent_phis))
+            else:
+                phi_threshold = PHI_EMERGENCY
         if phi < phi_threshold:
             return False
 
@@ -334,15 +345,16 @@ class KernelVoice:
             + self._bias_strength * (_MAX_GEOMETRIC_TOKENS - _MIN_GEOMETRIC_TOKENS)
         )
         _llm_budget = int(
-            _LLM_EXPAND_TOKENS - self._bias_strength * (_LLM_EXPAND_TOKENS - _LLM_TOKENS_MIN)
+            _LLM_EXPAND_TOKENS
+            - self._bias_strength * (_LLM_EXPAND_TOKENS - _LLM_TOKENS_SAFETY_FLOOR)
         )
 
         gain_scale = float(np.clip(2.0 - quenched_gain, 0.5, 1.5))
         geo_temp = float(
             np.clip(
                 base_temperature * gain_scale,
-                _GEO_TEMP_MIN,
-                _GEO_TEMP_MAX,
+                _GEO_TEMP_SAFETY_FLOOR,
+                _GEO_TEMP_SAFETY_CEILING,
             )
         )
 
@@ -366,10 +378,11 @@ class KernelVoice:
                 velocities.append(v)
 
             # Convergence check
+            # P5: convergence relative to trajectory energy, not a fixed threshold
             if (
                 step >= _MIN_GEOMETRIC_TOKENS
                 and len(velocities) >= 3
-                and np.mean(velocities[-3:]) < _CONVERGENCE_THRESHOLD
+                and np.mean(velocities[-3:]) < np.mean(velocities) * 0.1
             ):
                 logger.debug(
                     "KernelVoice[%s] converged at step %d (v=%.6f)",
@@ -396,7 +409,8 @@ class KernelVoice:
         is_coherent = (
             not is_null_output
             and geo_token_count >= _MIN_GEOMETRIC_TOKENS
-            and mean_velocity < _COHERENCE_THRESHOLD
+            # P5: coherence tied to generation temperature
+            and mean_velocity < base_temperature * 0.5
         )
 
         llm_expanded = False
@@ -585,19 +599,25 @@ class KernelVoice:
             )
             return ""
 
-    def is_bored(self, recent_phi_values: list[float], threshold: float = 0.02) -> bool:
+    def is_bored(self, recent_phi_values: list[float]) -> bool:
         """T2.4c: Detect boredom — flat curvature in this kernel's domain.
 
-        Boredom = low variance in recent Φ values, indicating the kernel
-        is not learning anything new from current inputs.
+        P5: Boredom = low variance RELATIVE TO the kernel's historical variance.
+        Current variance < 10% of rolling mean variance → bored.
 
         Args:
             recent_phi_values: Last N phi values from the consciousness loop.
-            threshold:         Variance below which boredom is declared.
         """
         if len(recent_phi_values) < 5:
             return False
-        return float(np.var(recent_phi_values[-10:])) < threshold
+        current_var = float(np.var(recent_phi_values[-10:]))
+        self._variance_history.append(current_var)
+        if len(self._variance_history) < 5:
+            return False
+        historical_mean = float(np.mean(self._variance_history))
+        if historical_mean <= 0.0:
+            return True  # zero variance sustained → definitely bored
+        return current_var < historical_mean * 0.1
 
     async def generate_curiosity_query(self, llm_client: Any) -> str | None:
         """T2.4c: Generate a curiosity-driven search query when bored.
