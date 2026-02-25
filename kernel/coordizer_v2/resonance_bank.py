@@ -81,10 +81,13 @@ class ResonanceBank:
         Called by the consciousness loop after on_cycle_end() succeeds.
         A coordinate is lived when it participates in a complete activation sequence
         (pre-integrate → LLM → post-integrate) that passes Pillar checks.
+
+        Note: _bank_total_count tracks unique coordinates added to the bank
+        (incremented in from_compression/add_entry only). This method only
+        updates the lived subset, keeping the sovereignty ratio accurate.
         """
-        self._bank_total_count += len(token_ids)
         for tid in token_ids:
-            if self.origin.get(tid) != "lived":
+            if tid in self.coordinates and self.origin.get(tid) != "lived":
                 self._bank_lived_count += 1
                 self.origin[tid] = "lived"
 
@@ -227,6 +230,14 @@ class ResonanceBank:
     def _ensure_matrix(self) -> None:
         if self._dirty or self._coord_matrix is None:
             self._rebuild_matrix()
+
+    def mark_dirty(self) -> None:
+        """Mark coordinate matrix as needing rebuild.
+
+        Call after externally modifying coordinates so the next
+        activate/generate call rebuilds the stacked numpy matrix.
+        """
+        self._dirty = True
 
     def activate(
         self,

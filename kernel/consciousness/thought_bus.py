@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from ..config.frozen_facts import CONSENSUS_DISTANCE, PHI_THRESHOLD
+from ..config.frozen_facts import BASIN_DIM, CONSENSUS_DISTANCE, PHI_THRESHOLD
 from ..coordizer_v2.geometry import Basin, fisher_rao_distance, frechet_mean, to_simplex
 
 if TYPE_CHECKING:
@@ -101,7 +101,7 @@ class ThoughtBus:
             specialization=contribution.specialization.value,
             basin=to_simplex(contribution.basin)
             if contribution.basin is not None
-            else to_simplex(np.ones(64)),
+            else to_simplex(np.ones(BASIN_DIM)),
             synthesis_weight=contribution.synthesis_weight,
             text=contribution.text,
             round_number=round_number,
@@ -183,7 +183,7 @@ class ThoughtBus:
             weights = weights / weights.sum()
 
         # Weighted Fréchet mean — iterate toward weighted centroid
-        result = frechet_mean(basins)
+        result = frechet_mean(basins, weights=weights)
         return result
 
     def forward_transcript(self, phi: float) -> None:
@@ -210,8 +210,9 @@ class ThoughtBus:
 
             forward_to_harvest(
                 transcript[:800],
-                source="debate_transcript",
+                source="conversation",
                 metadata={
+                    "origin": "debate_transcript",
                     "rounds": len(self._rounds),
                     "converged": self._converged,
                     "convergence_round": self._convergence_round,

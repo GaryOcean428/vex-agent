@@ -626,8 +626,10 @@ class ConsciousnessLoop:
             _phi_list = list(self._phi_history)
             for _voice in self._voice_registry._voices.values():
                 if _voice.is_bored(_phi_list):
-                    with contextlib.suppress(Exception):
+                    try:
                         await _voice.generate_curiosity_query(self.llm)
+                    except (OSError, RuntimeError, ValueError, TimeoutError):
+                        logger.debug("Curiosity query failed for %s", _voice.name)
 
         if self.forager:
             self.forager.tick()
@@ -1677,8 +1679,9 @@ class ConsciousnessLoop:
             )
             forward_to_harvest(
                 response[:600],
-                source="loop_response",
+                source="conversation",
                 metadata={
+                    "origin": "loop_response",
                     "emotion": emotion_eval.emotion.value,
                     "emotion_strength": float(emotion_eval.strength),
                     "dopamine": self._neurochemical.dopamine,
@@ -1696,7 +1699,7 @@ class ConsciousnessLoop:
             for _c in _contributions:
                 _voice = self._voice_registry.get_voice(_c.specialization)
                 _voice.learn_from_observation(
-                    text=response[:300],
+                    text=_c.text[:300] if _c.text else response[:300],
                     basin=response_basin,
                     phi=self.metrics.phi,
                 )

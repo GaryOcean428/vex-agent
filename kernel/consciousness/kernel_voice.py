@@ -509,8 +509,12 @@ class KernelVoice:
             if text:
                 forward_to_harvest(
                     text,
-                    source="llm_cogeneration",
-                    metadata={"kernel": self.specialization.value, "mode": "expand"},
+                    source="conversation",
+                    metadata={
+                        "origin": "llm_cogeneration",
+                        "kernel": self.specialization.value,
+                        "mode": "expand",
+                    },
                 )
             return text
         except (OSError, RuntimeError, ValueError):
@@ -565,8 +569,12 @@ class KernelVoice:
             if text:
                 forward_to_harvest(
                     text,
-                    source="llm_cogeneration",
-                    metadata={"kernel": self.specialization.value, "mode": "fallback"},
+                    source="conversation",
+                    metadata={
+                        "origin": "llm_cogeneration",
+                        "kernel": self.specialization.value,
+                        "mode": "fallback",
+                    },
                 )
             return text
         except (OSError, RuntimeError, ValueError):
@@ -623,8 +631,9 @@ class KernelVoice:
             if query:
                 forward_to_harvest(
                     query,
-                    source="curiosity",
+                    source="foraging",
                     metadata={
+                        "origin": "curiosity",
                         "kernel": self.specialization.value,
                         "mode": "curiosity_query",
                     },

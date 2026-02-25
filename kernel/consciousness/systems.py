@@ -740,6 +740,7 @@ class SleepCycleManager:
                     f"dream_{tid_a}_{tid_b}",
                     dream_basin,
                 )
+                bank.origin[dream_tid] = "dream"
                 self._dream_log[-1]["dream_tid"] = dream_tid
 
         # T2.3f: Norepinephrine micro-spike during dream startles
@@ -905,8 +906,9 @@ class SelfNarrative:
 
                 forward_to_harvest(
                     event,
-                    source="narrative",
+                    source="conversation",
                     metadata={
+                        "origin": "narrative",
                         "phi": metrics.phi,
                         "coach_id": coach_id,
                         "reward": reward,

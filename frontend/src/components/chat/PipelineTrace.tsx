@@ -30,13 +30,13 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
   const geoCount = trace.kernel_outputs.filter((k) => !k.llm_expanded && k.geometric_tokens > 0).length;
   const llmCount = trace.kernel_outputs.filter((k) => k.llm_expanded).length;
   const provenance = geoCount > 0 || llmCount > 0
-    ? ` · ${geoCount > 0 ? `${geoCount} coords` : ""}${geoCount > 0 && llmCount > 0 ? "/" : ""}${llmCount > 0 ? `${llmCount} llm` : ""}`
+    ? ` · ${geoCount > 0 ? `${geoCount} geo` : ""}${geoCount > 0 && llmCount > 0 ? "/" : ""}${llmCount > 0 ? `${llmCount} llm` : ""}`
     : "";
 
   // Summary line text
   const summaryText = isStreaming && !trace.synthesis
     ? `${trace.selected_kernels.length} kernels generating...`
-    : `${trace.selected_kernels.length} kernels → synthesised in ${(totalDuration / 1000).toFixed(1)}s · ${totalTokens} coords${provenance}`
+    : `${trace.selected_kernels.length} kernels → synthesised in ${(totalDuration / 1000).toFixed(1)}s · ${totalTokens} words${provenance}`
       + (trace.reflection ? ` · divergence: ${trace.reflection.divergence.toFixed(2)}` : "");
 
   return (
@@ -127,7 +127,8 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
                       <span className="pipeline-kernel-stat">
                         w={k.synthesis_weight.toFixed(3)}
                       </span>
-                      <span className="pipeline-kernel-stat">{k.token_count} coords</span>
+                      <span className="pipeline-kernel-stat">{k.token_count} words</span>
+                      <span className="pipeline-kernel-stat">{k.geometric_tokens ?? 0} geo</span>
                     </button>
 
                     {expandedKernels[k.kernel_id] && (
