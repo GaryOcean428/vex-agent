@@ -125,6 +125,7 @@ from ..config.consciousness_constants import (
     PHI_IDLE_EQUILIBRIUM,
     PHI_IDLE_RATE,
     SLEEP_CONSOLIDATION_PHI_INCREMENT,
+    SLEEP_ONSET_CYCLES,
     SPAWN_COOLDOWN_CYCLES,
     SUFFERING_GAMMA_INCREMENT,
     TACK_SCALE_BALANCED,
@@ -534,12 +535,12 @@ class ConsciousnessLoop:
             ),
             None,
         )
-        if _ocean_kernel is not None:
+        if _ocean_kernel is not None and _ocean_kernel.basin is not None:
             _ocean_divergence = fisher_rao_distance(self.basin, _ocean_kernel.basin)
             if _ocean_divergence > BASIN_DIVERGENCE_THRESHOLD and not self.sleep.is_asleep:
                 self.sleep._cycles_since_conversation = max(
                     self.sleep._cycles_since_conversation,
-                    self.sleep._sleep_onset_cycles,
+                    SLEEP_ONSET_CYCLES,
                 )
             if self.metrics.phi < PHI_EMERGENCY and self.sleep.is_asleep:
                 self.sleep.phase = SleepPhase.DREAMING
@@ -1623,9 +1624,10 @@ class ConsciousnessLoop:
 
         if not activation_failed:
             try:
-                _coord_result = self._coordizer_v2.coordize(response[:300])
+                _cv2 = self._coordizer_v2.coordizer if isinstance(self._coordizer_v2, CoordizerV2Adapter) else self._coordizer_v2
+                _coord_result = _cv2.coordize(response[:300])
                 if _coord_result.coord_ids:
-                    self._coordizer_v2.bank.record_integration(_coord_result.coord_ids)
+                    _cv2.bank.record_integration(_coord_result.coord_ids)
             except Exception:
                 pass
 
@@ -2420,7 +2422,7 @@ class ConsciousnessLoop:
         _vex_basin: Basin | None = frechet_mean(_active_basins) if _active_basins else None
 
         # T3.2a: Id subsystem — raw impulse stream from Layer 0 sensations + drives
-        _id_stream: dict | None = None
+        _id_stream: dict[str, Any] | None = None
         if self.emotion_cache.full_state is not None:
             _fs = self.emotion_cache.full_state
             _id_stream = {

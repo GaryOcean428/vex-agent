@@ -25,6 +25,7 @@ import logging
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger("vex.harvest_bridge")
 
@@ -37,7 +38,7 @@ _MIN_TEXT_LEN = 20
 def forward_to_harvest(
     text: str,
     source: str,
-    metadata: dict | None = None,
+    metadata: dict[str, Any] | None = None,
     priority: int = 1,
 ) -> None:
     """Write a text chunk to the harvest pending queue.

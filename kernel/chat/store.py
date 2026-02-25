@@ -29,9 +29,9 @@ from pathlib import Path
 from typing import Any, cast
 
 try:
-    import redis  # type: ignore[import-untyped]
+    import redis
 except ImportError:
-    redis = None  # type: ignore[assignment]
+    redis = None  # type: ignore[assignment,unused-ignore]
 
 from ..config.settings import settings
 
@@ -291,7 +291,7 @@ class _RedisBackend:
 # ═══════════════════════════════════════════════════════════════
 
 
-class _JSONLBackend:
+class ConversationStore:
     """JSONL-based conversation persistence on filesystem."""
 
     def __init__(self, data_dir: str | None = None) -> None:
@@ -516,8 +516,10 @@ class RedisConversationStore:
         """Connect to Redis. Raises if redis package is missing or server unreachable."""
         if redis is None:
             raise ImportError("redis package is not installed")
+        import redis as _redis
+
         self._ttl = ttl_days * 86400
-        self._r = redis.from_url(url, decode_responses=True)
+        self._r: _redis.Redis[str] = _redis.from_url(url, decode_responses=True)
         # Probe connection immediately so failure is caught at init time
         self._r.ping()
 
@@ -638,7 +640,7 @@ class RedisConversationStore:
         return int(float(val)) if val else 0
 
 
-def make_conversation_store() -> ConversationStore | RedisConversationStore:
+def make_conversation_store() -> RedisConversationStore | ConversationStore:
     """Factory: return RedisConversationStore if Redis is configured, else JSONL."""
     cfg = settings.redis
     if cfg.enabled and cfg.url:
