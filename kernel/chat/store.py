@@ -13,7 +13,7 @@ Storage layout (JSONL fallback):
         _index.json               — conversation list with metadata
 
 Redis key layout:
-    {prefix}conv:{id}:meta   — JSON hash with conversation metadata
+    {prefix}conv:{id}:meta   — JSON string with conversation metadata
     {prefix}conv:{id}:msgs   — list of JSON-encoded messages
     {prefix}convindex        — sorted set of conv IDs scored by updated_at
 """
@@ -142,18 +142,22 @@ class _RedisBackend:
         return cid
 
     def append_message(self, conv_id: str, message: Message) -> None:
-        if not self._r.exists(self._meta_key(conv_id)):
-            self.create_conversation(conv_id)
-
         if message.token_count == 0:
             message.token_count = estimate_tokens(message.content)
 
+        # Fold meta fetch + message append into a single round-trip
         pipe = self._r.pipeline()
+        pipe.get(self._meta_key(conv_id))
         pipe.rpush(self._msgs_key(conv_id), json.dumps(message.to_dict()))
         pipe.expire(self._msgs_key(conv_id), self._ttl)
+        results = pipe.execute()
 
-        # Update metadata
-        raw = cast(str | None, self._r.get(self._meta_key(conv_id)))
+        raw = cast(str | None, results[0])
+        if raw is None:
+            # Lazily create conversation — avoids separate EXISTS call
+            self.create_conversation(conv_id)
+            raw = cast(str | None, self._r.get(self._meta_key(conv_id)))
+
         if raw:
             meta = Conversation.from_dict(json.loads(raw))
         else:
@@ -172,10 +176,11 @@ class _RedisBackend:
             if len(message.content) > 60:
                 meta.title += "..."
 
-        pipe.set(self._meta_key(conv_id), json.dumps(meta.to_dict()))
-        pipe.expire(self._meta_key(conv_id), self._ttl)
-        pipe.zadd(self._index_key(), {conv_id: meta.updated_at})
-        pipe.execute()
+        pipe2 = self._r.pipeline()
+        pipe2.set(self._meta_key(conv_id), json.dumps(meta.to_dict()))
+        pipe2.expire(self._meta_key(conv_id), self._ttl)
+        pipe2.zadd(self._index_key(), {conv_id: meta.updated_at})
+        pipe2.execute()
 
     def get_conversation(self, conv_id: str) -> dict[str, Any] | None:
         raw = cast(str | None, self._r.get(self._meta_key(conv_id)))
@@ -194,6 +199,8 @@ class _RedisBackend:
         return {**meta, "messages": messages}
 
     def list_conversations(self, limit: int = 50) -> list[dict[str, Any]]:
+        if limit <= 0:
+            return []
         # Sorted set: highest score (most recent) first
         ids = cast(list[str], self._r.zrevrange(self._index_key(), 0, limit - 1))
         result: list[dict[str, Any]] = []
@@ -254,8 +261,14 @@ class _RedisBackend:
         to_remove = count - MAX_CONVERSATIONS
         # Remove oldest (lowest scores)
         oldest = cast(list[str], self._r.zrange(self._index_key(), 0, to_remove - 1))
+        if not oldest:
+            return
+        pipe = self._r.pipeline()
         for cid in oldest:
-            self.delete_conversation(cid)
+            pipe.delete(self._meta_key(cid))
+            pipe.delete(self._msgs_key(cid))
+        pipe.zrem(self._index_key(), *oldest)
+        pipe.execute()
         logger.info("Pruned %d old conversations from Redis", to_remove)
 
 
@@ -484,6 +497,14 @@ class ConversationStore:
 
         if settings.redis.enabled and settings.redis.url:
             try:
+                from redis import RedisError as _RedisError
+            except ImportError:
+                logger.warning("redis package not installed — falling back to JSONL store")
+                self._backend = _JSONLBackend(data_dir)
+                self._backend_name = "jsonl"
+                return
+
+            try:
                 self._backend = _RedisBackend(
                     url=settings.redis.url,
                     prefix=settings.redis.key_prefix,
@@ -491,7 +512,7 @@ class ConversationStore:
                 )
                 self._backend_name = "redis"
                 logger.info("Chat persistence: Redis")
-            except Exception as e:
+            except _RedisError as e:
                 logger.warning("Redis unavailable (%s) — falling back to JSONL store", e)
                 self._backend = _JSONLBackend(data_dir)
                 self._backend_name = "jsonl"

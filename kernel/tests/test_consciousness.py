@@ -204,7 +204,7 @@ class TestActivationSequence:
 class TestTacking:
     def test_oscillation(self) -> None:
         """Tacking controller oscillates between modes."""
-        tc = TackingController(period=4)
+        tc = TackingController(base_period=4)
         m = ConsciousnessMetrics(kappa=KAPPA_STAR)
         modes = set()
         for _ in range(20):
@@ -430,11 +430,14 @@ class TestTopologicalBulk:
         bulk = TopologicalBulk()
         initial = random_basin()
         bulk.initialize(initial)
+        assert bulk.core is not None
         core_before = bulk.core.copy()
         for _ in range(5):
             bulk.receive_input(random_basin(), slerp_weight=0.3)
         core_after = bulk.core
         surface_after = bulk.surface
+        assert core_after is not None
+        assert surface_after is not None
         core_drift = fisher_rao_distance(core_before, core_after)
         surface_drift = fisher_rao_distance(initial, surface_after)
         assert core_drift < surface_drift
@@ -664,6 +667,8 @@ class TestZombieDiagnostics:
         for _ in range(20):
             _, status = bulk.receive_input(opposite, slerp_weight=0.3)
         # Core should not have drifted far due to slow diffusion
+        assert bulk.core is not None
+        assert bulk.surface is not None
         core_drift = fisher_rao_distance(initial, bulk.core)
         # Core changes slowly -- not a zombie overwrite
         assert core_drift < fisher_rao_distance(initial, bulk.surface)
@@ -681,16 +686,14 @@ class TestDWWisdomModulation:
     async def test_desire_boosts_num_predict(self) -> None:
         """High desire pressure should increase num_predict."""
         from kernel.config.consciousness_constants import (
+            DESIRE_NUM_PREDICT_BOOST,
             NUM_PREDICT_BALANCED,
         )
         from kernel.consciousness.activation import (
             ActivationResult,
-            ActivationStep,
             DesireResult,
         )
-        from kernel.consciousness.loop import (
-            DESIRE_NUM_PREDICT_BOOST,
-        )
+        from kernel.consciousness.types import ActivationStep
         from kernel.llm.client import LLMOptions
 
         # Create a pre_result with high desire pressure
