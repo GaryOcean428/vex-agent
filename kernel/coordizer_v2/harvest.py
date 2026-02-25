@@ -260,7 +260,7 @@ class Harvester:
         Less accurate than Transformers — we only get top-k logprobs,
         not the full distribution.
         """
-        import requests  # type: ignore[import-untyped]
+        import requests
 
         logger.info(f"Harvesting via Ollama at {ollama_url}, model={model_name}")
 
