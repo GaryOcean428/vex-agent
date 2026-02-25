@@ -229,8 +229,7 @@ class KernelVoice:
                 boosted_token_ids=set(),
             )
             logger.info(
-                "KernelVoice[%s] deferred bootstrap complete: anchor from "
-                "%d learned observations",
+                "KernelVoice[%s] deferred bootstrap complete: anchor from %d learned observations",
                 self.specialization.value,
                 len(learned_basins),
             )
@@ -677,4 +676,3 @@ class KernelVoiceRegistry:
             "voices": {spec.value: voice.get_state() for spec, voice in self._voices.items()},
             "bank_vocab_size": self._coordizer.vocab_size,
         }
-

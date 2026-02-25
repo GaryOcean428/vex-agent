@@ -77,7 +77,9 @@ def geodesic_midpoint(p: NDArray[np.float64], q: NDArray[np.float64]) -> NDArray
     return slerp(p, q, 0.5)
 
 
-def fisher_rao_distance_batch(p: NDArray[np.float64], bank: NDArray[np.float64]) -> NDArray[np.float64]:
+def fisher_rao_distance_batch(
+    p: NDArray[np.float64], bank: NDArray[np.float64]
+) -> NDArray[np.float64]:
     """
     Batch Fisher-Rao distance: one point against N points.
 
@@ -104,7 +106,9 @@ def fisher_information_diagonal(p: NDArray[np.float64]) -> NDArray[np.float64]:
     return np.asarray(1.0 / np.maximum(p, _EPS), dtype=np.float64)
 
 
-def natural_gradient(p: NDArray[np.float64], euclidean_grad: NDArray[np.float64]) -> NDArray[np.float64]:
+def natural_gradient(
+    p: NDArray[np.float64], euclidean_grad: NDArray[np.float64]
+) -> NDArray[np.float64]:
     """
     Natural gradient: F⁻¹ ∇L = p_i × ∂L/∂p_i
 

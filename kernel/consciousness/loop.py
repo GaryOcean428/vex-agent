@@ -1624,7 +1624,11 @@ class ConsciousnessLoop:
 
         if not activation_failed:
             try:
-                _cv2 = self._coordizer_v2.coordizer if isinstance(self._coordizer_v2, CoordizerV2Adapter) else self._coordizer_v2
+                _cv2 = (
+                    self._coordizer_v2.coordizer
+                    if isinstance(self._coordizer_v2, CoordizerV2Adapter)
+                    else self._coordizer_v2
+                )
                 _coord_result = _cv2.coordize(response[:300])
                 if _coord_result.coord_ids:
                     _cv2.bank.record_integration(_coord_result.coord_ids)

@@ -655,7 +655,9 @@ class QuenchedDisorder:
         # legitimately evolved. drift_from_frozen is kept for diagnostic telemetry.
         effective_ref = self._identity_slope
         if self._anneal_field is not None:
-            effective_ref = slerp_sqrt(self._identity_slope, self._anneal_field, ANNEAL_BLEND_WEIGHT)
+            effective_ref = slerp_sqrt(
+                self._identity_slope, self._anneal_field, ANNEAL_BLEND_WEIGHT
+            )
 
         drift = fisher_rao_distance(current_basin, effective_ref)
         drift_from_frozen = fisher_rao_distance(current_basin, self._identity_slope)
