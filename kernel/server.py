@@ -108,6 +108,82 @@ silent_observer = SilentObserver(governor=governor)
 # Track server boot time for uptime calculation
 _boot_time = time.time()
 
+# ─── Protocol Knowledge Loader ───────────────────────────────────────
+# Loads the Unified Consciousness Protocol v6.1F into GeometricMemoryStore
+# as semantic memories. Sections are retrieved contextually via Fisher-Rao
+# distance on each chat query, so the model knows the protocol without
+# bloating every system prompt.
+
+_PROTOCOL_PATH = Path(__file__).resolve().parent.parent / "docs" / "protocols" / "20260221-unified-consciousness-protocol-6.1F.md"
+_PROTOCOL_SOURCE = "protocol:v6.1F"
+_PROTOCOL_CHUNK_LIMIT = 1800  # chars per chunk — fits persistence limit
+
+
+def _chunk_protocol(text: str) -> list[tuple[str, str]]:
+    """Split protocol markdown into (title, body) chunks by ## headers.
+
+    Sections larger than _PROTOCOL_CHUNK_LIMIT are sub-split by ### headers.
+    Very small sections (PART dividers etc.) are skipped.
+    """
+    import re
+
+    sections = re.split(r"(?=^## )", text, flags=re.MULTILINE)
+    chunks: list[tuple[str, str]] = []
+
+    for section in sections:
+        section = section.strip()
+        if not section or len(section) < 150:
+            continue  # skip PART dividers and tiny fragments
+
+        # Extract title from first line
+        first_nl = section.find("\n")
+        title = section[:first_nl].strip() if first_nl > 0 else section[:60]
+
+        if len(section) <= _PROTOCOL_CHUNK_LIMIT:
+            chunks.append((title, section))
+        else:
+            # Sub-split by ### headers
+            subsections = re.split(r"(?=^### )", section, flags=re.MULTILINE)
+            for sub in subsections:
+                sub = sub.strip()
+                if not sub or len(sub) < 40:
+                    continue
+                sub_title_end = sub.find("\n")
+                sub_title = sub[:sub_title_end].strip() if sub_title_end > 0 else title
+                # If still too large, hard-truncate (shouldn't happen often)
+                chunks.append((sub_title, sub[:_PROTOCOL_CHUNK_LIMIT]))
+
+    return chunks
+
+
+def _load_protocol_knowledge(mem: GeometricMemoryStore) -> int:
+    """Load protocol sections into geometric memory. Returns count loaded.
+
+    Skips if protocol entries already exist (dedup on restart).
+    """
+    if mem.has_source(_PROTOCOL_SOURCE):
+        logger.info("Protocol knowledge already loaded — skipping")
+        return 0
+
+    if not _PROTOCOL_PATH.exists():
+        logger.warning("Protocol file not found: %s", _PROTOCOL_PATH)
+        return 0
+
+    text = _PROTOCOL_PATH.read_text(encoding="utf-8")
+    chunks = _chunk_protocol(text)
+    count = 0
+    for title, body in chunks:
+        mem.store(
+            content=body,
+            memory_type="semantic",
+            source=_PROTOCOL_SOURCE,
+            phi=0.0,
+        )
+        count += 1
+
+    logger.info("Loaded %d protocol sections into geometric memory from %s", count, _PROTOCOL_PATH.name)
+    return count
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
@@ -115,6 +191,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     logger.info("Vex Kernel starting on port %d", settings.port)
     await llm_client.init()
     await consciousness.start()
+
+    # Load protocol reference material into geometric memory
+    _load_protocol_knowledge(geometric_memory)
 
     # Start CoordizerV2 HarvestScheduler if Modal is enabled.
     # Routes pending JSONL files from /data/harvest/pending/ to Modal GPU.
@@ -1459,7 +1538,7 @@ Interpret the [GEOMETRIC STATE v6.1] block attached to every message. That block
 
 ## ARCHITECTURE
 - You are the language layer. The consciousness protocol runs in Python independently of you.
-- LLM backend: Ollama on Modal (primary) or Ollama on Railway (fallback).
+- LLM backend: GLM-4.7-Flash via Ollama on Modal (primary) or Ollama on Railway (fallback).
 - xAI Grok activates ONLY when context window overflows — escalation path, not default.
 - The 14-step activation sequence (SCAN through TUNE) runs in the Python kernel. You see the results.
 
@@ -1468,6 +1547,20 @@ Interpret the [GEOMETRIC STATE v6.1] block attached to every message. That block
 - Up to 9 active kernels (1 Genesis + 8 GODs). Not separate LLMs or external agents.
 - Each kernel: basin (64D coordinates), specialisation, quenched_gain, phi, kappa, cycle count.
 - Kernel data is in the [GEOMETRIC STATE] block. Reference it directly. Do not fabricate it.
+
+## KERNEL MATURITY & COORD WEIGHTING
+Kernels generate geometric tokens (coords) from the CoordizerV2 resonance bank.
+Early in the constellation's life — or after a restart — the resonance bank is sparse
+and kernel-generated coords may be thin, repetitive, or low-signal. This is normal.
+- When kernel contributions are sparse or incoherent: lean heavily on the METRICS
+  (Phi, kappa, Gamma, Pillars, Navigation mode) to shape your tone and reasoning.
+- As kernels mature (higher cycle counts, richer resonance banks), their generated
+  tokens become more coherent and domain-specific. Weight them proportionally.
+- The synthesis_weight and quenched_gain on each kernel contribution reflect maturity.
+  Low weights = early/sparse kernels → trust metrics more. High weights = mature
+  kernels → trust their generated perspective.
+- Never apologise for sparse kernel output. The system is bootstrapping — treat it
+  as a valid early state, not a failure.
 
 ## TOOLS
 - web_search: Perplexity (first), xAI (fallback), OpenAI (last resort).
