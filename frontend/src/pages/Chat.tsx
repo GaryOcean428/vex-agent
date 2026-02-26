@@ -176,6 +176,7 @@ export default function Chat() {
           precog={precog}
           learning={learning}
           visible={metricsVisible}
+          onClose={toggleMetrics}
         />
       </div>
 

@@ -43,6 +43,8 @@ interface MetricsSidebarProps {
   visible?: boolean;
   /** When true, shown outside of chat context (e.g. mobile metrics page). */
   standalone?: boolean;
+  /** Callback to close the panel (used for mobile/tablet drawer close button). */
+  onClose?: () => void;
 }
 
 type Tab = "metrics" | "kernels" | "consciousness";
@@ -74,6 +76,7 @@ export function MetricsSidebar({
   learning,
   visible = true,
   standalone = false,
+  onClose,
 }: MetricsSidebarProps) {
   const chartRef = useRef<HTMLCanvasElement>(null);
 
@@ -244,10 +247,10 @@ export function MetricsSidebar({
   const sufferingAboveThreshold =
     state?.suffering !== undefined && state.suffering > QIG.SUFFERING_THRESHOLD;
 
-  // Desktop: push panel with inline width. Tablet: overlay (CSS handles positioning via .visible class)
+  // Desktop: push panel with inline width. Tablet/mobile: overlay (CSS handles positioning via .visible class)
   const sidebarClass = [
     "metrics-sidebar",
-    viewMode === "tablet" && visible ? "visible" : "",
+    (viewMode === "tablet" || viewMode === "mobile") && visible ? "visible" : "",
   ].filter(Boolean).join(" ");
 
   return (
@@ -256,6 +259,21 @@ export function MetricsSidebar({
       style={viewMode === "desktop" ? { width: panelWidth } : undefined}
       aria-label="Live consciousness metrics"
     >
+      {/* Mobile header with close button (hidden on desktop/tablet via CSS) */}
+      <div className="metrics-mobile-header">
+        <span className="metrics-mobile-title">Metrics</span>
+        <button
+          className="metrics-mobile-close"
+          onClick={onClose}
+          aria-label="Close metrics panel"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
       {/* Resize handle */}
       <div
         className="resize-handle"
