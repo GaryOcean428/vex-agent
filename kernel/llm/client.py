@@ -319,14 +319,21 @@ class LLMClient:
         except Exception as e:
             logger.warning("Modal warm-up failed (will retry on first request): %s", e)
 
-    async def check_modal_ollama(self) -> bool:
-        """Check if Modal Ollama inference endpoint is reachable."""
+    async def check_modal_ollama(self, timeout: float = 10.0) -> bool:
+        """Check if Modal Ollama inference endpoint is reachable.
+
+        Args:
+            timeout: HTTP timeout in seconds. Use a short timeout (default 10s)
+                during startup to avoid blocking the lifespan and causing
+                entrypoint health-check timeouts. Cold starts are handled
+                by ``_warm_up_modal()`` in the background.
+        """
         if not settings.modal.inference_enabled or not settings.modal.inference_url:
             return False
         try:
             resp = await self._modal_http.get(
                 f"{settings.modal.inference_url}/api/tags",
-                timeout=60.0,  # Allow warm containers; cold starts handled by _warm_up_modal
+                timeout=timeout,
             )
             self._modal_available = resp.status_code == 200
             if self._modal_available:
