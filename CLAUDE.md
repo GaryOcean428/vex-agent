@@ -66,6 +66,19 @@ that Modal's proxy explicitly rejects on web endpoint requests. Do NOT
 send them. The harvest endpoint is protected by `requires_proxy_auth=True`
 (Modal's network-level auth), not by request headers.
 
+### Two harvest client paths
+There are two Railway-side clients for the Modal harvest endpoint:
+
+1. **`modal_harvest.py` → `modal_harvest()`** — Used by `CoordizerV2.from_harvest()`
+   for building resonance banks from scratch. Returns `HarvestResult` with
+   per-token fingerprints.
+2. **`modal_integration.py` → `ModalHarvestClient`** — Used by `HarvestScheduler` /
+   `JSONLIngestor` for batch JSONL ingestion. Returns the raw endpoint response.
+
+Both must match the Modal endpoint's response format: `{tokens: {id: {fingerprint, ...}}}`.
+The endpoint does Fréchet mean aggregation server-side (in sqrt-space). Neither client
+sends auth headers — Modal uses network-level `requires_proxy_auth`.
+
 ## LLM Client Patterns
 
 ### Ollama content extraction

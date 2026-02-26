@@ -141,51 +141,33 @@ class ModalHarvestClient:
 
         Returns:
             Raw harvest response dict, or None on failure.
-            Response format:
+            Response format (matches Modal endpoint):
                 {
                     "success": True,
-                    "vocab_size": 32000,
-                    "results": [
-                        {"tokens": [...], "logits": [[...], ...], "token_strings": [...]},
+                    "vocab_size": 65536,
+                    "total_tokens_processed": 12345,
+                    "tokens": {
+                        "42": {
+                            "string": "hello",
+                            "fingerprint": [0.001, 0.002, ...],
+                            "context_count": 15
+                        },
                         ...
-                    ],
-                    "elapsed_seconds": 1.23
+                    },
+                    "elapsed_seconds": 45.2
                 }
         """
         if not self.config.is_configured():
             logger.warning("Modal not configured, skipping harvest")
             return None
 
-        all_results = []
-        batch_size = self.config.batch_size
-        vocab_size = 0
-        total_elapsed = 0.0
-
-        for batch_start in range(0, len(texts), batch_size):
-            batch = texts[batch_start : batch_start + batch_size]
-            result = await self._harvest_batch(batch, max_length)
-
-            if result is None:
-                logger.warning(
-                    f"Batch {batch_start // batch_size} failed, skipping {len(batch)} texts"
-                )
-                continue
-
-            if result.get("success"):
-                all_results.extend(result.get("results", []))
-                vocab_size = result.get("vocab_size", vocab_size)
-                total_elapsed += result.get("elapsed_seconds", 0)
-
-        if not all_results:
+        # Send all texts in a single request — the Modal endpoint
+        # aggregates across all texts internally (Fréchet means per token).
+        result = await self._harvest_batch(texts, max_length)
+        if result is None or not result.get("success"):
             return None
 
-        return {
-            "success": True,
-            "vocab_size": vocab_size,
-            "results": all_results,
-            "elapsed_seconds": total_elapsed,
-            "n_texts": len(all_results),
-        }
+        return result
 
     async def harvest_to_fingerprints(
         self,
