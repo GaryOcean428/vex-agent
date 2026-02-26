@@ -16,7 +16,8 @@ Flow:
     → Railway transforms logits via logits_to_simplex (linear projection)
     → basin coordinates via compress.py
 
-Auth: Modal Proxy Auth Tokens (wk-*/ws-* headers)
+Auth: Modal network-level proxy auth (requires_proxy_auth=True on endpoint).
+      Modal-Token-Id/Secret headers are NOT sent — Modal rejects them.
 """
 
 from __future__ import annotations

@@ -488,7 +488,14 @@ class JSONLIngestor:
         output_path: str,
         result: IngestResult,
     ) -> None:
-        """Route batches to Modal GPU for harvesting."""
+        """Route batches to Modal GPU for harvesting.
+
+        The Modal endpoint aggregates all texts and returns per-token
+        Fréchet-mean fingerprints.  We compute a single aggregate basin
+        on Δ⁶³ from those fingerprints and assign it to every entry in
+        the batch.  For finer per-entry resolution, use the local
+        CoordizerV2 path instead.
+        """
         for batch in batches:
             try:
                 raw = await self.modal_client.harvest(batch.texts)
@@ -500,8 +507,11 @@ class JSONLIngestor:
                     )
                     continue
 
-                # Convert raw logits to basin coordinates
-                basins = self._logits_to_basins(raw)
+                # Compute aggregate basin from fingerprints
+                basin = self._fingerprints_to_basin(raw)
+                basins: list[NDArray[np.float64] | None] = [
+                    basin for _ in batch.entries
+                ]
                 written = write_coordized_jsonl(
                     output_path,
                     batch.entries,
@@ -617,36 +627,48 @@ class JSONLIngestor:
                 result.batches_failed += 1
                 result.errors.append(f"Ollama write error: {e}")
 
-    def _logits_to_basins(
-        self,
+    @staticmethod
+    def _fingerprints_to_basin(
         raw: dict[str, Any],
-    ) -> list[NDArray[np.float64] | None]:
-        """Convert raw Modal harvest response to basin coordinates.
+    ) -> NDArray[np.float64] | None:
+        """Compute a single Δ⁶³ basin from Modal harvest fingerprints.
 
-        Takes the raw logits from each result entry and projects
-        them onto the probability simplex Δ⁶³.
+        The Modal endpoint returns per-token Fréchet-mean fingerprints
+        on Δ^(V-1). We compute the Fréchet mean of all fingerprints,
+        then project to Δ⁶³ via to_simplex (truncate + renormalise).
+
+        Returns None if no fingerprints were returned.
         """
-        basins: list[NDArray[np.float64] | None] = []
-        results = raw.get("results", [])
+        from .geometry import frechet_mean
 
-        for entry in results:
-            logits = entry.get("logits", [])
-            if logits and len(logits) > 0:
-                # Take the last-token logits and project to simplex
-                raw_logits = np.array(
-                    logits[-1] if isinstance(logits[0], list) else logits, dtype=np.float64
-                )
-                # Truncate or pad to BASIN_DIM
-                if len(raw_logits) >= BASIN_DIM:
-                    raw_logits = raw_logits[:BASIN_DIM]
-                else:
-                    raw_logits = np.pad(
-                        raw_logits,
-                        (0, BASIN_DIM - len(raw_logits)),
-                        constant_values=1e-12,
-                    )
-                basins.append(to_simplex(raw_logits))
-            else:
-                basins.append(None)
+        tokens = raw.get("tokens", {})
+        if not tokens:
+            return None
 
-        return basins
+        _EPS = 1e-12
+        fps: list[NDArray[np.float64]] = []
+        for token_data in tokens.values():
+            fp = token_data.get("fingerprint")
+            if fp is None:
+                continue
+            arr = np.array(fp, dtype=np.float64)
+            arr = np.maximum(arr, _EPS)
+            arr = arr / arr.sum()
+            fps.append(arr)
+
+        if not fps:
+            return None
+
+        # Fréchet mean on Δ^(V-1)
+        mean_fp = frechet_mean(fps)
+
+        # Project to Δ⁶³: take first BASIN_DIM components, renormalise
+        if len(mean_fp) >= BASIN_DIM:
+            basin = mean_fp[:BASIN_DIM]
+        else:
+            basin = np.pad(
+                mean_fp,
+                (0, BASIN_DIM - len(mean_fp)),
+                constant_values=_EPS,
+            )
+        return to_simplex(basin)
