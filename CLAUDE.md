@@ -40,6 +40,23 @@ inference (GLM-4.7-Flash) and coordizer harvesting (LFM2.5-1.2B-Thinking).
 - Health endpoint is a public GET — no auth needed
 - Railway calls Modal via `MODAL_HARVEST_URL` env var
 
+### Model Selection
+The Modal harvest endpoint supports dynamic model selection:
+
+1. **Default model** (env var): Set `HARVEST_MODEL_ID` in Modal env or use hardcoded default
+   - Loaded at container start for fast cold starts
+   - Default: `zai-org/GLM-4.7-Flash` (matches inference model tokenizer)
+   - Override: `HARVEST_MODEL_ID=LiquidAI/LFM2.5-1.2B-Thinking` (faster, smaller)
+
+2. **Per-request model** (JSON body): Railway can specify model in request payload
+   - Field: `"model_id": "zai-org/GLM-4.7-Flash"`
+   - Model is loaded on-demand and cached for subsequent requests
+   - Multiple models can coexist in cache (GPU memory permitting)
+
+3. **Fallback chain**: request `model_id` → current active model → env default
+
+The health endpoint returns `cached_models` array showing all loaded models.
+
 ### Modal CLI in Claude Code web sessions
 The Modal CLI needs to reach `api.modal.com`. In sandboxed environments
 (Claude Code on the web), outbound HTTPS may be blocked or require a

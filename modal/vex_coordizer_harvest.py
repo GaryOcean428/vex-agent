@@ -34,12 +34,13 @@ import modal
 
 # --- Configuration --------------------------------------------------------
 # HARVEST_MODEL_ID: HuggingFace model to load for probability-distribution
-# extraction.  Default is LFM2.5-1.2B-Thinking (1.2B params, fits A10G
-# easily, 65K vocab).  Override to "zai-org/GLM-4.7-Flash" when token-ID
-# alignment with the Modal inference model matters for resonance bank
-# fingerprints.  See kernel/config/settings.py GPUHarvestConfig for the
-# Railway-side mirror of this setting.
-HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "LiquidAI/LFM2.5-1.2B-Thinking")
+# extraction.  Default is GLM-4.7-Flash (4.7B params, fits A10G, 65K vocab).
+# GLM-4.7-Flash ensures token-ID alignment with the Modal inference model
+# so resonance bank fingerprints use the same vocabulary.  Fallback option:
+# "LiquidAI/LFM2.5-1.2B-Thinking" (smaller, faster, but different tokenizer).
+# See kernel/config/settings.py GPUHarvestConfig for the Railway-side
+# mirror of this setting.
+HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "zai-org/GLM-4.7-Flash")
 
 app = modal.App("vex-coordizer-harvest")
 
@@ -67,42 +68,90 @@ ml_image = modal.Image.debian_slim(python_version="3.14").pip_install(
 class CoordizerHarvester:
     """GPU-backed harvester for CoordizerV2.
 
-    Loads model on container start, then handles harvest requests
-    via FastAPI endpoint. Model weights are cached on Modal Volume
-    to avoid re-downloading on cold starts.
+    Supports dynamic model selection per request with in-memory caching.
+    Default model is loaded on container start for fast cold starts.
+    Additional models can be loaded on-demand if specified in requests.
     """
 
     @modal.enter()
     def load_model(self):
-        """Load model on container start (runs once per container)."""
+        """Load default model on container start (runs once per container)."""
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        model_id = HARVEST_MODEL_ID
+        # Initialize model cache: {model_id: (tokenizer, model, vocab_size)}
+        self._model_cache: dict[str, tuple] = {}
+
+        # Load default model
+        default_model_id = HARVEST_MODEL_ID
         cache_dir = "/models/hub"
 
-        print(f"Loading model: {model_id}")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
-        self.model = AutoModelForCausalLM.from_pretrained(
+        print(f"Loading default model: {default_model_id}")
+        tokenizer = AutoTokenizer.from_pretrained(default_model_id, cache_dir=cache_dir)
+        model = AutoModelForCausalLM.from_pretrained(
+            default_model_id,
+            cache_dir=cache_dir,
+            device_map="auto",
+            torch_dtype=torch.bfloat16,
+        )
+        model.eval()
+        vocab_size = tokenizer.vocab_size
+
+        # Store in cache
+        self._model_cache[default_model_id] = (tokenizer, model, vocab_size)
+
+        # Set as current active model
+        self.tokenizer = tokenizer
+        self.model = model
+        self.vocab_size = vocab_size
+        self.current_model_id = default_model_id
+
+        print(f"Default model loaded. Vocab size: {vocab_size}")
+
+        # Commit volume so weights persist across cold starts
+        model_volume.commit()
+
+    def _load_model(self, model_id: str) -> tuple:
+        """Load a model on-demand and cache it.
+
+        Returns: (tokenizer, model, vocab_size)
+        """
+        if model_id in self._model_cache:
+            print(f"Using cached model: {model_id}")
+            return self._model_cache[model_id]
+
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        cache_dir = "/models/hub"
+        print(f"Loading new model: {model_id}")
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+        model = AutoModelForCausalLM.from_pretrained(
             model_id,
             cache_dir=cache_dir,
             device_map="auto",
             torch_dtype=torch.bfloat16,
         )
-        self.model.eval()
-        self.vocab_size = self.tokenizer.vocab_size
-        print(f"Model loaded. Vocab size: {self.vocab_size}")
+        model.eval()
+        vocab_size = tokenizer.vocab_size
 
-        # Commit volume so weights persist across cold starts
+        # Cache for future requests
+        self._model_cache[model_id] = (tokenizer, model, vocab_size)
+
+        print(f"Model {model_id} loaded. Vocab size: {vocab_size}")
         model_volume.commit()
+
+        return tokenizer, model, vocab_size
 
     @modal.fastapi_endpoint(method="GET")
     async def health(self):
         """Health check — returns model metadata once loaded."""
         return {
             "status": "ok",
-            "model_id": HARVEST_MODEL_ID,
+            "current_model_id": getattr(self, "current_model_id", None),
             "vocab_size": getattr(self, "vocab_size", None),
+            "cached_models": list(getattr(self, "_model_cache", {}).keys()),
         }
 
     @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
@@ -112,6 +161,7 @@ class CoordizerHarvester:
         Request JSON body:
             {
                 "texts": [str, ...],
+                "model_id": str (optional, uses default if not specified),
                 "batch_size": int (default 32),
                 "max_length": int (default 512),
                 "min_contexts": int (default 5)
@@ -120,6 +170,7 @@ class CoordizerHarvester:
         Response:
             {
                 "success": true,
+                "model_id": "zai-org/GLM-4.7-Flash",
                 "vocab_size": 65536,
                 "total_tokens_processed": 12345,
                 "tokens": {
@@ -142,12 +193,31 @@ class CoordizerHarvester:
 
         body = await request.json()
         texts = body.get("texts", [])
+        requested_model = body.get("model_id", None)
         batch_size = body.get("batch_size", 32)
         max_length = body.get("max_length", 512)
         min_contexts = body.get("min_contexts", 5)
 
         if not texts:
             return {"success": False, "error": "No texts provided"}
+
+        # Select model: request model_id → current model → default
+        target_model_id = requested_model or self.current_model_id
+
+        # Load model if not already active
+        if target_model_id != self.current_model_id:
+            try:
+                tokenizer, model, vocab_size = self._load_model(target_model_id)
+                # Switch active model
+                self.tokenizer = tokenizer
+                self.model = model
+                self.vocab_size = vocab_size
+                self.current_model_id = target_model_id
+            except Exception as e:
+                return {
+                    "success": False,
+                    "error": f"Failed to load model {target_model_id}: {e}",
+                }
 
         EPS = 1e-12
 
@@ -226,6 +296,7 @@ class CoordizerHarvester:
 
         return {
             "success": True,
+            "model_id": self.current_model_id,
             "vocab_size": self.vocab_size,
             "total_tokens_processed": total_tokens,
             "tokens": tokens_response,

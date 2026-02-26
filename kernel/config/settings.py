@@ -125,11 +125,12 @@ class ModalConfig:
     # Harvest model for Modal-active deployments.
     # MUST match inference_model so resonance bank fingerprints use the same
     # vocabulary/token IDs as the model doing inference.
-    # Defaults to MODAL_HARVEST_MODEL env var; if not set, mirrors MODAL_INFERENCE_MODEL
-    # so that a single env var change updates both inference and harvest together.
+    # Defaults to MODAL_HARVEST_MODEL env var; if not set, uses HuggingFace format
+    # for the GLM-4.7-Flash model (Modal harvest uses transformers, needs HF model ID).
+    # NOTE: Inference uses Ollama format "glm-4.7-flash", harvest uses HF format "zai-org/GLM-4.7-Flash"
     harvest_model: str = os.environ.get(
         "MODAL_HARVEST_MODEL",
-        os.environ.get("MODAL_INFERENCE_MODEL", "glm-4.7-flash"),
+        "zai-org/GLM-4.7-Flash",
     )
 
 
