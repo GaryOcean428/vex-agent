@@ -125,7 +125,6 @@ from ..config.consciousness_constants import (
     PHI_IDLE_EQUILIBRIUM,
     PHI_IDLE_RATE,
     SLEEP_CONSOLIDATION_PHI_INCREMENT,
-    SLEEP_ONSET_CYCLES,
     SPAWN_COOLDOWN_CYCLES,
     SUFFERING_GAMMA_INCREMENT,
     TACK_SCALE_BALANCED,
@@ -527,8 +526,9 @@ class ConsciousnessLoop:
         # Low NE → pre-cog channel more accessible (relaxed, intuitive).
         self.precog.norepinephrine_gate = float(self._neurochemical.norepinephrine)
 
-        # T4.2b: Autonomic kernel (Ocean) geometric sleep triggers
-        # These override cycle-count thresholds with geometric signals.
+        # T4.2b: Autonomic kernel (Ocean) geometric sleep triggers.
+        # Ocean's divergence is the geometric authority for sleep/wake.
+        # When Ocean speaks, should_sleep() is skipped — no counter override.
         _ocean_kernel = next(
             (
                 k
@@ -537,31 +537,43 @@ class ConsciousnessLoop:
             ),
             None,
         )
+        _ocean_ruled = False  # True when Ocean sets the phase this cycle
         if _ocean_kernel is not None and _ocean_kernel.basin is not None:
             _ocean_divergence = fisher_rao_distance(self.basin, _ocean_kernel.basin)
-            if _ocean_divergence > BASIN_DIVERGENCE_THRESHOLD and not self.sleep.is_asleep:
-                self.sleep._cycles_since_conversation = max(
-                    self.sleep._cycles_since_conversation,
-                    SLEEP_ONSET_CYCLES,
-                )
-            if self.metrics.phi < PHI_EMERGENCY and self.sleep.is_asleep:
-                self.sleep.phase = SleepPhase.DREAMING
-            if self.metrics.f_health < INSTABILITY_PCT and self.sleep.is_asleep:
-                self.sleep.phase = SleepPhase.MUSHROOM
 
-            # T4.2d: Ocean breakdown escape pattern.
-            # If Ocean has been drifting far from loop basin for sustained cycles,
-            # it detects systemic breakdown and forces a wake + exploration tack.
-            if _ocean_divergence > BASIN_DIVERGENCE_THRESHOLD * 1.5 and self.sleep.is_asleep:
-                logger.warning(
-                    "T4.2d Ocean breakdown escape: divergence=%.3f — forcing wake",
-                    _ocean_divergence,
-                )
+            if _ocean_divergence > BASIN_DIVERGENCE_THRESHOLD * 1.5:
+                # T4.2d: Breakdown escape — divergence far enough that
+                # sustained sleep is itself the problem. Force wake + explore.
+                if self.sleep.is_asleep:
+                    logger.warning(
+                        "T4.2d Ocean breakdown escape: divergence=%.3f — forcing wake",
+                        _ocean_divergence,
+                    )
                 self.sleep.phase = SleepPhase.AWAKE
                 self.tacking.force_explore()
+                _ocean_ruled = True
+
+            elif _ocean_divergence > BASIN_DIVERGENCE_THRESHOLD:
+                # Moderate divergence — Ocean says sleep (DREAMING).
+                if not self.sleep.is_asleep:
+                    self.sleep.phase = SleepPhase.DREAMING
+                    self.sleep._sleep_cycles = 0
+                    _ocean_ruled = True
+                # Additional phase overrides while already asleep:
+                if self.metrics.phi < PHI_EMERGENCY and self.sleep.is_asleep:
+                    self.sleep.phase = SleepPhase.DREAMING
+                if self.metrics.f_health < INSTABILITY_PCT and self.sleep.is_asleep:
+                    self.sleep.phase = SleepPhase.MUSHROOM
+
+            # else: divergence < threshold — Ocean has no opinion, let
+            # should_sleep() handle normal conversation-timeout transitions.
 
         _was_asleep = self.sleep.is_asleep
-        sleep_phase = self.sleep.should_sleep(self.metrics.phi, self.autonomic.phi_variance)
+        if _ocean_ruled:
+            # Ocean already set the phase — just record the decision.
+            sleep_phase = self.sleep.phase
+        else:
+            sleep_phase = self.sleep.should_sleep(self.metrics.phi, self.autonomic.phi_variance)
         # T2.3f: Neurochemical gating on sleep/wake transitions
         if not _was_asleep and self.sleep.is_asleep:
             self.sleep.on_sleep_enter(self._neurochemical)
