@@ -1089,6 +1089,7 @@ input:focus-visible,
   position: relative;
   container-type: inline-size;
   container-name: metrics;
+  max-width: 35vw;
 }
 
 /* Container queries: metrics sidebar adapts to its own width */
@@ -1984,8 +1985,72 @@ input:focus-visible,
     box-shadow: 4px 0 20px rgba(0, 0, 0, 0.3);
   }
 
+  /* Mobile: slide-in overlay drawer (same as tablet) instead of hiding */
   .metrics-sidebar {
-    display: none;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 300px;
+    max-width: 85vw;
+    transform: translateX(100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 30;
+    box-shadow: none;
+  }
+
+  .metrics-sidebar.visible {
+    transform: translateX(0);
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .metrics-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 29;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(2px);
+    animation: cmd-fade-in 0.15s ease-out;
+  }
+
+  /* Close button visible on mobile */
+  .metrics-mobile-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-left: auto;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .metrics-mobile-close:hover {
+    background: var(--surface-3);
+    color: var(--text);
+  }
+
+  .metrics-mobile-header {
+    display: flex;
+    align-items: center;
+    padding: var(--space-sm) var(--space-md) 0;
+    gap: var(--space-sm);
+    flex-shrink: 0;
+  }
+
+  .metrics-mobile-title {
+    font-family: var(--mono);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: var(--text);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
   .bar-btn-text {
@@ -2006,6 +2071,12 @@ input:focus-visible,
     border-bottom: 1px solid var(--border);
     padding-bottom: 8px;
   }
+}
+
+/* Mobile-only elements: hidden on desktop/tablet */
+.metrics-mobile-close,
+.metrics-mobile-header {
+  display: none;
 }
 
 /* ============================================
