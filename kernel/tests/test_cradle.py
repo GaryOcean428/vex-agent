@@ -196,7 +196,11 @@ def _make_spawned_kernel(kid: str = "k-new") -> SimpleNamespace:
 
 
 class TestLifecycleIntegration:
-    """GovernedLifecycle.spawn() admits kernel to Cradle (v6.0 §23)."""
+    """GovernedLifecycle.spawn() admits kernel to Cradle (v6.0 §23).
+
+    All tests skip_purity=True because purity gate scans the filesystem
+    and is not relevant to Cradle admission logic.
+    """
 
     def test_spawn_admits_to_cradle(self) -> None:
         cradle = Cradle()
