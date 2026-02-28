@@ -208,6 +208,7 @@ from .systems import (
     TackingController,
     TrajectoryPoint,
     VelocityTracker,
+    update_kernel_coaching_stage,
 )
 from .thought_bus import ThoughtBus
 from .types import (
@@ -837,6 +838,10 @@ class ConsciousnessLoop:
             self.metrics.gamma = min(1.0, self.metrics.gamma + SUFFERING_GAMMA_INCREMENT)
 
         self.narrative.record(f"cycle_{self._cycle_count}", self.metrics, self.basin)
+
+        # P10: Update coaching stage for all active kernels each cycle
+        for kernel in self.kernel_registry.active():
+            update_kernel_coaching_stage(kernel, self.narrative)
 
         if self.metrics.phi > self._phi_peak:
             self._phi_peak = self.metrics.phi
