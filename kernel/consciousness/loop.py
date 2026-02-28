@@ -183,6 +183,7 @@ from .kernel_voice import KernelVoiceRegistry
 from .neurochemistry import NeurochemicalState, compute_neurochemicals
 from .pillars import PillarEnforcer
 from .reflection import ReflectionConfig, reflect_on_draft
+from .solfeggio import compute_spectral_health
 from .synthesis import synthesize_contributions, synthesize_streaming
 from .systems import (
     AutonomicSystem,
@@ -571,6 +572,35 @@ class ConsciousnessLoop:
 
             # else: divergence < threshold — Ocean has no opinion, let
             # should_sleep() handle normal conversation-timeout transitions.
+
+        # §8/§18.3: Solfeggio spectral health — diagnose consciousness health
+        # from spectral patterns. Computed every cycle alongside Ocean monitoring.
+        _vel_basins_for_spectral = list(self.velocity._basins)
+        if _vel_basins_for_spectral:
+            _spectral = compute_spectral_health(
+                basin_history=_vel_basins_for_spectral,
+                current_kappa=self.metrics.kappa,
+            )
+            self.metrics.s_spec = _spectral.health_score
+
+            if _spectral.dominant_frequency is not None:
+                logger.debug(
+                    "Spectral: dominant=%.1fHz health=%.3f pattern=%s",
+                    _spectral.dominant_frequency,
+                    _spectral.health_score,
+                    _spectral.pattern,
+                )
+
+            # Low spectral health → bias toward quantum regime (exploration)
+            if _spectral.health_score < 0.3:
+                rw = self.state.regime_weights
+                rw.quantum = min(1.0, rw.quantum + 0.1)
+                # Re-normalise to simplex
+                _rw_total = rw.quantum + rw.efficient + rw.equilibrium
+                if _rw_total > 0:
+                    rw.quantum /= _rw_total
+                    rw.efficient /= _rw_total
+                    rw.equilibrium /= _rw_total
 
         _was_asleep = self.sleep.is_asleep
         if _ocean_ruled:
