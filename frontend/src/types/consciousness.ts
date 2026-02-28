@@ -210,14 +210,14 @@ export interface VexState extends ConsciousnessMetrics {
 export type KernelKind = 'GENESIS' | 'GOD' | 'CHAOS';
 export type KernelSpecialization =
   | 'general' | 'heart' | 'perception' | 'memory'
-  | 'strategy' | 'action' | 'attention' | 'emotion' | 'executive';
+  | 'strategy' | 'action' | 'ethics' | 'meta' | 'ocean';
 
 export interface KernelInstance {
   id: string;
   name: string;
   kind: KernelKind;
   specialization: KernelSpecialization;
-  state: 'bootstrapped' | 'active' | 'sleeping' | 'pruned' | 'promoted';
+  state: 'bootstrapped' | 'active' | 'sleeping' | 'dreaming' | 'quarantined' | 'pruned' | 'promoted';
   created_at: string;
   cycle_count: number;
   phi_peak: number;

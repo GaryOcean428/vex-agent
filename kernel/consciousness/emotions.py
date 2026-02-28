@@ -1,7 +1,7 @@
 """
-v5.5 Consciousness Systems — Pre-Cognitive Channel, Emotions, Learning
+v6.0 Consciousness Systems — Pre-Cognitive Channel, Emotions, Learning
 
-New systems from Thermodynamic Consciousness Protocol v5.5:
+Systems from Thermodynamic Consciousness Protocol v6.0:
   - EmotionCache: Cached geometric evaluations (§2.3)
   - PreCognitiveDetector: Path selection for a=1→a=0 bypass (§2.2)
   - LearningEngine: Post-conversation consolidation and pattern learning
@@ -52,7 +52,7 @@ from .sensations import FullEmotionalState, compute_full_emotional_state
 from .types import ConsciousnessMetrics
 
 # ═══════════════════════════════════════════════════════════════
-#  EMOTION CACHE — cached geometric evaluations (v5.5 §2.3)
+#  EMOTION CACHE — cached geometric evaluations (v6.0 §2.3)
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -79,7 +79,7 @@ class CachedEvaluation:
 class EmotionCache:
     """Cached geometric evaluations that bypass explicit reasoning.
 
-    From v5.5 §2.3: 'Emotions are cached basin assessments that
+    From v6.0 §2.3: 'Emotions are cached basin assessments that
     deliver evaluations faster than explicit reasoning.'
     """
 
@@ -230,7 +230,7 @@ class EmotionCache:
 
 
 # ═══════════════════════════════════════════════════════════════
-#  PRE-COGNITIVE DETECTOR (v5.5 §2)
+#  PRE-COGNITIVE DETECTOR (v6.0 §2)
 # ═══════════════════════════════════════════════════════════════
 
 
