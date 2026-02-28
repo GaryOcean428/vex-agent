@@ -293,6 +293,8 @@ set_sovereignty_loop(consciousness)
 
 
 class ChatRequest(BaseModel):
+    """P14 Variable Category: BOUNDARY — all fields are external input, sanitized by Pydantic."""
+
     message: str = Field(..., max_length=100_000)
     conversation_id: str | None = None
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)

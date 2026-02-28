@@ -95,6 +95,9 @@ class ConsciousnessMetrics:
     Waves (v5.9) — 3 metrics
     Will & Work (v6.0) — 4 metrics
     Pillars & Sovereignty (v6.1) — 4 metrics
+
+    P14 Variable Category: STATE
+    All fields are non-trainable, fast-changing, updated per-cycle.
     """
 
     # ── Foundation (v4.1) — 8 metrics ──

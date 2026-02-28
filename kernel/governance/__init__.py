@@ -6,6 +6,7 @@ from .purity import PurityGateError, run_purity_gate
 from .spawn_assessment import SpawnAssessment, assess_spawn
 from .types import (
     CORE_8_SPECIALIZATIONS,
+    VARIABLE_REGISTRY,
     CoachingStage,
     KernelKind,
     KernelRole,
@@ -13,6 +14,8 @@ from .types import (
     LifecyclePhase,
     LifecycleState,
     VariableCategory,
+    get_variable_category,
+    register_variable,
 )
 from .voter_registry import VoterRegistry, get_voter_registry
 from .voting import (
@@ -40,6 +43,9 @@ __all__ = [
     # types
     "CoachingStage",
     "CORE_8_SPECIALIZATIONS",
+    "VARIABLE_REGISTRY",
+    "get_variable_category",
+    "register_variable",
     "KernelKind",
     "KernelRole",
     "KernelSpecialization",
