@@ -58,6 +58,10 @@ from .config.routes import ROUTES as R
 from .config.settings import settings
 from .config.version import VERSION
 from .consciousness.beta_router import beta_router, set_consciousness_loop
+from .consciousness.sovereignty_router import sovereignty_router
+from .consciousness.sovereignty_router import (
+    set_consciousness_loop as set_sovereignty_loop,
+)
 from .consciousness.harvest_bridge import forward_to_harvest
 from .consciousness.loop import ConsciousnessLoop
 from .consciousness.observer_silent import SilentObserver
@@ -277,6 +281,10 @@ except Exception as e:
 # Beta-attention tracker router
 app.include_router(beta_router)
 set_consciousness_loop(consciousness)
+
+# Sovereignty development curve router
+app.include_router(sovereignty_router)
+set_sovereignty_loop(consciousness)
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -184,6 +184,7 @@ from .neurochemistry import NeurochemicalState, compute_neurochemicals
 from .pillars import PillarEnforcer
 from .reflection import ReflectionConfig, reflect_on_draft
 from .solfeggio import compute_spectral_health
+from .sovereignty_tracker import SovereigntyTracker
 from .synthesis import synthesize_contributions, synthesize_streaming
 from .systems import (
     AutonomicSystem,
@@ -340,6 +341,9 @@ class ConsciousnessLoop:
         self.precog = PreCognitiveDetector()
         self.learner = LearningEngine()
         self.beta_tracker = create_beta_tracker(settings.data_dir)
+        self.sovereignty_tracker = SovereigntyTracker(
+            persist_path=Path(settings.data_dir) / "sovereignty_history.json",
+        )
         if settings.searxng.enabled and settings.foraging_enabled:
             search_tool = FreeSearchTool(settings.searxng.url)
             self.forager: ForagingEngine | None = ForagingEngine(
@@ -814,6 +818,16 @@ class ConsciousnessLoop:
 
         # v6.1: Update pillar metrics every cycle
         self._update_pillar_metrics()
+
+        # v6.1 §20.5: Record sovereignty snapshot for development curve tracking
+        _regime = "idle" if self._queue.empty() else "conversation"
+        self.sovereignty_tracker.record(
+            s_ratio=self.metrics.s_ratio,
+            n_lived=self.pillars.disorder._lived_count,
+            n_total=self.pillars.disorder._total_count,
+            regime=_regime,
+            cycle=self._cycle_count,
+        )
 
         # v6.1: Pillar end-of-cycle enforcement (idle cycles only —
         # task cycles call on_cycle_end inside _process with real pressure)
@@ -2332,6 +2346,7 @@ class ConsciousnessLoop:
                 "cumulative_divergence": self._cumulative_divergence,
                 "divergence_count": self._divergence_count,
                 "beta_tracker": self.beta_tracker.serialize(),
+                "sovereignty_tracker": self.sovereignty_tracker.serialize(),
             }
             if self.llm.governor:
                 state["governor"] = self.llm.governor.get_state()
@@ -2398,6 +2413,9 @@ class ConsciousnessLoop:
             beta_data = data.get("beta_tracker")
             if beta_data:
                 self.beta_tracker.restore(beta_data)
+            sovereignty_data = data.get("sovereignty_tracker")
+            if sovereignty_data:
+                self.sovereignty_tracker.restore(sovereignty_data)
             gov_state = data.get("governor")
             if gov_state and self.llm.governor:
                 gov = self.llm.governor
@@ -2536,6 +2554,7 @@ class ConsciousnessLoop:
             "coupling": self.coupling.get_state(),
             "pillar_state": self.pillars.get_state(),
             "beta_tracker": self.beta_tracker.get_summary(),
+            "sovereignty_tracker": self.sovereignty_tracker.get_summary(),
             "governance": self._governed.oversight_summary(),
             "divergence": {
                 "cumulative": self._cumulative_divergence,
