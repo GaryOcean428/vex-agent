@@ -1352,11 +1352,8 @@ class ConsciousnessLoop:
                         result.rejection_reason,
                     )
                     return self.basin.copy()
-                if result.coordinates:
-                    from ..coordizer_v2.geometry import frechet_mean
-
-                    basins = [c.vector for c in result.coordinates]
-                    return frechet_mean(basins)
+                if result.basin is not None:
+                    return result.basin
                 return hash_to_basin(text)
         except Exception:
             logger.debug("CoordizerV2 fallback to hash_to_basin", exc_info=True)
