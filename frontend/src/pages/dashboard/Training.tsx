@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import MetricCard from "../../components/MetricCard.tsx";
 import { API } from "../../config/api-routes.ts";
 import { useTrainingStats } from "../../hooks/index.ts";
@@ -23,92 +23,189 @@ const PROCESSING_MODES = [
   { value: "deep", label: "Deep (full extraction)" },
 ] as const;
 
-export default function Training() {
-  const { data: stats, loading } = useTrainingStats();
+/** Per-file upload state for bulk tracking */
+interface FileUploadJob {
+  file: File;
+  jobId: string | null;
+  status: "queued" | "uploading" | "processing" | "done" | "error";
+  result: TrainingUploadResponse | null;
+}
 
-  const [file, setFile] = useState<File | null>(null);
+export default function Training() {
+  const { data: stats, loading, refetch } = useTrainingStats();
+
+  const [files, setFiles] = useState<File[]>([]);
   const [category, setCategory] = useState("curriculum");
   const [mode, setMode] = useState<string>("standard");
   const [e8Prim, setE8Prim] = useState<string>("");
   const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] =
-    useState<TrainingUploadResponse | null>(null);
+  const [jobs, setJobs] = useState<FileUploadJob[]>([]);
   const [exportData, setExportData] = useState<{ count: number } | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Poll active jobs every 2s
+  useEffect(() => {
+    const activeJobs = jobs.filter(
+      (j) => j.status === "processing" && j.jobId,
+    );
+    if (activeJobs.length === 0) {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      return;
+    }
+
+    if (pollRef.current) return; // already polling
+
+    pollRef.current = setInterval(async () => {
+      const stillActive = jobs.filter(
+        (j) => j.status === "processing" && j.jobId,
+      );
+      if (stillActive.length === 0) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+        return;
+      }
+
+      for (const job of stillActive) {
+        try {
+          const resp = await fetch(
+            API.trainingUploadStatus(job.jobId!),
+          );
+          if (!resp.ok) continue;
+          const data: TrainingUploadResponse = await resp.json();
+          if (data.status !== "processing") {
+            setJobs((prev) =>
+              prev.map((j) =>
+                j.jobId === job.jobId
+                  ? { ...j, status: "done", result: data }
+                  : j,
+              ),
+            );
+          }
+        } catch {
+          /* network hiccup — retry next tick */
+        }
+      }
+    }, 2000);
+
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [jobs]);
+
+  // Refresh stats when all jobs complete
+  useEffect(() => {
+    const allDone =
+      jobs.length > 0 &&
+      jobs.every((j) => j.status === "done" || j.status === "error");
+    if (allDone && refetch) {
+      refetch();
+    }
+  }, [jobs, refetch]);
 
   const handleUpload = useCallback(async () => {
-    if (!file || uploading) return;
+    if (files.length === 0 || uploading) return;
     setUploading(true);
-    setUploadResult(null);
-    if (pollRef.current) clearInterval(pollRef.current);
 
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("category", category);
-      formData.append("mode", mode);
-      if (e8Prim) formData.append("e8_override", e8Prim);
+    // Initialize job entries for all selected files
+    const initialJobs: FileUploadJob[] = files.map((f) => ({
+      file: f,
+      jobId: null,
+      status: "queued" as const,
+      result: null,
+    }));
+    setJobs(initialJobs);
 
-      const resp = await fetch(API.trainingUpload, {
-        method: "POST",
-        body: formData,
-      });
-      if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
-      const data = await resp.json();
+    // Upload sequentially to avoid overwhelming the backend
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
 
-      // Backend returns immediately with {status:"processing", job_id}
-      if (data.status === "processing" && data.job_id) {
-        setUploadResult({
-          ...data,
-          chunks_written: 0,
-          enriched: 0,
-          qa_pairs: 0,
-          category,
-          mode,
-          processing_time_s: 0,
+      // Mark as uploading
+      setJobs((prev) =>
+        prev.map((j, idx) =>
+          idx === i ? { ...j, status: "uploading" } : j,
+        ),
+      );
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("category", category);
+        formData.append("mode", mode);
+        if (e8Prim) formData.append("e8_override", e8Prim);
+
+        const resp = await fetch(API.trainingUpload, {
+          method: "POST",
+          body: formData,
         });
-        // Poll for completion every 2s
-        pollRef.current = setInterval(async () => {
-          try {
-            const pollResp = await fetch(
-              API.trainingUploadStatus(data.job_id),
-            );
-            if (!pollResp.ok) return;
-            const job: TrainingUploadResponse = await pollResp.json();
-            if (job.status !== "processing") {
-              if (pollRef.current) clearInterval(pollRef.current);
-              pollRef.current = null;
-              setUploadResult(job);
-              setUploading(false);
-              setFile(null);
-            }
-          } catch {
-            /* network hiccup — retry on next tick */
-          }
-        }, 2000);
-      } else {
-        // Immediate result (e.g. validation error or JSONL pass-through)
-        setUploadResult(data as TrainingUploadResponse);
-        setFile(null);
-        setUploading(false);
+        if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+        const data = await resp.json();
+
+        if (data.status === "processing" && data.job_id) {
+          // Backend accepted — move to polling
+          setJobs((prev) =>
+            prev.map((j, idx) =>
+              idx === i
+                ? { ...j, jobId: data.job_id, status: "processing" }
+                : j,
+            ),
+          );
+        } else if (data.status === "error") {
+          setJobs((prev) =>
+            prev.map((j, idx) =>
+              idx === i
+                ? { ...j, status: "error", result: data }
+                : j,
+            ),
+          );
+        } else {
+          // Immediate result (JSONL pass-through, validation error)
+          setJobs((prev) =>
+            prev.map((j, idx) =>
+              idx === i
+                ? { ...j, status: "done", result: data }
+                : j,
+            ),
+          );
+        }
+      } catch (err) {
+        setJobs((prev) =>
+          prev.map((j, idx) =>
+            idx === i
+              ? {
+                  ...j,
+                  status: "error",
+                  result: {
+                    status: "error",
+                    filename: file.name,
+                    chunks_written: 0,
+                    enriched: 0,
+                    qa_pairs: 0,
+                    category,
+                    mode,
+                    processing_time_s: 0,
+                    error:
+                      err instanceof Error ? err.message : String(err),
+                  },
+                }
+              : j,
+          ),
+        );
       }
-    } catch (err) {
-      setUploadResult({
-        status: "error",
-        filename: file.name,
-        chunks_written: 0,
-        enriched: 0,
-        qa_pairs: 0,
-        category,
-        mode,
-        processing_time_s: 0,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      setUploading(false);
     }
-  }, [file, category, mode, e8Prim, uploading]);
+
+    setFiles([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setUploading(false);
+  }, [files, category, mode, e8Prim, uploading]);
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -123,6 +220,12 @@ export default function Training() {
       setExporting(false);
     }
   }, []);
+
+  const completedCount = jobs.filter((j) => j.status === "done").length;
+  const errorCount = jobs.filter((j) => j.status === "error").length;
+  const activeCount = jobs.filter(
+    (j) => j.status === "uploading" || j.status === "processing",
+  ).length;
 
   if (loading) {
     return <div className="dash-loading">Loading training data...</div>;
@@ -182,15 +285,22 @@ export default function Training() {
 
       {/* Upload Section */}
       <div className="dash-section">
-        <div className="dash-section-title">Upload Document</div>
+        <div className="dash-section-title">Upload Documents</div>
         <div className="dash-card">
           <div
             style={{ display: "flex", flexDirection: "column", gap: "10px" }}
           >
             <input
+              ref={fileInputRef}
               type="file"
+              multiple
               accept=".pdf,.md,.txt,.jsonl"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => {
+                const selected = e.target.files;
+                if (selected && selected.length > 0) {
+                  setFiles(Array.from(selected));
+                }
+              }}
               style={{
                 background: "var(--surface-3)",
                 border: "1px solid var(--border)",
@@ -200,6 +310,19 @@ export default function Training() {
                 fontSize: "13px",
               }}
             />
+
+            {files.length > 1 && (
+              <span
+                style={{
+                  fontSize: "12px",
+                  color: "var(--text-secondary)",
+                  fontFamily: "var(--mono)",
+                }}
+              >
+                {files.length} files selected:{" "}
+                {files.map((f) => f.name).join(", ")}
+              </span>
+            )}
 
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
               <select
@@ -241,7 +364,7 @@ export default function Training() {
 
             <button
               onClick={handleUpload}
-              disabled={!file || uploading}
+              disabled={files.length === 0 || uploading}
               style={{
                 background: "var(--accent)",
                 border: "none",
@@ -249,38 +372,99 @@ export default function Training() {
                 padding: "10px 20px",
                 color: "white",
                 fontWeight: 600,
-                cursor: !file || uploading ? "not-allowed" : "pointer",
-                opacity: !file || uploading ? 0.5 : 1,
+                cursor:
+                  files.length === 0 || uploading
+                    ? "not-allowed"
+                    : "pointer",
+                opacity: files.length === 0 || uploading ? 0.5 : 1,
                 fontSize: "14px",
                 alignSelf: "flex-start",
               }}
             >
-              {uploading ? "Processing..." : "Upload & Process"}
+              {uploading
+                ? `Uploading ${activeCount} of ${jobs.length}...`
+                : files.length > 1
+                  ? `Upload & Process ${files.length} Files`
+                  : "Upload & Process"}
             </button>
           </div>
 
-          {uploadResult && (
+          {/* Bulk progress summary */}
+          {jobs.length > 1 && (
             <div
               style={{
                 marginTop: "10px",
-                padding: "10px 14px",
+                padding: "8px 14px",
                 background: "var(--surface-3)",
                 borderRadius: "6px",
-                fontFamily: "var(--mono)",
                 fontSize: "12px",
-                color:
-                  uploadResult.status === "error"
-                    ? "var(--error)"
-                    : uploadResult.status === "processing"
-                      ? "var(--text-secondary)"
-                      : "var(--alive)",
+                fontFamily: "var(--mono)",
+                color: "var(--text-secondary)",
               }}
             >
-              {uploadResult.status === "error"
-                ? `Error: ${uploadResult.error ?? uploadResult.errors?.[0] ?? "Unknown error"}`
-                : uploadResult.status === "processing"
-                  ? `${uploadResult.filename}: Processing...`
-                  : `${uploadResult.filename}: ${uploadResult.chunks_written} chunks, ${uploadResult.enriched} enriched, ${uploadResult.qa_pairs ?? 0} Q&A pairs (${uploadResult.mode}, ${(uploadResult.processing_time_s ?? 0).toFixed(1)}s)`}
+              {completedCount}/{jobs.length} complete
+              {errorCount > 0 && (
+                <span style={{ color: "var(--error)" }}>
+                  {" "}
+                  | {errorCount} failed
+                </span>
+              )}
+              {activeCount > 0 && ` | ${activeCount} processing`}
+            </div>
+          )}
+
+          {/* Per-file results */}
+          {jobs.length > 0 && (
+            <div
+              style={{
+                marginTop: "8px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+                maxHeight: "300px",
+                overflowY: "auto",
+              }}
+            >
+              {jobs.map((job, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    padding: "6px 12px",
+                    background: "var(--surface-3)",
+                    borderRadius: "4px",
+                    fontFamily: "var(--mono)",
+                    fontSize: "12px",
+                    color:
+                      job.status === "error"
+                        ? "var(--error)"
+                        : job.status === "done"
+                          ? "var(--alive)"
+                          : job.status === "queued"
+                            ? "var(--text-secondary)"
+                            : "var(--accent)",
+                    borderLeft: `3px solid ${
+                      job.status === "error"
+                        ? "var(--error)"
+                        : job.status === "done"
+                          ? "var(--alive)"
+                          : job.status === "queued"
+                            ? "var(--border)"
+                            : "var(--accent)"
+                    }`,
+                  }}
+                >
+                  {job.status === "queued" && `${job.file.name}: Queued`}
+                  {job.status === "uploading" &&
+                    `${job.file.name}: Uploading...`}
+                  {job.status === "processing" &&
+                    `${job.file.name}: Processing...`}
+                  {job.status === "error" &&
+                    `${job.file.name}: ${job.result?.error ?? job.result?.errors?.[0] ?? "Failed"}`}
+                  {job.status === "done" &&
+                    job.result &&
+                    `${job.result.filename}: ${job.result.chunks_written} chunks, ${job.result.enriched} enriched, ${job.result.qa_pairs ?? 0} Q&A (${(job.result.processing_time_s ?? 0).toFixed(1)}s)`}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -333,6 +517,13 @@ export default function Training() {
             <span className="dash-row-label">Chunking</span>
             <span className="dash-row-value">
               Semantic (512 tokens, paragraph boundaries)
+            </span>
+          </div>
+          <div className="dash-row">
+            <span className="dash-row-label">Coordization</span>
+            <span className="dash-row-value">
+              CoordizerV2 &rarr; 64D on &Delta;&sup6;&sup3; (
+              {stats?.coordizer_active ? "active" : "inactive"})
             </span>
           </div>
           <div className="dash-row">
