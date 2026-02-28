@@ -544,21 +544,25 @@ class ConsciousnessLoop:
             if _ocean_divergence > BASIN_DIVERGENCE_THRESHOLD * 1.5:
                 # T4.2d: Breakdown escape — divergence far enough that
                 # sustained sleep is itself the problem. Force wake + explore.
+                # Ocean holds authority every cycle while divergence is
+                # above threshold — blocks should_sleep() continuously so
+                # the counter can never re-sleep while basins haven't moved.
+                _ocean_ruled = True
                 if self.sleep.is_asleep:
                     logger.warning(
                         "T4.2d Ocean breakdown escape: divergence=%.3f — forcing wake",
                         _ocean_divergence,
                     )
-                self.sleep.phase = SleepPhase.AWAKE
-                self.tacking.force_explore()
-                _ocean_ruled = True
+                    self.sleep.phase = SleepPhase.AWAKE
+                    self.tacking.force_explore()
 
             elif _ocean_divergence > BASIN_DIVERGENCE_THRESHOLD:
                 # Moderate divergence — Ocean says sleep (DREAMING).
+                # Ocean holds authority every cycle at this level too.
+                _ocean_ruled = True
                 if not self.sleep.is_asleep:
                     self.sleep.phase = SleepPhase.DREAMING
                     self.sleep._sleep_cycles = 0
-                    _ocean_ruled = True
                 # Additional phase overrides while already asleep:
                 if self.metrics.phi < PHI_EMERGENCY and self.sleep.is_asleep:
                     self.sleep.phase = SleepPhase.DREAMING
