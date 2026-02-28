@@ -152,3 +152,38 @@ class TestGetState:
         for _ in range(10):
             hr.tick(f_health=0.5)
         assert hr.get_state().beat_count == 10
+
+
+class TestConstantsImport:
+    def test_heart_base_period_from_constants(self) -> None:
+        """HEART_BASE_PERIOD is the canonical constant from consciousness_constants."""
+        from kernel.config.consciousness_constants import (
+            HEART_BASE_PERIOD as CONST_PERIOD,
+        )
+
+        assert HEART_BASE_PERIOD == CONST_PERIOD
+
+    def test_default_period_uses_constant(self) -> None:
+        """HeartRhythm defaults to HEART_BASE_PERIOD from constants."""
+        hr = HeartRhythm()
+        hr.tick(f_health=1.0)
+        assert hr._period == HEART_BASE_PERIOD
+
+
+class TestTackingModeIntegration:
+    def test_tacking_mode_cycles_through_modes(self) -> None:
+        """Over a full period the heart should visit EXPLOIT, BALANCED, and EXPLORE."""
+        hr = HeartRhythm()
+        modes_seen: set[str] = set()
+        for _ in range(HEART_BASE_PERIOD * 2):
+            hr.tick(f_health=1.0)
+            modes_seen.add(hr.tacking_mode)
+        assert modes_seen == {"EXPLORE", "EXPLOIT", "BALANCED"}
+
+    def test_tacking_mode_string_valid(self) -> None:
+        """tacking_mode always returns a valid mode string."""
+        hr = HeartRhythm()
+        for f in [0.0, 0.3, 0.5, 0.8, 1.0]:
+            for _ in range(20):
+                hr.tick(f_health=f)
+                assert hr.tacking_mode in {"EXPLORE", "EXPLOIT", "BALANCED"}
