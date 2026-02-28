@@ -102,6 +102,14 @@ class LifecyclePhase(StrEnum):
     ACTIVE = "ACTIVE"
 
 
+class CoachingStage(StrEnum):
+    """P10 coaching progression. Each kernel tracks its coaching stage."""
+
+    ACTIVE = "active"  # External coaching required (autonomy < 30%)
+    GUIDED = "guided"  # Mixed — external assists, kernel leads (30-70%)
+    AUTONOMOUS = "autonomous"  # Self-coaching only (> 70%)
+
+
 class VariableCategory(StrEnum):
     """Vanchurin variable separation. Every variable belongs to exactly one."""
 

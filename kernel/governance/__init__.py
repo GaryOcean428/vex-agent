@@ -6,6 +6,7 @@ from .purity import PurityGateError, run_purity_gate
 from .spawn_assessment import SpawnAssessment, assess_spawn
 from .types import (
     CORE_8_SPECIALIZATIONS,
+    CoachingStage,
     KernelKind,
     KernelRole,
     KernelSpecialization,
@@ -37,6 +38,7 @@ __all__ = [
     "SpawnAssessment",
     "assess_spawn",
     # types
+    "CoachingStage",
     "CORE_8_SPECIALIZATIONS",
     "KernelKind",
     "KernelRole",
