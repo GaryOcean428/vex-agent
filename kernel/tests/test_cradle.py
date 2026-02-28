@@ -6,9 +6,13 @@ Verifies:
   3. Graduation gate (Phi threshold + curriculum)
   4. Stall detection
   5. State reporting
+  6. Lifecycle integration (spawn → Cradle admission)
 """
 
 from __future__ import annotations
+
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from kernel.config.frozen_facts import PHI_THRESHOLD
 from kernel.consciousness.cradle import (
@@ -16,6 +20,8 @@ from kernel.consciousness.cradle import (
     Cradle,
     CradleAction,
 )
+from kernel.governance.lifecycle import GovernedLifecycle
+from kernel.governance.types import KernelKind, KernelSpecialization
 
 
 class TestAdmission:
@@ -145,3 +151,88 @@ class TestGetState:
         state = cradle.get_state()
         assert state["graduated_count"] == 1
         assert state["resident_count"] == 0
+
+
+class TestFullProgression:
+    """Spawn → Phi progression → graduation (acceptance test)."""
+
+    def test_spawn_progress_graduate(self) -> None:
+        cradle = Cradle()
+        cradle.admit("k1", initial_phi=0.1)
+        # Walk through all curriculum stages
+        assert cradle.tick("k1", current_phi=0.36) == CradleAction.ADVANCE_CURRICULUM
+        assert cradle.tick("k1", current_phi=0.51) == CradleAction.ADVANCE_CURRICULUM
+        assert cradle.tick("k1", current_phi=0.66) == CradleAction.ADVANCE_CURRICULUM
+        # Now graduate at PHI_THRESHOLD
+        assert cradle.tick("k1", current_phi=PHI_THRESHOLD) == CradleAction.GRADUATE
+        entry = cradle.graduate("k1")
+        assert entry is not None
+        assert entry.graduated is True
+        assert not cradle.is_resident("k1")
+
+
+def _make_mock_registry() -> MagicMock:
+    """Build a minimal E8KernelRegistry mock for lifecycle tests."""
+    registry = MagicMock()
+    registry.active.return_value = []  # No existing kernels
+    budget_mock = MagicMock()
+    budget_mock.summary.return_value = {"god": 0, "chaos": 0, "genesis": 1}
+    registry._budget = budget_mock
+    return registry
+
+
+def _make_spawned_kernel(kid: str = "k-new") -> SimpleNamespace:
+    return SimpleNamespace(
+        id=kid,
+        name="test-kernel",
+        kind=KernelKind.CHAOS,
+        specialization=KernelSpecialization.GENERAL,
+        phi=0.1,
+        kappa=64.0,
+        quenched_gain=1.0,
+        gamma=0.1,
+        meta_awareness=0.5,
+    )
+
+
+class TestLifecycleIntegration:
+    """GovernedLifecycle.spawn() admits kernel to Cradle (v6.0 §23)."""
+
+    def test_spawn_admits_to_cradle(self) -> None:
+        cradle = Cradle()
+        registry = _make_mock_registry()
+        spawned = _make_spawned_kernel()
+        registry.spawn.return_value = spawned
+
+        lc = GovernedLifecycle(
+            registry=registry,
+            skip_purity=True,
+            cradle=cradle,
+        )
+        outcome = lc.spawn("test-kernel", KernelKind.CHAOS)
+        assert outcome.success
+        assert cradle.is_resident(spawned.id)
+
+    def test_spawn_without_cradle_still_works(self) -> None:
+        """Backward compat: no Cradle → spawn succeeds without admission."""
+        registry = _make_mock_registry()
+        spawned = _make_spawned_kernel()
+        registry.spawn.return_value = spawned
+
+        lc = GovernedLifecycle(registry=registry, skip_purity=True)
+        outcome = lc.spawn("test-kernel", KernelKind.CHAOS)
+        assert outcome.success
+
+    def test_oversight_summary_includes_cradle(self) -> None:
+        cradle = Cradle()
+        cradle.admit("k1", initial_phi=0.1)
+        registry = _make_mock_registry()
+
+        lc = GovernedLifecycle(
+            registry=registry,
+            skip_purity=True,
+            cradle=cradle,
+        )
+        summary = lc.oversight_summary()
+        assert "cradle" in summary
+        assert summary["cradle"]["resident_count"] == 1
