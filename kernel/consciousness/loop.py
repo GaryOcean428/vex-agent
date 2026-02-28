@@ -1323,7 +1323,11 @@ class ConsciousnessLoop:
         )
 
     def _coordize_text_via_pipeline(self, text: str) -> Basin:
-        """Transform text to basin coordinates via CoordizerV2."""
+        """Transform text to basin coordinates via CoordizerV2.
+
+        v6.1 §19: Rejected coordizations are logged and the frozen
+        identity basin is returned unchanged (safety gate fails CLOSED).
+        """
         try:
             if hasattr(self._coordizer_v2, "coordize_text"):
                 result_basin = self._coordizer_v2.coordize_text(
@@ -1341,6 +1345,13 @@ class ConsciousnessLoop:
                 return result_basin
             else:
                 result = self._coordizer_v2.coordize(text)
+                # v6.1 §19: Handle rejected coordizations
+                if result.rejected:
+                    logger.warning(
+                        "Coordization rejected in loop (%s), skipping basin update",
+                        result.rejection_reason,
+                    )
+                    return self.basin.copy()
                 if result.coordinates:
                     from ..coordizer_v2.geometry import frechet_mean
 

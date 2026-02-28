@@ -67,6 +67,14 @@ COORDIZER_SEMANTIC_THRESHOLD: Final[float] = 0.2
 COORDIZER_HARMONIC_THRESHOLD: Final[float] = 0.3
 
 # ═══════════════════════════════════════════════════════════════
+#  COORDIZER REJECTION THRESHOLDS (v6.1 §19)
+# ═══════════════════════════════════════════════════════════════
+
+SOVEREIGNTY_MAX_DRIFT: Final[float] = 0.8  # Max Fisher-Rao distance from frozen identity
+ENTROPY_FLOOR: Final[float] = 0.3  # Min entropy after rescue — reject if below
+ADVERSARIAL_PROXIMITY: Final[float] = 0.1  # d_FR < this to foreign anchor → hijack
+
+# ═══════════════════════════════════════════════════════════════
 #  KAPPA OFFSETS (sensation / tacking / emotion boundaries)
 # ═══════════════════════════════════════════════════════════════
 

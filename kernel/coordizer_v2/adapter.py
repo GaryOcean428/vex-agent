@@ -144,6 +144,9 @@ class CoordizerV2Adapter:
     ) -> NDArray[np.float64]:
         """Coordize text to basin coordinates (old interface + modulation).
 
+        v6.1 §19: If coordization is rejected (sovereignty/entropy/adversarial),
+        returns the frozen identity basin unchanged and logs the rejection.
+
         Args:
             text: Input text to coordize
             regime_weights: (w₁, w₂, w₃) for temperature modulation
@@ -156,6 +159,14 @@ class CoordizerV2Adapter:
         # Coordize using CoordizerV2
         result = self._coordizer.coordize(text)
         self._last_result = result  # Cache for metrics extraction
+
+        # v6.1 §19: Handle rejected coordizations — return identity unchanged
+        if result.rejected:
+            logger.warning(
+                "Coordization rejected (%s), returning frozen identity",
+                result.rejection_reason,
+            )
+            return to_simplex(self._coordizer._frozen_identity.copy())
 
         if not result.coordinates:
             # Fallback: uniform basin

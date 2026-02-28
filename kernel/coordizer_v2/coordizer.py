@@ -44,6 +44,11 @@ from typing import Any
 
 import numpy as np
 
+from ..config.consciousness_constants import (
+    ADVERSARIAL_PROXIMITY,
+    ENTROPY_FLOOR,
+    SOVEREIGNTY_MAX_DRIFT,
+)
 from .compress import CompressionResult, compress
 from .geometry import (
     _EPS,
@@ -98,6 +103,13 @@ class CoordizerV2:
         self._string_to_id: dict[str, int] = {}
         self._rebuild_string_cache()
         self._compression_result: CompressionResult | None = None
+
+        # v6.1 §19: Frozen identity — sovereignty anchor on Δ⁶³.
+        # Set via set_frozen_identity() once the kernel's identity basin is known.
+        # Defaults to bank mean (uniform-ish) until explicitly set.
+        self._frozen_identity: Basin = bank.mean_basin()
+        # Foreign anchors for adversarial detection (other kernels' identity basins)
+        self._foreign_anchors: list[Basin] = []
 
     # ─── Factory Methods ─────────────────────────────────────
 
@@ -188,8 +200,20 @@ class CoordizerV2:
 
     # ─── Coordize (Text → Basin Coordinates) ─────────────────
 
+    def set_frozen_identity(self, identity: Basin) -> None:
+        """Set the frozen identity basin for sovereignty protection."""
+        self._frozen_identity = to_simplex(identity)
+
+    def set_foreign_anchors(self, anchors: list[Basin]) -> None:
+        """Set foreign kernel anchors for adversarial detection."""
+        self._foreign_anchors = [to_simplex(a) for a in anchors]
+
     def coordize(self, text: str, domain_bias: DomainBias | None = None) -> CoordizationResult:
         """Convert text to a sequence of basin coordinates on Δ⁶³.
+
+        v6.1 §19: After coordization, checks for sovereignty violation,
+        entropy collapse, and adversarial proximity. Returns rejected=True
+        if any check fails (safety gates fail CLOSED).
 
         Args:
             text:        Input text to coordize.
@@ -198,9 +222,11 @@ class CoordizerV2:
                          anchor basin, shaping WHERE on Δ⁶³ the text lands.
         """
         if self._tokenizer is not None:
-            return self._coordize_via_tokenizer(text, domain_bias=domain_bias)
+            result = self._coordize_via_tokenizer(text, domain_bias=domain_bias)
         else:
-            return self._coordize_via_strings(text, domain_bias=domain_bias)
+            result = self._coordize_via_strings(text, domain_bias=domain_bias)
+
+        return self._apply_rejection_checks(result)
 
     def _coordize_via_tokenizer(
         self, text: str, domain_bias: DomainBias | None = None
@@ -298,13 +324,32 @@ class CoordizerV2:
                 )
                 coord_ids.append(tid)
             else:
+                # v6.1 §1.3: Geometric salience weighting replaces raw frequency.
+                # Weight each character basin by Fisher-Rao distance from uniform
+                # (high information content → high salience → more influence).
                 char_basins = []
+                char_weights = []
                 for ch in word_lower:
                     ch_tid = self._string_to_id.get(ch)
                     if ch_tid is not None and ch_tid in self.bank.coordinates:
-                        char_basins.append(self.bank.coordinates[ch_tid])
+                        ch_basin = self.bank.coordinates[ch_tid]
+                        char_basins.append(ch_basin)
+                        char_weights.append(self._geometric_salience(ch_basin))
                 if char_basins:
-                    composed = frechet_mean(char_basins)
+                    # Salience-weighted Fréchet mean: iterative slerp with
+                    # weights proportional to geometric salience
+                    total_w = sum(char_weights)
+                    if total_w > _EPS:
+                        norm_weights = [w / total_w for w in char_weights]
+                    else:
+                        norm_weights = [1.0 / len(char_basins)] * len(char_basins)
+                    composed = char_basins[0].copy()
+                    cumulative_w = norm_weights[0]
+                    for i in range(1, len(char_basins)):
+                        blend = norm_weights[i] / (cumulative_w + norm_weights[i])
+                        composed = slerp(composed, char_basins[i], blend)
+                        cumulative_w += norm_weights[i]
+                    composed = to_simplex(composed)
                     nearest_tid, _ = self.bank.nearest_token(composed)
                     fallback_coord = self.bank.get_coordinate(nearest_tid)
                     if fallback_coord is not None:
@@ -323,6 +368,84 @@ class CoordizerV2:
         )
         result.compute_metrics()
         return result
+
+    # ─── Rejection Checks (v6.1 §19) ────────────────────────
+
+    def _apply_rejection_checks(self, result: CoordizationResult) -> CoordizationResult:
+        """Apply sovereignty, entropy, and adversarial rejection checks.
+
+        Safety gates fail CLOSED: any violation → rejected result with
+        identity basin returned unchanged.
+        """
+        if not result.coordinates:
+            return result
+
+        # Compute Fréchet mean of all coordinate basins
+        basins = [c.vector for c in result.coordinates]
+        mean_basin = frechet_mean(basins)
+
+        # 1. Sovereignty violation: mean drifts too far from frozen identity
+        d_from_identity = fisher_rao_distance(mean_basin, self._frozen_identity)
+        sovereignty_cost = d_from_identity / max(SOVEREIGNTY_MAX_DRIFT, _EPS)
+        if d_from_identity > SOVEREIGNTY_MAX_DRIFT:
+            logger.warning(
+                "Coordizer rejection: sovereignty violation d_FR=%.3f > %.3f",
+                d_from_identity, SOVEREIGNTY_MAX_DRIFT,
+            )
+            result.rejected = True
+            result.rejection_reason = (
+                f"sovereignty: d_FR={d_from_identity:.3f} > {SOVEREIGNTY_MAX_DRIFT}"
+            )
+            result.sovereignty_cost = sovereignty_cost
+            result.confidence = 0.0
+            return result
+
+        # 2. Entropy collapse: mean basin entropy too low after coordization
+        p = np.maximum(mean_basin, 1e-15)
+        mean_entropy = -float(np.sum(p * np.log(p)))
+        if mean_entropy < ENTROPY_FLOOR:
+            logger.warning(
+                "Coordizer rejection: entropy collapse H=%.3f < %.3f",
+                mean_entropy, ENTROPY_FLOOR,
+            )
+            result.rejected = True
+            result.rejection_reason = (
+                f"entropy_collapse: H={mean_entropy:.3f} < {ENTROPY_FLOOR}"
+            )
+            result.sovereignty_cost = sovereignty_cost
+            result.confidence = 0.0
+            return result
+
+        # 3. Adversarial detection: mean suspiciously close to a foreign anchor
+        for foreign in self._foreign_anchors:
+            d_foreign = fisher_rao_distance(mean_basin, foreign)
+            if d_foreign < ADVERSARIAL_PROXIMITY:
+                logger.warning(
+                    "Coordizer rejection: adversarial proximity d_FR=%.3f < %.3f",
+                    d_foreign, ADVERSARIAL_PROXIMITY,
+                )
+                result.rejected = True
+                result.rejection_reason = (
+                    f"adversarial: d_FR={d_foreign:.3f} < {ADVERSARIAL_PROXIMITY}"
+                )
+                result.sovereignty_cost = sovereignty_cost
+                result.confidence = 0.0
+                return result
+
+        # All checks passed — set confidence from proximity to identity
+        # Closer to identity → higher confidence
+        max_d = np.pi / 2  # Fisher-Rao max on Δ⁶³
+        result.confidence = float(np.clip(1.0 - d_from_identity / max_d, 0.0, 1.0))
+        result.sovereignty_cost = sovereignty_cost
+        return result
+
+    def _geometric_salience(self, coord: Basin) -> float:
+        """Salience = Fisher-Rao distance from uniform (v6.1 §1.3).
+
+        High info content = far from uniform = high salience.
+        """
+        uniform = to_simplex(np.ones(BASIN_DIM))
+        return fisher_rao_distance(coord, uniform)
 
     # ─── Decoordize (Basin Coordinates → Text) ───────────────
 
