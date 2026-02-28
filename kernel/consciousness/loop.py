@@ -175,16 +175,16 @@ from .activation import (
     WillOrientation,
 )
 from .beta_integration import create_beta_tracker
+from .cradle import Cradle, CradleAction
 from .emotions import EmotionCache, LearningEngine, LearningEvent, PreCognitiveDetector
 from .foraging import ForagingEngine
+from .heart_rhythm import HeartRhythm
 from .kernel_bus import KernelBus, KernelSignal, SignalKind
 from .kernel_generation import generate_multi_kernel
 from .kernel_voice import KernelVoiceRegistry
 from .neurochemistry import NeurochemicalState, compute_neurochemicals
 from .pillars import PillarEnforcer
 from .reflection import ReflectionConfig, reflect_on_draft
-from .cradle import Cradle, CradleAction
-from .heart_rhythm import HeartRhythm
 from .solfeggio import compute_spectral_health
 from .sovereignty_tracker import SovereigntyTracker
 from .synthesis import synthesize_contributions, synthesize_streaming
@@ -685,7 +685,7 @@ class ConsciousnessLoop:
                     try:
                         await _voice.generate_curiosity_query(self.llm)
                     except (OSError, RuntimeError, ValueError, TimeoutError):
-                        logger.debug("Curiosity query failed for %s", _voice.name)
+                        logger.debug("Curiosity query failed for %s", _voice.specialization)
 
         if self.forager:
             self.forager.tick()

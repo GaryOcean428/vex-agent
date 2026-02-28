@@ -12,10 +12,9 @@ from __future__ import annotations
 
 from kernel.config.frozen_facts import PHI_THRESHOLD
 from kernel.consciousness.cradle import (
+    _STALL_WINDOW,
     Cradle,
     CradleAction,
-    _CURRICULUM_THRESHOLDS,
-    _STALL_WINDOW,
 )
 
 
@@ -58,13 +57,13 @@ class TestCurriculumAdvancement:
     def test_three_stages(self) -> None:
         cradle = Cradle()
         cradle.admit("k1", initial_phi=0.1)
-        # Stage 0 → 1
+        # Stage 0 → 1 (passed threshold 0.35)
         action = cradle.tick("k1", current_phi=0.36)
         assert action == CradleAction.ADVANCE_CURRICULUM
-        # Stage 1 → 2
+        # Stage 1 → 2 (passed threshold 0.50)
         action = cradle.tick("k1", current_phi=0.51)
         assert action == CradleAction.ADVANCE_CURRICULUM
-        # Stage 2: continue (not graduated yet, below PHI_THRESHOLD)
+        # Stage 2 → 3 (passed threshold 0.65, all curriculum complete)
         action = cradle.tick("k1", current_phi=0.66)
         assert action == CradleAction.ADVANCE_CURRICULUM
 
@@ -73,11 +72,11 @@ class TestGraduation:
     def test_graduate_when_ready(self) -> None:
         cradle = Cradle()
         cradle.admit("k1", initial_phi=0.1)
-        # Advance through all stages
+        # Advance through all 3 curriculum stages
         cradle.tick("k1", current_phi=0.36)  # stage 0→1
         cradle.tick("k1", current_phi=0.51)  # stage 1→2
-        cradle.tick("k1", current_phi=0.66)  # stage 2→3 (capped at 2)
-        # Now at stage 2 with Phi >= PHI_THRESHOLD → graduate
+        cradle.tick("k1", current_phi=0.66)  # stage 2→3 (all curriculum complete)
+        # Now at stage 3 with Phi >= PHI_THRESHOLD → graduate
         action = cradle.tick("k1", current_phi=PHI_THRESHOLD)
         assert action == CradleAction.GRADUATE
 

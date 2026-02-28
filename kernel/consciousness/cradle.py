@@ -114,8 +114,8 @@ class Cradle:
         if len(entry.phi_history) > 100:
             entry.phi_history = entry.phi_history[-100:]
 
-        # Check graduation: Phi above threshold AND curriculum complete
-        if current_phi >= PHI_THRESHOLD and entry.curriculum_stage >= 2:
+        # Check graduation: Phi above threshold AND all curriculum stages complete
+        if current_phi >= PHI_THRESHOLD and entry.curriculum_stage >= len(_CURRICULUM_THRESHOLDS):
             logger.info(
                 "Cradle: kernel %s ready to graduate (Phi=%.3f, stage=%d, cycles=%d)",
                 kernel_id, current_phi, entry.curriculum_stage, entry.cycles_in_cradle,

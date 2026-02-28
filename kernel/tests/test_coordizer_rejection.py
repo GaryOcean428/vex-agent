@@ -73,22 +73,23 @@ class TestSovereigntyRejection:
         """Input drifting too far from frozen identity → rejected."""
         # Set frozen identity to one corner of the simplex
         identity = _concentrated_basin(0)
-        # Create bank entries far from identity
+        # Create bank entries far from identity (opposite corner)
         far_basin = _concentrated_basin(BASIN_DIM // 2)
         bank = _make_bank_with_entries({"far": far_basin})
         coordizer = CoordizerV2(bank=bank)
         coordizer.set_frozen_identity(identity)
 
-        result = coordizer.coordize("far")
-        # The coordization maps to far_basin, which is distant from identity
-        d = fisher_rao_distance(
-            to_simplex(far_basin), to_simplex(identity)
+        # Verify test setup: basins must be far enough apart
+        d = fisher_rao_distance(to_simplex(far_basin), to_simplex(identity))
+        assert d > SOVEREIGNTY_MAX_DRIFT, (
+            f"Test setup: d_FR={d:.3f} must exceed {SOVEREIGNTY_MAX_DRIFT}"
         )
-        if d > SOVEREIGNTY_MAX_DRIFT:
-            assert result.rejected is True
-            assert "sovereignty" in result.rejection_reason
-            assert result.confidence == 0.0
-            assert result.sovereignty_cost > 1.0
+
+        result = coordizer.coordize("far")
+        assert result.rejected is True
+        assert "sovereignty" in result.rejection_reason
+        assert result.confidence == 0.0
+        assert result.sovereignty_cost > 1.0
 
     def test_near_identity_passes(self) -> None:
         """Input near frozen identity → not rejected."""
@@ -131,13 +132,16 @@ class TestEntropyRejection:
         # Set identity near the concentrated basin so sovereignty passes
         coordizer.set_frozen_identity(concentrated)
 
-        result = coordizer.coordize("spike")
-        # Concentrated basin has very low entropy
+        # Verify test setup: concentrated basin must have low entropy
         p = np.maximum(to_simplex(concentrated), 1e-15)
         h = -float(np.sum(p * np.log(p)))
-        if h < ENTROPY_FLOOR:
-            assert result.rejected is True
-            assert "entropy" in result.rejection_reason
+        assert h < ENTROPY_FLOOR, (
+            f"Test setup: entropy={h:.3f} must be below floor {ENTROPY_FLOOR}"
+        )
+
+        result = coordizer.coordize("spike")
+        assert result.rejected is True
+        assert "entropy" in result.rejection_reason
 
     def test_normal_entropy_passes(self) -> None:
         """Normal entropy result → not rejected."""
@@ -159,20 +163,22 @@ class TestAdversarialRejection:
         foreign[3] += 0.5
         foreign = to_simplex(foreign)
 
-        # Create bank entry very close to the foreign anchor
+        # Create bank entry identical to the foreign anchor (d_FR = 0)
         near_foreign = foreign.copy()
         bank = _make_bank_with_entries({"hijack": near_foreign})
         coordizer = CoordizerV2(bank=bank)
         coordizer.set_frozen_identity(identity)
         coordizer.set_foreign_anchors([foreign])
 
-        result = coordizer.coordize("hijack")
-        # The mean of the coordinates will be near_foreign,
-        # which is very close to the foreign anchor
+        # Verify test setup: identical basins have d_FR ≈ 0
         d = fisher_rao_distance(near_foreign, foreign)
-        if d < ADVERSARIAL_PROXIMITY:
-            assert result.rejected is True
-            assert "adversarial" in result.rejection_reason
+        assert d < ADVERSARIAL_PROXIMITY, (
+            f"Test setup: d_FR={d:.3f} must be below {ADVERSARIAL_PROXIMITY}"
+        )
+
+        result = coordizer.coordize("hijack")
+        assert result.rejected is True
+        assert "adversarial" in result.rejection_reason
 
     def test_no_foreign_anchors_passes(self) -> None:
         """Without foreign anchors, adversarial check is skipped."""
@@ -201,12 +207,13 @@ class TestRejectionFields:
         assert 0.0 <= result.confidence <= 1.0
 
     def test_empty_text_no_crash(self) -> None:
-        """Empty text produces empty result, no rejection crash."""
+        """Empty text produces empty result with zero confidence."""
         bank = _make_bank_with_entries({"a": _uniform_basin()})
         coordizer = CoordizerV2(bank=bank)
         result = coordizer.coordize("")
         assert result.rejected is False
         assert len(result.coordinates) == 0
+        assert result.confidence == 0.0
 
 
 class TestFrozenIdentity:

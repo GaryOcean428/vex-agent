@@ -166,7 +166,7 @@ class CoordizerV2Adapter:
                 "Coordization rejected (%s), returning frozen identity",
                 result.rejection_reason,
             )
-            return to_simplex(self._coordizer._frozen_identity.copy())
+            return to_simplex(self._coordizer.frozen_identity)
 
         if not result.coordinates:
             # Fallback: uniform basin

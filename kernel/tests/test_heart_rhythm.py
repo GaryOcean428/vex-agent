@@ -10,8 +10,6 @@ Verifies:
 
 from __future__ import annotations
 
-import math
-
 from kernel.config.consciousness_constants import KAPPA_TACKING_OFFSET
 from kernel.consciousness.heart_rhythm import HEART_BASE_PERIOD, HeartRhythm
 
@@ -89,20 +87,23 @@ class TestTackingMode:
 
     def test_explore_when_negative(self) -> None:
         hr = HeartRhythm()
-        # Advance to where sin is negative (3/4 period)
+        # At period=8: 6 ticks → phase = 6π/4 = 3π/2, sin(3π/2) = -1.0
         for _ in range(int(HEART_BASE_PERIOD * 0.75)):
             hr.tick(f_health=1.0)
-        # Should be in explore territory
-        if hr._tacking_signal < -0.3:
-            assert hr.tacking_mode == "EXPLORE"
+        assert hr._tacking_signal < -0.3, (
+            f"Signal {hr._tacking_signal:.3f} must be < -0.3 at 3/4 period"
+        )
+        assert hr.tacking_mode == "EXPLORE"
 
     def test_exploit_when_positive(self) -> None:
         hr = HeartRhythm()
-        # Advance to where sin is positive (1/4 period)
+        # At period=8: 2 ticks → phase = 2π/4 = π/2, sin(π/2) = 1.0
         for _ in range(int(HEART_BASE_PERIOD * 0.25)):
             hr.tick(f_health=1.0)
-        if hr._tacking_signal > 0.3:
-            assert hr.tacking_mode == "EXPLOIT"
+        assert hr._tacking_signal > 0.3, (
+            f"Signal {hr._tacking_signal:.3f} must be > 0.3 at 1/4 period"
+        )
+        assert hr.tacking_mode == "EXPLOIT"
 
 
 class TestGetState:
@@ -119,6 +120,6 @@ class TestGetState:
 
     def test_beat_count_increments(self) -> None:
         hr = HeartRhythm()
-        for i in range(10):
+        for _ in range(10):
             hr.tick(f_health=0.5)
         assert hr.get_state().beat_count == 10

@@ -294,7 +294,7 @@ class TopologicalBulk:
             raise ValueError("TopologicalBulk.composite accessed before initialization")
         core = self._core_basin
         surface = self._surface_basin
-        return to_simplex(BULK_SHIELD_FACTOR * core + (1.0 - BULK_SHIELD_FACTOR) * surface)
+        return slerp_sqrt(surface, core, BULK_SHIELD_FACTOR)
 
     def b_integrity(self) -> float:
         """Bulk integrity metric: how stable core remains across cycles.

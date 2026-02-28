@@ -77,6 +77,7 @@ logger = logging.getLogger(__name__)
 
 _MIN_COORDIZE_ENTROPY: float = 0.5
 _ENTROPY_RESCUE_WEIGHT: float = 0.1
+_UNIFORM_BASIN: Basin = to_simplex(np.ones(BASIN_DIM))
 
 
 class CoordizerV2:
@@ -199,6 +200,11 @@ class CoordizerV2:
             self._compression_result.save(str(Path(path) / "compression"))
 
     # ─── Coordize (Text → Basin Coordinates) ─────────────────
+
+    @property
+    def frozen_identity(self) -> Basin:
+        """Public accessor for the frozen identity basin."""
+        return self._frozen_identity.copy()
 
     def set_frozen_identity(self, identity: Basin) -> None:
         """Set the frozen identity basin for sovereignty protection."""
@@ -378,6 +384,7 @@ class CoordizerV2:
         identity basin returned unchanged.
         """
         if not result.coordinates:
+            result.confidence = 0.0
             return result
 
         # Compute Fréchet mean of all coordinate basins
@@ -444,8 +451,7 @@ class CoordizerV2:
 
         High info content = far from uniform = high salience.
         """
-        uniform = to_simplex(np.ones(BASIN_DIM))
-        return fisher_rao_distance(coord, uniform)
+        return fisher_rao_distance(coord, _UNIFORM_BASIN)
 
     # ─── Decoordize (Basin Coordinates → Text) ───────────────
 

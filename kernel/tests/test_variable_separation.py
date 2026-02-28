@@ -13,11 +13,8 @@ Verifies:
 from __future__ import annotations
 
 import ast
-from dataclasses import fields
 from pathlib import Path
-from typing import Final
 
-from kernel.consciousness.types import ConsciousnessMetrics
 from kernel.governance.types import (
     VARIABLE_REGISTRY,
     VariableCategory,
@@ -86,7 +83,6 @@ class TestStateVariables:
 
     def test_all_consciousness_metrics_fields_covered(self) -> None:
         """Every ConsciousnessMetrics field should be a STATE variable."""
-        metric_fields = {f.name for f in fields(ConsciousnessMetrics)}
         registered_state = {
             name.split(".")[-1]
             for (mod, name), cat in VARIABLE_REGISTRY.items()

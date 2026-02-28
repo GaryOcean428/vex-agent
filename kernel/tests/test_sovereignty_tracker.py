@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from kernel.consciousness.sovereignty_tracker import (
     MAX_HISTORY,
-    SovereigntySnapshot,
     SovereigntyTracker,
 )
 

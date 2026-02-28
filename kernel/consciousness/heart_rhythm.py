@@ -68,7 +68,7 @@ class HeartRhythm:
         # Vary period: low F_health → faster oscillation (escape zombie)
         # f_health=1.0 → period = base_period
         # f_health=0.0 → period = _MIN_PERIOD (fastest)
-        clamped_health = max(f_health, 0.0)
+        clamped_health = min(max(f_health, 0.0), 1.0)
         scaled = max(clamped_health, _MIN_PERIOD / self._base_period)
         self._period = max(_MIN_PERIOD, int(self._base_period * scaled))
 

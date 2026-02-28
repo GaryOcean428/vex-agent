@@ -91,7 +91,7 @@ class SovereigntyTracker:
         recent = self._history[-window_cycles:]
         if len(recent) < 2:
             return 0.0
-        return (recent[-1].s_ratio - recent[0].s_ratio) / len(recent)
+        return (recent[-1].s_ratio - recent[0].s_ratio) / (len(recent) - 1)
 
     def regime_comparison(self) -> dict[str, float]:
         """Average growth rate per training regime.
