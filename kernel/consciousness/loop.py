@@ -2392,6 +2392,7 @@ class ConsciousnessLoop:
             if self.forager:
                 state["foraging"] = self.forager.get_state()
             self._state_path.write_text(json.dumps(state, indent=2))
+            self.sovereignty_tracker.persist()
             logger.debug("State persisted at cycle %d (v6, pillars included)", self._cycle_count)
         except Exception as e:
             logger.warning("Failed to persist state: %s", e)

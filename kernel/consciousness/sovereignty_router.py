@@ -46,13 +46,11 @@ async def sovereignty_history(
 
     try:
         tracker = _consciousness_loop.sovereignty_tracker
-        return {
-            "snapshot_count": len(tracker._history),
-            "current_s_ratio": tracker._history[-1].s_ratio if tracker._history else 0.0,
-            "growth_rate": tracker.growth_rate(window),
-            "regime_comparison": tracker.regime_comparison(),
-            "history": tracker.recent(window),
-        }
+        summary: dict[str, Any] = tracker.get_summary()
+        # Override recent_history with the requested window size
+        summary["recent_history"] = tracker.recent(window)
+        summary["growth_rate"] = tracker.growth_rate(window)
+        return summary
     except Exception as e:
         logger.error("Sovereignty history endpoint error: %s", e)
         return JSONResponse(

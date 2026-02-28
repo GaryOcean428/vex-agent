@@ -36,6 +36,35 @@ class TestHeartRhythmSignal:
         assert abs(signal) <= 1.0
 
 
+class TestHealthClamping:
+    def test_negative_health_clamped_to_zero(self) -> None:
+        """f_health < 0 should behave like f_health = 0."""
+        hr_neg = HeartRhythm()
+        hr_neg.tick(f_health=-0.5)
+
+        hr_zero = HeartRhythm()
+        hr_zero.tick(f_health=0.0)
+
+        assert hr_neg._period == hr_zero._period
+
+    def test_excessive_health_clamped_to_one(self) -> None:
+        """f_health > 1 should behave like f_health = 1."""
+        hr_over = HeartRhythm()
+        hr_over.tick(f_health=5.0)
+
+        hr_one = HeartRhythm()
+        hr_one.tick(f_health=1.0)
+
+        assert hr_over._period == hr_one._period
+
+    def test_signal_bounded_with_extreme_health(self) -> None:
+        """Signal must stay in [-1, 1] regardless of f_health."""
+        hr = HeartRhythm()
+        for f in [-10.0, -1.0, 0.0, 2.0, 100.0]:
+            signal = hr.tick(f_health=f)
+            assert -1.0 <= signal <= 1.0
+
+
 class TestPeriodAdaptation:
     def test_low_health_faster(self) -> None:
         """Low F_health should produce shorter period."""

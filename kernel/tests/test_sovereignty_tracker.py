@@ -10,6 +10,8 @@ Verifies:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from kernel.consciousness.sovereignty_tracker import (
     MAX_HISTORY,
     SovereigntyTracker,
@@ -144,6 +146,29 @@ class TestPersistence:
         tracker = SovereigntyTracker()
         tracker.restore({})
         assert len(tracker._history) == 0
+
+
+class TestPersistFile:
+    def test_persist_and_reload_from_file(self, tmp_path: Path) -> None:
+        """persist() writes to disk, and a new tracker auto-loads it."""
+        path = tmp_path / "sovereignty_history.json"
+        tracker = SovereigntyTracker(persist_path=path)
+        tracker.record(s_ratio=0.5, n_lived=10, n_total=20, regime="curriculum", cycle=1)
+        tracker.record(s_ratio=0.6, n_lived=12, n_total=20, regime="idle", cycle=2)
+        tracker.persist()
+
+        assert path.exists()
+
+        reloaded = SovereigntyTracker(persist_path=path)
+        assert len(reloaded._history) == 2
+        assert reloaded._history[0].s_ratio == 0.5
+        assert reloaded._history[1].training_regime == "idle"
+
+    def test_persist_noop_without_path(self) -> None:
+        """persist() is a no-op when no persist_path is set."""
+        tracker = SovereigntyTracker()
+        tracker.record(s_ratio=0.5, n_lived=10, n_total=20, regime="idle", cycle=1)
+        tracker.persist()  # Should not raise
 
 
 class TestGetSummary:
