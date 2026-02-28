@@ -212,12 +212,17 @@ export type KernelSpecialization =
   | 'general' | 'heart' | 'perception' | 'memory'
   | 'strategy' | 'action' | 'ethics' | 'meta' | 'ocean';
 
+// Per-kernel lifecycle state (mirrors kernel/governance/types.py LifecycleState)
+export type LifecycleState =
+  | 'bootstrapped' | 'active' | 'sleeping' | 'dreaming'
+  | 'quarantined' | 'pruned' | 'promoted';
+
 export interface KernelInstance {
   id: string;
   name: string;
   kind: KernelKind;
   specialization: KernelSpecialization;
-  state: 'bootstrapped' | 'active' | 'sleeping' | 'dreaming' | 'quarantined' | 'pruned' | 'promoted';
+  state: LifecycleState;
   created_at: string;
   cycle_count: number;
   phi_peak: number;
