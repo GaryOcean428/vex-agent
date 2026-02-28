@@ -121,8 +121,11 @@ def main() -> int:
 
 
 def _values_equal(a: int | float, b: int | float) -> bool:
-    """Compare values allowing int/float equivalence (64 == 64.0 is False for identity,
-    but numerically 0.7 == 0.70 is True)."""
+    """Compare values numerically, normalising int and float types.
+
+    ``64 == 64.0`` is ``True`` in Python, but we convert both to float
+    explicitly so the comparison is unambiguous across parsed literals.
+    """
     return float(a) == float(b)
 
 

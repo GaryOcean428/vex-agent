@@ -13,7 +13,9 @@ This module exists so callers can write the shorter import path
 ``kernel.constants`` instead of ``kernel.config.frozen_facts``.
 
 Do NOT define new constants here. Add them to ``frozen_facts.py``
-and they will be available here automatically via the star re-export.
+and then add the import to this file.  The explicit import list is
+intentional — it enables static analysis tools (mypy, ruff) to
+verify the re-exports.
 """
 
 from kernel.config.frozen_facts import (  # noqa: F401

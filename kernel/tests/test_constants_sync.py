@@ -12,8 +12,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 from kernel import constants as kernel_constants
 from kernel.config import frozen_facts
 
@@ -59,8 +57,7 @@ class TestSyncScript:
     def test_sync_script_passes(self) -> None:
         """scripts/sync_constants.py must exit 0 (all constants in sync)."""
         script = REPO_ROOT / "scripts" / "sync_constants.py"
-        if not script.exists():
-            pytest.skip("sync_constants.py not found")
+        assert script.exists(), f"sync_constants.py not found at {script}"
         result = subprocess.run(
             [sys.executable, str(script)],
             capture_output=True,
