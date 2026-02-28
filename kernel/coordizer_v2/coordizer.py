@@ -241,7 +241,21 @@ class CoordizerV2:
         bank = ResonanceBank.from_compression(compression)
         bank.save(str(Path(output_dir) / "bank"))
 
-        instance = cls(bank=bank)
+        # Optionally load tokenizer for tokenizer-based coordization.
+        # This only loads the tokenizer (small), not the full model.
+        # Falls back to string-based coordization if unavailable.
+        tokenizer = None
+        if model_id:
+            try:
+                from transformers import AutoTokenizer
+
+                tokenizer = AutoTokenizer.from_pretrained(model_id)
+            except Exception as e:
+                logger.info(
+                    "Tokenizer not available locally (OK — using string coordization): %s", e
+                )
+
+        instance = cls(bank=bank, tokenizer=tokenizer)
         instance._compression_result = compression
 
         # Phase D: Validate
