@@ -27,8 +27,7 @@ import { ROUTES } from "./config/routes";
 import { getComputeTools, sandboxManager } from "./tools/compute-sandbox";
 
 // Read version from package.json (single source of truth)
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { version: APP_VERSION } = require("../package.json") as { version: string };
+import { version as APP_VERSION } from "../package.json";
 
 const KERNEL_URL = config.kernelUrl;
 
