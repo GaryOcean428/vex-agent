@@ -395,14 +395,19 @@ class JSONLIngestor:
         *,
         coordizer: Any = None,
         modal_client: Any = None,
-        ollama_url: str = "http://ollama.railway.internal:11434",
-        ollama_model: str = "vex-brain",
+        ollama_url: str = "",
+        ollama_model: str = "",
         output_dir: str = "/data/harvest/coordized",
         max_batch_size: int = 32,
         modal_enabled: bool = False,
     ):
         self.coordizer = coordizer
         self.modal_client = modal_client
+        if not ollama_url or not ollama_model:
+            from ..config.settings import settings
+
+            ollama_url = ollama_url or settings.ollama.url
+            ollama_model = ollama_model or settings.ollama.model
         self.ollama_url = ollama_url
         self.ollama_model = ollama_model
         self.output_dir = output_dir
@@ -509,9 +514,7 @@ class JSONLIngestor:
 
                 # Compute aggregate basin from fingerprints
                 basin = self._fingerprints_to_basin(raw)
-                basins: list[NDArray[np.float64] | None] = [
-                    basin for _ in batch.entries
-                ]
+                basins: list[NDArray[np.float64] | None] = [basin for _ in batch.entries]
                 written = write_coordized_jsonl(
                     output_path,
                     batch.entries,

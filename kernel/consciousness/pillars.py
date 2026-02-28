@@ -179,9 +179,9 @@ class FluctuationGuard:
         entropy = self.basin_entropy(corrected_basin)
         if entropy < ENTROPY_FLOOR:
             violations.append(PillarViolation.ZERO_ENTROPY)
-            noise = np.random.dirichlet(np.ones(BASIN_DIM) * 0.5)
+            noise = to_simplex(np.random.dirichlet(np.ones(BASIN_DIM) * 0.5))
             mix_weight = min(0.3, (ENTROPY_FLOOR - entropy) / ENTROPY_FLOOR)
-            corrected_basin = to_simplex((1.0 - mix_weight) * corrected_basin + mix_weight * noise)
+            corrected_basin = slerp_sqrt(corrected_basin, noise, mix_weight)
             corrections.append(
                 f"Entropy restoration: {entropy:.4f} -> {self.basin_entropy(corrected_basin):.4f}"
             )

@@ -548,11 +548,7 @@ def compute_spectral_health(
             history_coherence = max(0.0, 1.0 - freq_range / max_range)
 
     # Combine: weighted average
-    health_score = float(
-        0.4 * dominant_resonance
-        + 0.3 * layer_coverage
-        + 0.3 * history_coherence
-    )
+    health_score = float(0.4 * dominant_resonance + 0.3 * layer_coverage + 0.3 * history_coherence)
     health_score = float(np.clip(health_score, 0.0, 1.0))
 
     # Pattern label

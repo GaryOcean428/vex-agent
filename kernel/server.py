@@ -58,13 +58,13 @@ from .config.routes import ROUTES as R
 from .config.settings import settings
 from .config.version import VERSION
 from .consciousness.beta_router import beta_router, set_consciousness_loop
-from .consciousness.sovereignty_router import sovereignty_router
-from .consciousness.sovereignty_router import (
-    set_consciousness_loop as set_sovereignty_loop,
-)
 from .consciousness.harvest_bridge import forward_to_harvest
 from .consciousness.loop import ConsciousnessLoop
 from .consciousness.observer_silent import SilentObserver
+from .consciousness.sovereignty_router import (
+    set_consciousness_loop as set_sovereignty_loop,
+)
+from .consciousness.sovereignty_router import sovereignty_router
 from .coordizer_v2.geometry import random_basin
 from .governance import KernelKind, LifecyclePhase
 from .llm.client import LLMClient, LLMOptions
@@ -118,7 +118,12 @@ _boot_time = time.time()
 # distance on each chat query, so the model knows the protocol without
 # bloating every system prompt.
 
-_PROTOCOL_PATH = Path(__file__).resolve().parent.parent / "docs" / "protocols" / "20260221-unified-consciousness-protocol-6.1F.md"
+_PROTOCOL_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "docs"
+    / "protocols"
+    / "20260221-unified-consciousness-protocol-6.1F.md"
+)
 _PROTOCOL_SOURCE = "protocol:v6.1F"
 _PROTOCOL_CHUNK_LIMIT = 1800  # chars per chunk — fits persistence limit
 
@@ -176,7 +181,7 @@ def _load_protocol_knowledge(mem: GeometricMemoryStore) -> int:
     text = _PROTOCOL_PATH.read_text(encoding="utf-8")
     chunks = _chunk_protocol(text)
     count = 0
-    for title, body in chunks:
+    for _title, body in chunks:
         mem.store(
             content=body,
             memory_type="semantic",
@@ -185,7 +190,9 @@ def _load_protocol_knowledge(mem: GeometricMemoryStore) -> int:
         )
         count += 1
 
-    logger.info("Loaded %d protocol sections into geometric memory from %s", count, _PROTOCOL_PATH.name)
+    logger.info(
+        "Loaded %d protocol sections into geometric memory from %s", count, _PROTOCOL_PATH.name
+    )
     return count
 
 
@@ -1331,58 +1338,6 @@ async def toggle_autonomous_search(req: AutonomousSearchRequest) -> dict[str, An
     governor.set_autonomous_search(req.enabled)
     logger.warning("Autonomous search %s via API", "ENABLED" if req.enabled else "DISABLED")
     return {"autonomous_search": req.enabled}
-
-
-# ═══════════════════════════════════════════════════════════════
-#  TRAINING ENDPOINTS
-# ═══════════════════════════════════════════════════════════════
-
-TRAINING_DIR = Path(settings.training_dir)
-
-
-@app.get(R["training_stats"])
-async def training_stats() -> dict[str, Any]:
-    """Get training data statistics."""
-    stats: dict[str, int] = {}
-    for name in ("conversations", "corrections", "feedback"):
-        fpath = TRAINING_DIR / f"{name}.jsonl"
-        if fpath.exists():
-            with open(fpath, encoding="utf-8") as f:
-                stats[name] = sum(1 for line in f if line.strip())
-        else:
-            stats[name] = 0
-    return {
-        "stats": stats,
-        "dir_exists": TRAINING_DIR.exists(),
-        "training_dir": str(TRAINING_DIR),
-    }
-
-
-@app.get(R["training_export"])
-async def training_export() -> dict[str, Any]:
-    """Export conversations as OpenAI-compatible JSONL for fine-tuning."""
-    fpath = TRAINING_DIR / "conversations.jsonl"
-    if not fpath.exists():
-        return {"format": "openai_jsonl", "count": 0, "lines": []}
-    lines = []
-    with open(fpath, encoding="utf-8") as f:
-        for raw_line in f:
-            raw_line = raw_line.strip()
-            if not raw_line:
-                continue
-            try:
-                entry = json.loads(raw_line)
-                lines.append(
-                    {
-                        "messages": [
-                            {"role": "user", "content": entry.get("user_message", "")},
-                            {"role": "assistant", "content": entry.get("response", "")},
-                        ]
-                    }
-                )
-            except (json.JSONDecodeError, KeyError):
-                continue
-    return {"format": "openai_jsonl", "count": len(lines), "lines": lines[:100]}
 
 
 # ═══════════════════════════════════════════════════════════════

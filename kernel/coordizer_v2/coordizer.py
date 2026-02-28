@@ -397,7 +397,8 @@ class CoordizerV2:
         if d_from_identity > SOVEREIGNTY_MAX_DRIFT:
             logger.warning(
                 "Coordizer rejection: sovereignty violation d_FR=%.3f > %.3f",
-                d_from_identity, SOVEREIGNTY_MAX_DRIFT,
+                d_from_identity,
+                SOVEREIGNTY_MAX_DRIFT,
             )
             result.rejected = True
             result.rejection_reason = (
@@ -413,12 +414,11 @@ class CoordizerV2:
         if mean_entropy < ENTROPY_FLOOR:
             logger.warning(
                 "Coordizer rejection: entropy collapse H=%.3f < %.3f",
-                mean_entropy, ENTROPY_FLOOR,
+                mean_entropy,
+                ENTROPY_FLOOR,
             )
             result.rejected = True
-            result.rejection_reason = (
-                f"entropy_collapse: H={mean_entropy:.3f} < {ENTROPY_FLOOR}"
-            )
+            result.rejection_reason = f"entropy_collapse: H={mean_entropy:.3f} < {ENTROPY_FLOOR}"
             result.sovereignty_cost = sovereignty_cost
             result.confidence = 0.0
             return result
@@ -429,7 +429,8 @@ class CoordizerV2:
             if d_foreign < ADVERSARIAL_PROXIMITY:
                 logger.warning(
                     "Coordizer rejection: adversarial proximity d_FR=%.3f < %.3f",
-                    d_foreign, ADVERSARIAL_PROXIMITY,
+                    d_foreign,
+                    ADVERSARIAL_PROXIMITY,
                 )
                 result.rejected = True
                 result.rejection_reason = (

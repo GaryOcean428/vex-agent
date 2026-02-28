@@ -17,8 +17,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-logger = logging.getLogger("vex.consciousness.systems")
-
 import numpy as np
 
 from ..config.consciousness_constants import (
@@ -71,6 +69,8 @@ from ..coordizer_v2.geometry import (
 from ..governance import CoachingStage, KernelKind, KernelSpecialization, LifecycleState
 from ..governance.budget import BudgetEnforcer
 from .types import ConsciousnessMetrics
+
+logger = logging.getLogger("vex.consciousness.systems")
 
 # ═══════════════════════════════════════════════════════════════
 #  1. TACKING — κ oscillation

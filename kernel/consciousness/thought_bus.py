@@ -183,7 +183,7 @@ class ThoughtBus:
             weights = weights / weights.sum()
 
         # Weighted Fréchet mean — iterate toward weighted centroid
-        result = frechet_mean(basins, weights=weights)
+        result = frechet_mean(basins, weights=weights.tolist())
         return result
 
     def forward_transcript(self, phi: float) -> None:

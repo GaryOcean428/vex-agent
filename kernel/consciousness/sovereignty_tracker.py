@@ -55,9 +55,7 @@ class SovereigntyTracker:
         if persist_path and persist_path.exists():
             try:
                 self.restore(json.loads(persist_path.read_text()))
-                logger.info(
-                    "Restored sovereignty history: %d snapshots", len(self._history)
-                )
+                logger.info("Restored sovereignty history: %d snapshots", len(self._history))
             except (json.JSONDecodeError, KeyError, TypeError):
                 logger.warning("Failed to restore sovereignty history, starting fresh")
 

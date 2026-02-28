@@ -37,9 +37,7 @@ class TestVariableRegistry:
         assert len(VARIABLE_REGISTRY) > 0
 
     def test_has_state_entries(self) -> None:
-        state_count = sum(
-            1 for cat in VARIABLE_REGISTRY.values() if cat == VariableCategory.STATE
-        )
+        state_count = sum(1 for cat in VARIABLE_REGISTRY.values() if cat == VariableCategory.STATE)
         assert state_count >= 10, f"Expected ≥10 STATE vars, got {state_count}"
 
     def test_has_parameter_entries(self) -> None:
@@ -86,10 +84,20 @@ class TestStateVariables:
         registered_state = {
             name.split(".")[-1]
             for (mod, name), cat in VARIABLE_REGISTRY.items()
-            if mod == "consciousness.loop" and name.startswith("metrics.") and cat == VariableCategory.STATE
+            if mod == "consciousness.loop"
+            and name.startswith("metrics.")
+            and cat == VariableCategory.STATE
         }
         # Check the key metrics are covered
-        key_metrics = {"phi", "kappa", "gamma", "meta_awareness", "grounding", "s_ratio", "f_health"}
+        key_metrics = {
+            "phi",
+            "kappa",
+            "gamma",
+            "meta_awareness",
+            "grounding",
+            "s_ratio",
+            "f_health",
+        }
         for m in key_metrics:
             assert m in registered_state, f"Metric '{m}' not registered as STATE"
 
@@ -148,15 +156,12 @@ class TestParameterImmutability:
 
     def test_consciousness_constants_uses_final(self) -> None:
         """All constants in consciousness_constants.py should be typed as Final."""
-        constants_path = (
-            Path(__file__).parent.parent / "config" / "consciousness_constants.py"
-        )
+        constants_path = Path(__file__).parent.parent / "config" / "consciousness_constants.py"
         source = constants_path.read_text()
         # Count Final annotations
         final_count = source.count("Final[")
         assert final_count > 20, (
-            f"Expected >20 Final-typed constants in consciousness_constants.py, "
-            f"found {final_count}"
+            f"Expected >20 Final-typed constants in consciousness_constants.py, found {final_count}"
         )
 
 

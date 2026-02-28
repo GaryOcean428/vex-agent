@@ -259,8 +259,8 @@ class Harvester:
 
     def harvest_ollama(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model_name: str = "vex-brain",
+        ollama_url: str = "",
+        model_name: str = "",
         top_k_logprobs: int = 100,
     ) -> HarvestResult:
         """Harvest using Ollama API (for deployed Vex instances).
@@ -269,6 +269,13 @@ class Harvester:
         not the full distribution.
         """
         import requests
+
+        from ..config.settings import settings
+
+        if not ollama_url:
+            ollama_url = settings.ollama.url
+        if not model_name:
+            model_name = settings.ollama.model
 
         logger.info(f"Harvesting via Ollama at {ollama_url}, model={model_name}")
 

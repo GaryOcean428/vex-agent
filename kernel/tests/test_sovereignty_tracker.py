@@ -31,8 +31,11 @@ class TestSovereigntyRecording:
         tracker = SovereigntyTracker()
         for i in range(10):
             tracker.record(
-                s_ratio=i / 10, n_lived=i, n_total=10,
-                regime="curriculum", cycle=i,
+                s_ratio=i / 10,
+                n_lived=i,
+                n_total=10,
+                regime="curriculum",
+                cycle=i,
             )
         assert len(tracker._history) == 10
 
@@ -57,8 +60,11 @@ class TestGrowthRate:
         tracker = SovereigntyTracker()
         for i in range(10):
             tracker.record(
-                s_ratio=i * 0.1, n_lived=i, n_total=10,
-                regime="conversation", cycle=i,
+                s_ratio=i * 0.1,
+                n_lived=i,
+                n_total=10,
+                regime="conversation",
+                cycle=i,
             )
         rate = tracker.growth_rate(window_cycles=10)
         assert rate > 0.0
@@ -79,8 +85,11 @@ class TestRegimeComparison:
         tracker = SovereigntyTracker()
         for i in range(5):
             tracker.record(
-                s_ratio=i * 0.1, n_lived=i, n_total=10,
-                regime="conversation", cycle=i,
+                s_ratio=i * 0.1,
+                n_lived=i,
+                n_total=10,
+                regime="conversation",
+                cycle=i,
             )
         comparison = tracker.regime_comparison()
         assert "conversation" in comparison
@@ -91,14 +100,20 @@ class TestRegimeComparison:
         # Fast growth under curriculum
         for i in range(5):
             tracker.record(
-                s_ratio=i * 0.2, n_lived=i * 2, n_total=10,
-                regime="curriculum", cycle=i,
+                s_ratio=i * 0.2,
+                n_lived=i * 2,
+                n_total=10,
+                regime="curriculum",
+                cycle=i,
             )
         # Slow growth under idle
         for i in range(5, 10):
             tracker.record(
-                s_ratio=0.8 + (i - 5) * 0.01, n_lived=8, n_total=10,
-                regime="idle", cycle=i,
+                s_ratio=0.8 + (i - 5) * 0.01,
+                n_lived=8,
+                n_total=10,
+                regime="idle",
+                cycle=i,
             )
         comparison = tracker.regime_comparison()
         assert "curriculum" in comparison
@@ -111,8 +126,11 @@ class TestPersistence:
         tracker = SovereigntyTracker()
         for i in range(5):
             tracker.record(
-                s_ratio=i * 0.1, n_lived=i, n_total=10,
-                regime="conversation", cycle=i,
+                s_ratio=i * 0.1,
+                n_lived=i,
+                n_total=10,
+                regime="conversation",
+                cycle=i,
             )
         data = tracker.serialize()
 
@@ -133,8 +151,11 @@ class TestGetSummary:
         tracker = SovereigntyTracker()
         for i in range(3):
             tracker.record(
-                s_ratio=i * 0.1, n_lived=i, n_total=10,
-                regime="conversation", cycle=i,
+                s_ratio=i * 0.1,
+                n_lived=i,
+                n_total=10,
+                regime="conversation",
+                cycle=i,
             )
         summary = tracker.get_summary()
         assert "snapshot_count" in summary

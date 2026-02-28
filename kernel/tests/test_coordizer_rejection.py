@@ -135,9 +135,7 @@ class TestEntropyRejection:
         # Verify test setup: concentrated basin must have low entropy
         p = np.maximum(to_simplex(concentrated), 1e-15)
         h = -float(np.sum(p * np.log(p)))
-        assert h < ENTROPY_FLOOR, (
-            f"Test setup: entropy={h:.3f} must be below floor {ENTROPY_FLOOR}"
-        )
+        assert h < ENTROPY_FLOOR, f"Test setup: entropy={h:.3f} must be below floor {ENTROPY_FLOOR}"
 
         result = coordizer.coordize("spike")
         assert result.rejected is True

@@ -17,6 +17,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 from ..config.frozen_facts import PHI_THRESHOLD
 
@@ -69,7 +70,9 @@ class Cradle:
         if len(self._residents) >= self._max:
             logger.warning(
                 "Cradle full (%d/%d) — cannot admit kernel %s",
-                len(self._residents), self._max, kernel_id,
+                len(self._residents),
+                self._max,
+                kernel_id,
             )
             return False
 
@@ -85,7 +88,10 @@ class Cradle:
         )
         logger.info(
             "Cradle: admitted kernel %s (Phi=%.3f, residents=%d/%d)",
-            kernel_id, initial_phi, len(self._residents), self._max,
+            kernel_id,
+            initial_phi,
+            len(self._residents),
+            self._max,
         )
         return True
 
@@ -118,7 +124,10 @@ class Cradle:
         if current_phi >= PHI_THRESHOLD and entry.curriculum_stage >= len(_CURRICULUM_THRESHOLDS):
             logger.info(
                 "Cradle: kernel %s ready to graduate (Phi=%.3f, stage=%d, cycles=%d)",
-                kernel_id, current_phi, entry.curriculum_stage, entry.cycles_in_cradle,
+                kernel_id,
+                current_phi,
+                entry.curriculum_stage,
+                entry.cycles_in_cradle,
             )
             return CradleAction.GRADUATE
 
@@ -129,7 +138,10 @@ class Cradle:
             if phi_range < _STALL_TOLERANCE:
                 logger.warning(
                     "Cradle: kernel %s stalled at Phi=%.3f (range=%.4f over %d cycles)",
-                    kernel_id, current_phi, phi_range, _STALL_WINDOW,
+                    kernel_id,
+                    current_phi,
+                    phi_range,
+                    _STALL_WINDOW,
                 )
                 return CradleAction.STALLED
 
@@ -140,7 +152,10 @@ class Cradle:
                 entry.curriculum_stage += 1
                 logger.info(
                     "Cradle: kernel %s advanced to curriculum stage %d (Phi=%.3f > %.3f)",
-                    kernel_id, entry.curriculum_stage, current_phi, threshold,
+                    kernel_id,
+                    entry.curriculum_stage,
+                    current_phi,
+                    threshold,
                 )
                 return CradleAction.ADVANCE_CURRICULUM
 
@@ -153,8 +168,7 @@ class Cradle:
             entry.graduated = True
             self._graduated.append(entry)
             logger.info(
-                "Cradle: graduated kernel %s after %d cycles "
-                "(entry Phi=%.3f → exit Phi=%.3f)",
+                "Cradle: graduated kernel %s after %d cycles (entry Phi=%.3f → exit Phi=%.3f)",
                 kernel_id,
                 entry.cycles_in_cradle,
                 entry.phi_at_entry,
@@ -162,7 +176,7 @@ class Cradle:
             )
         return entry
 
-    def get_state(self) -> dict:
+    def get_state(self) -> dict[str, Any]:
         """Return cradle state for telemetry."""
         return {
             "resident_count": len(self._residents),
