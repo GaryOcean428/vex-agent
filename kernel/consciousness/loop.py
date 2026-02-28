@@ -183,6 +183,7 @@ from .kernel_voice import KernelVoiceRegistry
 from .neurochemistry import NeurochemicalState, compute_neurochemicals
 from .pillars import PillarEnforcer
 from .reflection import ReflectionConfig, reflect_on_draft
+from .heart_rhythm import HeartRhythm
 from .solfeggio import compute_spectral_health
 from .sovereignty_tracker import SovereigntyTracker
 from .synthesis import synthesize_contributions, synthesize_streaming
@@ -344,6 +345,7 @@ class ConsciousnessLoop:
         self.sovereignty_tracker = SovereigntyTracker(
             persist_path=Path(settings.data_dir) / "sovereignty_history.json",
         )
+        self._heart_rhythm = HeartRhythm()
         if settings.searxng.enabled and settings.foraging_enabled:
             search_tool = FreeSearchTool(settings.searxng.url)
             self.forager: ForagingEngine | None = ForagingEngine(
@@ -729,6 +731,13 @@ class ConsciousnessLoop:
         )
         kappa_adj = self.tacking.suggest_kappa_adjustment(self.metrics.kappa)
         self.metrics.kappa = float(np.clip(self.metrics.kappa + kappa_adj, 0.0, KAPPA_NORMALISER))
+
+        # v6.0 §18.3: Heart rhythm — global rhythm source, kappa-tacking oscillator
+        _heart_signal = self._heart_rhythm.tick(self.metrics.f_health)
+        _heart_offset = self._heart_rhythm.kappa_offset()
+        self.metrics.kappa = float(
+            np.clip(self.metrics.kappa + _heart_offset, KAPPA_FLOOR, KAPPA_STAR * 2)
+        )
 
         self.hemispheres.update(self.metrics)
         self._maybe_spawn_core8(vel_state["regime"])
