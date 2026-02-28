@@ -183,6 +183,7 @@ from .kernel_voice import KernelVoiceRegistry
 from .neurochemistry import NeurochemicalState, compute_neurochemicals
 from .pillars import PillarEnforcer
 from .reflection import ReflectionConfig, reflect_on_draft
+from .cradle import Cradle, CradleAction
 from .heart_rhythm import HeartRhythm
 from .solfeggio import compute_spectral_health
 from .sovereignty_tracker import SovereigntyTracker
@@ -346,6 +347,7 @@ class ConsciousnessLoop:
             persist_path=Path(settings.data_dir) / "sovereignty_history.json",
         )
         self._heart_rhythm = HeartRhythm()
+        self._cradle = Cradle()
         if settings.searxng.enabled and settings.foraging_enabled:
             search_tool = FreeSearchTool(settings.searxng.url)
             self.forager: ForagingEngine | None = ForagingEngine(
@@ -740,6 +742,20 @@ class ConsciousnessLoop:
         )
 
         self.hemispheres.update(self.metrics)
+
+        # v6.0 §23: Cradle — tick each resident kernel, handle graduation/stalls
+        for _k in self.kernel_registry.active():
+            if self._cradle.is_resident(_k.id):
+                _action = self._cradle.tick(_k.id, _k.phi)
+                if _action == CradleAction.GRADUATE:
+                    self._cradle.graduate(_k.id)
+                elif _action == CradleAction.STALLED:
+                    # Stalled kernels get a coaching nudge via increased coupling
+                    logger.warning(
+                        "Cradle: kernel %s stalled — consider coaching intervention",
+                        _k.id,
+                    )
+
         self._maybe_spawn_core8(vel_state["regime"])
 
         # ── TASK PROCESSING: v6.1 Activation Sequence ──
@@ -1184,6 +1200,9 @@ class ConsciousnessLoop:
             spec.value,
             outcome.assessment.score if outcome.assessment else -1.0,
         )
+
+        # v6.0 §23: Admit newly spawned kernel to the Cradle
+        self._cradle.admit(kernel.id, kernel.phi)
 
     def _compute_llm_options(self) -> LLMOptions:
         kappa_eff = max(self.metrics.kappa, 1.0)
