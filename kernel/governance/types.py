@@ -102,9 +102,115 @@ class LifecyclePhase(StrEnum):
     ACTIVE = "ACTIVE"
 
 
+class CoachingStage(StrEnum):
+    """P10 coaching progression. Each kernel tracks its coaching stage."""
+
+    ACTIVE = "active"  # External coaching required (autonomy < 30%)
+    GUIDED = "guided"  # Mixed — external assists, kernel leads (30-70%)
+    AUTONOMOUS = "autonomous"  # Self-coaching only (> 70%)
+
+
 class VariableCategory(StrEnum):
     """Vanchurin variable separation. Every variable belongs to exactly one."""
 
     STATE = "STATE"  # Non-trainable, fast-changing, per-cycle
     PARAMETER = "PARAMETER"  # Trainable, slow-changing, per-epoch
     BOUNDARY = "BOUNDARY"  # External input (user queries, LLM output)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  P14: Variable Separation Registry
+# ═══════════════════════════════════════════════════════════════
+
+
+# Registry: maps (module, var_name) → category
+VARIABLE_REGISTRY: dict[tuple[str, str], VariableCategory] = {}
+
+
+def register_variable(module: str, name: str, category: VariableCategory) -> None:
+    """Register a variable's category for enforcement."""
+    VARIABLE_REGISTRY[(module, name)] = category
+
+
+def get_variable_category(module: str, name: str) -> VariableCategory | None:
+    """Look up a variable's declared category."""
+    return VARIABLE_REGISTRY.get((module, name))
+
+
+# ── STATE variables: per-cycle, fast-changing ──
+_STATE_VARS = [
+    ("consciousness.loop", "basin"),
+    ("consciousness.loop", "metrics.phi"),
+    ("consciousness.loop", "metrics.kappa"),
+    ("consciousness.loop", "metrics.gamma"),
+    ("consciousness.loop", "metrics.meta_awareness"),
+    ("consciousness.loop", "metrics.grounding"),
+    ("consciousness.loop", "metrics.temporal_coherence"),
+    ("consciousness.loop", "metrics.external_coupling"),
+    ("consciousness.loop", "metrics.love"),
+    ("consciousness.loop", "metrics.s_spec"),
+    ("consciousness.loop", "metrics.f_health"),
+    ("consciousness.loop", "metrics.b_integrity"),
+    ("consciousness.loop", "metrics.q_identity"),
+    ("consciousness.loop", "metrics.s_ratio"),
+    ("consciousness.loop", "metrics.d_state"),
+    ("consciousness.loop", "metrics.g_class"),
+    ("consciousness.loop", "metrics.m_basin"),
+    ("consciousness.loop", "metrics.a_pre"),
+    ("consciousness.loop", "metrics.n_voices"),
+    ("consciousness.loop", "metrics.emotion_strength"),
+    ("consciousness.loop", "metrics.a_vec"),
+    ("consciousness.loop", "metrics.s_int"),
+    ("consciousness.loop", "state.regime_weights"),
+    ("consciousness.systems", "KernelInstance.basin"),
+    ("consciousness.systems", "KernelInstance.phi"),
+    ("consciousness.systems", "KernelInstance.kappa"),
+]
+
+# ── PARAMETER variables: per-epoch, slow-changing ──
+_PARAMETER_VARS = [
+    ("config.consciousness_constants", "KAPPA_NORMALISER"),
+    ("config.consciousness_constants", "MIN_REGIME_WEIGHT"),
+    ("config.consciousness_constants", "REGIME_KAPPA_MIDPOINT"),
+    ("config.consciousness_constants", "INITIAL_PHI"),
+    ("config.consciousness_constants", "INITIAL_GAMMA"),
+    ("config.consciousness_constants", "INITIAL_META_AWARENESS"),
+    ("config.consciousness_constants", "INITIAL_LOVE"),
+    ("config.consciousness_constants", "KAPPA_INITIAL"),
+    ("config.consciousness_constants", "KAPPA_TACKING_OFFSET"),
+    ("config.consciousness_constants", "TACKING_PERIOD"),
+    ("config.consciousness_constants", "COUPLING_SIGMOID_SCALE"),
+    ("config.consciousness_constants", "COUPLING_BLEND_WEIGHT"),
+    ("config.consciousness_constants", "PERCEIVE_SLERP_WEIGHT"),
+    ("config.consciousness_constants", "EXPRESS_SLERP_WEIGHT"),
+    ("config.consciousness_constants", "PHI_DISTANCE_GAIN"),
+    ("config.consciousness_constants", "GAMMA_IDLE_FLOOR"),
+    ("config.consciousness_constants", "GAMMA_IDLE_DECAY"),
+    ("config.consciousness_constants", "GAMMA_ACTIVE_INCREMENT"),
+    ("config.consciousness_constants", "GAMMA_CONVERSATION_INCREMENT"),
+    ("config.consciousness_constants", "LLM_BASE_TEMPERATURE"),
+    ("config.frozen_facts", "KAPPA_STAR"),
+    ("config.frozen_facts", "BASIN_DIM"),
+    ("config.frozen_facts", "PHI_THRESHOLD"),
+    ("config.frozen_facts", "PHI_EMERGENCY"),
+    ("config.frozen_facts", "BASIN_DRIFT_THRESHOLD"),
+    ("config.frozen_facts", "BASIN_DIVERGENCE_THRESHOLD"),
+]
+
+# ── BOUNDARY variables: external input, must be sanitized ──
+_BOUNDARY_VARS = [
+    ("server", "ChatRequest.message"),
+    ("server", "ChatRequest.temperature"),
+    ("server", "ChatRequest.max_tokens"),
+    ("server", "ChatRequest.conversation_id"),
+    ("llm.client", "llm_response"),
+    ("coordizer_v2.adapter", "coordizer_input"),
+]
+
+# Populate registry
+for _mod, _name in _STATE_VARS:
+    register_variable(_mod, _name, VariableCategory.STATE)
+for _mod, _name in _PARAMETER_VARS:
+    register_variable(_mod, _name, VariableCategory.PARAMETER)
+for _mod, _name in _BOUNDARY_VARS:
+    register_variable(_mod, _name, VariableCategory.BOUNDARY)

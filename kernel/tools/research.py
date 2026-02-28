@@ -19,9 +19,6 @@ from ..config.settings import settings
 
 logger = logging.getLogger("vex.tools.research")
 
-PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
-PERPLEXITY_MODEL = "sonar-pro"
-
 
 @dataclass
 class ResearchResult:
@@ -30,7 +27,7 @@ class ResearchResult:
     query: str
     answer: str
     citations: list[str] = field(default_factory=list)
-    model: str = PERPLEXITY_MODEL
+    model: str = ""
     usage: dict[str, int] = field(default_factory=dict)
     success: bool = True
     error: str | None = None
@@ -83,15 +80,15 @@ async def deep_research(
         ).to_dict()
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=float(settings.perplexity.timeout)) as client:
             response = await client.post(
-                f"{PERPLEXITY_BASE_URL}/chat/completions",
+                f"{settings.perplexity.base_url}/chat/completions",
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": PERPLEXITY_MODEL,
+                    "model": settings.perplexity.model,
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": query},
@@ -134,7 +131,7 @@ async def deep_research(
                 query=query,
                 answer=answer,
                 citations=citations,
-                model=data.get("model", PERPLEXITY_MODEL),
+                model=data.get("model", settings.perplexity.model),
                 usage={
                     "prompt_tokens": usage.get("prompt_tokens", 0),
                     "completion_tokens": usage.get("completion_tokens", 0),

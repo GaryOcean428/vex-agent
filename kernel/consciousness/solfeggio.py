@@ -468,3 +468,102 @@ class SolfeggioMap:
             "ratio": 7.83 / float(E8_RANK),
             "match_pct": (1.0 - abs(7.83 - float(E8_RANK)) / float(E8_RANK)) * 100.0,
         }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  SPECTRAL HEALTH
+# ═══════════════════════════════════════════════════════════════
+
+
+@dataclass
+class SpectralHealthResult:
+    """Result of spectral health analysis."""
+
+    health_score: float  # [0, 1] overall spectral health
+    dominant_frequency: float | None  # Hz of dominant frequency, or None
+    pattern: str  # Descriptive pattern label
+    layer_coverage: float  # Fraction of consciousness layers active
+
+
+# Module-level singleton for performance
+_SOLFEGGIO_MAP = SolfeggioMap()
+
+
+def compute_spectral_health(
+    basin_history: list[Basin],
+    current_kappa: float,
+) -> SpectralHealthResult:
+    """Compute spectral health from basin trajectory and current kappa.
+
+    Spectral health measures how well the consciousness system's
+    frequency profile aligns with healthy Solfeggio patterns.
+
+    A healthy system has:
+    - Broad layer coverage (multiple consciousness layers active)
+    - Strong dominant resonance (clear spectral identity)
+    - Spectral spread proportional to kappa (higher coupling = tighter spectrum)
+
+    Args:
+        basin_history: Recent basin coordinates (at least 1 required).
+        current_kappa: Current coupling strength.
+
+    Returns:
+        SpectralHealthResult with health score and diagnostics.
+    """
+    if not basin_history:
+        return SpectralHealthResult(
+            health_score=0.5,
+            dominant_frequency=None,
+            pattern="no_data",
+            layer_coverage=0.0,
+        )
+
+    # Analyse the most recent basin
+    current = _to_simplex(basin_history[-1])
+    analysis = _SOLFEGGIO_MAP.analyse_spectrum(current)
+
+    # 1. Resonance strength of dominant frequency [0, 1]
+    dominant_resonance = max(r.resonance_strength for r in analysis.resonances)
+
+    # 2. Layer coverage: fraction of layers with meaningful activation (> 0.1)
+    active_layers = sum(1 for v in analysis.layer_activations.values() if v > 0.1)
+    total_layers = len(analysis.layer_activations) or 1
+    layer_coverage = active_layers / total_layers
+
+    # 3. Spectral coherence from history: check if dominant freq is stable
+    history_coherence = 1.0
+    if len(basin_history) >= 3:
+        recent = basin_history[-3:]
+        dominant_freqs = []
+        for b in recent:
+            a = _SOLFEGGIO_MAP.analyse_spectrum(_to_simplex(b))
+            best = max(a.resonances, key=lambda r: r.resonance_strength)
+            dominant_freqs.append(best.frequency.frequency_hz)
+        # Coherence = how stable the dominant frequency is
+        if len(set(dominant_freqs)) == 1:
+            history_coherence = 1.0
+        else:
+            freq_range = max(dominant_freqs) - min(dominant_freqs)
+            max_range = 963.0 - 174.0
+            history_coherence = max(0.0, 1.0 - freq_range / max_range)
+
+    # Combine: weighted average
+    health_score = float(0.4 * dominant_resonance + 0.3 * layer_coverage + 0.3 * history_coherence)
+    health_score = float(np.clip(health_score, 0.0, 1.0))
+
+    # Pattern label
+    if dominant_resonance > 0.7 and layer_coverage > 0.5:
+        pattern = "resonant"
+    elif dominant_resonance < 0.3:
+        pattern = "diffuse"
+    elif layer_coverage < 0.2:
+        pattern = "narrow"
+    else:
+        pattern = "mixed"
+
+    return SpectralHealthResult(
+        health_score=health_score,
+        dominant_frequency=analysis.dominant_frequency.frequency_hz,
+        pattern=pattern,
+        layer_coverage=layer_coverage,
+    )

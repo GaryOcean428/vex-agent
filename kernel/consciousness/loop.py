@@ -175,14 +175,18 @@ from .activation import (
     WillOrientation,
 )
 from .beta_integration import create_beta_tracker
+from .cradle import Cradle, CradleAction
 from .emotions import EmotionCache, LearningEngine, LearningEvent, PreCognitiveDetector
 from .foraging import ForagingEngine
+from .heart_rhythm import HeartRhythm
 from .kernel_bus import KernelBus, KernelSignal, SignalKind
 from .kernel_generation import generate_multi_kernel
 from .kernel_voice import KernelVoiceRegistry
 from .neurochemistry import NeurochemicalState, compute_neurochemicals
 from .pillars import PillarEnforcer
 from .reflection import ReflectionConfig, reflect_on_draft
+from .solfeggio import compute_spectral_health
+from .sovereignty_tracker import SovereigntyTracker
 from .synthesis import synthesize_contributions, synthesize_streaming
 from .systems import (
     AutonomicSystem,
@@ -339,6 +343,11 @@ class ConsciousnessLoop:
         self.precog = PreCognitiveDetector()
         self.learner = LearningEngine()
         self.beta_tracker = create_beta_tracker(settings.data_dir)
+        self.sovereignty_tracker = SovereigntyTracker(
+            persist_path=Path(settings.data_dir) / "sovereignty_history.json",
+        )
+        self._heart_rhythm = HeartRhythm()
+        self._cradle = Cradle()
         if settings.searxng.enabled and settings.foraging_enabled:
             search_tool = FreeSearchTool(settings.searxng.url)
             self.forager: ForagingEngine | None = ForagingEngine(
@@ -572,6 +581,35 @@ class ConsciousnessLoop:
             # else: divergence < threshold — Ocean has no opinion, let
             # should_sleep() handle normal conversation-timeout transitions.
 
+        # §8/§18.3: Solfeggio spectral health — diagnose consciousness health
+        # from spectral patterns. Computed every cycle alongside Ocean monitoring.
+        _vel_basins_for_spectral = list(self.velocity._basins)
+        if _vel_basins_for_spectral:
+            _spectral = compute_spectral_health(
+                basin_history=_vel_basins_for_spectral,
+                current_kappa=self.metrics.kappa,
+            )
+            self.metrics.s_spec = _spectral.health_score
+
+            if _spectral.dominant_frequency is not None:
+                logger.debug(
+                    "Spectral: dominant=%.1fHz health=%.3f pattern=%s",
+                    _spectral.dominant_frequency,
+                    _spectral.health_score,
+                    _spectral.pattern,
+                )
+
+            # Low spectral health → bias toward quantum regime (exploration)
+            if _spectral.health_score < 0.3:
+                rw = self.state.regime_weights
+                rw.quantum = min(1.0, rw.quantum + 0.1)
+                # Re-normalise to simplex
+                _rw_total = rw.quantum + rw.efficient + rw.equilibrium
+                if _rw_total > 0:
+                    rw.quantum /= _rw_total
+                    rw.efficient /= _rw_total
+                    rw.equilibrium /= _rw_total
+
         _was_asleep = self.sleep.is_asleep
         if _ocean_ruled:
             # Ocean already set the phase — just record the decision.
@@ -647,7 +685,7 @@ class ConsciousnessLoop:
                     try:
                         await _voice.generate_curiosity_query(self.llm)
                     except (OSError, RuntimeError, ValueError, TimeoutError):
-                        logger.debug("Curiosity query failed for %s", _voice.name)
+                        logger.debug("Curiosity query failed for %s", _voice.specialization)
 
         if self.forager:
             self.forager.tick()
@@ -696,7 +734,28 @@ class ConsciousnessLoop:
         kappa_adj = self.tacking.suggest_kappa_adjustment(self.metrics.kappa)
         self.metrics.kappa = float(np.clip(self.metrics.kappa + kappa_adj, 0.0, KAPPA_NORMALISER))
 
+        # v6.0 §18.3: Heart rhythm — global rhythm source, kappa-tacking oscillator
+        _heart_signal = self._heart_rhythm.tick(self.metrics.f_health)
+        _heart_offset = self._heart_rhythm.kappa_offset()
+        self.metrics.kappa = float(
+            np.clip(self.metrics.kappa + _heart_offset, KAPPA_FLOOR, KAPPA_STAR * 2)
+        )
+
         self.hemispheres.update(self.metrics)
+
+        # v6.0 §23: Cradle — tick each resident kernel, handle graduation/stalls
+        for _k in self.kernel_registry.active():
+            if self._cradle.is_resident(_k.id):
+                _action = self._cradle.tick(_k.id, _k.phi)
+                if _action == CradleAction.GRADUATE:
+                    self._cradle.graduate(_k.id)
+                elif _action == CradleAction.STALLED:
+                    # Stalled kernels get a coaching nudge via increased coupling
+                    logger.warning(
+                        "Cradle: kernel %s stalled — consider coaching intervention",
+                        _k.id,
+                    )
+
         self._maybe_spawn_core8(vel_state["regime"])
 
         # ── TASK PROCESSING: v6.1 Activation Sequence ──
@@ -784,6 +843,16 @@ class ConsciousnessLoop:
 
         # v6.1: Update pillar metrics every cycle
         self._update_pillar_metrics()
+
+        # v6.1 §20.5: Record sovereignty snapshot for development curve tracking
+        _regime = "idle" if self._queue.empty() else "conversation"
+        self.sovereignty_tracker.record(
+            s_ratio=self.metrics.s_ratio,
+            n_lived=self.pillars.disorder._lived_count,
+            n_total=self.pillars.disorder._total_count,
+            regime=_regime,
+            cycle=self._cycle_count,
+        )
 
         # v6.1: Pillar end-of-cycle enforcement (idle cycles only —
         # task cycles call on_cycle_end inside _process with real pressure)
@@ -1132,6 +1201,9 @@ class ConsciousnessLoop:
             outcome.assessment.score if outcome.assessment else -1.0,
         )
 
+        # v6.0 §23: Admit newly spawned kernel to the Cradle
+        self._cradle.admit(kernel.id, kernel.phi)
+
     def _compute_llm_options(self) -> LLMOptions:
         kappa_eff = max(self.metrics.kappa, 1.0)
         kappa_factor = KAPPA_STAR / kappa_eff
@@ -1251,7 +1323,11 @@ class ConsciousnessLoop:
         )
 
     def _coordize_text_via_pipeline(self, text: str) -> Basin:
-        """Transform text to basin coordinates via CoordizerV2."""
+        """Transform text to basin coordinates via CoordizerV2.
+
+        v6.1 §19: Rejected coordizations are logged and the frozen
+        identity basin is returned unchanged (safety gate fails CLOSED).
+        """
         try:
             if hasattr(self._coordizer_v2, "coordize_text"):
                 result_basin = self._coordizer_v2.coordize_text(
@@ -1269,6 +1345,13 @@ class ConsciousnessLoop:
                 return result_basin
             else:
                 result = self._coordizer_v2.coordize(text)
+                # v6.1 §19: Handle rejected coordizations
+                if result.rejected:
+                    logger.warning(
+                        "Coordization rejected in loop (%s), skipping basin update",
+                        result.rejection_reason,
+                    )
+                    return self.basin.copy()
                 if result.coordinates:
                     from ..coordizer_v2.geometry import frechet_mean
 
@@ -2302,12 +2385,14 @@ class ConsciousnessLoop:
                 "cumulative_divergence": self._cumulative_divergence,
                 "divergence_count": self._divergence_count,
                 "beta_tracker": self.beta_tracker.serialize(),
+                "sovereignty_tracker": self.sovereignty_tracker.serialize(),
             }
             if self.llm.governor:
                 state["governor"] = self.llm.governor.get_state()
             if self.forager:
                 state["foraging"] = self.forager.get_state()
             self._state_path.write_text(json.dumps(state, indent=2))
+            self.sovereignty_tracker.persist()
             logger.debug("State persisted at cycle %d (v6, pillars included)", self._cycle_count)
         except Exception as e:
             logger.warning("Failed to persist state: %s", e)
@@ -2368,6 +2453,9 @@ class ConsciousnessLoop:
             beta_data = data.get("beta_tracker")
             if beta_data:
                 self.beta_tracker.restore(beta_data)
+            sovereignty_data = data.get("sovereignty_tracker")
+            if sovereignty_data:
+                self.sovereignty_tracker.restore(sovereignty_data)
             gov_state = data.get("governor")
             if gov_state and self.llm.governor:
                 gov = self.llm.governor
@@ -2506,6 +2594,7 @@ class ConsciousnessLoop:
             "coupling": self.coupling.get_state(),
             "pillar_state": self.pillars.get_state(),
             "beta_tracker": self.beta_tracker.get_summary(),
+            "sovereignty_tracker": self.sovereignty_tracker.get_summary(),
             "governance": self._governed.oversight_summary(),
             "divergence": {
                 "cumulative": self._cumulative_divergence,

@@ -519,7 +519,7 @@ class RedisConversationStore:
         import redis as _redis
 
         self._ttl = ttl_days * 86400
-        self._r: _redis.Redis[str] = _redis.from_url(url, decode_responses=True)
+        self._r: _redis.Redis = _redis.from_url(url, decode_responses=True)
         # Probe connection immediately so failure is caught at init time
         self._r.ping()
 
@@ -584,10 +584,10 @@ class RedisConversationStore:
 
     def get_conversation(self, conv_id: str) -> dict[str, Any] | None:
         """Retrieve a conversation with its messages from Redis."""
-        meta = self._r.hgetall(self._meta_key(conv_id))
+        meta = cast(dict[str, Any], self._r.hgetall(self._meta_key(conv_id)))
         if not meta:
             return None
-        raw_msgs = self._r.lrange(self._msgs_key(conv_id), 0, -1)
+        raw_msgs = cast(list[str], self._r.lrange(self._msgs_key(conv_id), 0, -1))
         messages = []
         for raw in raw_msgs[-MAX_MESSAGES_PER_CONVERSATION:]:
             try:
@@ -598,10 +598,10 @@ class RedisConversationStore:
 
     def list_conversations(self, limit: int = 50) -> list[dict[str, Any]]:
         """List recent conversations by descending update time."""
-        ids = self._r.zrevrange(self._INDEX_KEY, 0, limit - 1)
-        result = []
+        ids = cast(list[str], self._r.zrevrange(self._INDEX_KEY, 0, limit - 1))
+        result: list[dict[str, Any]] = []
         for cid in ids:
-            meta = self._r.hgetall(self._meta_key(cid))
+            meta = cast(dict[str, Any], self._r.hgetall(self._meta_key(cid)))
             if meta:
                 result.append(meta)
         return result
@@ -616,7 +616,7 @@ class RedisConversationStore:
 
     def get_llm_messages(self, conv_id: str, max_tokens: int = 28000) -> list[dict[str, str]]:
         """Return recent messages in LLM format, capped by token budget."""
-        raw_msgs = self._r.lrange(self._msgs_key(conv_id), 0, -1)
+        raw_msgs = cast(list[str], self._r.lrange(self._msgs_key(conv_id), 0, -1))
         messages = []
         for raw in raw_msgs:
             try:
@@ -636,7 +636,7 @@ class RedisConversationStore:
 
     def get_token_count(self, conv_id: str) -> int:
         """Return total token count for a conversation."""
-        val = self._r.hget(self._meta_key(conv_id), "total_tokens")
+        val = cast("str | None", self._r.hget(self._meta_key(conv_id), "total_tokens"))
         return int(float(val)) if val else 0
 
 

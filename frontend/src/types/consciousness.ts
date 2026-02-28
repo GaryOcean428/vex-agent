@@ -627,6 +627,7 @@ export interface TrainingStats {
   conversations: number;
   feedback: number;
   curriculum_chunks: number;
+  coordizer_active: boolean;
   uploads: number;
   dir_exists: boolean;
   training_dir: string;

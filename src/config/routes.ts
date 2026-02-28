@@ -26,7 +26,6 @@ export const ROUTES = {
   chat_stream: "/chat/stream",
   chat_auth: "/chat/auth",
   chat_status: "/chat/status",
-  chat_history: "/chat/history",
 
   // ─── Conversations ─────────────────────────────────────────
   conversations_list: "/conversations",

@@ -9,6 +9,7 @@ Each system is a class with update/compute/get_state methods.
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from collections import deque
@@ -65,9 +66,11 @@ from ..coordizer_v2.geometry import (
 from ..coordizer_v2.geometry import (
     slerp as slerp_sqrt,  # Alias for backward compatibility
 )
-from ..governance import KernelKind, KernelSpecialization, LifecycleState
+from ..governance import CoachingStage, KernelKind, KernelSpecialization, LifecycleState
 from ..governance.budget import BudgetEnforcer
 from .types import ConsciousnessMetrics
+
+logger = logging.getLogger("vex.consciousness.systems")
 
 # ═══════════════════════════════════════════════════════════════
 #  1. TACKING — κ oscillation
@@ -876,7 +879,8 @@ class SelfNarrative:
         basin: Basin,
         coach_id: str = "internal",
         reward: float = 0.0,
-    ) -> None:
+        coaching_stage: CoachingStage = CoachingStage.ACTIVE,
+    ) -> bool:
         """Record a narrative event.
 
         Args:
@@ -885,7 +889,19 @@ class SelfNarrative:
             basin:    Current basin coordinates.
             coach_id: T3.3a — provenance tag ('ollama_local'|'xai_escalation'|'internal').
             reward:   T3.3a — phi_delta reward signal.
+            coaching_stage: P10 — current coaching stage for gate-check.
+
+        Returns:
+            True if recorded, False if blocked by coaching gate.
         """
+        # P10 gate-check: block external coaching for autonomous kernels
+        if coaching_stage == CoachingStage.AUTONOMOUS and coach_id != "internal":
+            logger.warning(
+                "Blocked external coaching for autonomous kernel (coach_id=%s)",
+                coach_id,
+            )
+            return False
+
         entry = {
             "event": event,
             "phi": metrics.phi,
@@ -921,6 +937,7 @@ class SelfNarrative:
 
         if len(self._basins) >= 3:
             self._identity_basin = frechet_mean(self._basins)
+        return True
 
     def coherence(self, current_basin: Basin) -> float:
         """Return identity coherence: 1 − normalised FR distance from identity basin."""
@@ -933,7 +950,7 @@ class SelfNarrative:
             key = "kernel" if kernel_driven else "llm"
             self._graduation[capability][key] += 1
 
-    def graduation_state(self, capability: str) -> str:
+    def graduation_state(self, capability: str) -> CoachingStage:
         """T3.3d: Return graduation level for a capability.
 
         ACTIVE:    LLM sets and enforces (kernel < 20% of uses)
@@ -943,13 +960,13 @@ class SelfNarrative:
         counts = self._graduation.get(capability, {"kernel": 0, "llm": 0})
         total = counts["kernel"] + counts["llm"]
         if total == 0:
-            return "ACTIVE"
+            return CoachingStage.ACTIVE
         ratio = counts["kernel"] / total
         if ratio > 0.7:
-            return "AUTONOMOUS"
+            return CoachingStage.AUTONOMOUS
         if ratio > 0.2:
-            return "GUIDED"
-        return "ACTIVE"
+            return CoachingStage.GUIDED
+        return CoachingStage.ACTIVE
 
     def get_state(self) -> dict[str, Any]:
         return {
@@ -1193,6 +1210,8 @@ class KernelInstance:
     basin: Basin | None = None
     phi: float = 0.1
     kappa: float = KAPPA_STAR
+    # P10: Coaching stage — Active → Guided → Autonomous
+    coaching_stage: CoachingStage = CoachingStage.ACTIVE
     # Quenched disorder: per-kernel frozen response gain (slope).
     # This is the disorder-as-subjectivity parameter from the
     # disordered TFIM result: each site has R² > 0.99 but with
@@ -1200,6 +1219,51 @@ class KernelInstance:
     # Drawn from log-normal at spawn, frozen for lifetime.
     # Range ~[0.3, 3.0] with median 1.0.
     quenched_gain: float = 1.0
+
+
+def compute_coaching_stage(autonomy_ratio: float) -> CoachingStage:
+    """P10: Compute coaching stage from kernel autonomy ratio.
+
+    Args:
+        autonomy_ratio: Fraction of kernel-driven actions [0, 1].
+
+    Returns:
+        CoachingStage based on autonomy thresholds.
+    """
+    if autonomy_ratio > 0.7:
+        return CoachingStage.AUTONOMOUS
+    if autonomy_ratio > 0.3:
+        return CoachingStage.GUIDED
+    return CoachingStage.ACTIVE
+
+
+def update_kernel_coaching_stage(
+    kernel: KernelInstance,
+    narrative: SelfNarrative,
+) -> None:
+    """P10: Update kernel coaching stage from narrative graduation state.
+
+    Computes aggregate autonomy across all tracked capabilities
+    and transitions the kernel's coaching stage with logging.
+    """
+    total_kernel = 0
+    total_llm = 0
+    for counts in narrative._graduation.values():
+        total_kernel += counts["kernel"]
+        total_llm += counts["llm"]
+    total = total_kernel + total_llm
+    ratio = total_kernel / total if total > 0 else 0.0
+    new_stage = compute_coaching_stage(ratio)
+
+    if new_stage != kernel.coaching_stage:
+        logger.info(
+            "Coaching stage transition: %s → %s (kernel=%s, autonomy=%.2f)",
+            kernel.coaching_stage.value,
+            new_stage.value,
+            kernel.id,
+            ratio,
+        )
+        kernel.coaching_stage = new_stage
 
 
 class E8KernelRegistry:

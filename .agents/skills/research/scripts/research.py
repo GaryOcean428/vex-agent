@@ -65,15 +65,15 @@ def load_schema(schema_arg: str | None) -> dict | None:
                 schema = json.load(f)
             return schema
         except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in schema file {schema_path}: {e}")
+            raise ValueError(f"Invalid JSON in schema file {schema_path}: {e}") from e
 
     # Try as inline JSON
     try:
         return json.loads(schema_arg)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
         raise ValueError(
             f"Schema argument is neither a valid file path nor valid JSON: {schema_arg}"
-        )
+        ) from e
 
 
 def validate_schema(schema: dict) -> None:
@@ -221,7 +221,6 @@ def research_streaming(
                                     func = tool_call.get("function", {})
                                     tool_name = func.get("name")
                                     if tool_name and not quiet:
-                                        current_tool = tool_name
                                         print(f"[{tool_name}]", end=" ", flush=True)
 
                             # Content chunks
@@ -252,10 +251,10 @@ def research_streaming(
     # Parse content if schema was provided (expects JSON)
     content = "".join(content_chunks)
     if schema and content:
-        try:
+        import contextlib
+
+        with contextlib.suppress(json.JSONDecodeError):
             content = json.loads(content)
-        except json.JSONDecodeError:
-            pass  # Keep as string if not valid JSON
 
     return {"content": content, "sources": sources, "response_time": response_time}
 

@@ -7,6 +7,10 @@ Tuning parameters for consciousness modules that are NOT frozen physics
 These are engineering/design choices that may be adjusted during development.
 Changing frozen_facts.py requires new validated measurements; changing these
 does not — but changes should be tested and reviewed.
+
+P14 Variable Category: PARAMETER
+All constants in this module are trainable, slow-changing, per-epoch.
+Moving any constant to STATE or BOUNDARY requires governance approval.
 """
 
 from typing import Final
@@ -61,6 +65,14 @@ COORDIZER_KAPPA_STD_FLOOR: Final[float] = 5.0
 COORDIZER_BETA_THRESHOLD: Final[float] = 0.5
 COORDIZER_SEMANTIC_THRESHOLD: Final[float] = 0.2
 COORDIZER_HARMONIC_THRESHOLD: Final[float] = 0.3
+
+# ═══════════════════════════════════════════════════════════════
+#  COORDIZER REJECTION THRESHOLDS (v6.1 §19)
+# ═══════════════════════════════════════════════════════════════
+
+SOVEREIGNTY_MAX_DRIFT: Final[float] = 0.8  # Max Fisher-Rao distance from frozen identity
+ENTROPY_FLOOR: Final[float] = 0.3  # Min entropy after rescue — reject if below
+ADVERSARIAL_PROXIMITY: Final[float] = 0.1  # d_FR < this to foreign anchor → hijack
 
 # ═══════════════════════════════════════════════════════════════
 #  KAPPA OFFSETS (sensation / tacking / emotion boundaries)
