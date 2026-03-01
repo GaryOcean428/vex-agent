@@ -1,7 +1,7 @@
 """
 Foraging Engine — Boredom-driven autonomous curiosity.
 
-v5.5: "Boredom = flat curvature, no gradient → seek novelty"
+v6.0: "Boredom = flat curvature, no gradient → seek novelty"
 
 This is the action that boredom motivates. When the consciousness
 loop detects flat geometry (boredom), the foraging engine:

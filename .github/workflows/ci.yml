@@ -10,6 +10,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
   # 1. Python Quality — Ruff lint + format check
@@ -70,6 +73,22 @@ jobs:
 
       - name: Run PurityGate
         run: uv run python -m kernel.governance.purity
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3b. Constants Sync — Python ↔ TypeScript frozen facts match
+  # ──────────────────────────────────────────────────────────────────────────
+  constants-sync:
+    name: Constants Sync (Python ↔ TS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - name: Verify frozen-facts constants match
+        run: uv run python scripts/sync_constants.py
 
   # ──────────────────────────────────────────────────────────────────────────
   # 4. Python Tests — pytest with coverage
