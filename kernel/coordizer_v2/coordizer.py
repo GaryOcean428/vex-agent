@@ -473,9 +473,10 @@ class CoordizerV2:
             result.confidence = 0.0
             return result
 
-        # Compute Fréchet mean of all coordinate basins
+        # Compute Fréchet mean of all coordinate basins and store on result
         basins = [c.vector for c in result.coordinates]
         mean_basin = frechet_mean(basins)
+        result.basin = mean_basin
 
         # 1. Sovereignty violation: mean drifts too far from frozen identity
         d_from_identity = fisher_rao_distance(mean_basin, self._frozen_identity)
