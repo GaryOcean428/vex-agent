@@ -1340,7 +1340,7 @@ class ConsciousnessLoop:
                     text,
                     regime_weights=None,
                     navigation_mode=None,
-                    tacking_mode=None,
+                    tacking_mode=self._heart_rhythm.tacking_mode,
                 )
                 if settings.coordizer_v2.metrics_integration and hasattr(
                     self._coordizer_v2, "get_last_metrics"
