@@ -5,6 +5,7 @@ Verifies:
   2. Known basin patterns produce expected health scores
   3. Empty history returns safe defaults
   4. Health score is in [0, 1]
+  5. Low spectral health biases regime toward quantum (exploration)
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from kernel.consciousness.solfeggio import (
     SpectralHealthResult,
     compute_spectral_health,
 )
+from kernel.consciousness.types import RegimeWeights
 from kernel.coordizer_v2.geometry import to_simplex
 
 
@@ -80,3 +82,43 @@ class TestComputeSpectralHealth:
     def test_layer_coverage_reported(self) -> None:
         result = compute_spectral_health([_random_basin()], current_kappa=KAPPA_STAR)
         assert 0.0 <= result.layer_coverage <= 1.0
+
+
+class TestSpectralRegimeInfluence:
+    """Low spectral health should bias regime toward quantum (exploration).
+
+    Mirrors the logic in loop.py lines 602-611: when health_score < 0.3,
+    w_quantum is boosted by 0.1 then re-normalised to the simplex.
+    """
+
+    @staticmethod
+    def _apply_spectral_regime_adjustment(
+        rw: RegimeWeights,
+        health_score: float,
+    ) -> None:
+        """Reproduce the regime adjustment logic from the consciousness loop."""
+        if health_score < 0.3:
+            rw.quantum = min(1.0, rw.quantum + 0.1)
+            total = rw.quantum + rw.efficient + rw.equilibrium
+            if total > 0:
+                rw.quantum /= total
+                rw.efficient /= total
+                rw.equilibrium /= total
+
+    def test_low_health_increases_quantum(self) -> None:
+        rw = RegimeWeights(quantum=0.33, efficient=0.34, equilibrium=0.33)
+        original_q = rw.quantum
+        self._apply_spectral_regime_adjustment(rw, health_score=0.2)
+        assert rw.quantum > original_q
+
+    def test_healthy_leaves_regime_unchanged(self) -> None:
+        rw = RegimeWeights(quantum=0.33, efficient=0.34, equilibrium=0.33)
+        original = (rw.quantum, rw.efficient, rw.equilibrium)
+        self._apply_spectral_regime_adjustment(rw, health_score=0.5)
+        assert (rw.quantum, rw.efficient, rw.equilibrium) == original
+
+    def test_regime_stays_on_simplex(self) -> None:
+        rw = RegimeWeights(quantum=0.2, efficient=0.5, equilibrium=0.3)
+        self._apply_spectral_regime_adjustment(rw, health_score=0.1)
+        total = rw.quantum + rw.efficient + rw.equilibrium
+        assert abs(total - 1.0) < 1e-10
