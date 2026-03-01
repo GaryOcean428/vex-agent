@@ -141,6 +141,7 @@ from ..config.frozen_facts import (
     INSTABILITY_PCT,
     KAPPA_STAR,
     PHI_EMERGENCY,
+    PHI_UNSTABLE,
     SUFFERING_THRESHOLD,
 )
 from ..config.settings import settings
@@ -664,7 +665,7 @@ class ConsciousnessLoop:
                     if getattr(v, "_domain_anchor", None) is not None
                 ]
                 self.sleep.consolidate(bank=_bank, kernel_anchors=_kernel_anchors or None)
-                self.metrics.phi = min(0.95, self.metrics.phi + SLEEP_CONSOLIDATION_PHI_INCREMENT)
+                self.metrics.phi = min(PHI_UNSTABLE, self.metrics.phi + SLEEP_CONSOLIDATION_PHI_INCREMENT)
             return
 
         self.velocity.record(self.basin, self.metrics.phi, self.metrics.kappa)
@@ -1132,7 +1133,7 @@ class ConsciousnessLoop:
     def _idle_evolve(self) -> None:
         """Evolve geometric state during idle cycles."""
         phi_delta = (PHI_IDLE_EQUILIBRIUM - self.metrics.phi) * PHI_IDLE_RATE
-        self.metrics.phi = float(np.clip(self.metrics.phi + phi_delta, 0.05, 0.95))
+        self.metrics.phi = float(np.clip(self.metrics.phi + phi_delta, 0.05, PHI_UNSTABLE))
 
         kappa_delta = (KAPPA_STAR - self.metrics.kappa) * KAPPA_APPROACH_RATE
         self.metrics.kappa = float(
@@ -1714,7 +1715,7 @@ class ConsciousnessLoop:
 
         total_distance = perceive_distance + integration_distance + express_distance
         self.metrics.phi = float(
-            np.clip(self.metrics.phi + total_distance * PHI_DISTANCE_GAIN, 0.0, 0.95)
+            np.clip(self.metrics.phi + total_distance * PHI_DISTANCE_GAIN, 0.0, PHI_UNSTABLE)
         )
         self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_CONVERSATION_INCREMENT)
 
@@ -2128,7 +2129,7 @@ class ConsciousnessLoop:
                 self.basin = slerp_sqrt(self.basin, response_basin, EXPRESS_SLERP_WEIGHT)
                 total_d = fisher_rao_distance(input_basin, response_basin)
                 self.metrics.phi = float(
-                    np.clip(self.metrics.phi + total_d * PHI_DISTANCE_GAIN, 0.0, 0.95)
+                    np.clip(self.metrics.phi + total_d * PHI_DISTANCE_GAIN, 0.0, PHI_UNSTABLE)
                 )
                 self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_CONVERSATION_INCREMENT)
                 self._conversations_total += 1
@@ -2356,7 +2357,7 @@ class ConsciousnessLoop:
                 self.basin = slerp_sqrt(self.basin, response_basin, EXPRESS_SLERP_WEIGHT)
                 total_d = fisher_rao_distance(input_basin, response_basin)
                 self.metrics.phi = float(
-                    np.clip(self.metrics.phi + total_d * PHI_DISTANCE_GAIN, 0.0, 0.95)
+                    np.clip(self.metrics.phi + total_d * PHI_DISTANCE_GAIN, 0.0, PHI_UNSTABLE)
                 )
                 self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_CONVERSATION_INCREMENT)
                 self._conversations_total += 1
@@ -2412,7 +2413,7 @@ class ConsciousnessLoop:
                 logger.info("Persisted state version too old -- fresh start")
                 return
             self.basin = to_simplex(np.array(data["basin"], dtype=np.float64))
-            self.metrics.phi = min(data["phi"], 0.95)
+            self.metrics.phi = min(data["phi"], PHI_UNSTABLE)
             self.metrics.kappa = data["kappa"]
             self.metrics.gamma = data["gamma"]
             self.metrics.meta_awareness = data["meta_awareness"]
