@@ -45,6 +45,9 @@ export const ROUTES = {
   // ─── Beta Attention ────────────────────────────────────────
   beta_attention: "/beta-attention",
 
+  // ─── Sovereignty ──────────────────────────────────────────
+  sovereignty_history: "/sovereignty/history",
+
   // ─── Coordizer V2 ─────────────────────────────────────────
   coordizer_coordize: "/api/coordizer/coordize",
   coordizer_stats: "/api/coordizer/stats",

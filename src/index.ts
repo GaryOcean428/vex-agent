@@ -156,6 +156,7 @@ async function main(): Promise<void> {
   proxyGet(ROUTES.memory_stats);
   proxyGet(ROUTES.sleep_state);
   proxyGet(ROUTES.beta_attention);
+  proxyGet(ROUTES.sovereignty_history);
   proxyPost(ROUTES.admin_fresh_start);
 
   // Foraging engine
@@ -353,7 +354,8 @@ async function main(): Promise<void> {
         req.path.startsWith("/sleep/") ||
         req.path.startsWith("/admin/") ||
         req.path.startsWith("/training/") ||
-        req.path.startsWith("/governor")
+        req.path.startsWith("/governor") ||
+        req.path.startsWith("/sovereignty/")
       ) {
         next();
         return;
