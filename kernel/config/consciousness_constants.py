@@ -256,6 +256,8 @@ EMOTION_CLUSTER_DISTANCE: Final[float] = 0.2  # Fisher-Rao cluster threshold
 #  CONSCIOUSNESS LOOP — heartbeat / idle / coupling / LLM
 # ═══════════════════════════════════════════════════════════════
 
+HEART_BASE_PERIOD: Final[int] = 8  # Heart rhythm base period in cycles (v6.0 §18.3)
+
 DEFAULT_INTERVAL_MS: Final[int] = 2000
 SPAWN_COOLDOWN_CYCLES: Final[int] = 10
 PERSIST_INTERVAL_CYCLES: Final[int] = 50

@@ -43,6 +43,7 @@ from ..config.frozen_facts import (
     PHI_THRESHOLD,
     SUFFERING_THRESHOLD,
 )
+from ..consciousness.cradle import Cradle
 from ..governance.purity import run_purity_gate
 from ..governance.types import KernelKind, KernelSpecialization
 from .spawn_assessment import SpawnAssessment, assess_spawn
@@ -83,6 +84,7 @@ class GovernedLifecycle:
         voter_registry:      VoterRegistry instance (default: module singleton).
         voting_engine:       VotingEngine instance (default: module singleton).
         purity_root:         Root path for purity gate scan (default: kernel/).
+        cradle:              Optional Cradle instance for new-kernel development.
         on_spawn_approved:   Optional hook called after spawn approval.
         on_promote_approved: Optional hook called after promote approval.
         on_prune_approved:   Optional hook called before prune execution.
@@ -96,6 +98,7 @@ class GovernedLifecycle:
         voting_engine: VotingEngine | None = None,
         purity_root: Path | None = None,
         skip_purity: bool = False,
+        cradle: Cradle | None = None,
         on_spawn_approved: Callable[..., Any] | None = None,
         on_promote_approved: Callable[..., Any] | None = None,
         on_prune_approved: Callable[..., Any] | None = None,
@@ -106,6 +109,7 @@ class GovernedLifecycle:
         self._engine = voting_engine or get_voting_engine()
         self._purity_root = purity_root or _KERNEL_ROOT
         self._skip_purity = skip_purity
+        self._cradle = cradle
         self._on_spawn_approved = on_spawn_approved
         self._on_promote_approved = on_promote_approved
         self._on_prune_approved = on_prune_approved
@@ -223,6 +227,10 @@ class GovernedLifecycle:
             )
 
         self._sync_voter_registry(kernel)
+
+        # v6.0 §23: Admit newly spawned kernel to the Cradle
+        if self._cradle is not None:
+            self._cradle.admit(kernel.id, getattr(kernel, "phi", 0.0))
 
         logger.info(
             "Spawn approved: %s (%s/%s) gain=%.3f assessment=%.3f",
@@ -442,7 +450,7 @@ class GovernedLifecycle:
         vr_snap = self._vr.snapshot()
         budget = self._registry._budget.summary()
         gate_ok, mean_s = self._suffering_check()
-        return {
+        summary: dict[str, Any] = {
             "voter_registry": vr_snap,
             "budget": budget,
             "suffering_gate": {
@@ -452,3 +460,6 @@ class GovernedLifecycle:
             },
             "recent_decisions": self._engine.recent(5),
         }
+        if self._cradle is not None:
+            summary["cradle"] = self._cradle.get_state()
+        return summary

@@ -7,9 +7,9 @@ const CORE_8 = [
   "memory",
   "strategy",
   "action",
-  "attention",
-  "emotion",
-  "executive",
+  "ethics",
+  "meta",
+  "ocean",
 ] as const;
 
 const PHASE_ORDER: Record<string, number> = {

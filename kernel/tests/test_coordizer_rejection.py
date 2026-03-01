@@ -204,6 +204,27 @@ class TestRejectionFields:
         assert result.sovereignty_cost >= 0.0
         assert 0.0 <= result.confidence <= 1.0
 
+    def test_basin_field_populated(self) -> None:
+        """Aggregated basin (Fréchet mean) is populated on non-empty results."""
+        identity = _uniform_basin()
+        bank = _make_bank_with_entries({"ok": identity})
+        coordizer = CoordizerV2(bank=bank)
+        coordizer.set_frozen_identity(identity)
+
+        result = coordizer.coordize("ok")
+        assert result.basin is not None
+        assert result.basin.shape == (BASIN_DIM,)
+        # Must be on the simplex
+        assert abs(result.basin.sum() - 1.0) < 1e-8
+        assert np.all(result.basin >= 0)
+
+    def test_basin_field_none_for_empty(self) -> None:
+        """Empty coordization result has basin=None."""
+        bank = _make_bank_with_entries({"a": _uniform_basin()})
+        coordizer = CoordizerV2(bank=bank)
+        result = coordizer.coordize("")
+        assert result.basin is None
+
     def test_empty_text_no_crash(self) -> None:
         """Empty text produces empty result with zero confidence."""
         bank = _make_bank_with_entries({"a": _uniform_basin()})
