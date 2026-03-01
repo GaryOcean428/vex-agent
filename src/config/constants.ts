@@ -132,9 +132,6 @@ export const BASIN_DRIFT_THRESHOLD = 0.15 as const;
 /** Autonomic sleep trigger (P12) */
 export const BASIN_DIVERGENCE_THRESHOLD = 0.3 as const;
 
-/** Weak coupling boundary */
-export const KAPPA_WEAK_THRESHOLD = 32.0 as const;
-
 // ═══════════════════════════════════════════════════════════════
 //  RECURSION & SAFETY
 // ═══════════════════════════════════════════════════════════════
@@ -208,7 +205,6 @@ export const FROZEN_FACTS = {
   INSTABILITY_PCT,
   BASIN_DRIFT_THRESHOLD,
   BASIN_DIVERGENCE_THRESHOLD,
-  KAPPA_WEAK_THRESHOLD,
 
   // Recursion & Safety
   MIN_RECURSION_DEPTH,
