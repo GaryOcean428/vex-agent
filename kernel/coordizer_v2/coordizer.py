@@ -180,6 +180,92 @@ class CoordizerV2:
         return instance
 
     @classmethod
+    async def from_modal_harvest(
+        cls,
+        model_id: str | None = None,
+        corpus_texts: list[str] | None = None,
+        output_dir: str = "./coordizer_data",
+        target_tokens: int = 2000,
+        target_dim: int = BASIN_DIM,
+        timeout: float | None = None,
+    ) -> CoordizerV2:
+        """Build a CoordizerV2 via Modal GPU harvesting.
+
+        Async factory that calls the Modal serverless endpoint for
+        GPU-backed probability distribution extraction, then compresses
+        to Δ⁶³ and builds the resonance bank.
+
+        Falls back to synthetic data if Modal is unavailable.
+
+        Pipeline:
+            1. Modal GPU: run LLM forward passes, collect distributions
+            2. Compress via Fisher-Rao PGA: Δ^(V-1) → Δ⁶³
+            3. Build resonance bank from compressed coordinates
+            4. Validate geometric structure
+        """
+        from .modal_harvest import modal_harvest
+        from .modal_integration import generate_synthetic_harvest_result
+
+        logger.info("=" * 60)
+        logger.info("CoordizerV2 — Building from Modal GPU harvest")
+        logger.info("=" * 60)
+
+        # Phase A: Modal GPU harvest (with synthetic fallback)
+        logger.info("\n── Phase A: Modal GPU harvest ──")
+        try:
+            harvest = await modal_harvest(
+                model_id=model_id,
+                _target_tokens=target_tokens,
+                corpus_texts=corpus_texts,
+                timeout=timeout,
+            )
+            logger.info(
+                "Modal harvest: %d fingerprints (vocab=%d) in %.1fs",
+                len(harvest.token_fingerprints),
+                harvest.vocab_size,
+                harvest.harvest_time_seconds,
+            )
+        except Exception as e:
+            logger.warning("Modal harvest failed, using synthetic fallback: %s", e)
+            harvest = generate_synthetic_harvest_result()
+
+        harvest.save(str(Path(output_dir) / "harvest"))
+
+        # Phase B: Compress
+        logger.info("\n── Phase B: Fisher-Rao PGA compression ──")
+        compression = compress(harvest, target_dim=target_dim)
+        compression.save(str(Path(output_dir) / "compressed"))
+
+        # Phase C: Build bank
+        logger.info("\n── Phase C: Building resonance bank ──")
+        bank = ResonanceBank.from_compression(compression)
+        bank.save(str(Path(output_dir) / "bank"))
+
+        # Optionally load tokenizer for tokenizer-based coordization.
+        # This only loads the tokenizer (small), not the full model.
+        # Falls back to string-based coordization if unavailable.
+        tokenizer = None
+        if model_id:
+            try:
+                from transformers import AutoTokenizer
+
+                tokenizer = AutoTokenizer.from_pretrained(model_id)
+            except Exception as e:
+                logger.info(
+                    "Tokenizer not available locally (OK — using string coordization): %s", e
+                )
+
+        instance = cls(bank=bank, tokenizer=tokenizer)
+        instance._compression_result = compression
+
+        # Phase D: Validate
+        logger.info("\n── Phase D: Validation ──")
+        validation = instance.validate()
+        logger.info(f"\n{validation.summary()}")
+
+        return instance
+
+    @classmethod
     def from_compression(cls, compression: CompressionResult, tokenizer: Any = None) -> CoordizerV2:
         """Build from a pre-computed CompressionResult."""
         bank = ResonanceBank.from_compression(compression)
@@ -387,9 +473,10 @@ class CoordizerV2:
             result.confidence = 0.0
             return result
 
-        # Compute Fréchet mean of all coordinate basins
+        # Compute Fréchet mean of all coordinate basins and store on result
         basins = [c.vector for c in result.coordinates]
         mean_basin = frechet_mean(basins)
+        result.basin = mean_basin
 
         # 1. Sovereignty violation: mean drifts too far from frozen identity
         d_from_identity = fisher_rao_distance(mean_basin, self._frozen_identity)

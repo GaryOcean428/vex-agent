@@ -100,6 +100,10 @@ class CoordizationResult:
     coord_ids: list[int]
     original_text: str
 
+    # Aggregated basin: Fréchet mean of all coordinate basins on Δ⁶³.
+    # Populated by _apply_rejection_checks(); None for empty results.
+    basin: Basin | None = None
+
     # Geometric metrics (populated after coordization)
     basin_velocity: float | None = None  # Avg d_FR between consecutive
     trajectory_curvature: float | None = None  # Second-order geodesic deviation

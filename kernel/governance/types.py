@@ -10,6 +10,7 @@ Ethics, Meta, Ocean.
 
 from __future__ import annotations
 
+import logging
 from enum import StrEnum
 
 
@@ -135,6 +136,48 @@ def register_variable(module: str, name: str, category: VariableCategory) -> Non
 def get_variable_category(module: str, name: str) -> VariableCategory | None:
     """Look up a variable's declared category."""
     return VARIABLE_REGISTRY.get((module, name))
+
+
+class UpdateFrequency(StrEnum):
+    """Expected update cadence for enforcement checks."""
+
+    PER_CYCLE = "per-cycle"
+    PER_EPOCH = "per-epoch"
+    ON_INGEST = "on-ingest"
+
+
+_logger = logging.getLogger(__name__)
+
+# Maps each VariableCategory to its expected update frequency
+_EXPECTED_FREQUENCY: dict[VariableCategory, UpdateFrequency] = {
+    VariableCategory.STATE: UpdateFrequency.PER_CYCLE,
+    VariableCategory.PARAMETER: UpdateFrequency.PER_EPOCH,
+    VariableCategory.BOUNDARY: UpdateFrequency.ON_INGEST,
+}
+
+
+def enforce_category(
+    var_name: str,
+    expected: VariableCategory,
+    actual_update_freq: UpdateFrequency,
+) -> bool:
+    """Check that a variable is updated at the correct frequency.
+
+    Logs a warning if a STATE variable is updated at PARAMETER frequency
+    or vice versa. Returns True if the check passes, False if violated.
+    """
+    expected_freq = _EXPECTED_FREQUENCY.get(expected)
+    if expected_freq is not None and actual_update_freq != expected_freq:
+        _logger.warning(
+            "P14 violation: variable %r (category=%s) updated at %s "
+            "frequency, expected %s",
+            var_name,
+            expected.value,
+            actual_update_freq,
+            expected_freq.value,
+        )
+        return False
+    return True
 
 
 # ── STATE variables: per-cycle, fast-changing ──

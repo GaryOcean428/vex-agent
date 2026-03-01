@@ -24,6 +24,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..config.settings import settings as kernel_settings
+from .harvest import HarvestResult
 
 logger = logging.getLogger(__name__)
 
@@ -328,3 +329,36 @@ def generate_synthetic_harvest(
         "context_counts": context_counts,
         "vocab_size": vocab_size,
     }
+
+
+def generate_synthetic_harvest_result(
+    vocab_size: int = 32000,
+    n_tokens: int = 500,
+) -> HarvestResult:
+    """Generate a synthetic HarvestResult for fallback when Modal is unavailable.
+
+    Returns a HarvestResult with Dirichlet-sampled V-dimensional fingerprints
+    on Δ^(V-1). These pass geometric validation but carry no real semantic
+    structure. Used by CoordizerV2.from_modal_harvest() fallback path.
+    """
+    logger.warning(
+        "Using SYNTHETIC HarvestResult — no real semantic structure. "
+        "Connect Modal for real GPU harvesting."
+    )
+
+    rng = np.random.default_rng(42)
+    result = HarvestResult(
+        model_name="synthetic",
+        vocab_size=vocab_size,
+        corpus_size=0,
+        harvest_time_seconds=0.0,
+    )
+
+    for i in range(n_tokens):
+        alpha = rng.uniform(0.1, 2.0)
+        fp = rng.dirichlet(np.ones(vocab_size) * alpha).astype(np.float64)
+        result.token_fingerprints[i] = fp
+        result.context_counts[i] = int(rng.integers(10, 500))
+        result.token_strings[i] = f"<synthetic_{i}>"
+
+    return result

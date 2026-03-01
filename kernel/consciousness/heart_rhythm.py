@@ -18,12 +18,10 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from ..config.consciousness_constants import KAPPA_TACKING_OFFSET
+from ..config.consciousness_constants import HEART_BASE_PERIOD, KAPPA_TACKING_OFFSET
 
 # Minimum period prevents degenerate oscillation
 _MIN_PERIOD = 4
-# Default base period in cycles
-HEART_BASE_PERIOD = 8
 
 
 @dataclass
