@@ -13,7 +13,9 @@ from .types import (
     KernelSpecialization,
     LifecyclePhase,
     LifecycleState,
+    UpdateFrequency,
     VariableCategory,
+    enforce_category,
     get_variable_category,
     register_variable,
 )
@@ -46,6 +48,8 @@ __all__ = [
     "VARIABLE_REGISTRY",
     "get_variable_category",
     "register_variable",
+    "enforce_category",
+    "UpdateFrequency",
     "KernelKind",
     "KernelRole",
     "KernelSpecialization",

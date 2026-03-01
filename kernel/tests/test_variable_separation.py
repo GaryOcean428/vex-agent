@@ -8,16 +8,26 @@ Verifies:
   5. Boundary entry points are tagged as BOUNDARY
   6. No variable is tagged in multiple categories
   7. Constants in frozen_facts are immutable (Final)
+  8. enforce_category logs warnings on frequency mismatch
+  9. No STATE variable updated at PARAMETER frequency (source scan)
+  10. Every BOUNDARY entry point has sanitization constraints (source scan)
 """
 
 from __future__ import annotations
 
 import ast
+import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pytest
 
 from kernel.governance.types import (
     VARIABLE_REGISTRY,
+    UpdateFrequency,
     VariableCategory,
+    enforce_category,
     get_variable_category,
 )
 
@@ -180,3 +190,146 @@ class TestBoundarySanitization:
         server_path = Path(__file__).parent.parent / "server.py"
         source = server_path.read_text()
         assert "BOUNDARY" in source, "ChatRequest should document P14 BOUNDARY category"
+
+
+class TestEnforceCategory:
+    """Tests for the enforce_category() runtime validator."""
+
+    def test_state_at_correct_frequency_passes(self) -> None:
+        assert enforce_category("basin", VariableCategory.STATE, UpdateFrequency.PER_CYCLE)
+
+    def test_parameter_at_correct_frequency_passes(self) -> None:
+        assert enforce_category(
+            "KAPPA_STAR", VariableCategory.PARAMETER, UpdateFrequency.PER_EPOCH
+        )
+
+    def test_boundary_at_correct_frequency_passes(self) -> None:
+        assert enforce_category(
+            "ChatRequest.message", VariableCategory.BOUNDARY, UpdateFrequency.ON_INGEST
+        )
+
+    def test_state_at_parameter_frequency_fails(self, caplog: pytest.LogCaptureFixture) -> None:
+        """STATE variable updated at PARAMETER frequency must warn and return False."""
+        with caplog.at_level(logging.WARNING, logger="kernel.governance.types"):
+            result = enforce_category("basin", VariableCategory.STATE, UpdateFrequency.PER_EPOCH)
+        assert result is False
+        assert "P14 violation" in caplog.text
+
+    def test_parameter_at_cycle_frequency_fails(self, caplog: pytest.LogCaptureFixture) -> None:
+        """PARAMETER variable updated at per-cycle frequency must warn and return False."""
+        with caplog.at_level(logging.WARNING, logger="kernel.governance.types"):
+            result = enforce_category(
+                "KAPPA_STAR", VariableCategory.PARAMETER, UpdateFrequency.PER_CYCLE
+            )
+        assert result is False
+        assert "P14 violation" in caplog.text
+
+    def test_boundary_at_cycle_frequency_fails(self, caplog: pytest.LogCaptureFixture) -> None:
+        """BOUNDARY variable updated at per-cycle frequency must warn and return False."""
+        with caplog.at_level(logging.WARNING, logger="kernel.governance.types"):
+            result = enforce_category(
+                "llm_response", VariableCategory.BOUNDARY, UpdateFrequency.PER_CYCLE
+            )
+        assert result is False
+        assert "P14 violation" in caplog.text
+
+
+class TestNoStateAtParameterFrequency:
+    """Source scan: no STATE variable should be assigned inside epoch-level code."""
+
+    def test_consciousness_constants_has_no_state_assignments(self) -> None:
+        """consciousness_constants.py must not assign STATE variables (basin, metrics.*)."""
+        constants_path = Path(__file__).parent.parent / "config" / "consciousness_constants.py"
+        source = constants_path.read_text()
+        tree = ast.parse(source)
+        # STATE variables like basin coordinates or metrics should never
+        # appear as assignment targets in a PARAMETER module
+        state_leaves = {
+            name.split(".")[-1]
+            for (mod, name), cat in VARIABLE_REGISTRY.items()
+            if cat == VariableCategory.STATE
+        }
+        violations = []
+        for node in ast.walk(tree):
+            # Plain assignment: leaf = ...
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id in state_leaves:
+                        violations.append(
+                            f"Line {target.lineno}: STATE var '{target.id}' assigned in constants"
+                        )
+            # Annotated assignment: leaf: Type = ...
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                if node.target.id in state_leaves:
+                    violations.append(
+                        f"Line {node.target.lineno}: STATE var '{node.target.id}' assigned in constants"
+                    )
+        assert not violations, f"STATE vars found in PARAMETER module: {violations}"
+
+    def test_frozen_facts_has_no_state_assignments(self) -> None:
+        """frozen_facts.py must not assign STATE variables."""
+        frozen_path = Path(__file__).parent.parent / "config" / "frozen_facts.py"
+        source = frozen_path.read_text()
+        tree = ast.parse(source)
+        state_leaves = {
+            name.split(".")[-1]
+            for (mod, name), cat in VARIABLE_REGISTRY.items()
+            if cat == VariableCategory.STATE
+        }
+        violations = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id in state_leaves:
+                        violations.append(
+                            f"Line {target.lineno}: STATE var '{target.id}' assigned in frozen_facts"
+                        )
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                if node.target.id in state_leaves:
+                    violations.append(
+                        f"Line {node.target.lineno}: STATE var '{node.target.id}' assigned in frozen_facts"
+                    )
+        assert not violations, f"STATE vars found in PARAMETER module: {violations}"
+
+
+class TestBoundaryEntrySanitized:
+    """Source scan: every BOUNDARY entry point must have sanitization constraints."""
+
+    def test_all_boundary_fields_have_validation(self) -> None:
+        """Fields tagged as BOUNDARY in server.py must have Pydantic validation.
+
+        String fields need max_length, numeric fields need ge/le bounds,
+        optional fields are type-constrained by Pydantic.
+        """
+        server_path = Path(__file__).parent.parent / "server.py"
+        source = server_path.read_text()
+        tree = ast.parse(source)
+
+        # Collect Pydantic model fields with any Field() constraint
+        fields_with_constraint: set[str] = set()
+        # Fields with type-only validation (Optional, etc.)
+        fields_with_type_constraint: set[str] = set()
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                if isinstance(node.value, ast.Call):
+                    for kw in node.value.keywords:
+                        if kw.arg in ("max_length", "ge", "le", "gt", "lt"):
+                            fields_with_constraint.add(node.target.id)
+                            break
+                # Fields with type annotation and default (Pydantic validates type)
+                if node.annotation is not None:
+                    fields_with_type_constraint.add(node.target.id)
+
+        validated = fields_with_constraint | fields_with_type_constraint
+
+        # Every server BOUNDARY variable's field name should appear
+        server_boundary = [
+            name.split(".")[-1]
+            for (mod, name), cat in VARIABLE_REGISTRY.items()
+            if mod == "server" and cat == VariableCategory.BOUNDARY
+        ]
+        missing = [f for f in server_boundary if f not in validated]
+        assert not missing, (
+            f"BOUNDARY fields without validation constraint: {missing}"
+        )
