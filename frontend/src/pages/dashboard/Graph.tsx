@@ -5,7 +5,7 @@ import { QIG } from '../../types/consciousness.ts';
 // Kernel node positions for force-directed layout simulation
 const CORE_8_SPECS = [
   'heart', 'perception', 'memory', 'strategy',
-  'action', 'attention', 'emotion', 'executive',
+  'action', 'ethics', 'meta', 'ocean',
 ] as const;
 
 interface Node {

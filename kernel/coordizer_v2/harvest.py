@@ -29,7 +29,6 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -408,32 +407,42 @@ async def harvest_model_auto(
     target_tokens: int = 2000,
     device: str = "cpu",
     min_contexts: int = 10,
-) -> dict[str, Any]:
-    """Auto-routing harvest: Modal (if enabled) or local Transformers.
+) -> HarvestResult:
+    """Auto-routing harvest: Modal GPU (if enabled) or local Transformers.
 
     Checks settings.modal.enabled and delegates accordingly.
-    Returns a dict with harvest metadata.
+    Returns a HarvestResult with full-distribution fingerprints
+    ready for compression via compress.py.
+
+    Fallback chain:
+        1. Modal GPU (if enabled + configured)
+        2. Local Transformers (CPU/GPU)
+        3. Synthetic data (if both fail)
     """
     from ..config.settings import settings
 
-    if settings.modal.enabled:
-        from .modal_harvest import modal_harvest
+    if settings.modal.enabled and settings.modal.harvest_url:
+        try:
+            from .modal_harvest import modal_harvest
 
-        logger.info("Modal enabled — delegating harvest to Modal GPU")
-        result = await modal_harvest(
-            model_id=model_id,
-            _target_tokens=target_tokens,
-        )
-        return {
-            "success": True,
-            "token_count": len(result.token_fingerprints),
-            "model_name": result.model_name,
-            "harvest_time_seconds": result.harvest_time_seconds,
-        }
+            logger.info("Modal enabled — delegating harvest to Modal GPU")
+            result = await modal_harvest(
+                model_id=model_id,
+                _target_tokens=target_tokens,
+                corpus_texts=corpus_texts,
+            )
+            logger.info(
+                "Modal harvest: %d fingerprints in %.1fs",
+                len(result.token_fingerprints),
+                result.harvest_time_seconds,
+            )
+            return result
+        except Exception as e:
+            logger.warning("Modal harvest failed, falling back to local: %s", e)
 
     # Fall back to local harvesting
-    logger.info("Modal not enabled — running local harvest")
-    local_result = harvest_model(
+    logger.info("Running local harvest (Modal not available)")
+    return harvest_model(
         model_id=model_id,
         corpus_path=corpus_path,
         corpus_texts=corpus_texts,
@@ -441,9 +450,3 @@ async def harvest_model_auto(
         device=device,
         min_contexts=min_contexts,
     )
-    return {
-        "success": True,
-        "token_count": len(local_result.token_fingerprints),
-        "model_name": local_result.model_name,
-        "harvest_time_seconds": local_result.harvest_time_seconds,
-    }
