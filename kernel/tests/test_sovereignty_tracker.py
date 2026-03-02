@@ -147,6 +147,27 @@ class TestPersistence:
         tracker.restore({})
         assert len(tracker._history) == 0
 
+    def test_restore_oversized_history_trimmed(self) -> None:
+        """Restoring a history exceeding MAX_HISTORY is trimmed to the bound."""
+        tracker = SovereigntyTracker()
+        oversized = {
+            "history": [
+                {
+                    "timestamp": float(i),
+                    "cycle": i,
+                    "s_ratio": i / (MAX_HISTORY + 500),
+                    "n_lived": i,
+                    "n_total": MAX_HISTORY + 500,
+                    "training_regime": "idle",
+                }
+                for i in range(MAX_HISTORY + 500)
+            ]
+        }
+        tracker.restore(oversized)
+        assert len(tracker._history) == MAX_HISTORY
+        # Should keep the most recent entries
+        assert tracker._history[-1].cycle == MAX_HISTORY + 499
+
 
 class TestPersistFile:
     def test_persist_and_reload_from_file(self, tmp_path: Path) -> None:

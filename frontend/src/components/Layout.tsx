@@ -1,3 +1,4 @@
+import type { PointerEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useHealth } from '../hooks/index.ts';
@@ -46,12 +47,12 @@ export default function Layout() {
   });
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleNavPointerEnter = useCallback((e: React.PointerEvent) => {
+  const handleNavPointerEnter = useCallback((e: PointerEvent) => {
     if (e.pointerType !== 'mouse') return;
     hoverTimeout.current = setTimeout(() => setNavExpanded(true), 200);
   }, []);
 
-  const handleNavPointerLeave = useCallback((e: React.PointerEvent) => {
+  const handleNavPointerLeave = useCallback((e: PointerEvent) => {
     if (e.pointerType !== 'mouse') return;
     if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
     if (!navPinned) setNavExpanded(false);

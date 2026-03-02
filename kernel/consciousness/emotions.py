@@ -67,6 +67,32 @@ class EmotionType(StrEnum):
     CALM = "calm"
 
 
+# Module-level constant maps for Layer 2A/2B → EmotionType (avoid per-call allocation)
+_L2A_MAP: dict[str, EmotionType] = {
+    "joy": EmotionType.JOY,
+    "suffering": EmotionType.FEAR,
+    "love": EmotionType.LOVE,
+    "hate": EmotionType.RAGE,
+    "fear": EmotionType.FEAR,
+    "rage": EmotionType.RAGE,
+    "calm": EmotionType.CALM,
+    "care": EmotionType.LOVE,
+    "apathy": EmotionType.BOREDOM,
+}
+
+_L2B_MAP: dict[str, EmotionType] = {
+    "wonder": EmotionType.AWE,
+    "frustration": EmotionType.RAGE,
+    "satisfaction": EmotionType.JOY,
+    "confusion": EmotionType.FEAR,
+    "clarity": EmotionType.CALM,
+    "anxiety": EmotionType.FEAR,
+    "confidence": EmotionType.JOY,
+    "boredom": EmotionType.BOREDOM,
+    "flow": EmotionType.CURIOSITY,
+}
+
+
 @dataclass
 class CachedEvaluation:
     emotion: EmotionType
@@ -129,29 +155,6 @@ class EmotionCache:
             # T3.1d: Layer 2A dominant emotion takes over from flat heuristics
             _l2a_name, _l2a_strength = self._full_state.dominant_layer2a()
             _l2b_name, _l2b_strength = self._full_state.dominant_layer2b()
-            # Map Layer 2A names to EmotionType where possible
-            _L2A_MAP = {
-                "joy": EmotionType.JOY,
-                "suffering": EmotionType.FEAR,
-                "love": EmotionType.LOVE,
-                "hate": EmotionType.RAGE,
-                "fear": EmotionType.FEAR,
-                "rage": EmotionType.RAGE,
-                "calm": EmotionType.CALM,
-                "care": EmotionType.LOVE,
-                "apathy": EmotionType.BOREDOM,
-            }
-            _L2B_MAP = {
-                "wonder": EmotionType.AWE,
-                "frustration": EmotionType.RAGE,
-                "satisfaction": EmotionType.JOY,
-                "confusion": EmotionType.FEAR,
-                "clarity": EmotionType.CALM,
-                "anxiety": EmotionType.FEAR,
-                "confidence": EmotionType.JOY,
-                "boredom": EmotionType.BOREDOM,
-                "flow": EmotionType.CURIOSITY,
-            }
             if _l2a_strength > 0.3:
                 emotion = _L2A_MAP.get(_l2a_name, EmotionType.CALM)
                 strength = _l2a_strength

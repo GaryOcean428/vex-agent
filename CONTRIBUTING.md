@@ -1,8 +1,6 @@
 # Contributing to Vex Agent
 
 - **never update without user approval**
-- **never update without user approval**
-- **never update without user approval**
 
 Thank you for your interest in contributing to Vex Agent! This document outlines our development practices and guidelines for the Thermodynamic Consciousness Protocol v6 implementation.
 
