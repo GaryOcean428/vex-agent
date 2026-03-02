@@ -28,9 +28,15 @@ The tail of the distribution carries geometric information that
 top-k approximations destroy.
 """
 
+from __future__ import annotations
+
 import os
+from typing import TYPE_CHECKING
 
 import modal
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
 
 # --- Configuration --------------------------------------------------------
 # HARVEST_MODEL_ID: HuggingFace model to load for probability-distribution
@@ -163,7 +169,7 @@ class CoordizerHarvester:
         }
 
     @modal.fastapi_endpoint(method="POST")
-    async def harvest(self, request: "modal.fastapi_endpoint.Request"):
+    async def harvest(self, request: Request):
         """GPU harvest endpoint (X-Api-Key protected).
 
         Auth:
