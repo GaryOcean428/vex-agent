@@ -47,6 +47,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, File, Form, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..config.settings import settings
@@ -849,7 +850,99 @@ def export_openai_format() -> dict[str, Any]:
     return {
         "format": "openai_jsonl",
         "count": len(lines),
-        "lines": lines[:100],
+        "lines": lines,
+    }
+
+
+def export_native_format() -> dict[str, Any]:
+    """Export ALL training data in harvest-ingest format for lossless round-trip.
+
+    Reads from:
+      - /data/training/conversations.jsonl → source="conversation"
+      - /data/training/curriculum/*.jsonl  → source="curriculum" (preserves qa_pairs, e8, basin)
+
+    Output format matches JSONLIngestor input schema exactly:
+        {"source": "...", "text": "...", "priority": N, "metadata": {...}, "timestamp": "..."}
+
+    This can be re-uploaded via POST /training/upload and will pass
+    through the harvest pipeline with zero conversion or data loss.
+    """
+    _ensure_dirs()
+    lines: list[dict[str, Any]] = []
+
+    # Conversations
+    conv_file = TRAINING_DIR / "conversations.jsonl"
+    if conv_file.exists():
+        with open(conv_file, encoding="utf-8") as f:
+            for raw in f:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    entry = json.loads(raw)
+                    user_msg = entry.get("user_message", "")
+                    response = entry.get("response", "")
+                    if not user_msg and not response:
+                        continue
+                    lines.append(
+                        {
+                            "source": "conversation",
+                            "text": f"User: {user_msg}\nAssistant: {response}",
+                            "priority": 2,
+                            "metadata": {
+                                "backend": entry.get("backend", ""),
+                                "phi": entry.get("phi", 0.0),
+                                "kappa": entry.get("kappa", 0.0),
+                                "origin": "training_export",
+                            },
+                            "timestamp": entry.get("timestamp", ""),
+                        }
+                    )
+                except (json.JSONDecodeError, KeyError):
+                    continue
+
+    # Curriculum — preserve full enrichment data in metadata
+    curriculum_dir = TRAINING_DIR / "curriculum"
+    if curriculum_dir.exists():
+        for jsonl_file in curriculum_dir.glob("*.jsonl"):
+            with open(jsonl_file, encoding="utf-8") as f:
+                for raw in f:
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        entry = json.loads(raw)
+                        text = entry.get("text", "")
+                        if not text:
+                            continue
+                        lines.append(
+                            {
+                                "source": "curriculum",
+                                "text": text,
+                                "priority": 1,
+                                "metadata": {
+                                    "source_file": entry.get("source", jsonl_file.name),
+                                    "e8_primitive": entry.get("e8_primitive", ""),
+                                    "summary": entry.get("summary", ""),
+                                    "concepts": entry.get("concepts", []),
+                                    "qa_pairs": entry.get("qa_pairs", []),
+                                    "basin_coords": entry.get("basin_coords", []),
+                                    "chunk_index": entry.get("chunk_index", 0),
+                                    "origin": "training_export",
+                                },
+                                "timestamp": entry.get(
+                                    "processed_at",
+                                    entry.get("timestamp", ""),
+                                ),
+                            }
+                        )
+                    except (json.JSONDecodeError, KeyError):
+                        continue
+
+    return {
+        "format": "native_harvest",
+        "count": len(lines),
+        "lines": lines,
     }
 
 
@@ -901,7 +994,7 @@ def export_coordized_format() -> dict[str, Any]:
         "format": "qig_coordized",
         "count": len(lines),
         "basin_dim": 64,
-        "lines": lines[:100],
+        "lines": lines,
     }
 
 
@@ -1018,15 +1111,52 @@ async def training_stats_endpoint() -> dict[str, Any]:
 
 
 @training_router.get("/training/export")
-async def training_export_endpoint(fmt: str = "openai") -> dict[str, Any]:
+async def training_export_endpoint(fmt: str = "openai", download: bool = False):
     """Export training data.
 
     Query params:
-        fmt: "openai" (default) or "coordized" for 64D basin format
+        fmt: "openai" | "native" | "coordized"
+        download: if true, returns a downloadable .jsonl file
+
+    Formats:
+        openai     — OpenAI fine-tuning format (messages array). Useful for
+                     external fine-tuning services.
+        native     — Harvest-ingest format (source/text/priority/metadata).
+                     Lossless round-trip: download → curate → re-upload.
+                     Preserves all enrichment data (Q&A, e8, summaries, basins).
+        coordized  — 64D basin format for geometric fine-tuning.
+
+    Without download=true, returns JSON summary with preview.
+    With download=true, returns the full .jsonl as a file attachment.
     """
-    if fmt == "coordized":
-        return export_coordized_format()
-    return export_openai_format()
+    if fmt == "native":
+        data = export_native_format()
+    elif fmt == "coordized":
+        data = export_coordized_format()
+    else:
+        data = export_openai_format()
+
+    if not download:
+        return {
+            "format": data["format"],
+            "count": data["count"],
+            "preview": data["lines"][:5],
+        }
+
+    # Stream all lines as a downloadable .jsonl file
+    def _generate():
+        for line in data["lines"]:
+            yield json.dumps(line, ensure_ascii=False) + "\n"
+
+    ts = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
+    filename = f"vex_training_{fmt}_{ts}.jsonl"
+    return StreamingResponse(
+        _generate(),
+        media_type="application/x-ndjson",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 @training_router.post("/training/upload")
