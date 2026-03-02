@@ -1,7 +1,7 @@
 """
 Modal GPU Inference — Vex Ollama Backend
 
-Runs a configurable model (default: GLM-4.7) on
+Runs a configurable model (default: GLM-4.7-Flash 30B-A3B MoE) on
 A10G GPU, exposing the standard Ollama API via Modal web_server.
 
 Always installs the latest Ollama version (no version pinning).
@@ -42,12 +42,12 @@ import modal
 
 # --- Configuration --------------------------------------------------------
 # Model is configurable via the VEX_MODAL_MODEL env var (e.g., Modal secret),
-# with "glm-4.7" as the hardcoded default if not set.
-MODEL_NAME = os.environ.get("VEX_MODAL_MODEL", "glm-4.7")
+# with "glm-4.7-flash" as the hardcoded default if not set.
+MODEL_NAME = os.environ.get("VEX_MODAL_MODEL", "glm-4.7-flash")
 MODEL_DIR = "/ollama_models"
 OLLAMA_PORT = 11434
 
-# A10G: 24GB VRAM. GLM-4.7 Q4_K_M fits with headroom.
+# A10G: 24GB VRAM. GLM-4.7-Flash Q4_K_M = 19GB. Fits with ~5GB headroom.
 # Qwen3:30b Q4_K_M = 19GB also fits.
 GPU_TYPE = "A10G"
 

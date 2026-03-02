@@ -40,13 +40,13 @@ if TYPE_CHECKING:
 
 # --- Configuration --------------------------------------------------------
 # HARVEST_MODEL_ID: HuggingFace model to load for probability-distribution
-# extraction.  Default is GLM-4.7 (fits A10G, 65K vocab).
-# GLM-4.7 ensures token-ID alignment with the Modal inference model
+# extraction.  Default is GLM-4.7-Flash (4.7B params, fits A10G, 65K vocab).
+# GLM-4.7-Flash ensures token-ID alignment with the Modal inference model
 # so resonance bank fingerprints use the same vocabulary.  Fallback option:
 # "LiquidAI/LFM2.5-1.2B-Thinking" (smaller, faster, but different tokenizer).
 # See kernel/config/settings.py GPUHarvestConfig for the Railway-side
 # mirror of this setting.
-HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "zai-org/GLM-4.7")
+HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "zai-org/GLM-4.7-Flash")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 
 app = modal.App("vex-coordizer-harvest")
@@ -188,7 +188,7 @@ class CoordizerHarvester:
         Response:
             {
                 "success": true,
-                "model_id": "zai-org/GLM-4.7",
+                "model_id": "zai-org/GLM-4.7-Flash",
                 "vocab_size": 65536,
                 "total_tokens_processed": 12345,
                 "tokens": {

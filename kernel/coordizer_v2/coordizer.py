@@ -16,7 +16,7 @@ Key differences from v1:
 Usage:
     # From scratch (harvest → compress → validate)
     coordizer = CoordizerV2.from_harvest(
-        model_id="zai-org/GLM-4.7",
+        model_id="zai-org/GLM-4.7-Flash",
         corpus_path="corpus.txt",
     )
 
@@ -117,7 +117,7 @@ class CoordizerV2:
     @classmethod
     def from_harvest(
         cls,
-        model_id: str = "zai-org/GLM-4.7",
+        model_id: str = "zai-org/GLM-4.7-Flash",
         corpus_path: str | None = None,
         corpus_texts: list[str] | None = None,
         output_dir: str = "./coordizer_data",
