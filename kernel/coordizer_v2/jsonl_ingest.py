@@ -15,6 +15,9 @@ Schema per line:
         "timestamp": "ISO 8601"
     }
 
+Also auto-detects OpenAI fine-tuning format:
+    {"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
+
 Priority levels:
     1 = critical (curriculum, core training data)
     2 = high (foraging discoveries, validated documents)
@@ -148,10 +151,57 @@ class ValidationError:
 # ═══════════════════════════════════════════════════════════════
 
 
+def _normalize_openai_entry(data: dict[str, Any]) -> dict[str, Any]:
+    """Auto-convert OpenAI fine-tuning format to harvest-ingest format.
+
+    OpenAI format:
+        {"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
+
+    Converts to ingest format:
+        {"source": "curriculum", "text": "User: ...\\nAssistant: ...", "priority": 1, "metadata": {"origin": "openai_export"}}
+
+    Returns the dict unchanged if it's already in ingest format.
+    """
+    messages = data.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return data  # Not OpenAI format — pass through
+
+    # Already has source+text → native format, skip conversion
+    if data.get("source") and data.get("text"):
+        return data
+
+    # Build text from messages
+    parts: list[str] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        if role and content:
+            parts.append(f"{role.capitalize()}: {content}")
+
+    if not parts:
+        return data  # Empty messages — let validator reject it
+
+    return {
+        "source": data.get("source", "curriculum"),
+        "text": "\n".join(parts),
+        "priority": data.get("priority", 1),
+        "metadata": {
+            **(data.get("metadata") or {}),
+            "origin": "openai_export",
+            "original_messages": len(messages),
+        },
+        "timestamp": data.get("timestamp", ""),
+    }
+
+
 def validate_entry(
     line: str, line_number: int
 ) -> tuple[IngestEntry | None, ValidationError | None]:
     """Validate a single JSONL line and return an IngestEntry or error.
+
+    Auto-detects and normalizes OpenAI fine-tuning format before validation.
 
     Checks:
         - Valid JSON
@@ -180,6 +230,9 @@ def validate_entry(
             reason="Entry must be a JSON object",
             raw_line=line[:200],
         )
+
+    # Auto-detect and normalize OpenAI format → ingest format
+    data = _normalize_openai_entry(data)
 
     # Required fields
     source = data.get("source")
