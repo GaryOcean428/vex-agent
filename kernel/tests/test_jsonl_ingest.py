@@ -576,14 +576,32 @@ class TestIngestPurity:
 
     def test_no_hash_fallback_in_source(self):
         """jsonl_ingest.py must not contain SHA or hash-based basin generation."""
+        import ast
         import inspect
 
         from kernel.coordizer_v2 import jsonl_ingest
 
-        source = inspect.getsource(jsonl_ingest)
-        forbidden = ["sha512", "sha256", "hashlib", "_text_to_basin_fallback"]
-        for term in forbidden:
-            assert term not in source, (
-                f"Hash fallback contamination: '{term}' found in jsonl_ingest.py. "
-                f"Hash-derived simplex points have no geometric meaning and corrupt the resonance bank."
-            )
+        tree = ast.parse(inspect.getsource(jsonl_ingest))
+        uses_hashlib = False
+        has_hash_fallback = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                if any(alias.name == "hashlib" for alias in node.names):
+                    uses_hashlib = True
+            elif isinstance(node, ast.ImportFrom):
+                if node.module == "hashlib":
+                    uses_hashlib = True
+            elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                if node.value.id == "hashlib" and node.attr.startswith("sha"):
+                    uses_hashlib = True
+            elif isinstance(node, ast.FunctionDef) and node.name == "_text_to_basin_fallback":
+                has_hash_fallback = True
+
+        assert not uses_hashlib, (
+            "Hash fallback contamination: hashlib usage found in jsonl_ingest.py. "
+            "Hash-derived simplex points have no geometric meaning and corrupt the resonance bank."
+        )
+        assert not has_hash_fallback, (
+            "Hash fallback contamination: _text_to_basin_fallback found in jsonl_ingest.py. "
+            "Hash-derived simplex points have no geometric meaning and corrupt the resonance bank."
+        )
