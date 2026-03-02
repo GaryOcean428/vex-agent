@@ -14,7 +14,7 @@ Quick start:
 
     # Build from LLM harvest
     c = CoordizerV2.from_harvest(
-        model_id="LiquidAI/LFM2.5-1.2B-Thinking",
+        model_id="zai-org/GLM-4.7",
         corpus_path="corpus.txt",
     )
 

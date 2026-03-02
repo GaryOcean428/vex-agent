@@ -65,16 +65,16 @@ class GPUHarvestConfig:
 
     IMPORTANT: harvest_model MUST match the active inference model so that
     token IDs in the resonance bank fingerprints map to the same vocabulary
-    as the model doing inference. Primary: GLM-4.7-Flash (Modal GPU).
+    as the model doing inference. Primary: GLM-4.7 (Modal GPU).
     Ollama fallback (vex-brain) is based on LFM2.5-1.2B-Thinking.
     """
 
     enabled: bool = os.environ.get("GPU_HARVEST_ENABLED", "false").lower() == "true"
     # Harvest model MUST match the active inference model.
-    # Primary: GLM-4.7-Flash (Modal GPU, 30B-A3B MoE).
+    # Primary: GLM-4.7 (Modal GPU).
     # Ollama fallback uses LFM2.5-1.2B-Thinking (vex-brain base).
     # Override GPU_HARVEST_MODEL if deploying with a different backend.
-    model_id: str = os.environ.get("GPU_HARVEST_MODEL", "zai-org/GLM-4.7-Flash")
+    model_id: str = os.environ.get("GPU_HARVEST_MODEL", "zai-org/GLM-4.7")
     batch_size: int = int(os.environ.get("GPU_HARVEST_BATCH_SIZE", "32"))
     vocab_target: int = int(os.environ.get("GPU_HARVEST_VOCAB_TARGET", "32768"))
     artifact_dir: str = os.environ.get("GPU_HARVEST_ARTIFACT_DIR", "/data/resonance-bank")
@@ -116,8 +116,8 @@ class ModalConfig:
     inference_timeout_ms: int = int(os.environ.get("MODAL_INFERENCE_TIMEOUT_MS", "120000"))
     # Modal runs the base model (no custom Modelfile). The kernel
     # injects the system prompt per-request, so vex-brain overlay is
-    # unnecessary. Defaults to GLM-4.7-Flash (30B-A3B MoE, 3B active).
-    inference_model: str = os.environ.get("MODAL_INFERENCE_MODEL", "glm-4.7-flash")
+    # unnecessary. Defaults to GLM-4.7.
+    inference_model: str = os.environ.get("MODAL_INFERENCE_MODEL", "glm-4.7")
 
     # --- Harvest (CoordizerV2 fingerprinting) ---
     harvest_url: str = os.environ.get("MODAL_HARVEST_URL", "")
@@ -126,11 +126,11 @@ class ModalConfig:
     # MUST match inference_model so resonance bank fingerprints use the same
     # vocabulary/token IDs as the model doing inference.
     # Defaults to MODAL_HARVEST_MODEL env var; if not set, uses HuggingFace format
-    # for the GLM-4.7-Flash model (Modal harvest uses transformers, needs HF model ID).
-    # NOTE: Inference uses Ollama format "glm-4.7-flash", harvest uses HF format "zai-org/GLM-4.7-Flash"
+    # for the GLM-4.7 model (Modal harvest uses transformers, needs HF model ID).
+    # NOTE: Inference uses Ollama format "glm-4.7", harvest uses HF format "zai-org/GLM-4.7"
     harvest_model: str = os.environ.get(
         "MODAL_HARVEST_MODEL",
-        "zai-org/GLM-4.7-Flash",
+        "zai-org/GLM-4.7",
     )
 
 

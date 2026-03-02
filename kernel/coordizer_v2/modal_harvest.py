@@ -42,7 +42,7 @@ class ModalHarvestConfig:
 
     model_id must match the active inference model so resonance bank
     fingerprints use the same vocabulary as the model doing inference.
-    Primary: GLM-4.7-Flash (Modal GPU). Ollama fallback: LFM2.5-1.2B-Thinking.
+    Primary: GLM-4.7 (Modal GPU). Ollama fallback: LFM2.5-1.2B-Thinking.
     """
 
     model_id: str = ""

@@ -133,7 +133,7 @@ class Harvester:
 
     def harvest_transformers(
         self,
-        model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
+        model_id: str = "zai-org/GLM-4.7",
     ) -> HarvestResult:
         """Harvest using HuggingFace Transformers (direct model access).
 
@@ -379,7 +379,7 @@ class Harvester:
 
 
 def harvest_model(
-    model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
+    model_id: str = "zai-org/GLM-4.7",
     corpus_path: str | None = None,
     corpus_texts: list[str] | None = None,
     output_dir: str = "./harvest_output",
@@ -401,7 +401,7 @@ def harvest_model(
 
 
 async def harvest_model_auto(
-    model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
+    model_id: str = "zai-org/GLM-4.7",
     corpus_path: str | None = None,
     corpus_texts: list[str] | None = None,
     output_dir: str = "./harvest_output",
