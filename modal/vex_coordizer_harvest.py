@@ -229,6 +229,11 @@ class CoordizerHarvester:
         batch_size = body.get("batch_size", 32)
         max_length = body.get("max_length", 512)
         min_contexts = body.get("min_contexts", 5)
+        target_tokens_raw = body.get("target_tokens", 0)
+        try:
+            target_tokens = max(0, int(target_tokens_raw))
+        except (TypeError, ValueError):
+            target_tokens = 0
 
         if not texts:
             return {"success": False, "error": "No texts provided"}
@@ -296,10 +301,18 @@ class CoordizerHarvester:
                             dist_counts[token_id] += 1
 
                         total_tokens += 1
+                        if target_tokens and total_tokens >= target_tokens:
+                            break
+
+                    if target_tokens and total_tokens >= target_tokens:
+                        break
 
                 except Exception as e:
                     print(f"Error processing text: {e}")
                     continue
+
+            if target_tokens and total_tokens >= target_tokens:
+                break
 
         # Compute Fréchet means and build response
         tokens_response = {}

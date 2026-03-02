@@ -537,8 +537,8 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
     # T1.1: Forward chat exchange to harvest pipeline
     forward_to_harvest(
         f"User: {req.message}\nVex: {response}",
-        source="chat",
-        metadata={"conversation_id": conv_id, "timestamp": now},
+        source="conversation",
+        metadata={"origin": "chat", "conversation_id": conv_id, "timestamp": now},
     )
 
     # Store in geometric memory
