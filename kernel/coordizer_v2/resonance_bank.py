@@ -128,7 +128,10 @@ class ResonanceBank:
         }
         bank.origin = {int(k): v for k, v in meta.get("origin", {}).items()}
         bank._bank_lived_count = int(meta.get("bank_lived_count", 0))
-        bank._bank_total_count = int(meta.get("bank_total_count", 0))
+        persisted_total = int(meta.get("bank_total_count", 0))
+        # Upgrade path: older bank_meta.json files may lack bank_total_count.
+        # Default to len(coordinates) so bank_sovereignty doesn't yield ratios > 1.
+        bank._bank_total_count = persisted_total if persisted_total > 0 else len(bank.coordinates)
         bank._rebuild_matrix()
         return bank
 

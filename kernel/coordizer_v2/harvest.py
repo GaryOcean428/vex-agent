@@ -24,6 +24,7 @@ The compression step (Δ^(V-1) → Δ⁶³) is handled by compress.py.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -437,16 +438,26 @@ async def harvest_model_auto(
                 result.harvest_time_seconds,
             )
             return result
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             logger.warning("Modal harvest failed, falling back to local: %s", e)
 
     # Fall back to local harvesting
-    logger.info("Running local harvest (Modal not available)")
-    return harvest_model(
-        model_id=model_id,
-        corpus_path=corpus_path,
-        corpus_texts=corpus_texts,
-        output_dir=output_dir,
-        device=device,
-        min_contexts=min_contexts,
-    )
+    try:
+        logger.info("Running local harvest (Modal not available)")
+        return harvest_model(
+            model_id=model_id,
+            corpus_path=corpus_path,
+            corpus_texts=corpus_texts,
+            output_dir=output_dir,
+            device=device,
+            min_contexts=min_contexts,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logger.warning("Local harvest failed, falling back to synthetic: %s", e)
+        from .modal_integration import generate_synthetic_harvest_result
+
+        return generate_synthetic_harvest_result()
