@@ -36,7 +36,7 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
   // Summary line text
   const summaryText = isStreaming && !trace.synthesis
     ? `${trace.selected_kernels.length} kernels generating...`
-    : `${trace.selected_kernels.length} kernels → synthesised in ${(totalDuration / 1000).toFixed(1)}s · ${totalTokens} words${provenance}`
+    : `${trace.selected_kernels.length} kernels → synthesised in ${(totalDuration / 1000).toFixed(1)}s · ${totalTokens} tokens${provenance}`
       + (trace.reflection ? ` · divergence: ${trace.reflection.divergence.toFixed(2)}` : "");
 
   return (
@@ -127,7 +127,7 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
                       <span className="pipeline-kernel-stat">
                         w={k.synthesis_weight.toFixed(3)}
                       </span>
-                      <span className="pipeline-kernel-stat">{k.token_count} words</span>
+                      <span className="pipeline-kernel-stat">{k.token_count} tokens</span>
                       <span className="pipeline-kernel-stat">{k.geometric_tokens ?? 0} geo</span>
                     </button>
 

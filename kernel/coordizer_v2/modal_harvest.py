@@ -16,8 +16,7 @@ Flow:
     → Railway transforms logits via logits_to_simplex (linear projection)
     → basin coordinates via compress.py
 
-Auth: Modal network-level proxy auth (requires_proxy_auth=True on endpoint).
-      Modal-Token-Id/Secret headers are NOT sent — Modal rejects them.
+Auth: X-Api-Key header (KERNEL_API_KEY) validated by the Modal handler.
 """
 
 from __future__ import annotations
@@ -56,7 +55,7 @@ class ModalHarvestConfig:
 
 async def modal_harvest(
     model_id: str | None = None,
-    _target_tokens: int = 2000,
+    target_tokens: int = 2000,
     corpus_texts: list[str] | None = None,
     timeout: float | None = None,
 ) -> HarvestResult:
@@ -76,8 +75,18 @@ async def modal_harvest(
 
     # Resolve from Railway env vars if not explicitly passed
     resolved_model = model_id or settings.modal.harvest_model
+    if not resolved_model:
+        raise RuntimeError(
+            "No Modal harvest model configured. Provide model_id to modal_harvest() "
+            "or set MODAL_HARVEST_MODEL in the environment/settings."
+        )
     resolved_timeout = (
         timeout if timeout is not None else settings.modal.inference_timeout_ms / 1000.0
+    )
+    config = ModalHarvestConfig(
+        model_id=resolved_model,
+        target_tokens=target_tokens,
+        timeout=resolved_timeout,
     )
 
     # Default corpus: diverse prompts for distribution harvesting
@@ -86,10 +95,11 @@ async def modal_harvest(
 
     # Build request
     payload = {
-        "model_id": resolved_model,
+        "model_id": config.model_id,
         "texts": corpus_texts[:200],  # Cap per-request
-        "batch_size": 32,
-        "max_length": 512,
+        "target_tokens": config.target_tokens,
+        "batch_size": config.batch_size,
+        "max_length": config.max_length,
         "return_full_distribution": True,  # CRITICAL: not top-k
     }
 
@@ -109,7 +119,7 @@ async def modal_harvest(
 
     start_time = time.time()
 
-    async with httpx.AsyncClient(timeout=resolved_timeout) as client:
+    async with httpx.AsyncClient(timeout=config.timeout) as client:
         response = await client.post(
             settings.modal.harvest_url,
             json=payload,

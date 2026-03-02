@@ -98,8 +98,8 @@ There are two Railway-side clients for the Modal harvest endpoint:
    `JSONLIngestor` for batch JSONL ingestion. Returns the raw endpoint response.
 
 Both must match the Modal endpoint's response format: `{tokens: {id: {fingerprint, ...}}}`.
-The endpoint does Fréchet mean aggregation server-side (in sqrt-space). Neither client
-sends auth headers — Modal uses network-level `requires_proxy_auth`.
+The endpoint does Fréchet mean aggregation server-side (in sqrt-space). Both clients
+send `X-Api-Key` headers derived from `settings.kernel_api_key` for auth.
 
 ## LLM Client Patterns
 
