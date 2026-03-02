@@ -65,6 +65,7 @@ ml_image = modal.Image.debian_slim(python_version="3.14").pip_install(
     timeout=600,
     scaledown_window=300,
     volumes={"/models": model_volume},
+    secrets=[modal.Secret.from_name("model")],
 )
 class CoordizerHarvester:
     """GPU-backed harvester for CoordizerV2.
