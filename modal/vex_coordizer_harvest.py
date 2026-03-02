@@ -233,6 +233,7 @@ class CoordizerHarvester:
         try:
             target_tokens = max(0, int(target_tokens_raw))
         except (TypeError, ValueError):
+            print(f"Invalid target_tokens value {target_tokens_raw!r}; disabling token cap")
             target_tokens = 0
 
         if not texts:
