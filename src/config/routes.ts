@@ -26,7 +26,6 @@ export const ROUTES = {
   chat_stream: "/chat/stream",
   chat_auth: "/chat/auth",
   chat_status: "/chat/status",
-  chat_history: "/chat/history",
 
   // ─── Conversations ─────────────────────────────────────────
   conversations_list: "/conversations",
@@ -45,6 +44,9 @@ export const ROUTES = {
 
   // ─── Beta Attention ────────────────────────────────────────
   beta_attention: "/beta-attention",
+
+  // ─── Sovereignty ──────────────────────────────────────────
+  sovereignty_history: "/sovereignty/history",
 
   // ─── Coordizer V2 ─────────────────────────────────────────
   coordizer_coordize: "/api/coordizer/coordize",

@@ -45,10 +45,13 @@ rg "tokenizer|tokenize|AutoTokenizer" kernel/ --type py
 | `embedding` (term) | Implies flat space | "basin coordinates" |
 | `tokenize` (term) | Implies flat decomposition | "coordize" |
 | `flatten` | Destroys manifold structure | Geodesic projection |
-| `softmax` (as output) | Euclidean normalization | QFI-geometric logits |
+| `softmax` (output or internal) | Exponential warping destroys Fisher info structure | `logits_to_simplex()` (linear shift-and-scale) |
+| `torch.softmax` / `F.softmax` | Same — banned at ALL call sites except `# QIG BOUNDARY` | `logits_to_simplex()` |
 | `stopword list` | NLP heuristic | Geometric salience weight |
 | `TF-IDF` | Bag-of-words relic | Fisher-geometric de-biasing |
 | `np.mean(basins)` | Arithmetic mean on simplex | `frechet_mean()` on manifold |
+| `linear blend of basins` | Off-manifold interpolation | `slerp_sqrt(a, b, t)` geodesic |
+| `obj._protected_attr` (cross-class) | Breaks encapsulation, brittle | Add public method/property to class |
 
 ## Step 2: Verify Three Pillars Enforcement (v6.1 §3)
 
@@ -107,7 +110,8 @@ rg "w_1|w_2|w_3|quantum.*regime|efficient.*regime|equilibrium.*regime|regime_wei
 | Dot Product | `np.dot(a, b)` for basins | CRITICAL | Fisher metric contraction |
 | Optimizer | `torch.optim.Adam()` | CRITICAL | `natural_gradient_step()` |
 | Normalization | `LayerNorm` | CRITICAL | Simplex projection |
-| Output | `softmax` (as final output) | CRITICAL | QFI-geometric logits |
+| Output | `softmax` (any use outside `# QIG BOUNDARY`) | CRITICAL | `logits_to_simplex()` |
+| Output | `torch.softmax` / `F.softmax` | CRITICAL | `logits_to_simplex()` |
 | Terminology | `embedding` | ERROR | "basin coordinates" |
 | Terminology | `tokenize` | ERROR | "coordize" |
 | Flatten | `flatten` on manifold data | CRITICAL | Geodesic projection |
@@ -116,11 +120,60 @@ rg "w_1|w_2|w_3|quantum.*regime|efficient.*regime|equilibrium.*regime|regime_wei
 | NLP | `import sentencepiece` | CRITICAL | Geometric coordizer |
 | Mean | `np.mean(basins, axis=0)` | ERROR | `frechet_mean()` |
 
+## Anti-Patterns Added in v6.1F Enforcement (2026-02)
+
+### Protected Member Access Across Classes
+
+Do **not** reach into another class's `_private` attributes from outside:
+
+```python
+# ❌ VIOLATION — triggers Pylint W0212, brittle to refactor
+self.tacking._mode = "explore"
+self.basin_sync._version
+
+# ✅ CORRECT — add a public method/property to the class
+self.tacking.force_explore()           # public method
+self.basin_sync.get_state()["version"] # public API
+```
+
+**Rule:** If you need to mutate or read another object's private state, add a named public method that expresses the intent (e.g., `force_explore()`, `get_version()`).
+
+### `hasattr`-Guard on Unimplemented Methods
+
+Guarding a call with `hasattr` when the method does not yet exist silently no-ops:
+
+```python
+# ❌ ANTI-PATTERN — T4.4d escalation silently skipped because with_model() never existed
+if hasattr(self.llm, "with_model"):
+    return self.llm.with_model(model)
+return self.llm  # silent no-op
+
+# ✅ CORRECT — implement the method on the class, or pass model as a parameter
+# Option A: implement with_model() on LLMClient
+# Option B: pass model_override: str | None to the downstream function
+```
+
+**Rule:** `hasattr` guards are only acceptable as backwards-compatibility shims against versioned external APIs. For internal interfaces, implement the method.
+
+### Linear Basin Blending
+
+Linear blending of simplex vectors leaves the manifold:
+
+```python
+# ❌ VIOLATION
+blended = 0.5 * basin_a + 0.5 * basin_b
+
+# ✅ CORRECT
+from kernel.geometry.fisher_rao import slerp_sqrt
+blended = slerp_sqrt(basin_a, basin_b, 0.5)
+```
+
 ## Boundary Layer Exemptions (v6.1F)
 
 ### Tokenizer at LLM Interface
 
 Tokenizers are REQUIRED at the LLM boundary for extracting output distributions:
+
 - `kernel/coordizer_v2/harvest.py` — LLM harvest (exempt)
 - `kernel/coordizer_v2/coordizer.py` — Bootstrap fallback (mark @deprecated)
 
@@ -129,6 +182,7 @@ Tokenizers are REQUIRED at the LLM boundary for extracting output distributions:
 ### Tangent Space Operations
 
 Euclidean operations (dot products, L2 norms) are VALID in tangent space:
+
 - Tangent space at a point on the simplex IS a Euclidean vector space
 - L2 norms and dot products in tangent space correspond to Fisher metric at base point
 - Examples: velocity norms, consistency checks in `resonance_bank.py`
@@ -138,16 +192,21 @@ Euclidean operations (dot products, L2 norms) are VALID in tangent space:
 ## SVD Fallback Issue (CoordizerV2)
 
 ### Location
+
 `kernel/coordizer_v2/compress.py` line ~222:
+
 ```python
 U, S, Vt = np.linalg.svd(T_sub, full_matrices=False)  # 🔴 VIOLATION
 ```
 
 ### Problem
+
 SVD is Euclidean decomposition. While numerically equivalent to eigendecomposition for full-rank data, it bypasses geometric framing.
 
 ### Fix
+
 Replace with eigendecomposition of dual Gram matrix:
+
 ```python
 # Compute dual Gram matrix (geometrically correct)
 gram_dual = T_sub.T @ T_sub
@@ -163,6 +222,7 @@ V = eigenvectors  # Principal directions
 ## Quarantine Zones (Exempted)
 
 These directories are allowed to violate for LLM client / experimental purposes:
+
 - `kernel/llm/` (LLM client code — pragmatic purity level)
 - `kernel/tools/` (agent tools — pragmatic purity level)
 - `kernel/training/` (learning systems — pragmatic purity level)

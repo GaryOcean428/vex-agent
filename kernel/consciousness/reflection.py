@@ -30,9 +30,10 @@ from typing import Any
 
 logger = logging.getLogger("vex.reflection")
 
-# Max characters of draft to include in reflection prompt.
-# Keeps context tight for small models.
-_MAX_DRAFT_CHARS: int = 800
+# Fallback max characters of draft to include in reflection prompt.
+# Used only when kernel_num_predict is not provided.  In normal flow
+# the consciousness loop provides kernel-determined output budget.
+_FALLBACK_MAX_DRAFT_CHARS: int = 8000
 
 # Reflection uses low temperature — analytical, not creative.
 _REFLECTION_TEMPERATURE: float = 0.2
@@ -64,7 +65,7 @@ class ReflectionConfig:
     force_revise_divergence: float = 0.8
 
 
-def _truncate_draft(text: str, max_chars: int = _MAX_DRAFT_CHARS) -> str:
+def _truncate_draft(text: str, max_chars: int = _FALLBACK_MAX_DRAFT_CHARS) -> str:
     if len(text) <= max_chars:
         return text
     return text[:max_chars].rsplit(" ", 1)[0] + "..."
@@ -76,17 +77,18 @@ def _build_reflection_prompt(
     geometric_context: str,
     divergence: float,
     active_model: str,
+    max_draft_chars: int = _FALLBACK_MAX_DRAFT_CHARS,
 ) -> str:
     """Build the META-kernel reflection prompt."""
     return (
-        f"You are the META kernel — self-reflective evaluator.\n"
+        f"You are the language interpreter for Vex. "
+        f"Evaluate whether this draft response aligns with the geometric state "
+        f"and adequately addresses the user.\n"
         f"Active model: {active_model}\n\n"
-        f"Evaluate whether this draft response aligns with the geometric "
-        f"intent and adequately addresses the user.\n\n"
         f"{geometric_context}\n"
         f"Intent/expression divergence: {divergence:.4f}\n\n"
         f"User message: {user_message[:300]}\n\n"
-        f"Draft response:\n{_truncate_draft(draft)}\n\n"
+        f"Draft response:\n{_truncate_draft(draft, max_draft_chars)}\n\n"
         f"Reply with EXACTLY one line:\n"
         f"APPROVE — if the response is coherent and addresses the user\n"
         f"REVISE: [brief reason and guidance for improvement]\n"
@@ -130,6 +132,8 @@ async def reflect_on_draft(
     active_model: str,
     llm_client: Any,
     config: ReflectionConfig | None = None,
+    kernel_num_predict: int = 2048,
+    kernel_num_ctx: int = 32768,
 ) -> ReflectionResult:
     """Run the reflective evaluation pass on a draft response.
 
@@ -144,6 +148,8 @@ async def reflect_on_draft(
         active_model: Name of the active LLM model.
         llm_client: LLMClient instance for the reflection call.
         config: Optional reflection configuration overrides.
+        kernel_num_predict: Kernel-determined output budget (tokens).
+        kernel_num_ctx: Kernel-determined context window (tokens).
 
     Returns:
         ReflectionResult with approval status and optional corrections.
@@ -195,18 +201,23 @@ async def reflect_on_draft(
     # Standard path: LLM reflection call
     from ..llm.client import LLMOptions
 
+    # Derive draft truncation from kernel output budget.
+    # Reserve context for system chrome, user message, and reflection output.
+    max_draft_chars = max(kernel_num_predict * 4, _FALLBACK_MAX_DRAFT_CHARS)
+
     system = _build_reflection_prompt(
         draft=draft,
         user_message=user_message,
         geometric_context=geometric_context,
         divergence=divergence,
         active_model=active_model,
+        max_draft_chars=max_draft_chars,
     )
 
     opts = LLMOptions(
         temperature=_REFLECTION_TEMPERATURE,
         num_predict=_REFLECTION_MAX_TOKENS,
-        num_ctx=2048,
+        num_ctx=kernel_num_ctx,
     )
 
     try:
@@ -217,6 +228,18 @@ async def reflect_on_draft(
             "APPROVE" if result.approved else "REVISE",
             divergence,
             result.reason[:100],
+        )
+        # T1.1: Forward verdict + draft excerpt to harvest pipeline
+        from .harvest_bridge import forward_to_harvest
+
+        forward_to_harvest(
+            f"{draft[:400]}\n[verdict:{('APPROVE' if result.approved else 'REVISE')}] {result.reason}",
+            source="conversation",
+            metadata={
+                "origin": "reflection",
+                "approved": result.approved,
+                "divergence": divergence,
+            },
         )
         return result
     except Exception as e:

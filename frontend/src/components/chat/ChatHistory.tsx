@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { API } from "../../config/api-routes.ts";
-import "./ChatHistory.css";
 
 interface ConversationSummary {
   id: string;

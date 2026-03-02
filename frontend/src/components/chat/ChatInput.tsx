@@ -1,5 +1,4 @@
 import { useCallback, useEffect, type KeyboardEvent, type RefObject } from "react";
-import "./ChatInput.css";
 
 interface ChatInputProps {
   input: string;

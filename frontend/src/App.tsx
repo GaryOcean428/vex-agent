@@ -25,6 +25,7 @@ const Telemetry = lazy(() => import("./pages/dashboard/Telemetry.tsx"));
 const Training = lazy(() => import("./pages/dashboard/Training.tsx"));
 const Governor = lazy(() => import("./pages/dashboard/Governor.tsx"));
 const Admin = lazy(() => import("./pages/dashboard/Admin.tsx"));
+const MobileMetrics = lazy(() => import("./pages/MobileMetrics.tsx"));
 
 const PageLoading = () => <div className="page-loading">Loading...</div>;
 
@@ -42,6 +43,7 @@ const router = createBrowserRouter([
           { path: "/", element: <Navigate to="/chat" replace /> },
           { path: "/chat", element: <Suspense fallback={<PageLoading />}><Chat /></Suspense> },
           { path: "/chat/:conversationId", element: <Suspense fallback={<PageLoading />}><Chat /></Suspense> },
+          { path: "/metrics", element: <Suspense fallback={<PageLoading />}><MobileMetrics /></Suspense> },
           {
             path: "/dashboard",
             element: <Dashboard />,

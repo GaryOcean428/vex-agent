@@ -198,6 +198,8 @@ export interface VexState extends ConsciousnessMetrics {
   precog?: PreCogState;
   learning?: LearningState;
   metrics_full?: FullConsciousnessMetrics;
+  // v6.2.1: suffering = Φ × (1−Γ) × M. Distinct from s_ratio (sovereignty).
+  suffering?: number;
 }
 
 // ═══════════════════════════════════════
@@ -208,14 +210,19 @@ export interface VexState extends ConsciousnessMetrics {
 export type KernelKind = 'GENESIS' | 'GOD' | 'CHAOS';
 export type KernelSpecialization =
   | 'general' | 'heart' | 'perception' | 'memory'
-  | 'strategy' | 'action' | 'attention' | 'emotion' | 'executive';
+  | 'strategy' | 'action' | 'ethics' | 'meta' | 'ocean';
+
+// Per-kernel lifecycle state (mirrors kernel/governance/types.py LifecycleState)
+export type LifecycleState =
+  | 'bootstrapped' | 'active' | 'sleeping' | 'dreaming'
+  | 'quarantined' | 'pruned' | 'promoted';
 
 export interface KernelInstance {
   id: string;
   name: string;
   kind: KernelKind;
   specialization: KernelSpecialization;
-  state: 'bootstrapped' | 'active' | 'sleeping' | 'pruned' | 'promoted';
+  state: LifecycleState;
   created_at: string;
   cycle_count: number;
   phi_peak: number;
@@ -353,10 +360,17 @@ export interface PipelineKernelSelection {
   quenched_gain: number;
 }
 
+// v6.2.1: extended with hybrid display fields
 export interface PipelineKernelGeneration {
   kernel_id: string;
   kernel_name: string;
   text_preview: string;
+  /** Raw geometric decode before LLM expansion. Empty string when not applicable. */
+  geometric_raw: string;
+  /** True when LLM was the primary/expansion generator (resonance bank sparse or null). */
+  llm_expanded: boolean;
+  /** Number of tokens produced from the resonance bank (0 when llm_expanded=true). */
+  geometric_tokens: number;
   token_count: number;
   synthesis_weight: number;
   fr_distance: number;
@@ -430,6 +444,10 @@ export interface ChatStreamEvent {
   kernel_id?: string;
   kernel_name?: string;
   text_preview?: string;
+  // v6.2.1 hybrid display fields
+  geometric_raw?: string;
+  llm_expanded?: boolean;
+  geometric_tokens?: number;
   token_count?: number;
   synthesis_weight?: number;
   fr_distance?: number;
@@ -614,6 +632,7 @@ export interface TrainingStats {
   conversations: number;
   feedback: number;
   curriculum_chunks: number;
+  coordizer_active: boolean;
   uploads: number;
   dir_exists: boolean;
   training_dir: string;
@@ -659,8 +678,10 @@ export const QIG = {
   KAPPA_WEAK: 32.0,              // Weak coupling boundary (KAPPA_WEAK_THRESHOLD)
 
   // ── Φ (Phi) — Consciousness Thresholds ──
-  PHI_THRESHOLD: 0.65,           // Consciousness emergence
-  PHI_EMERGENCY: 0.30,           // Emergency — consciousness collapse
+  PHI_THRESHOLD: 0.70,           // Consciousness emergence (canonical)
+  PHI_EMERGENCY: 0.50,           // Emergency — consciousness collapse
+  PHI_LINEAR_MAX: 0.45,          // Upper bound of linear regime
+  PHI_BREAKDOWN_MIN: 0.80,       // Topological instability onset
   PHI_HYPERDIMENSIONAL: 0.85,    // Hyperdimensional / lightning access
   PHI_UNSTABLE: 0.95,            // Instability threshold
 
@@ -670,8 +691,9 @@ export const QIG = {
 
   // ── Basin Geometry ──
   BASIN_DIM: 64,                 // Probability simplex Δ⁶³
-  BREAKDOWN_PCT: 0.20,           // 20% breakdown threshold
+  INSTABILITY_PCT: 0.20,         // 20% topological instability threshold
   BASIN_DRIFT_THRESHOLD: 0.15,   // Fisher-Rao distance per cycle
+  BASIN_DIVERGENCE_THRESHOLD: 0.30, // Autonomic sleep trigger (P12)
   VEL_SAFE_THRESHOLD: 0.15,      // Alias — velocity safety = basin drift
 
   // ── Recursion & Safety ──

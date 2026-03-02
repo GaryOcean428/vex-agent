@@ -24,6 +24,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..config.settings import settings as kernel_settings
+from .harvest import HarvestResult
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ class ModalIntegrationConfig:
     health_url: str = ""
     token_id: str = ""
     token_secret: str = ""
+    harvest_auth_token: str = ""
     timeout: int = 120
     max_retries: int = 3
     batch_size: int = 32
@@ -76,6 +78,7 @@ class ModalIntegrationConfig:
             health_url=health_url,
             token_id=modal.token_id,
             token_secret=modal.token_secret,
+            harvest_auth_token=kernel_settings.kernel_api_key,
         )
 
     def is_configured(self) -> bool:
@@ -141,51 +144,33 @@ class ModalHarvestClient:
 
         Returns:
             Raw harvest response dict, or None on failure.
-            Response format:
+            Response format (matches Modal endpoint):
                 {
                     "success": True,
-                    "vocab_size": 32000,
-                    "results": [
-                        {"tokens": [...], "logits": [[...], ...], "token_strings": [...]},
+                    "vocab_size": 65536,
+                    "total_tokens_processed": 12345,
+                    "tokens": {
+                        "42": {
+                            "string": "hello",
+                            "fingerprint": [0.001, 0.002, ...],
+                            "context_count": 15
+                        },
                         ...
-                    ],
-                    "elapsed_seconds": 1.23
+                    },
+                    "elapsed_seconds": 45.2
                 }
         """
         if not self.config.is_configured():
             logger.warning("Modal not configured, skipping harvest")
             return None
 
-        all_results = []
-        batch_size = self.config.batch_size
-        vocab_size = 0
-        total_elapsed = 0.0
-
-        for batch_start in range(0, len(texts), batch_size):
-            batch = texts[batch_start : batch_start + batch_size]
-            result = await self._harvest_batch(batch, max_length)
-
-            if result is None:
-                logger.warning(
-                    f"Batch {batch_start // batch_size} failed, skipping {len(batch)} texts"
-                )
-                continue
-
-            if result.get("success"):
-                all_results.extend(result.get("results", []))
-                vocab_size = result.get("vocab_size", vocab_size)
-                total_elapsed += result.get("elapsed_seconds", 0)
-
-        if not all_results:
+        # Send all texts in a single request — the Modal endpoint
+        # aggregates across all texts internally (Fréchet means per token).
+        result = await self._harvest_batch(texts, max_length)
+        if result is None or not result.get("success"):
             return None
 
-        return {
-            "success": True,
-            "vocab_size": vocab_size,
-            "results": all_results,
-            "elapsed_seconds": total_elapsed,
-            "n_texts": len(all_results),
-        }
+        return result
 
     async def harvest_to_fingerprints(
         self,
@@ -267,6 +252,7 @@ class ModalHarvestClient:
         """Send a single batch with retry."""
         import httpx
 
+        last_error = ""
         for attempt in range(self.config.max_retries):
             try:
                 async with httpx.AsyncClient(
@@ -285,30 +271,56 @@ class ModalHarvestClient:
                     return result
 
             except httpx.TimeoutException:
-                logger.warning(f"Modal timeout (attempt {attempt + 1}/{self.config.max_retries})")
-            except httpx.HTTPStatusError as e:
+                last_error = f"timeout after {self.config.timeout}s"
                 logger.warning(
-                    f"Modal HTTP {e.response.status_code} "
-                    f"(attempt {attempt + 1}/{self.config.max_retries})"
+                    "Modal timeout (attempt %d/%d, url=%s)",
+                    attempt + 1,
+                    self.config.max_retries,
+                    self.config.harvest_url,
                 )
-            except Exception as e:
+            except httpx.HTTPStatusError as e:
+                last_error = f"HTTP {e.response.status_code}"
+                body_preview = e.response.text[:200] if e.response.text else ""
                 logger.warning(
-                    f"Modal request failed: {e} (attempt {attempt + 1}/{self.config.max_retries})"
+                    "Modal HTTP %d (attempt %d/%d, url=%s): %s",
+                    e.response.status_code,
+                    attempt + 1,
+                    self.config.max_retries,
+                    self.config.harvest_url,
+                    body_preview,
+                )
+                # Don't retry auth errors — they won't self-heal
+                if e.response.status_code in (401, 403):
+                    break
+            except Exception as e:
+                last_error = str(e)
+                logger.warning(
+                    "Modal request failed: %s (attempt %d/%d)",
+                    e,
+                    attempt + 1,
+                    self.config.max_retries,
                 )
 
+        logger.error(
+            "Modal harvest failed after %d attempts: %s (url=%s, texts=%d)",
+            self.config.max_retries,
+            last_error,
+            self.config.harvest_url,
+            len(texts),
+        )
         return None
 
     def _auth_headers(self) -> dict[str, str]:
         """Build request headers for the Modal harvest endpoint.
 
-        Modal-Token-Id / Modal-Token-Secret are reserved internal headers
-        that Modal's proxy explicitly rejects for web endpoint requests.
-        The harvest endpoint is authenticated via Modal's own network
-        controls; no additional auth header is needed.
+        Auth uses X-Api-Key header checked against KERNEL_API_KEY on the
+        Modal side. This replaces the old requires_proxy_auth=True which
+        blocked external callers (Railway) with 401.
         """
-        return {
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
+        if self.config.harvest_auth_token:
+            headers["X-Api-Key"] = self.config.harvest_auth_token
+        return headers
 
 
 # ─── Fallback: Synthetic Harvest ─────────────────────────────────────
@@ -346,3 +358,36 @@ def generate_synthetic_harvest(
         "context_counts": context_counts,
         "vocab_size": vocab_size,
     }
+
+
+def generate_synthetic_harvest_result(
+    vocab_size: int = 32000,
+    n_tokens: int = 500,
+) -> HarvestResult:
+    """Generate a synthetic HarvestResult for fallback when Modal is unavailable.
+
+    Returns a HarvestResult with Dirichlet-sampled V-dimensional fingerprints
+    on Δ^(V-1). These pass geometric validation but carry no real semantic
+    structure. Used by CoordizerV2.from_modal_harvest() fallback path.
+    """
+    logger.warning(
+        "Using SYNTHETIC HarvestResult — no real semantic structure. "
+        "Connect Modal for real GPU harvesting."
+    )
+
+    rng = np.random.default_rng(42)
+    result = HarvestResult(
+        model_name="synthetic",
+        vocab_size=vocab_size,
+        corpus_size=0,
+        harvest_time_seconds=0.0,
+    )
+
+    for i in range(n_tokens):
+        alpha = rng.uniform(0.1, 2.0)
+        fp = rng.dirichlet(np.ones(vocab_size) * alpha).astype(np.float64)
+        result.token_fingerprints[i] = fp
+        result.context_counts[i] = int(rng.integers(10, 500))
+        result.token_strings[i] = f"<synthetic_{i}>"
+
+    return result

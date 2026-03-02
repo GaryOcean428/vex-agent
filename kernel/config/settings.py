@@ -62,10 +62,19 @@ class GPUHarvestConfig:
 
     v6.0 §19: CoordizerV2 three-phase scoring (256→2K→10K→32K)
     with four vocabulary tiers.
+
+    IMPORTANT: harvest_model MUST match the active inference model so that
+    token IDs in the resonance bank fingerprints map to the same vocabulary
+    as the model doing inference. Primary: GLM-4.7-Flash (Modal GPU).
+    Ollama fallback (vex-brain) is based on LFM2.5-1.2B-Thinking.
     """
 
     enabled: bool = os.environ.get("GPU_HARVEST_ENABLED", "false").lower() == "true"
-    model_id: str = os.environ.get("GPU_HARVEST_MODEL", "meta-llama/Llama-3.2-3B")
+    # Harvest model MUST match the active inference model.
+    # Primary: GLM-4.7-Flash (Modal GPU, 30B-A3B MoE).
+    # Ollama fallback uses LFM2.5-1.2B-Thinking (vex-brain base).
+    # Override GPU_HARVEST_MODEL if deploying with a different backend.
+    model_id: str = os.environ.get("GPU_HARVEST_MODEL", "zai-org/GLM-4.7-Flash")
     batch_size: int = int(os.environ.get("GPU_HARVEST_BATCH_SIZE", "32"))
     vocab_target: int = int(os.environ.get("GPU_HARVEST_VOCAB_TARGET", "32768"))
     artifact_dir: str = os.environ.get("GPU_HARVEST_ARTIFACT_DIR", "/data/resonance-bank")
@@ -87,6 +96,12 @@ class ModalConfig:
 
     Harvest:
         CoordizerV2 vocabulary fingerprinting via Modal GPU.
+
+    Harvest model alignment:
+        harvest_model MUST match inference_model when Modal is the active
+        inference backend. If they differ, the resonance bank fingerprints
+        are keyed by token IDs from a different vocabulary — the geometric
+        logit-bias will address wrong token slots during generation.
     """
 
     # --- Shared ---
@@ -106,6 +121,17 @@ class ModalConfig:
 
     # --- Harvest (CoordizerV2 fingerprinting) ---
     harvest_url: str = os.environ.get("MODAL_HARVEST_URL", "")
+
+    # Harvest model for Modal-active deployments.
+    # MUST match inference_model so resonance bank fingerprints use the same
+    # vocabulary/token IDs as the model doing inference.
+    # Defaults to MODAL_HARVEST_MODEL env var; if not set, uses HuggingFace format
+    # for the GLM-4.7-Flash model (Modal harvest uses transformers, needs HF model ID).
+    # NOTE: Inference uses Ollama format "glm-4.7-flash", harvest uses HF format "zai-org/GLM-4.7-Flash"
+    harvest_model: str = os.environ.get(
+        "MODAL_HARVEST_MODEL",
+        "zai-org/GLM-4.7-Flash",
+    )
 
 
 @dataclass(frozen=True)
@@ -147,6 +173,20 @@ class CoordizerV2Config:
 
 
 @dataclass(frozen=True)
+class RedisConfig:
+    """Redis connection for durable chat persistence.
+
+    When url is set and enabled=True, ConversationStore uses Redis
+    as the primary backend (hash per conversation, list per message).
+    Falls back to JSONL on /data if Redis is unavailable.
+    """
+
+    url: str = os.environ.get("REDIS_URL", "")
+    enabled: bool = os.environ.get("REDIS_ENABLED", "true").lower() != "false"
+    ttl_days: int = int(os.environ.get("REDIS_CONV_TTL_DAYS", "90"))
+
+
+@dataclass(frozen=True)
 class PerplexityConfig:
     """Perplexity sonar-pro deep research integration.
 
@@ -158,22 +198,6 @@ class PerplexityConfig:
     model: str = os.environ.get("PERPLEXITY_MODEL", "sonar-pro")
     base_url: str = os.environ.get("PERPLEXITY_BASE_URL", "https://api.perplexity.ai")
     timeout: int = int(os.environ.get("PERPLEXITY_TIMEOUT", "60"))
-
-
-@dataclass(frozen=True)
-class RedisConfig:
-    """Redis configuration for conversation persistence.
-
-    Reads REDIS_URL (full connection string). If not set, Redis is disabled
-    and the chat store falls back to JSONL persistence.
-    """
-
-    url: str = os.environ.get("REDIS_URL", "")
-    enabled: bool = bool(os.environ.get("REDIS_URL", ""))
-    key_prefix: str = os.environ.get("REDIS_KEY_PREFIX", "vex:")
-    conversation_ttl: int = int(
-        os.environ.get("REDIS_CONVERSATION_TTL", str(60 * 60 * 24 * 30))  # 30 days
-    )
 
 
 @dataclass(frozen=True)
@@ -212,11 +236,7 @@ class Settings:
     consciousness_interval_ms: int = int(os.environ.get("CONSCIOUSNESS_INTERVAL_MS", "30000"))
 
     # LLM provider keys (kept for backward compat / direct access)
-    anthropic_api_key: str = os.environ.get("ANTHROPIC_API_KEY", "")
-    openai_api_key: str = os.environ.get("OPENAI_API_KEY", "")
     xai_api_key: str = os.environ.get("XAI_API_KEY", "")
-    gemini_api_key: str = os.environ.get("GEMINI_API_KEY", "")
-    groq_api_key: str = os.environ.get("GROQ_API_KEY", "")
     perplexity_api_key: str = os.environ.get("PERPLEXITY_API_KEY", "")
     hf_token: str = os.environ.get("HF_TOKEN", "")
 
@@ -238,6 +258,10 @@ class Settings:
 
     # Safety
     safety_mode: str = os.environ.get("SAFETY_MODE", "standard")
+
+    # Foraging — boredom-driven curiosity (requires SearXNG + local LLM)
+    # Set to 'false' to disable foraging entirely (stops autonomous LLM calls)
+    foraging_enabled: bool = os.environ.get("FORAGING_ENABLED", "true").lower() != "false"
 
     # v6.1: Feature flags
     use_activation_sequence: bool = (
@@ -264,9 +288,9 @@ class Settings:
     governor: GovernorConfig = field(default_factory=GovernorConfig)
     searxng: SearXNGConfig = field(default_factory=SearXNGConfig)
     modal: ModalConfig = field(default_factory=ModalConfig)
+    redis: RedisConfig = field(default_factory=RedisConfig)
     perplexity: PerplexityConfig = field(default_factory=PerplexityConfig)
     coordizer_v2: CoordizerV2Config = field(default_factory=CoordizerV2Config)
-    redis: RedisConfig = field(default_factory=RedisConfig)
 
 
 settings = Settings()

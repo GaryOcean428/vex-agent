@@ -1,5 +1,4 @@
 import { useCallback, useState } from "react";
-import "../../components/StatusBadge.css";
 import { API } from "../../config/api-routes.ts";
 import { useHealth, useVexState } from "../../hooks/index.ts";
 

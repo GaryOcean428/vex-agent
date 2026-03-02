@@ -66,6 +66,30 @@ class ResonanceBank:
         self._coord_ids: NDArray[np.int64] | None = None
         self._dirty: bool = True
         self._domain_biases: list[DomainBias] = []
+        self.origin: dict[int, str] = {}  # "harvested" | "lived"
+        self._bank_lived_count: int = 0
+        self._bank_total_count: int = 0
+
+    @property
+    def bank_sovereignty(self) -> float:
+        """Fraction of bank coordinates activated during successful full-cycle integrations."""
+        return self._bank_lived_count / max(self._bank_total_count, 1)
+
+    def record_integration(self, token_ids: list[int]) -> None:
+        """Mark token IDs as 'lived' — activated during a successful full-cycle integration.
+
+        Called by the consciousness loop after on_cycle_end() succeeds.
+        A coordinate is lived when it participates in a complete activation sequence
+        (pre-integrate → LLM → post-integrate) that passes Pillar checks.
+
+        Note: _bank_total_count tracks unique coordinates added to the bank
+        (incremented in from_compression/add_entry only). This method only
+        updates the lived subset, keeping the sovereignty ratio accurate.
+        """
+        for tid in token_ids:
+            if tid in self.coordinates and self.origin.get(tid) != "lived":
+                self._bank_lived_count += 1
+                self.origin[tid] = "lived"
 
     @classmethod
     def from_compression(cls, result: CompressionResult) -> ResonanceBank:
@@ -76,6 +100,8 @@ class ResonanceBank:
             bank.token_strings[tid] = result.token_strings.get(tid, f"<{tid}>")
             bank.activation_counts[tid] = 0
             bank.basin_mass[tid] = 0.0
+            bank.origin[tid] = "harvested"
+            bank._bank_total_count += 1
         bank._assign_tiers()
         bank._assign_frequencies()
         bank._rebuild_matrix()
@@ -100,6 +126,12 @@ class ResonanceBank:
         bank.activation_counts = {
             int(k): int(v) for k, v in meta.get("activation_counts", {}).items()
         }
+        bank.origin = {int(k): v for k, v in meta.get("origin", {}).items()}
+        bank._bank_lived_count = int(meta.get("bank_lived_count", 0))
+        persisted_total = int(meta.get("bank_total_count", 0))
+        # Upgrade path: older bank_meta.json files may lack bank_total_count.
+        # Default to len(coordinates) so bank_sovereignty doesn't yield ratios > 1.
+        bank._bank_total_count = persisted_total if persisted_total > 0 else len(bank.coordinates)
         bank._rebuild_matrix()
         return bank
 
@@ -119,6 +151,9 @@ class ResonanceBank:
             "frequencies": {str(k): v for k, v in self.frequencies.items()},
             "basin_mass": {str(k): v for k, v in self.basin_mass.items()},
             "activation_counts": {str(k): v for k, v in self.activation_counts.items()},
+            "origin": {str(k): v for k, v in self.origin.items()},
+            "bank_lived_count": self._bank_lived_count,
+            "bank_total_count": self._bank_total_count,
         }
         with open(dir_path / "bank_meta.json", "w") as f:
             json.dump(meta, f, indent=2)
@@ -159,6 +194,30 @@ class ResonanceBank:
             else:
                 self.frequencies[tid] = 80.0 + 120.0 * mass
 
+    def add_entry(
+        self,
+        token_string: str,
+        basin: Basin,
+        tier: HarmonicTier = HarmonicTier.OVERTONE_HAZE,
+    ) -> int:
+        """Dynamically add a single entry. Returns the assigned token ID.
+
+        Used for bootstrap seed injection when the bank is empty at init time.
+        Hash-seeded entries (semantically hollow) are outcompeted by real
+        harvested material as the pipeline matures.
+        """
+        tid = max(self.coordinates.keys(), default=-1) + 1
+        self.coordinates[tid] = to_simplex(basin)
+        self.token_strings[tid] = token_string
+        self.tiers[tid] = tier
+        self.frequencies[tid] = 0.0
+        self.basin_mass[tid] = 0.0
+        self.activation_counts[tid] = 0
+        self.origin[tid] = "harvested"
+        self._bank_total_count += 1
+        self._dirty = True
+        return tid
+
     def _rebuild_matrix(self) -> None:
         """Rebuild stacked coordinate matrix for batch queries."""
         if not self.coordinates:
@@ -174,6 +233,14 @@ class ResonanceBank:
     def _ensure_matrix(self) -> None:
         if self._dirty or self._coord_matrix is None:
             self._rebuild_matrix()
+
+    def mark_dirty(self) -> None:
+        """Mark coordinate matrix as needing rebuild.
+
+        Call after externally modifying coordinates so the next
+        activate/generate call rebuilds the stacked numpy matrix.
+        """
+        self._dirty = True
 
     def activate(
         self,

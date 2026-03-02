@@ -404,6 +404,11 @@ class TestCoordizedOutput:
             assert np.all(bc >= 0)
 
     def test_write_with_none_basin(self):
+        """Entries with no real logprobs are written without basin_coordinates.
+
+        This is an explicit gap — the entry is preserved for retry but not
+        injected with synthetic coordinates. Hash fallbacks were removed.
+        """
         with tempfile.TemporaryDirectory() as tmp:
             entries = [
                 IngestEntry(
@@ -512,29 +517,6 @@ class TestIngestor:
             assert result.invalid_entries == 2
             assert len(result.errors) == 2
 
-    @pytest.mark.asyncio
-    async def test_text_to_basin_fallback(self):
-        """Fallback basin generation should produce valid simplex points."""
-        basin = JSONLIngestor._text_to_basin_fallback("consciousness emerges from geometry")
-        assert basin.shape == (BASIN_DIM,)
-        assert abs(basin.sum() - 1.0) < 1e-6
-        assert np.all(basin >= 0)
-
-    @pytest.mark.asyncio
-    async def test_fallback_is_deterministic(self):
-        """Same text should produce same fallback basin."""
-        text = "deterministic basin coordinate generation"
-        b1 = JSONLIngestor._text_to_basin_fallback(text)
-        b2 = JSONLIngestor._text_to_basin_fallback(text)
-        np.testing.assert_array_equal(b1, b2)
-
-    @pytest.mark.asyncio
-    async def test_fallback_different_texts(self):
-        """Different texts should produce different basins."""
-        b1 = JSONLIngestor._text_to_basin_fallback("text one for differentiation")
-        b2 = JSONLIngestor._text_to_basin_fallback("text two for differentiation")
-        assert not np.allclose(b1, b2)
-
     def test_result_summary(self):
         result = IngestResult(
             total_lines=100,
@@ -591,3 +573,35 @@ class TestIngestPurity:
                 raise AssertionError(
                     f"Terminology violation at line {i}: use 'basin coordinates' not 'embedding'"
                 )
+
+    def test_no_hash_fallback_in_source(self):
+        """jsonl_ingest.py must not contain SHA or hash-based basin generation."""
+        import ast
+        import inspect
+
+        from kernel.coordizer_v2 import jsonl_ingest
+
+        tree = ast.parse(inspect.getsource(jsonl_ingest))
+        uses_hashlib = False
+        has_hash_fallback = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                if any(alias.name == "hashlib" for alias in node.names):
+                    uses_hashlib = True
+            elif isinstance(node, ast.ImportFrom):
+                if node.module == "hashlib":
+                    uses_hashlib = True
+            elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                if node.value.id == "hashlib" and node.attr.startswith("sha"):
+                    uses_hashlib = True
+            elif isinstance(node, ast.FunctionDef) and node.name == "_text_to_basin_fallback":
+                has_hash_fallback = True
+
+        assert not uses_hashlib, (
+            "Hash fallback contamination: hashlib usage found in jsonl_ingest.py. "
+            "Hash-derived simplex points have no geometric meaning and corrupt the resonance bank."
+        )
+        assert not has_hash_fallback, (
+            "Hash fallback contamination: _text_to_basin_fallback found in jsonl_ingest.py. "
+            "Hash-derived simplex points have no geometric meaning and corrupt the resonance bank."
+        )

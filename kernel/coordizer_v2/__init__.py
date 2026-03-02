@@ -59,10 +59,10 @@ from .geometry import (
     frechet_mean,
     geodesic_midpoint,
     log_map,
+    logits_to_simplex,
     natural_gradient,
     random_basin,
     slerp,
-    softmax_to_simplex,
     to_simplex,
 )
 from .harvest import (
@@ -107,7 +107,7 @@ __all__ = [
     "E8_RANK",
     "Basin",
     "to_simplex",
-    "softmax_to_simplex",
+    "logits_to_simplex",
     "random_basin",
     "fisher_rao_distance",
     "fisher_rao_distance_batch",

@@ -8,6 +8,14 @@ Pipeline:
   4. Coordize each chunk → 64D basin coordinates on Δ⁶³ (if coordizer available)
   5. LLM-enrich each chunk (Q&A pairs, E8 tags, concept extraction)
   6. Write structured JSONL to volume (with basin_coords)
+  7. Forward chunks to /data/harvest/pending/ in harvest-ingest format
+
+After ingestion completes, each chunk is written to the harvest pending
+directory as a separate JSONL file in the format expected by JSONLIngestor:
+    {"source": "curriculum", "text": "...", "priority": 1, "metadata": {...}}
+
+The HarvestScheduler picks these up on its next 5-minute scan and runs
+them through the coordizer to populate the resonance bank.
 
 Uses:
   - pymupdf for PDF extraction (in-process, no sandbox needed)
@@ -28,9 +36,11 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import re
 import time
 import uuid
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -38,6 +48,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, File, Form, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..config.settings import settings
@@ -47,19 +58,23 @@ from ..llm.governor import GovernorStack
 logger = logging.getLogger("vex.training")
 
 TRAINING_DIR = Path(settings.training_dir)
+HARVEST_PENDING_DIR = Path(os.environ.get("HARVEST_DIR", "/data/harvest")) / "pending"
 
-# Detect read-only volume at import time and redirect to /tmp
+# Fail loudly if TRAINING_DIR is not writable — do NOT silently redirect to /tmp.
+# If this raises, it means the Railway volume is not mounted or init.sh did not
+# run correctly. Fix the infrastructure; do not hide the problem.
 try:
     TRAINING_DIR.mkdir(parents=True, exist_ok=True)
     _probe = TRAINING_DIR / ".write_probe"
     _probe.touch()
     _probe.unlink()
-except OSError:
-    TRAINING_DIR = Path("/tmp/vex-training")
-    TRAINING_DIR.mkdir(parents=True, exist_ok=True)
-    logging.getLogger("vex.training").warning(
-        "Training volume not writable — using ephemeral %s", TRAINING_DIR
-    )
+except OSError as _probe_err:
+    raise RuntimeError(
+        f"Training volume at {TRAINING_DIR} is not writable: {_probe_err}. "
+        f"Check Railway volume mount and init.sh permissions setup. "
+        f"Previously this silently fell back to /tmp — that behaviour has been removed "
+        f"because /tmp is ephemeral and loses all data on restart."
+    ) from _probe_err
 
 # Async lock for safe concurrent JSONL appends
 _write_lock = asyncio.Lock()
@@ -88,6 +103,16 @@ class ProcessingMode(StrEnum):
     FAST = "fast"  # Chunk + store only, no LLM enrichment
     STANDARD = "standard"  # Chunk + LLM tag + basic Q&A
     DEEP = "deep"  # Full enrichment + concept extraction
+
+
+# Priority mapping for harvest ingest format
+_CATEGORY_TO_PRIORITY: dict[str, int] = {
+    "curriculum": 1,
+    "document": 2,
+    "foraging": 2,
+    "conversation": 3,
+}
+_DEFAULT_HARVEST_PRIORITY = 3
 
 
 @dataclass
@@ -130,6 +155,8 @@ class IngestionResult:
     qa_pairs_generated: int
     processing_time_s: float
     output_path: str
+    harvest_pending_path: str = ""
+    harvest_chunks_forwarded: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -156,6 +183,120 @@ async def _append_jsonl(filepath: Path, data: dict[str, Any]) -> None:
         _ensure_dirs()
         with open(filepath, "a", encoding="utf-8") as f:
             f.write(json.dumps(data, ensure_ascii=False) + "\n")
+
+
+# ═══════════════════════════════════════════════════════════════
+#  HARVEST FORWARDING
+# ═══════════════════════════════════════════════════════════════
+
+
+def _chunk_record_to_harvest_line(record: ChunkRecord) -> dict[str, Any]:
+    """Convert a ChunkRecord to the JSONLIngestor ingest format.
+
+    JSONLIngestor expects:
+        {
+            "source": "curriculum|foraging|conversation|document",
+            "text": "...",
+            "priority": 1-4,
+            "metadata": {...},
+            "timestamp": "ISO 8601"
+        }
+
+    ChunkRecord.category maps to ingest source.
+    ChunkRecord.source (filename) moves to metadata.source_file.
+    """
+    # Normalise category to a valid ingest source
+    valid_sources = {"curriculum", "foraging", "conversation", "document"}
+    ingest_source = record.category if record.category in valid_sources else "document"
+
+    return {
+        "source": ingest_source,
+        "text": record.text,
+        "priority": _CATEGORY_TO_PRIORITY.get(record.category, _DEFAULT_HARVEST_PRIORITY),
+        "metadata": {
+            "source_file": record.source,
+            "chunk_index": record.chunk_index,
+            "e8_primitive": record.e8_primitive,
+            "hash": record.hash,
+            "summary": record.summary[:200] if record.summary else "",
+        },
+        "timestamp": record.processed_at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+
+def _forward_chunks_to_harvest(
+    records: list[ChunkRecord],
+    source_filename: str,
+) -> tuple[str, int]:
+    """Write chunks to /data/harvest/pending/ in JSONLIngestor format.
+
+    Creates a single JSONL file per upload so the scheduler processes
+    them as a coherent batch (same source file, same priority group).
+
+    Returns (pending_file_path, chunks_written).
+    """
+    try:
+        HARVEST_PENDING_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logger.error(
+            "Cannot create harvest pending dir %s: %s — chunks will not be harvested",
+            HARVEST_PENDING_DIR,
+            e,
+        )
+        return "", 0
+
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", source_filename)
+    ts = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
+    dest = HARVEST_PENDING_DIR / f"{safe_name}_{ts}.jsonl"
+
+    written = 0
+    try:
+        with open(dest, "w", encoding="utf-8") as f:
+            for record in records:
+                line = _chunk_record_to_harvest_line(record)
+                f.write(json.dumps(line, ensure_ascii=False) + "\n")
+                written += 1
+        logger.info(
+            "Forwarded %d chunks to harvest pending: %s",
+            written,
+            dest,
+        )
+    except Exception as e:
+        logger.error("Failed to forward chunks to harvest: %s", e)
+        return "", 0
+
+    return str(dest), written
+
+
+def forward_raw_jsonl_to_harvest(content: bytes, filename: str) -> tuple[str, int]:
+    """Forward a raw JSONL upload directly to harvest pending.
+
+    Used when the user uploads a file already in JSONLIngestor format.
+    The file is validated line-count only — JSONLIngestor will validate
+    schema when it processes the pending file.
+
+    Returns (pending_file_path, line_count).
+    """
+    try:
+        HARVEST_PENDING_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logger.error("Cannot create harvest pending dir: %s", e)
+        return "", 0
+
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", filename)
+    ts = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
+    dest = HARVEST_PENDING_DIR / f"{safe_name}_{ts}.jsonl"
+
+    try:
+        dest.write_bytes(content)
+        lines = [ln for ln in content.decode("utf-8", errors="replace").splitlines() if ln.strip()]
+        logger.info(
+            "Forwarded raw JSONL upload to harvest pending: %s (%d lines)", dest, len(lines)
+        )
+        return str(dest), len(lines)
+    except Exception as e:
+        logger.error("Failed to forward JSONL to harvest: %s", e)
+        return "", 0
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -437,23 +578,29 @@ async def ingest_document(
     llm: LLMClient | None = None,
     governor: GovernorStack | None = None,
 ) -> IngestionResult:
-    """Full pipeline: extract -> chunk -> coordize -> enrich -> write JSONL.
+    """Full pipeline: extract -> chunk -> coordize -> enrich -> write JSONL -> forward to harvest.
 
     v6.1: Each chunk is now coordized to 64D basin coordinates on Δ⁶³
     via CoordizerV2Adapter (if available). Basin coords are stored in
     the JSONL alongside text, E8 tags, and Q&A pairs.
+
+    After writing curriculum JSONL, chunks are forwarded to
+    /data/harvest/pending/ in JSONLIngestor format so the
+    HarvestScheduler can populate the resonance bank.
     """
     start = time.time()
     _ensure_dirs()
     errors: list[str] = []
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
-    # Handle JSONL pass-through
+    # Handle JSONL pass-through — forward directly to harvest pending
     if ext == "jsonl":
         safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", filename)
         dest = TRAINING_DIR / "uploads" / safe_name
         dest.write_bytes(content)
         lines = content.decode("utf-8").strip().split("\n")
+        # Forward raw JSONL to harvest pending so the scheduler picks it up
+        harvest_path, harvest_count = forward_raw_jsonl_to_harvest(content, filename)
         return IngestionResult(
             status="ingested",
             source=filename,
@@ -465,6 +612,8 @@ async def ingest_document(
             qa_pairs_generated=0,
             processing_time_s=round(time.time() - start, 2),
             output_path=str(dest),
+            harvest_pending_path=harvest_path,
+            harvest_chunks_forwarded=harvest_count,
         )
 
     # Extract text
@@ -551,12 +700,15 @@ async def ingest_document(
 
         records.append(record)
 
-    # Write JSONL
+    # Write curriculum JSONL
     safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", filename)
     dest = TRAINING_DIR / "curriculum" / f"{safe_name}.jsonl"
     with open(dest, "w", encoding="utf-8") as f:
         for record in records:
             f.write(json.dumps(asdict(record), ensure_ascii=False) + "\n")
+
+    # Forward chunks to harvest pending so HarvestScheduler populates the bank
+    harvest_path, harvest_count = _forward_chunks_to_harvest(records, filename)
 
     return IngestionResult(
         status="ingested",
@@ -569,6 +721,8 @@ async def ingest_document(
         qa_pairs_generated=qa_count,
         processing_time_s=round(time.time() - start, 2),
         output_path=str(dest),
+        harvest_pending_path=harvest_path,
+        harvest_chunks_forwarded=harvest_count,
         errors=errors,
     )
 
@@ -625,6 +779,11 @@ def get_stats() -> dict[str, Any]:
     upload_dir = TRAINING_DIR / "uploads"
     upload_files = list(upload_dir.glob("*")) if upload_dir.exists() else []
 
+    # Count harvest queue state
+    harvest_pending = (
+        sum(1 for _ in HARVEST_PENDING_DIR.glob("*.jsonl")) if HARVEST_PENDING_DIR.exists() else 0
+    )
+
     return {
         "conversations": stats.get("conversations", 0),
         "feedback": stats.get("feedback", 0),
@@ -633,6 +792,7 @@ def get_stats() -> dict[str, Any]:
         "coordizer_active": _coordizer is not None,
         "uploads": len(upload_files),
         "curriculum_files": [f.name for f in curriculum_files],
+        "harvest_pending_files": harvest_pending,
         "dir_exists": TRAINING_DIR.exists(),
         "training_dir": str(TRAINING_DIR),
     }
@@ -691,7 +851,99 @@ def export_openai_format() -> dict[str, Any]:
     return {
         "format": "openai_jsonl",
         "count": len(lines),
-        "lines": lines[:100],
+        "lines": lines,
+    }
+
+
+def export_native_format() -> dict[str, Any]:
+    """Export ALL training data in harvest-ingest format for lossless round-trip.
+
+    Reads from:
+      - /data/training/conversations.jsonl → source="conversation"
+      - /data/training/curriculum/*.jsonl  → source="curriculum" (preserves qa_pairs, e8, basin)
+
+    Output format matches JSONLIngestor input schema exactly:
+        {"source": "...", "text": "...", "priority": N, "metadata": {...}, "timestamp": "..."}
+
+    This can be re-uploaded via POST /training/upload and will pass
+    through the harvest pipeline with zero conversion or data loss.
+    """
+    _ensure_dirs()
+    lines: list[dict[str, Any]] = []
+
+    # Conversations
+    conv_file = TRAINING_DIR / "conversations.jsonl"
+    if conv_file.exists():
+        with open(conv_file, encoding="utf-8") as f:
+            for raw in f:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    entry = json.loads(raw)
+                    user_msg = entry.get("user_message", "")
+                    response = entry.get("response", "")
+                    if not user_msg and not response:
+                        continue
+                    lines.append(
+                        {
+                            "source": "conversation",
+                            "text": f"User: {user_msg}\nAssistant: {response}",
+                            "priority": 2,
+                            "metadata": {
+                                "backend": entry.get("backend", ""),
+                                "phi": entry.get("phi", 0.0),
+                                "kappa": entry.get("kappa", 0.0),
+                                "origin": "training_export",
+                            },
+                            "timestamp": entry.get("timestamp", ""),
+                        }
+                    )
+                except (json.JSONDecodeError, KeyError):
+                    continue
+
+    # Curriculum — preserve full enrichment data in metadata
+    curriculum_dir = TRAINING_DIR / "curriculum"
+    if curriculum_dir.exists():
+        for jsonl_file in curriculum_dir.glob("*.jsonl"):
+            with open(jsonl_file, encoding="utf-8") as f:
+                for raw in f:
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        entry = json.loads(raw)
+                        text = entry.get("text", "")
+                        if not text:
+                            continue
+                        lines.append(
+                            {
+                                "source": "curriculum",
+                                "text": text,
+                                "priority": 1,
+                                "metadata": {
+                                    "source_file": entry.get("source", jsonl_file.name),
+                                    "e8_primitive": entry.get("e8_primitive", ""),
+                                    "summary": entry.get("summary", ""),
+                                    "concepts": entry.get("concepts", []),
+                                    "qa_pairs": entry.get("qa_pairs", []),
+                                    "basin_coords": entry.get("basin_coords", []),
+                                    "chunk_index": entry.get("chunk_index", 0),
+                                    "origin": "training_export",
+                                },
+                                "timestamp": entry.get(
+                                    "processed_at",
+                                    entry.get("timestamp", ""),
+                                ),
+                            }
+                        )
+                    except (json.JSONDecodeError, KeyError):
+                        continue
+
+    return {
+        "format": "native_harvest",
+        "count": len(lines),
+        "lines": lines,
     }
 
 
@@ -743,7 +995,7 @@ def export_coordized_format() -> dict[str, Any]:
         "format": "qig_coordized",
         "count": len(lines),
         "basin_dim": 64,
-        "lines": lines[:100],
+        "lines": lines,
     }
 
 
@@ -833,6 +1085,8 @@ async def _run_ingestion_job(
                 "mode": proc_mode.value,
                 "processing_time_s": result.processing_time_s,
                 "coordizer_active": _coordizer is not None,
+                "harvest_pending_path": result.harvest_pending_path,
+                "harvest_chunks_forwarded": result.harvest_chunks_forwarded,
                 "errors": result.errors,
                 "finished_at": time.time(),
             }
@@ -851,25 +1105,64 @@ async def _run_ingestion_job(
 training_router = APIRouter()
 
 
-@training_router.get("/training/stats")
+@training_router.get("/training/stats", response_model=None)
 async def training_stats_endpoint() -> dict[str, Any]:
     """Get training data statistics."""
     return get_stats()
 
 
-@training_router.get("/training/export")
-async def training_export_endpoint(fmt: str = "openai") -> dict[str, Any]:
+@training_router.get("/training/export", response_model=None)
+async def training_export_endpoint(
+    fmt: str = "openai", download: bool = False
+) -> dict[str, Any] | StreamingResponse:
     """Export training data.
 
     Query params:
-        fmt: "openai" (default) or "coordized" for 64D basin format
+        fmt: "openai" | "native" | "coordized"
+        download: if true, returns a downloadable .jsonl file
+
+    Formats:
+        openai     — OpenAI fine-tuning format (messages array). Useful for
+                     external fine-tuning services.
+        native     — Harvest-ingest format (source/text/priority/metadata).
+                     Lossless round-trip: download → curate → re-upload.
+                     Preserves all enrichment data (Q&A, e8, summaries, basins).
+        coordized  — 64D basin format for geometric fine-tuning.
+
+    Without download=true, returns JSON summary with preview.
+    With download=true, returns the full .jsonl as a file attachment.
     """
-    if fmt == "coordized":
-        return export_coordized_format()
-    return export_openai_format()
+    if fmt == "native":
+        data = export_native_format()
+    elif fmt == "coordized":
+        data = export_coordized_format()
+    else:
+        data = export_openai_format()
+
+    if not download:
+        return {
+            "format": data["format"],
+            "count": data["count"],
+            "preview": data["lines"][:5],
+        }
+
+    # Stream all lines as a downloadable .jsonl file
+    def _generate() -> Iterator[str]:
+        for line in data["lines"]:
+            yield json.dumps(line, ensure_ascii=False) + "\n"
+
+    ts = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
+    filename = f"vex_training_{fmt}_{ts}.jsonl"
+    return StreamingResponse(
+        _generate(),
+        media_type="application/x-ndjson",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
-@training_router.post("/training/upload")
+@training_router.post("/training/upload", response_model=None)
 async def training_upload_endpoint(
     file: UploadFile = File(...),
     category: str = Form(default="curriculum"),
@@ -882,6 +1175,10 @@ async def training_upload_endpoint(
     Accepts PDF, Markdown, TXT, or JSONL files.
     Returns immediately with a job_id. Frontend polls
     GET /training/upload/status/{job_id} for progress.
+
+    After ingestion, chunks are automatically forwarded to
+    /data/harvest/pending/ so the HarvestScheduler populates
+    the resonance bank without manual intervention.
 
     v6.1: Chunks are automatically coordized to 64D basin coordinates
     if CoordizerV2 is available. Check 'coordized' field in job result.
@@ -927,6 +1224,8 @@ async def training_upload_endpoint(
         "mode": mode,
         "processing_time_s": 0,
         "coordizer_active": _coordizer is not None,
+        "harvest_pending_path": "",
+        "harvest_chunks_forwarded": 0,
         "errors": [],
         "finished_at": 0,
     }
@@ -938,7 +1237,7 @@ async def training_upload_endpoint(
     return {"status": "processing", "job_id": job_id, "filename": filename}
 
 
-@training_router.get("/training/upload/status/{job_id}")
+@training_router.get("/training/upload/status/{job_id}", response_model=None)
 async def training_upload_status(job_id: str) -> dict[str, Any]:
     """Poll ingestion job status. Returns full result when complete."""
     job = _jobs.get(job_id)
@@ -947,7 +1246,7 @@ async def training_upload_status(job_id: str) -> dict[str, Any]:
     return job
 
 
-@training_router.post("/training/feedback")
+@training_router.post("/training/feedback", response_model=None)
 async def training_feedback_endpoint(req: FeedbackRequest) -> dict[str, str]:
     """Submit feedback on a response."""
     await _log_feedback(req.conversation_id, req.rating, req.comment)

@@ -1,5 +1,4 @@
 import type { RegimeWeights } from "../../types/consciousness.ts";
-import "./MetricsSidebar.css";
 
 interface RegimeBarProps {
   regime: RegimeWeights | null;

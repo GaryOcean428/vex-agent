@@ -1,4 +1,3 @@
-import "../../components/MetricCard.css";
 import MetricCard from "../../components/MetricCard.tsx";
 import { API } from "../../config/api-routes.ts";
 import { useMemoryStats, useVexState } from "../../hooks/index.ts";

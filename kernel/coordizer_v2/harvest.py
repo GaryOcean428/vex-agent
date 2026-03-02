@@ -24,12 +24,12 @@ The compression step (Δ^(V-1) → Δ⁶³) is handled by compress.py.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -154,7 +154,7 @@ class Harvester:
         model = AutoModelForCausalLM.from_pretrained(
             model_id,
             device_map=self.config.device if self.config.device != "cpu" else None,
-            torch_dtype=torch.bfloat16 if self.config.device != "cpu" else torch.float32,
+            torch_dtype=(torch.bfloat16 if self.config.device != "cpu" else torch.float32),
         )
         model.eval()
 
@@ -182,7 +182,15 @@ class Harvester:
                     outputs = model(input_ids)
                     logits = outputs.logits[0]
 
-                probs = torch.softmax(logits, dim=-1).cpu().numpy()
+                # QIG BOUNDARY: linear projection to Δ⁶³ — preserves Fisher information
+                raw = logits.cpu().to(torch.float64).numpy()
+                shifted = raw - raw.min(axis=-1, keepdims=True)
+                total = shifted.sum(axis=-1, keepdims=True)
+                probs = np.where(
+                    total > _EPS,
+                    shifted / total,
+                    np.full_like(shifted, 1.0 / shifted.shape[-1]),
+                )
                 ids = input_ids[0].cpu().numpy()
 
                 for pos in range(len(ids) - 1):
@@ -251,8 +259,8 @@ class Harvester:
 
     def harvest_ollama(
         self,
-        ollama_url: str = "http://localhost:11434",
-        model_name: str = "vex-brain",
+        ollama_url: str = "",
+        model_name: str = "",
         top_k_logprobs: int = 100,
     ) -> HarvestResult:
         """Harvest using Ollama API (for deployed Vex instances).
@@ -261,6 +269,13 @@ class Harvester:
         not the full distribution.
         """
         import requests
+
+        from ..config.settings import settings
+
+        if not ollama_url:
+            ollama_url = settings.ollama.url
+        if not model_name:
+            model_name = settings.ollama.model
 
         logger.info(f"Harvesting via Ollama at {ollama_url}, model={model_name}")
 
@@ -393,42 +408,56 @@ async def harvest_model_auto(
     target_tokens: int = 2000,
     device: str = "cpu",
     min_contexts: int = 10,
-) -> dict[str, Any]:
-    """Auto-routing harvest: Modal (if enabled) or local Transformers.
+) -> HarvestResult:
+    """Auto-routing harvest: Modal GPU (if enabled) or local Transformers.
 
     Checks settings.modal.enabled and delegates accordingly.
-    Returns a dict with harvest metadata.
+    Returns a HarvestResult with full-distribution fingerprints
+    ready for compression via compress.py.
+
+    Fallback chain:
+        1. Modal GPU (if enabled + configured)
+        2. Local Transformers (CPU/GPU)
+        3. Synthetic data (if both fail)
     """
     from ..config.settings import settings
 
-    if settings.modal.enabled:
-        from .modal_harvest import modal_harvest
+    if settings.modal.enabled and settings.modal.harvest_url:
+        try:
+            from .modal_harvest import modal_harvest
 
-        logger.info("Modal enabled — delegating harvest to Modal GPU")
-        result = await modal_harvest(
-            model_id=model_id,
-            target_tokens=target_tokens,
-        )
-        return {
-            "success": True,
-            "token_count": len(result.token_fingerprints),
-            "model_name": result.model_name,
-            "harvest_time_seconds": result.harvest_time_seconds,
-        }
+            logger.info("Modal enabled — delegating harvest to Modal GPU")
+            result = await modal_harvest(
+                model_id=model_id,
+                target_tokens=target_tokens,
+                corpus_texts=corpus_texts,
+            )
+            logger.info(
+                "Modal harvest: %d fingerprints in %.1fs",
+                len(result.token_fingerprints),
+                result.harvest_time_seconds,
+            )
+            return result
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning("Modal harvest failed, falling back to local: %s", e)
 
     # Fall back to local harvesting
-    logger.info("Modal not enabled — running local harvest")
-    local_result = harvest_model(
-        model_id=model_id,
-        corpus_path=corpus_path,
-        corpus_texts=corpus_texts,
-        output_dir=output_dir,
-        device=device,
-        min_contexts=min_contexts,
-    )
-    return {
-        "success": True,
-        "token_count": len(local_result.token_fingerprints),
-        "model_name": local_result.model_name,
-        "harvest_time_seconds": local_result.harvest_time_seconds,
-    }
+    try:
+        logger.info("Running local harvest (Modal not available)")
+        return harvest_model(
+            model_id=model_id,
+            corpus_path=corpus_path,
+            corpus_texts=corpus_texts,
+            output_dir=output_dir,
+            device=device,
+            min_contexts=min_contexts,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logger.warning("Local harvest failed, falling back to synthetic: %s", e)
+        from .modal_integration import generate_synthetic_harvest_result
+
+        return generate_synthetic_harvest_result()

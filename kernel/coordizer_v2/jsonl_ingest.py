@@ -15,6 +15,9 @@ Schema per line:
         "timestamp": "ISO 8601"
     }
 
+Also auto-detects OpenAI fine-tuning format:
+    {"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
+
 Priority levels:
     1 = critical (curriculum, core training data)
     2 = high (foraging discoveries, validated documents)
@@ -27,6 +30,12 @@ Architecture:
     - Routing: Modal GPU when MODAL_ENABLED=true, Ollama fallback otherwise
     - Output: writes coordized JSONL with basin coordinates appended
     - Governor-aware: checks budget before routing to paid backends
+
+Failure policy:
+    If a backend cannot produce real logprobs for an entry, the entry is
+    written to output WITHOUT basin_coordinates (None). There is no hash
+    fallback. Hash-derived simplex points carry zero semantic structure and
+    corrupt the resonance bank. Explicit gaps are preferable to silent noise.
 
 Zero Euclidean contamination. Fisher-Rao is the ONLY distance metric.
 Terminology: "basin coordinates" (FORBIDDEN: embedding), "coordize" (FORBIDDEN: tokenize).
@@ -142,10 +151,57 @@ class ValidationError:
 # ═══════════════════════════════════════════════════════════════
 
 
+def _normalize_openai_entry(data: dict[str, Any]) -> dict[str, Any]:
+    """Auto-convert OpenAI fine-tuning format to harvest-ingest format.
+
+    OpenAI format:
+        {"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
+
+    Converts to ingest format:
+        {"source": "curriculum", "text": "User: ...\\nAssistant: ...", "priority": 1, "metadata": {"origin": "openai_export"}}
+
+    Returns the dict unchanged if it's already in ingest format.
+    """
+    messages = data.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return data  # Not OpenAI format — pass through
+
+    # Already has source+text → native format, skip conversion
+    if data.get("source") and data.get("text"):
+        return data
+
+    # Build text from messages
+    parts: list[str] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        if role and content:
+            parts.append(f"{role.capitalize()}: {content}")
+
+    if not parts:
+        return data  # Empty messages — let validator reject it
+
+    return {
+        "source": data.get("source", "curriculum"),
+        "text": "\n".join(parts),
+        "priority": data.get("priority", 1),
+        "metadata": {
+            **(data.get("metadata") or {}),
+            "origin": "openai_export",
+            "original_messages": len(messages),
+        },
+        "timestamp": data.get("timestamp", ""),
+    }
+
+
 def validate_entry(
     line: str, line_number: int
 ) -> tuple[IngestEntry | None, ValidationError | None]:
     """Validate a single JSONL line and return an IngestEntry or error.
+
+    Auto-detects and normalizes OpenAI fine-tuning format before validation.
 
     Checks:
         - Valid JSON
@@ -174,6 +230,9 @@ def validate_entry(
             reason="Entry must be a JSON object",
             raw_line=line[:200],
         )
+
+    # Auto-detect and normalize OpenAI format → ingest format
+    data = _normalize_openai_entry(data)
 
     # Required fields
     source = data.get("source")
@@ -339,6 +398,11 @@ def write_coordized_jsonl(
         "coordized_at": "ISO 8601 timestamp",
         "basin_dim": 64
 
+    Entries with basin=None are written without basin_coordinates.
+    This is an explicit gap, not an error. It means the backend could not
+    produce real logprobs for this entry. Do not substitute hash-derived
+    coordinates — that is silent corruption.
+
     Returns the number of entries written.
     """
     output_dir = Path(output_path).parent
@@ -384,14 +448,19 @@ class JSONLIngestor:
         *,
         coordizer: Any = None,
         modal_client: Any = None,
-        ollama_url: str = "http://ollama.railway.internal:11434",
-        ollama_model: str = "vex-brain",
+        ollama_url: str = "",
+        ollama_model: str = "",
         output_dir: str = "/data/harvest/coordized",
         max_batch_size: int = 32,
         modal_enabled: bool = False,
     ):
         self.coordizer = coordizer
         self.modal_client = modal_client
+        if not ollama_url or not ollama_model:
+            from ..config.settings import settings
+
+            ollama_url = ollama_url or settings.ollama.url
+            ollama_model = ollama_model or settings.ollama.model
         self.ollama_url = ollama_url
         self.ollama_model = ollama_model
         self.output_dir = output_dir
@@ -477,7 +546,14 @@ class JSONLIngestor:
         output_path: str,
         result: IngestResult,
     ) -> None:
-        """Route batches to Modal GPU for harvesting."""
+        """Route batches to Modal GPU for harvesting.
+
+        The Modal endpoint aggregates all texts and returns per-token
+        Fréchet-mean fingerprints.  We compute a single aggregate basin
+        on Δ⁶³ from those fingerprints and assign it to every entry in
+        the batch.  For finer per-entry resolution, use the local
+        CoordizerV2 path instead.
+        """
         for batch in batches:
             try:
                 raw = await self.modal_client.harvest(batch.texts)
@@ -489,8 +565,9 @@ class JSONLIngestor:
                     )
                     continue
 
-                # Convert raw logits to basin coordinates
-                basins = self._logits_to_basins(raw)
+                # Compute aggregate basin from fingerprints
+                basin = self._fingerprints_to_basin(raw)
+                basins: list[NDArray[np.float64] | None] = [basin for _ in batch.entries]
                 written = write_coordized_jsonl(
                     output_path,
                     batch.entries,
@@ -581,12 +658,18 @@ class JSONLIngestor:
                                 basins.append(to_simplex(raw))
                                 continue
 
-                    # Fallback: generate a basin from text hash
-                    basins.append(self._text_to_basin_fallback(entry.text))
+                    # Ollama returned no usable logprobs — entry written without
+                    # basin_coordinates. Do NOT substitute a hash. Explicit gaps
+                    # are correct; hash-derived simplex points corrupt the bank.
+                    logger.warning(
+                        f"Ollama returned no logprobs for entry "
+                        f"(source={entry.source}, line={entry.line_number}) — skipping basin"
+                    )
+                    basins.append(None)
 
                 except Exception as e:
                     logger.warning(f"Ollama harvest failed for entry: {e}")
-                    basins.append(self._text_to_basin_fallback(entry.text))
+                    basins.append(None)
 
             try:
                 written = write_coordized_jsonl(
@@ -600,52 +683,48 @@ class JSONLIngestor:
                 result.batches_failed += 1
                 result.errors.append(f"Ollama write error: {e}")
 
-    def _logits_to_basins(
-        self,
-        raw: dict[str, Any],
-    ) -> list[NDArray[np.float64] | None]:
-        """Convert raw Modal harvest response to basin coordinates.
-
-        Takes the raw logits from each result entry and projects
-        them onto the probability simplex Δ⁶³.
-        """
-        basins: list[NDArray[np.float64] | None] = []
-        results = raw.get("results", [])
-
-        for entry in results:
-            logits = entry.get("logits", [])
-            if logits and len(logits) > 0:
-                # Take the last-token logits and project to simplex
-                raw_logits = np.array(
-                    logits[-1] if isinstance(logits[0], list) else logits, dtype=np.float64
-                )
-                # Truncate or pad to BASIN_DIM
-                if len(raw_logits) >= BASIN_DIM:
-                    raw_logits = raw_logits[:BASIN_DIM]
-                else:
-                    raw_logits = np.pad(
-                        raw_logits,
-                        (0, BASIN_DIM - len(raw_logits)),
-                        constant_values=1e-12,
-                    )
-                basins.append(to_simplex(raw_logits))
-            else:
-                basins.append(None)
-
-        return basins
-
     @staticmethod
-    def _text_to_basin_fallback(text: str) -> NDArray[np.float64]:
-        """Deterministic fallback: hash text to a basin coordinate.
+    def _fingerprints_to_basin(
+        raw: dict[str, Any],
+    ) -> NDArray[np.float64] | None:
+        """Compute a single Δ⁶³ basin from Modal harvest fingerprints.
 
-        Used when neither Modal nor Ollama can produce real logprobs.
-        The result is on the simplex but carries no real semantic
-        structure — it's a placeholder until real harvesting runs.
+        The Modal endpoint returns per-token Fréchet-mean fingerprints
+        on Δ^(V-1). We compute the Fréchet mean of all fingerprints,
+        then project to Δ⁶³ via to_simplex (truncate + renormalise).
+
+        Returns None if no fingerprints were returned.
         """
-        import hashlib
+        from .geometry import frechet_mean
 
-        # SHA-512 gives 64 bytes = BASIN_DIM
-        h = hashlib.sha512(text.encode("utf-8")).digest()
-        raw = np.array([b for b in h[:BASIN_DIM]], dtype=np.float64)
-        raw = np.maximum(raw, 1e-12)
-        return to_simplex(raw)
+        tokens = raw.get("tokens", {})
+        if not tokens:
+            return None
+
+        _EPS = 1e-12
+        fps: list[NDArray[np.float64]] = []
+        for token_data in tokens.values():
+            fp = token_data.get("fingerprint")
+            if fp is None:
+                continue
+            arr = np.array(fp, dtype=np.float64)
+            arr = np.maximum(arr, _EPS)
+            arr = arr / arr.sum()
+            fps.append(arr)
+
+        if not fps:
+            return None
+
+        # Fréchet mean on Δ^(V-1)
+        mean_fp = frechet_mean(fps)
+
+        # Project to Δ⁶³: take first BASIN_DIM components, renormalise
+        if len(mean_fp) >= BASIN_DIM:
+            basin = mean_fp[:BASIN_DIM]
+        else:
+            basin = np.pad(
+                mean_fp,
+                (0, BASIN_DIM - len(mean_fp)),
+                constant_values=_EPS,
+            )
+        return to_simplex(basin)

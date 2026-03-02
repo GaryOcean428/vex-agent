@@ -73,7 +73,20 @@ COPY ollama/ ./ollama/
 RUN groupadd -r vex && useradd -r -g vex -d /app vex
 
 # ── Create data directories ───────────────────────────────────
-RUN mkdir -p /data/workspace /data/training /data/training/epochs /data/training/exports /data/training/uploads /data/training/curriculum \
+# Note: Railway volume mounts overwrite these at runtime.
+# init.sh re-creates and re-chowns them on every start.
+RUN mkdir -p \
+    /data/workspace \
+    /data/training \
+    /data/training/curriculum \
+    /data/training/uploads \
+    /data/training/exports \
+    /data/harvest \
+    /data/harvest/pending \
+    /data/harvest/processing \
+    /data/harvest/completed \
+    /data/harvest/failed \
+    /data/harvest/output \
     && chown -R vex:vex /data /app
 
 # ── Entrypoint scripts ────────────────────────────────────────
@@ -93,7 +106,10 @@ ENV TRAINING_DIR=/data/training
 EXPOSE 8080
 
 # Health check against the web server (which probes the kernel)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+# start-period=90s: kernel takes ~20s, web server starts after, plus margin
+# interval=15s: check frequently once healthy so Railway sees liveness quickly
+# timeout=10s: single probe timeout (web server has its own 5s kernel fetch timeout)
+HEALTHCHECK --interval=15s --timeout=10s --start-period=90s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
 # init.sh runs as root, fixes /data permissions, then exec's entrypoint.sh as vex

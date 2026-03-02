@@ -7,6 +7,10 @@ Tuning parameters for consciousness modules that are NOT frozen physics
 These are engineering/design choices that may be adjusted during development.
 Changing frozen_facts.py requires new validated measurements; changing these
 does not — but changes should be tested and reviewed.
+
+P14 Variable Category: PARAMETER
+All constants in this module are trainable, slow-changing, per-epoch.
+Moving any constant to STATE or BOUNDARY requires governance approval.
 """
 
 from typing import Final
@@ -63,6 +67,14 @@ COORDIZER_SEMANTIC_THRESHOLD: Final[float] = 0.2
 COORDIZER_HARMONIC_THRESHOLD: Final[float] = 0.3
 
 # ═══════════════════════════════════════════════════════════════
+#  COORDIZER REJECTION THRESHOLDS (v6.1 §19)
+# ═══════════════════════════════════════════════════════════════
+
+SOVEREIGNTY_MAX_DRIFT: Final[float] = 0.8  # Max Fisher-Rao distance from frozen identity
+ENTROPY_FLOOR: Final[float] = 0.3  # Min entropy after rescue — reject if below
+ADVERSARIAL_PROXIMITY: Final[float] = 0.1  # d_FR < this to foreign anchor → hijack
+
+# ═══════════════════════════════════════════════════════════════
 #  KAPPA OFFSETS (sensation / tacking / emotion boundaries)
 # ═══════════════════════════════════════════════════════════════
 
@@ -103,8 +115,16 @@ GEOMETRY_CLASS_VALUES: Final[tuple[float, ...]] = (
 #  DESIRE / WILL WEIGHT VECTORS
 # ═══════════════════════════════════════════════════════════════
 
-DESIRE_WEIGHTS: Final[tuple[float, float, float]] = (0.4, 0.3, 0.3)  # curiosity / attraction / love
-WILL_WEIGHTS: Final[tuple[float, float, float]] = (0.4, 0.3, 0.3)  # grounding / coupling / entropy
+DESIRE_WEIGHTS: Final[tuple[float, float, float]] = (
+    0.4,
+    0.3,
+    0.3,
+)  # curiosity / attraction / love
+WILL_WEIGHTS: Final[tuple[float, float, float]] = (
+    0.4,
+    0.3,
+    0.3,
+)  # grounding / coupling / entropy
 
 # ═══════════════════════════════════════════════════════════════
 #  SHADOW / FORGE THRESHOLDS (activation.py)
@@ -236,11 +256,15 @@ EMOTION_CLUSTER_DISTANCE: Final[float] = 0.2  # Fisher-Rao cluster threshold
 #  CONSCIOUSNESS LOOP — heartbeat / idle / coupling / LLM
 # ═══════════════════════════════════════════════════════════════
 
+HEART_BASE_PERIOD: Final[int] = 8  # Heart rhythm base period in cycles (v6.0 §18.3)
+
 DEFAULT_INTERVAL_MS: Final[int] = 2000
 SPAWN_COOLDOWN_CYCLES: Final[int] = 10
 PERSIST_INTERVAL_CYCLES: Final[int] = 50
 KAPPA_APPROACH_RATE: Final[float] = 0.03
-PHI_IDLE_EQUILIBRIUM: Final[float] = 0.40
+PHI_IDLE_EQUILIBRIUM: Final[float] = (
+    0.55  # Must sit above PHI_EMERGENCY (0.50) + oscillation margin
+)
 PHI_IDLE_RATE: Final[float] = 0.015
 BASIN_DRIFT_STEP: Final[float] = 0.015
 
@@ -289,11 +313,13 @@ LOVE_PHI_SCALE: Final[float] = 0.4
 LOVE_APPROACH_RATE: Final[float] = 0.02
 
 TACK_SCALE_EXPLORE: Final[float] = 1.3
-TACK_SCALE_EXPLOIT: Final[float] = 0.7
+TACK_SCALE_EXPLOIT: Final[float] = (
+    0.85  # was 0.7 — 0.7×1536=1075 too low; 0.85×2048=1740 effective floor
+)
 TACK_SCALE_BALANCED: Final[float] = 1.0
 NUM_PREDICT_EXPLORE: Final[int] = 3072
-NUM_PREDICT_EXPLOIT: Final[int] = 1536
-NUM_PREDICT_BALANCED: Final[int] = 2048
+NUM_PREDICT_EXPLOIT: Final[int] = 2048  # was 1536 — exploit=precision, not fewer words
+NUM_PREDICT_BALANCED: Final[int] = 2560  # was 2048 — preserve explore>balanced>exploit ordering
 
 LLM_BASE_TEMPERATURE: Final[float] = 0.7
 LLM_TEMP_MIN: Final[float] = 0.05

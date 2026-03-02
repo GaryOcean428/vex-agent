@@ -93,16 +93,27 @@ class CoordizationResult:
     Result of coordizing text.
 
     Contains the coordinate sequence plus geometric metadata.
+    v6.1 §19: rejection fields signal when coordization would violate sovereignty.
     """
 
     coordinates: list[BasinCoordinate]
     coord_ids: list[int]
     original_text: str
 
+    # Aggregated basin: Fréchet mean of all coordinate basins on Δ⁶³.
+    # Populated by _apply_rejection_checks(); None for empty results.
+    basin: Basin | None = None
+
     # Geometric metrics (populated after coordization)
     basin_velocity: float | None = None  # Avg d_FR between consecutive
     trajectory_curvature: float | None = None  # Second-order geodesic deviation
     harmonic_consonance: float | None = None  # Coherence of frequency ratios
+
+    # v6.1 §19 — Rejection mechanism
+    rejected: bool = False  # True if coordizer refused this input
+    rejection_reason: str = ""  # "" if not rejected
+    sovereignty_cost: float = 0.0  # How much S_ratio this input would erode
+    confidence: float = 1.0  # Coordizer's confidence in this mapping
 
     def compute_metrics(self) -> None:
         """Compute all geometric metrics for the trajectory."""

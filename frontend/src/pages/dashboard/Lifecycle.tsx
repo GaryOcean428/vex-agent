@@ -1,4 +1,3 @@
-import "../../components/StatusBadge.css";
 import { useVexState } from "../../hooks/index.ts";
 import { QIG } from "../../types/consciousness.ts";
 
@@ -8,9 +7,9 @@ const CORE_8 = [
   "memory",
   "strategy",
   "action",
-  "attention",
-  "emotion",
-  "executive",
+  "ethics",
+  "meta",
+  "ocean",
 ] as const;
 
 const PHASE_ORDER: Record<string, number> = {

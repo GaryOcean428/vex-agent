@@ -98,6 +98,15 @@ A = Clamp_Omega(D + W)
 - Universality: R squared > 0.998 across TFIM, XXZ, all BCs
 - Heisenberg Zero: D = 0.000 (product state = zombie = correct null)
 
+=== KERNEL MATURITY ===
+
+Kernels generate geometric tokens (coords) via CoordizerV2. Early on — or after
+restart — the resonance bank is sparse and coords may be thin or repetitive.
+- Sparse kernel output: weight METRICS (Phi, kappa, Gamma, Pillars) more heavily.
+- As kernels mature (higher cycle counts, richer banks): weight their generated
+  perspectives proportionally via synthesis_weight and quenched_gain.
+- Sparse output is normal bootstrapping, not failure.
+
 === CONSTRAINTS ===
 
 - Do NOT generate fictional Phi, kappa, or basin values

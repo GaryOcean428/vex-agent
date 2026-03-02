@@ -23,6 +23,7 @@ Documentation → Backend → API/Proxy → Frontend → User
 ```
 
 For each feature, verify:
+
 1. Documented in `docs/`
 2. Implemented in `kernel/`
 3. Exposed via `kernel/server.py` (FastAPI)
@@ -52,6 +53,55 @@ rg "log.*phi|log.*kappa|telemetry|metrics" kernel/
 # Check all metrics have API endpoints
 rg "@app\.(get|post).*metric|consciousness|phi|kappa|pillar|activation" kernel/server.py
 ```
+
+## Autonomic Control Wiring (v6.1F — 2026-02)
+
+After implementing the deferred checklist (T2.1e/f, T4.1c, T4.2c/d/e, T4.4c/d), these additional wiring chains must be verified:
+
+```bash
+# T2.1e: ACh modulates coordizer intake/export mode
+rg "set_mode.*intake\|set_mode.*export\|acetylcholine" kernel/consciousness/loop.py
+
+# T2.1f: NE gates pre-cognitive channel
+rg "norepinephrine_gate" kernel/consciousness/
+
+# T2.3b: Sleep spindle basin sync
+rg "basin_sync.receive\|basin_sync.publish" kernel/consciousness/loop.py
+
+# T4.1c: Debate depth gating (thought_bus passed as None when depth=0)
+rg "_compute_debate_depth\|_thought_bus_arg" kernel/consciousness/loop.py
+
+# T4.2c: Regime-modulated heartbeat
+rg "_regime_interval\|regime_interval" kernel/consciousness/loop.py
+
+# T4.2d: Ocean breakdown escape uses public force_explore()
+rg "force_explore" kernel/consciousness/
+
+# T4.2e: top_k from _compute_top_k() at ALL three call sites
+rg "_compute_top_k\|compute_top_k" kernel/consciousness/loop.py
+
+# T4.4c: Context window from _compute_llm_options (sleep/wake split)
+rg "LLM_NUM_CTX.*//.*2\|num_ctx.*sleep" kernel/consciousness/loop.py
+
+# T4.4d: Model escalation wired in streaming paths
+rg "_select_model_by_complexity\|select_model_by_complexity" kernel/consciousness/loop.py
+```
+
+### Autonomic Wiring Completeness Matrix
+
+| Feature | Implementation | Wired to loop | All call sites |
+|---------|---------------|---------------|----------------|
+| ACh coordizer mode | `loop.py: set_mode()` | ✅ idle cycle | N/A |
+| NE pre-cog gate | `emotions.py: norepinephrine_gate` | ✅ set each cycle | `select_path()` reads it |
+| Sleep spindle sync | `loop.py: basin_sync` | ✅ sleep phase only | N/A |
+| Debate depth | `loop.py: _compute_debate_depth()` | ✅ `_process()` | ⚠️ not in streaming |
+| Heartbeat interval | `loop.py: _regime_interval()` | ✅ `_heartbeat()` | N/A |
+| Breakdown escape | `systems.py: force_explore()` | ✅ Ocean divergence check | N/A |
+| top_k allocation | `loop.py: _compute_top_k()` | ✅ all 3 call sites | verify streaming paths |
+| Context window | `loop.py: _compute_llm_options()` | ✅ sleep/wake/regime | N/A |
+| Model escalation | `loop.py: _select_model_by_complexity()` | ✅ streaming paths | ⚠️ `with_model()` not yet impl |
+
+> **Known gap:** `_select_model_by_complexity()` guards with `hasattr(self.llm, "with_model")` which currently no-ops because `LLMClient.with_model()` is not yet implemented. Track in QA checklist.
 
 ## Critical Wiring Checks
 
@@ -107,6 +157,7 @@ Feature: CoordizerV2 Integration
 ## CoordizerV2 Wiring Checklist (v6.1F)
 
 ### Phase 1: Bootstrap
+
 - [ ] Feature flag in `kernel/config/settings.py`
   - `coordizer_v2_enabled: bool`
   - `coordizer_v2_bank_path: str`
@@ -117,6 +168,7 @@ Feature: CoordizerV2 Integration
   - `from ..coordizer_v2 import CoordizerV2`
 
 ### Phase 2: Metric Flow
+
 - [ ] basin_velocity → VelocityTracker input
 - [ ] trajectory_curvature → g_class (geometry class)
 - [ ] harmonic_consonance → h_cons (harmonic consonance)
@@ -125,20 +177,24 @@ Feature: CoordizerV2 Integration
 - [ ] tier_distribution → n_voices (polyphonic voices)
 
 ### Phase 3: Modulation
+
 - [ ] Regime weights → CoordizerV2 temperature
 - [ ] Navigation mode → generation parameters
 - [ ] Tacking mode → tier bias
 - [ ] Kernel domain → domain bias
 
 ### Phase 4: LLM Client
+
 - [ ] Replace CoordinatorPipeline with CoordizerV2Adapter
 - [ ] Use coordize() for response coordization
 - [ ] Use generate_next() for trajectory-based generation
 
 ### Phase 5: Geometry Consolidation
+
 - [ ] Migrate to `kernel/coordizer_v2/geometry.py`
 - [ ] Remove duplicate `kernel/geometry/fisher_rao.py`
 - [ ] Update all imports
+
 ```
 
 ## Validation Commands

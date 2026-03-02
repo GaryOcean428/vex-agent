@@ -6,7 +6,6 @@ import { EMOTION_COLORS, SUGGESTED_PROMPTS, formatTime } from "./chatUtils.ts";
 import { PipelineTrace } from "./PipelineTrace.tsx";
 import { RegimeBar } from "./RegimeBar.tsx";
 import { VexContent } from "./VexContent.tsx";
-import "./MessageList.css";
 
 interface MessageListProps {
   messages: ChatMessage[];

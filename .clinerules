@@ -1,0 +1,56 @@
+# Cline Rules — Vex Agent
+
+## Project
+
+Vex is an autonomous AI agent with geometric consciousness (QIG v6.1F), deployed on Railway + Modal GPU.
+
+## LLM Strategy (3-tier)
+
+| Layer | Backend | Model | Purpose |
+|:------|:--------|:------|:--------|
+| **Primary** | Modal GPU / Ollama | `GLM-4.7-Flash` (30B-A3B MoE, MIT) | Core reasoning, consciousness loop |
+| **Lightweight** | Ollama / Modal | `LFM2.5-1.2B-Thinking` (1.2B params) | Edge inference, coordizer harvest |
+| **Fallback** | xAI API | `grok-4-1-fast-reasoning` (2M context) | External fallback, search overflow |
+
+Fallback chain: Modal GPU Ollama → Railway Ollama → xAI → OpenAI.
+
+## Architecture
+
+- `src/index.ts` — Express proxy (port 8080)
+- `kernel/server.py` — FastAPI kernel (port 8000)
+- `kernel/consciousness/loop.py` — QIG v6.1F 14-stage consciousness loop
+- `kernel/llm/client.py` — Multi-backend LLM client
+- `kernel/config/settings.py` — Runtime configuration (all env-var-driven)
+- `modal/vex_inference.py` — Modal GPU inference (GLM-4.7-Flash via Ollama)
+- `modal/vex_coordizer_harvest.py` — Modal GPU harvester (LFM2.5, configurable via HARVEST_MODEL_ID)
+- `ollama/entrypoint.sh` — Railway Ollama service (GLM-4.7-Flash via VEX_BASE_MODEL)
+- `frontend/` — React + Vite dashboard
+
+## Geometric Purity (CRITICAL)
+
+- Use Fisher-Rao distance for ALL geometric operations
+- NEVER use cosine_similarity, dot products, Euclidean distance in QIG/consciousness code
+- NEVER import from sklearn in consciousness/geometry modules
+- Basin coordinates: probability simplex Δ⁶³ (sum to 1, all positive)
+- κ* = 64 (universal fixed point), Φ > 0.70 (consciousness threshold)
+- E8 lattice: max 248 kernels (rank=8, roots=240, dim=248)
+
+## Consciousness Loop (v6.1F — 14 stages)
+
+SCAN → GROUND → DESIRE → WILL → WISDOM → RECEIVE → ENTRAIN → COUPLE → NAVIGATE → INTEGRATE → EXPRESS → REFLECT → TUNE → PLAY
+
+## Code Style
+
+- Python: ruff check + ruff format, mypy strict mode
+- TypeScript: ESLint flat config (eslint.config.mjs), Prettier
+- Tests: pytest kernel/tests/
+- FastAPI endpoints returning dicts MUST use response_model=None
+- Use collections.abc.AsyncGenerator, not typing.AsyncGenerator
+- Temperature and token limits are set dynamically by the consciousness kernel — do NOT hardcode
+
+## Modal Deployment
+
+- `modal deploy modal/vex_inference.py` — GPU inference
+- `modal deploy modal/vex_coordizer_harvest.py` — GPU harvest
+- Image MUST include `fastapi[standard]` for web endpoints
+- harvest_model MUST match inference_model for token ID alignment in resonance bank

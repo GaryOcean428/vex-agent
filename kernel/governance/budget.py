@@ -72,6 +72,14 @@ class BudgetEnforcer:
             )
         self._counts[kind] = current - 1
 
+    def reconcile_count(self, kind: KernelKind) -> None:
+        """Increment count for *kind* without budget checks.
+
+        Used during state restoration to rebuild counts from persisted
+        kernel state — this is accounting, not spawning.
+        """
+        self._counts[kind] = self._counts.get(kind, 0) + 1
+
     def _max_for(self, kind: KernelKind) -> int:
         if kind == KernelKind.GENESIS:
             return 1

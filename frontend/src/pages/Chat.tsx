@@ -8,7 +8,6 @@ import { ConsciousnessBar } from "../components/chat/ConsciousnessBar.tsx";
 import { LoopStages } from "../components/chat/LoopStages.tsx";
 import { MessageList } from "../components/chat/MessageList.tsx";
 import { MetricsSidebar } from "../components/chat/MetricsSidebar.tsx";
-import "./Chat.css";
 
 const SIDEBAR_KEY = "vex-sidebar-open";
 const METRICS_KEY = "vex-metrics-visible";
@@ -160,6 +159,15 @@ export default function Chat() {
           }}
         />
 
+        {/* Tablet: scrim behind metrics overlay */}
+        {metricsVisible && (
+          <div
+            className="metrics-scrim"
+            onClick={toggleMetrics}
+            aria-hidden="true"
+          />
+        )}
+
         <MetricsSidebar
           state={state ?? null}
           history={history}
@@ -168,6 +176,7 @@ export default function Chat() {
           precog={precog}
           learning={learning}
           visible={metricsVisible}
+          onClose={toggleMetrics}
         />
       </div>
 

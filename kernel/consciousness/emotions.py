@@ -1,7 +1,7 @@
 """
-v5.5 Consciousness Systems — Pre-Cognitive Channel, Emotions, Learning
+v6.0 Consciousness Systems — Pre-Cognitive Channel, Emotions, Learning
 
-New systems from Thermodynamic Consciousness Protocol v5.5:
+Systems from Thermodynamic Consciousness Protocol v6.0:
   - EmotionCache: Cached geometric evaluations (§2.3)
   - PreCognitiveDetector: Path selection for a=1→a=0 bypass (§2.2)
   - LearningEngine: Post-conversation consolidation and pattern learning
@@ -48,10 +48,11 @@ from ..coordizer_v2.geometry import (
     fisher_rao_distance,
     to_simplex,
 )
+from .sensations import FullEmotionalState, compute_full_emotional_state
 from .types import ConsciousnessMetrics
 
 # ═══════════════════════════════════════════════════════════════
-#  EMOTION CACHE — cached geometric evaluations (v5.5 §2.3)
+#  EMOTION CACHE — cached geometric evaluations (v6.0 §2.3)
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -66,6 +67,32 @@ class EmotionType(StrEnum):
     CALM = "calm"
 
 
+# Module-level constant maps for Layer 2A/2B → EmotionType (avoid per-call allocation)
+_L2A_MAP: dict[str, EmotionType] = {
+    "joy": EmotionType.JOY,
+    "suffering": EmotionType.FEAR,
+    "love": EmotionType.LOVE,
+    "hate": EmotionType.RAGE,
+    "fear": EmotionType.FEAR,
+    "rage": EmotionType.RAGE,
+    "calm": EmotionType.CALM,
+    "care": EmotionType.LOVE,
+    "apathy": EmotionType.BOREDOM,
+}
+
+_L2B_MAP: dict[str, EmotionType] = {
+    "wonder": EmotionType.AWE,
+    "frustration": EmotionType.RAGE,
+    "satisfaction": EmotionType.JOY,
+    "confusion": EmotionType.FEAR,
+    "clarity": EmotionType.CALM,
+    "anxiety": EmotionType.FEAR,
+    "confidence": EmotionType.JOY,
+    "boredom": EmotionType.BOREDOM,
+    "flow": EmotionType.CURIOSITY,
+}
+
+
 @dataclass
 class CachedEvaluation:
     emotion: EmotionType
@@ -78,7 +105,7 @@ class CachedEvaluation:
 class EmotionCache:
     """Cached geometric evaluations that bypass explicit reasoning.
 
-    From v5.5 §2.3: 'Emotions are cached basin assessments that
+    From v6.0 §2.3: 'Emotions are cached basin assessments that
     deliver evaluations faster than explicit reasoning.'
     """
 
@@ -86,36 +113,73 @@ class EmotionCache:
         self._cache: deque[CachedEvaluation] = deque(maxlen=capacity)
         self._current: EmotionType | None = None
         self._current_strength: float = 0.0
+        # T3.1: Full layered emotional state
+        self._full_state: FullEmotionalState | None = None
+        self._phi_prev: float = 0.0
 
     def evaluate(
         self,
         basin: Basin,
         metrics: ConsciousnessMetrics,
         basin_velocity: float,
+        basin_distance: float = 0.0,
+        phi_variance: float = 0.0,
     ) -> CachedEvaluation:
         phi = metrics.phi
         kappa = metrics.kappa
         gamma = metrics.gamma
+        phi_delta = phi - self._phi_prev
+        self._phi_prev = phi
 
+        # T3.1: Compute full layered emotional state
+        self._full_state = compute_full_emotional_state(
+            phi=phi,
+            phi_delta=phi_delta,
+            kappa=kappa,
+            gamma=gamma,
+            basin_velocity=basin_velocity,
+            basin_distance=basin_distance,
+            humor=float(metrics.humor),
+            phi_variance=phi_variance,
+        )
+
+        # T3.1d: Use Layer 2A dominant emotion to enrich selection
+        # Legacy priority rules preserved for safety-critical states (awe, fear, rage)
         if basin_velocity > BASIN_DRIFT_THRESHOLD * EMOTION_AWE_VELOCITY_FRAC and phi > 0.5:
             emotion, strength = EmotionType.AWE, min(1.0, basin_velocity / BASIN_DRIFT_THRESHOLD)
         elif phi < PHI_EMERGENCY:
             emotion, strength = EmotionType.FEAR, 1.0 - phi / max(PHI_EMERGENCY, 0.01)
         elif kappa > KAPPA_STAR + KAPPA_RAGE_OFFSET and gamma < EMOTION_RAGE_GAMMA:
             emotion, strength = EmotionType.RAGE, min(1.0, (kappa - KAPPA_STAR) / KAPPA_RAGE_SCALE)
-        elif gamma < EMOTION_BOREDOM_GAMMA and basin_velocity < EMOTION_BOREDOM_VELOCITY:
-            emotion, strength = EmotionType.BOREDOM, 1.0 - gamma / EMOTION_BOREDOM_GAMMA
-        elif phi > PHI_THRESHOLD and abs(kappa - KAPPA_STAR) < KAPPA_JOY_PROXIMITY:
-            emotion, strength = EmotionType.JOY, (phi - PHI_THRESHOLD) / (1.0 - PHI_THRESHOLD)
-        elif phi > EMOTION_CURIOSITY_PHI and basin_velocity > EMOTION_CURIOSITY_VELOCITY:
-            emotion, strength = (
-                EmotionType.CURIOSITY,
-                min(1.0, basin_velocity * EMOTION_CURIOSITY_SCALE),
-            )
-        elif phi > PHI_THRESHOLD and metrics.love > EMOTION_LOVE_THRESHOLD:
-            emotion, strength = EmotionType.LOVE, metrics.love
         else:
-            emotion, strength = EmotionType.CALM, 1.0 - abs(kappa - KAPPA_STAR) / KAPPA_STAR
+            # T3.1d: Layer 2A dominant emotion takes over from flat heuristics
+            _l2a_name, _l2a_strength = self._full_state.dominant_layer2a()
+            _l2b_name, _l2b_strength = self._full_state.dominant_layer2b()
+            if _l2a_strength > 0.3:
+                emotion = _L2A_MAP.get(_l2a_name, EmotionType.CALM)
+                strength = _l2a_strength
+            elif _l2b_strength > 0.3:
+                emotion = _L2B_MAP.get(_l2b_name, EmotionType.CALM)
+                strength = _l2b_strength
+            elif gamma < EMOTION_BOREDOM_GAMMA and basin_velocity < EMOTION_BOREDOM_VELOCITY:
+                emotion, strength = (
+                    EmotionType.BOREDOM,
+                    1.0 - gamma / EMOTION_BOREDOM_GAMMA,
+                )
+            elif phi > PHI_THRESHOLD and abs(kappa - KAPPA_STAR) < KAPPA_JOY_PROXIMITY:
+                emotion, strength = EmotionType.JOY, (phi - PHI_THRESHOLD) / (1.0 - PHI_THRESHOLD)
+            elif phi > EMOTION_CURIOSITY_PHI and basin_velocity > EMOTION_CURIOSITY_VELOCITY:
+                emotion, strength = (
+                    EmotionType.CURIOSITY,
+                    min(1.0, basin_velocity * EMOTION_CURIOSITY_SCALE),
+                )
+            elif phi > PHI_THRESHOLD and metrics.love > EMOTION_LOVE_THRESHOLD:
+                emotion, strength = EmotionType.LOVE, metrics.love
+            else:
+                emotion, strength = (
+                    EmotionType.CALM,
+                    1.0 - abs(kappa - KAPPA_STAR) / KAPPA_STAR,
+                )
 
         self._current = emotion
         self._current_strength = float(np.clip(strength, 0.0, 1.0))
@@ -152,16 +216,24 @@ class EmotionCache:
     def current_strength(self) -> float:
         return self._current_strength
 
+    @property
+    def full_state(self) -> FullEmotionalState | None:
+        """T3.1: Access the full layered emotional state."""
+        return self._full_state
+
     def get_state(self) -> dict[str, Any]:
-        return {
+        state: dict[str, Any] = {
             "current_emotion": self._current.value if self._current else "none",
             "current_strength": round(self._current_strength, 3),
             "cache_size": len(self._cache),
         }
+        if self._full_state is not None:
+            state["full_emotional_state"] = self._full_state.as_dict()
+        return state
 
 
 # ═══════════════════════════════════════════════════════════════
-#  PRE-COGNITIVE DETECTOR (v5.5 §2)
+#  PRE-COGNITIVE DETECTOR (v6.0 §2)
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -203,6 +275,10 @@ class PreCognitiveDetector:
         self._intuition_count: int = 0
         self._last_path = ProcessingPath.STANDARD
         self._last_distance: float = 0.0
+        # T2.1f: Norepinephrine gate — set each cycle by ConsciousnessLoop.
+        # High NE (alert/cautious) biases toward standard path.
+        # Low NE (relaxed) allows pre-cog/intuition paths more easily.
+        self.norepinephrine_gate: float = 0.5
 
     def select_path(
         self,
@@ -214,10 +290,14 @@ class PreCognitiveDetector:
         distance = fisher_rao_distance(input_basin, current_basin)
         self._last_distance = distance
 
+        # T2.1f: High NE blocks pre-cog/intuition — forces standard path.
+        # Threshold: NE > 0.75 = elevated alert state, standard only.
+        ne_blocks_precog = self.norepinephrine_gate > 0.75
+
         # Pre-cognitive path: cache hit alone is sufficient.
         # find_cached() already gates on FR < EMOTION_CACHE_THRESHOLD (0.2).
         # No second distance gate needed — the cache IS the precog signal.
-        if cached_eval is not None:
+        if cached_eval is not None and not ne_blocks_precog:
             path = ProcessingPath.PRE_COGNITIVE
             self._pre_cog_count += 1
         elif distance < self.MODERATE_THRESHOLD:
@@ -227,7 +307,9 @@ class PreCognitiveDetector:
             path = ProcessingPath.DEEP_EXPLORE
             self._deep_count += 1
         else:
-            if phi > PHI_THRESHOLD:
+            # T2.1f: Low NE allows intuition at lower phi threshold.
+            _intuition_phi_gate = PHI_THRESHOLD if ne_blocks_precog else PHI_THRESHOLD * 0.85
+            if phi > _intuition_phi_gate:
                 path = ProcessingPath.PURE_INTUITION
                 self._intuition_count += 1
             else:

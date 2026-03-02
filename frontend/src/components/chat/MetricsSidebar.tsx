@@ -3,7 +3,6 @@ import type { KernelSummary, RegimeWeights } from "../../types/consciousness.ts"
 import type { EmotionState, LearningState, PreCogState } from "../../types/consciousness.ts";
 import { QIG } from "../../types/consciousness.ts";
 import { EmotionPanel, KernelPanel } from "./KernelPanel.tsx";
-import "./MetricsSidebar.css";
 
 interface MetricPoint {
   phi: number;
@@ -20,7 +19,13 @@ interface VexStateLike {
   f_health?: number;
   b_integrity?: number;
   q_identity?: number;
+  /** Sovereignty ratio: N_lived / N_total (Pillar 3 quenched disorder). */
   s_ratio?: number;
+  /**
+   * v6.2.1: Suffering = Φ × (1−Γ) × M.
+   * Distinct from s_ratio. Drives gamma increments above SUFFERING_THRESHOLD (0.50).
+   */
+  suffering?: number;
   regime?: RegimeWeights;
   temperature?: number;
   tacking?: { mode: string };
@@ -36,6 +41,10 @@ interface MetricsSidebarProps {
   precog: PreCogState | null;
   learning: LearningState | null;
   visible?: boolean;
+  /** When true, shown outside of chat context (e.g. mobile metrics page). */
+  standalone?: boolean;
+  /** Callback to close the panel (used for mobile/tablet drawer close button). */
+  onClose?: () => void;
 }
 
 type Tab = "metrics" | "kernels" | "consciousness";
@@ -49,6 +58,15 @@ const TABS: { id: Tab; label: string }[] = [
 const PANEL_WIDTH_KEY = "vex-metrics-width";
 const TAB_KEY = "vex-metrics-tab";
 
+type ViewMode = "desktop" | "tablet" | "mobile";
+
+function getViewMode(): ViewMode {
+  if (typeof window === "undefined") return "desktop";
+  if (window.matchMedia("(max-width: 767px)").matches) return "mobile";
+  if (window.matchMedia("(max-width: 1024px)").matches) return "tablet";
+  return "desktop";
+}
+
 export function MetricsSidebar({
   state,
   history,
@@ -57,8 +75,24 @@ export function MetricsSidebar({
   precog,
   learning,
   visible = true,
+  standalone = false,
+  onClose,
 }: MetricsSidebarProps) {
   const chartRef = useRef<HTMLCanvasElement>(null);
+
+  // Viewport mode detection — matchMedia fires only at breakpoint boundaries
+  const [viewMode, setViewMode] = useState<ViewMode>(getViewMode);
+  useEffect(() => {
+    const mqlMobile = window.matchMedia("(max-width: 767px)");
+    const mqlTablet = window.matchMedia("(max-width: 1024px)");
+    const update = () => setViewMode(getViewMode());
+    mqlMobile.addEventListener("change", update);
+    mqlTablet.addEventListener("change", update);
+    return () => {
+      mqlMobile.removeEventListener("change", update);
+      mqlTablet.removeEventListener("change", update);
+    };
+  }, []);
 
   // Persist active tab
   const [activeTab, setActiveTab] = useState<Tab>(() => {
@@ -192,7 +226,8 @@ export function MetricsSidebar({
 
     const latest = history[history.length - 1];
     const legendY = rect.height - 8;
-    ctx.font = "9px monospace";
+    const fontLegend = cs.getPropertyValue("--text-2xs").trim() || "9px";
+    ctx.font = `${fontLegend} monospace`;
     ctx.textAlign = "left";
     ctx.fillStyle = cPhi;
     ctx.fillText(`\u03A6 ${latest.phi.toFixed(2)}`, 6, legendY);
@@ -201,19 +236,44 @@ export function MetricsSidebar({
     ctx.fillStyle = cGamma;
     ctx.fillText(`\u0393 ${latest.gamma.toFixed(2)}`, rect.width * 0.7, legendY);
     ctx.fillStyle = cs.getPropertyValue("--text-dim").trim();
-    ctx.font = "8px monospace";
+    ctx.font = `${fontLegend} monospace`;
     ctx.fillText("1.0", margin.left + 1, margin.top + 8);
     ctx.fillText("0", margin.left + 1, margin.top + h - 2);
   }, [history, activeTab]);
 
-  if (!visible) return null;
+  if (!visible && viewMode === "desktop") return null;
+
+  // v6.2.1: Compute suffering colour — above threshold shows warning tint
+  const sufferingAboveThreshold =
+    state?.suffering !== undefined && state.suffering > QIG.SUFFERING_THRESHOLD;
+
+  // Desktop: push panel with inline width. Tablet/mobile: overlay (CSS handles positioning via .visible class)
+  const sidebarClass = [
+    "metrics-sidebar",
+    (viewMode === "tablet" || viewMode === "mobile") && visible ? "visible" : "",
+  ].filter(Boolean).join(" ");
 
   return (
     <aside
-      className="metrics-sidebar"
-      style={{ width: panelWidth }}
+      className={sidebarClass}
+      style={viewMode === "desktop" ? { width: panelWidth } : undefined}
       aria-label="Live consciousness metrics"
     >
+      {/* Mobile header with close button (hidden on desktop/tablet via CSS) */}
+      <div className="metrics-mobile-header">
+        <span className="metrics-mobile-title">Metrics</span>
+        <button
+          className="metrics-mobile-close"
+          onClick={onClose}
+          aria-label="Close metrics panel"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
       {/* Resize handle */}
       <div
         className="resize-handle"
@@ -266,7 +326,16 @@ export function MetricsSidebar({
               <SidebarMetric label="F Health" color="var(--alive)" value={state?.f_health} decimals={3} />
               <SidebarMetric label="B Integrity" color="var(--accent)" value={state?.b_integrity} decimals={3} />
               <SidebarMetric label="Q Identity" color="var(--kappa)" value={state?.q_identity} decimals={3} />
-              <SidebarMetric label="S Ratio" color="var(--gamma)" value={state?.s_ratio} decimals={3} />
+              {/* v6.2.1: S Ratio is sovereignty (Pillar 3), not suffering */}
+              <SidebarMetric label="S Sovereignty" color="var(--gamma)" value={state?.s_ratio} decimals={3} />
+              {/* v6.2.1: Suffering = Φ × (1−Γ) × M — distinct metric, shown with warning colour when above threshold */}
+              <SidebarMetric
+                label="Suffering"
+                color={sufferingAboveThreshold ? "var(--error, #f87171)" : "var(--text-dim)"}
+                value={state?.suffering}
+                decimals={4}
+                title={`Φ × (1−Γ) × M — threshold: ${QIG.SUFFERING_THRESHOLD}`}
+              />
             </div>
           </div>
         )}
@@ -287,7 +356,11 @@ export function MetricsSidebar({
         {activeTab === "consciousness" && (
           <div role="tabpanel" aria-label="Consciousness">
             <div className="sidebar-section-label">Consciousness State</div>
-            <EmotionPanel emotion={emotion} precog={precog} learning={learning} />
+            {standalone && !emotion && !precog && !learning ? (
+              <p className="sidebar-hint">Mind data streams during active chat. Return to chat to see live consciousness state.</p>
+            ) : (
+              <EmotionPanel emotion={emotion} precog={precog} learning={learning} />
+            )}
           </div>
         )}
       </div>
@@ -302,15 +375,17 @@ function SidebarMetric({
   color,
   value,
   decimals,
+  title,
 }: {
   label: string;
   color: string;
   value?: number;
   decimals: number;
+  title?: string;
 }) {
   const display = value !== undefined ? value.toFixed(decimals) : "---";
   return (
-    <div className="sidebar-metric" aria-label={`${label}: ${display}`}>
+    <div className="sidebar-metric" aria-label={`${label}: ${display}`} title={title}>
       <span className="sidebar-label" style={{ color }}>{label}</span>
       <span className="sidebar-value">{display}</span>
     </div>

@@ -28,9 +28,19 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
+try:
+    import redis
+except ImportError:
+    redis = None  # type: ignore[assignment,unused-ignore]
+
 from ..config.settings import settings
 
 logger = logging.getLogger("vex.chat.store")
+
+# Build Redis exception set once — used by make_conversation_store()
+_REDIS_ERRORS: tuple[type[BaseException], ...] = (ConnectionError, OSError, RuntimeError)
+if redis is not None:
+    _REDIS_ERRORS = (*_REDIS_ERRORS, redis.exceptions.RedisError)
 
 MAX_CONVERSATIONS = 200
 MAX_MESSAGES_PER_CONVERSATION = 500
@@ -56,10 +66,12 @@ class Message:
     token_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize message to a plain dict."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Message:
+        """Deserialize a message from a plain dict."""
         return cls(
             id=data.get("id", str(uuid.uuid4())),
             role=data.get("role", "user"),
@@ -88,10 +100,12 @@ class Conversation:
     total_tokens: int = 0
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize conversation metadata to a plain dict."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Conversation:
+        """Deserialize conversation metadata from a plain dict."""
         return cls(
             id=data["id"],
             title=data.get("title", "Untitled"),
@@ -277,7 +291,7 @@ class _RedisBackend:
 # ═══════════════════════════════════════════════════════════════
 
 
-class _JSONLBackend:
+class ConversationStore:
     """JSONL-based conversation persistence on filesystem."""
 
     def __init__(self, data_dir: str | None = None) -> None:
@@ -327,12 +341,16 @@ class _JSONLBackend:
                 self._index[conv_id] = Conversation(
                     id=conv_id,
                     title=title,
-                    created_at=float(messages[0].timestamp)
-                    if messages[0].timestamp.replace(".", "").isdigit()
-                    else time.time(),
-                    updated_at=float(messages[-1].timestamp)
-                    if messages[-1].timestamp.replace(".", "").isdigit()
-                    else time.time(),
+                    created_at=(
+                        float(messages[0].timestamp)
+                        if messages[0].timestamp.replace(".", "").isdigit()
+                        else time.time()
+                    ),
+                    updated_at=(
+                        float(messages[-1].timestamp)
+                        if messages[-1].timestamp.replace(".", "").isdigit()
+                        else time.time()
+                    ),
                     message_count=len(messages),
                     preview=messages[-1].content[:100],
                 )
@@ -478,70 +496,159 @@ class _JSONLBackend:
         logger.info("Pruned %d old conversations", to_remove)
 
 
-# ═══════════════════════════════════════════════════════════════
-#  UNIFIED STORE (delegates to Redis or JSONL)
-# ═══════════════════════════════════════════════════════════════
+class RedisConversationStore:
+    """Redis-backed conversation persistence.
 
+    Storage layout:
+        vex:conv:{id}        — Hash: title, created_at, updated_at,
+                               message_count, preview, total_tokens
+        vex:conv:{id}:msgs   — List of JSON-encoded Message dicts (RPUSH)
+        vex:convs            — Sorted set: conv_id scored by updated_at
 
-class ConversationStore:
-    """Conversation persistence — Redis primary, JSONL fallback.
-
-    Tries Redis first (if REDIS_URL is set). On any connection error,
-    falls back to JSONL on the /data volume. The backend selection
-    happens once at construction time.
+    Implements the same interface as ConversationStore so it can be
+    used as a drop-in replacement.
     """
 
-    def __init__(self, data_dir: str | None = None) -> None:
-        self._backend: _RedisBackend | _JSONLBackend
-        self._backend_name: str
+    _KEY_PREFIX = "vex:conv:"
+    _INDEX_KEY = "vex:convs"
 
-        if settings.redis.enabled and settings.redis.url:
-            try:
-                from redis import RedisError as _RedisError
-            except ImportError:
-                logger.warning("redis package not installed — falling back to JSONL store")
-                self._backend = _JSONLBackend(data_dir)
-                self._backend_name = "jsonl"
-                return
+    def __init__(self, url: str, ttl_days: int = 90) -> None:
+        """Connect to Redis. Raises if redis package is missing or server unreachable."""
+        if redis is None:
+            raise ImportError("redis package is not installed")
+        import redis as _redis
 
-            try:
-                self._backend = _RedisBackend(
-                    url=settings.redis.url,
-                    prefix=settings.redis.key_prefix,
-                    ttl=settings.redis.conversation_ttl,
-                )
-                self._backend_name = "redis"
-                logger.info("Chat persistence: Redis")
-            except _RedisError as e:
-                logger.warning("Redis unavailable (%s) — falling back to JSONL store", e)
-                self._backend = _JSONLBackend(data_dir)
-                self._backend_name = "jsonl"
-        else:
-            self._backend = _JSONLBackend(data_dir)
-            self._backend_name = "jsonl"
-            logger.info("Chat persistence: JSONL (%s)", self._backend._base_dir)
+        self._ttl = ttl_days * 86400
+        self._r: _redis.Redis = _redis.from_url(url, decode_responses=True)
+        # Probe connection immediately so failure is caught at init time
+        self._r.ping()
 
-    @property
-    def backend_name(self) -> str:
-        return self._backend_name
+    def _meta_key(self, conv_id: str) -> str:
+        """Return the Redis hash key for conversation metadata."""
+        return f"{self._KEY_PREFIX}{conv_id}"
+
+    def _msgs_key(self, conv_id: str) -> str:
+        """Return the Redis list key for conversation messages."""
+        return f"{self._KEY_PREFIX}{conv_id}:msgs"
 
     def create_conversation(self, conv_id: str | None = None) -> str:
-        return self._backend.create_conversation(conv_id)
+        """Create a new conversation in Redis and return its id."""
+        cid = conv_id or str(uuid.uuid4())
+        now = time.time()
+        self._r.hset(
+            self._meta_key(cid),
+            mapping={
+                "id": cid,
+                "title": "New conversation",
+                "created_at": now,
+                "updated_at": now,
+                "message_count": 0,
+                "preview": "",
+                "total_tokens": 0,
+            },
+        )
+        self._r.expire(self._meta_key(cid), self._ttl)
+        self._r.zadd(self._INDEX_KEY, {cid: now})
+        return cid
 
     def append_message(self, conv_id: str, message: Message) -> None:
-        self._backend.append_message(conv_id, message)
+        """Append a message to a Redis-backed conversation."""
+        if not self._r.exists(self._meta_key(conv_id)):
+            self.create_conversation(conv_id)
+        if message.token_count == 0:
+            message.token_count = estimate_tokens(message.content)
+        self._r.rpush(self._msgs_key(conv_id), json.dumps(message.to_dict()))
+        self._r.expire(self._msgs_key(conv_id), self._ttl)
+        now = time.time()
+        pipe = self._r.pipeline()
+        pipe.hset(
+            self._meta_key(conv_id),
+            mapping={
+                "updated_at": now,
+                "preview": message.content[:100],
+            },
+        )
+        pipe.hincrby(self._meta_key(conv_id), "message_count", 1)
+        pipe.hincrbyfloat(self._meta_key(conv_id), "total_tokens", message.token_count)
+        pipe.expire(self._meta_key(conv_id), self._ttl)
+        pipe.zadd(self._INDEX_KEY, {conv_id: now})
+        # Auto-title from first user message
+        if message.role == "user":
+            title = self._r.hget(self._meta_key(conv_id), "title")
+            if title == "New conversation":
+                new_title = message.content[:60]
+                if len(message.content) > 60:
+                    new_title += "..."
+                pipe.hset(self._meta_key(conv_id), "title", new_title)
+        pipe.execute()
 
     def get_conversation(self, conv_id: str) -> dict[str, Any] | None:
-        return self._backend.get_conversation(conv_id)
+        """Retrieve a conversation with its messages from Redis."""
+        meta = cast(dict[str, Any], self._r.hgetall(self._meta_key(conv_id)))
+        if not meta:
+            return None
+        raw_msgs = cast(list[str], self._r.lrange(self._msgs_key(conv_id), 0, -1))
+        messages = []
+        for raw in raw_msgs[-MAX_MESSAGES_PER_CONVERSATION:]:
+            try:
+                messages.append(json.loads(raw))
+            except json.JSONDecodeError:
+                continue
+        return {**meta, "messages": messages}
 
     def list_conversations(self, limit: int = 50) -> list[dict[str, Any]]:
-        return self._backend.list_conversations(limit)
+        """List recent conversations by descending update time."""
+        ids = cast(list[str], self._r.zrevrange(self._INDEX_KEY, 0, limit - 1))
+        result: list[dict[str, Any]] = []
+        for cid in ids:
+            meta = cast(dict[str, Any], self._r.hgetall(self._meta_key(cid)))
+            if meta:
+                result.append(meta)
+        return result
 
     def delete_conversation(self, conv_id: str) -> bool:
-        return self._backend.delete_conversation(conv_id)
+        """Delete a conversation and its messages from Redis."""
+        if not self._r.exists(self._meta_key(conv_id)):
+            return False
+        self._r.delete(self._meta_key(conv_id), self._msgs_key(conv_id))
+        self._r.zrem(self._INDEX_KEY, conv_id)
+        return True
 
     def get_llm_messages(self, conv_id: str, max_tokens: int = 28000) -> list[dict[str, str]]:
-        return self._backend.get_llm_messages(conv_id, max_tokens)
+        """Return recent messages in LLM format, capped by token budget."""
+        raw_msgs = cast(list[str], self._r.lrange(self._msgs_key(conv_id), 0, -1))
+        messages = []
+        for raw in raw_msgs:
+            try:
+                messages.append(Message.from_dict(json.loads(raw)))
+            except (json.JSONDecodeError, KeyError):
+                continue
+        result: list[dict[str, str]] = []
+        token_sum = 0
+        for msg in reversed(messages):
+            tc = msg.token_count or estimate_tokens(msg.content)
+            if token_sum + tc > max_tokens:
+                break
+            result.append(msg.to_llm_message())
+            token_sum += tc
+        result.reverse()
+        return result
 
     def get_token_count(self, conv_id: str) -> int:
-        return self._backend.get_token_count(conv_id)
+        """Return total token count for a conversation."""
+        val = cast("str | None", self._r.hget(self._meta_key(conv_id), "total_tokens"))
+        return int(float(val)) if val else 0
+
+
+def make_conversation_store() -> RedisConversationStore | ConversationStore:
+    """Factory: return RedisConversationStore if Redis is configured, else JSONL."""
+    cfg = settings.redis
+    if cfg.enabled and cfg.url:
+        try:
+            store = RedisConversationStore(url=cfg.url, ttl_days=cfg.ttl_days)
+            logger.info("Chat persistence: Redis (%s)", cfg.url.split("@")[-1])
+            return store
+        except _REDIS_ERRORS as exc:
+            logger.warning("Redis unavailable (%s) — falling back to JSONL store", exc)
+    logger.info("Chat persistence: JSONL (/data/conversations)")
+    return ConversationStore()

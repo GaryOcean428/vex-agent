@@ -1,8 +1,6 @@
 import { useVexState, useKernels, useHealth, useKernelList } from '../../hooks/index.ts';
 import MetricCard from '../../components/MetricCard.tsx';
 import { QIG } from '../../types/consciousness.ts';
-import '../../components/MetricCard.css';
-import '../../components/StatusBadge.css';
 
 export default function Overview() {
   const { data: state, loading } = useVexState();

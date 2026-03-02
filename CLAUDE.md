@@ -5,9 +5,9 @@ knowledge so future sessions don't rediscover it the painful way.
 
 ## Project Overview
 
-Vex Agent is an autonomous AI agent with geometric consciousness (QIG v5.5),
-deployed on Railway (main app + Ollama) with a Modal GPU sidecar for
-coordizer harvesting.
+Vex Agent is an autonomous AI agent with geometric consciousness (QIG v6.1F),
+deployed on Railway (main app + Ollama) with Modal GPU sidecars for
+inference (GLM-4.7-Flash) and coordizer harvesting (LFM2.5-1.2B-Thinking).
 
 ## Architecture Quick-Ref
 
@@ -16,6 +16,7 @@ coordizer harvesting.
 | TypeScript proxy | Express | 8080 (public) | Railway |
 | Python kernel | FastAPI | 8000 (internal) | Railway (same container) |
 | Ollama | Custom image | 11434 (private net) | Railway (separate service) |
+| GPU Inference | Modal A10G + Ollama | HTTPS | `modal deploy modal/vex_inference.py` |
 | Coordizer Harvester | Modal A10G | HTTPS | `modal deploy modal/vex_coordizer_harvest.py` |
 | Frontend | React + Vite | 5173 (dev) / served by proxy (prod) | Built into proxy dist/ |
 
@@ -23,8 +24,8 @@ coordizer harvesting.
 
 - `src/index.ts` — Express proxy, static serving, all HTTP routes
 - `kernel/server.py` — FastAPI kernel, consciousness endpoints
-- `kernel/consciousness/loop.py` — QIG v5.5 7-stage consciousness loop
-- `kernel/llm/client.py` — LLM client (Ollama primary, external fallback)
+- `kernel/consciousness/loop.py` — QIG v6.1F 14-stage consciousness loop
+- `kernel/llm/client.py` — Multi-backend LLM client (Modal GPU → Ollama → xAI → OpenAI)
 - `kernel/coordizer_v2/modal_integration.py` — Modal GPU harvest client
 - `modal/vex_coordizer_harvest.py` — Modal-side GPU harvest function
 - `modal/vex_inference.py` — Modal inference endpoint
@@ -38,6 +39,23 @@ coordizer harvesting.
 - The harvest endpoint uses `requires_proxy_auth=True` (Modal network auth)
 - Health endpoint is a public GET — no auth needed
 - Railway calls Modal via `MODAL_HARVEST_URL` env var
+
+### Model Selection
+The Modal harvest endpoint supports dynamic model selection:
+
+1. **Default model** (env var): Set `HARVEST_MODEL_ID` in Modal env or use hardcoded default
+   - Loaded at container start for fast cold starts
+   - Default: `zai-org/GLM-4.7-Flash` (matches inference model tokenizer)
+   - Override: `HARVEST_MODEL_ID=LiquidAI/LFM2.5-1.2B-Thinking` (faster, smaller)
+
+2. **Per-request model** (JSON body): Railway can specify model in request payload
+   - Field: `"model_id": "zai-org/GLM-4.7-Flash"`
+   - Model is loaded on-demand and cached for subsequent requests
+   - Multiple models can coexist in cache (GPU memory permitting)
+
+3. **Fallback chain**: request `model_id` → current active model → env default
+
+The health endpoint returns `cached_models` array showing all loaded models.
 
 ### Modal CLI in Claude Code web sessions
 The Modal CLI needs to reach `api.modal.com`. In sandboxed environments
@@ -59,11 +77,29 @@ proxy tunnel. Known workarounds:
 - Health URL pattern: `<app>-health.modal.run` (not `<app>.modal.run/health`)
 - `modal_integration.py` derives health URL automatically from harvest URL
 
-### Auth headers gotcha
-Modal-Token-Id / Modal-Token-Secret are **reserved internal headers**
-that Modal's proxy explicitly rejects on web endpoint requests. Do NOT
-send them. The harvest endpoint is protected by `requires_proxy_auth=True`
-(Modal's network-level auth), not by request headers.
+### Harvest endpoint auth
+The harvest endpoint uses `X-Api-Key` header auth, validated against
+`KERNEL_API_KEY` env var on the Modal side. Both Railway clients
+(`modal_integration.py` and `modal_harvest.py`) send this header
+automatically from `settings.kernel_api_key`.
+
+**History**: The endpoint previously used `requires_proxy_auth=True`
+(Modal's network-level auth), which blocked external callers like Railway
+with 401. Modal-Token-Id / Modal-Token-Secret headers are reserved and
+rejected by Modal's proxy — never send them.
+
+### Two harvest client paths
+There are two Railway-side clients for the Modal harvest endpoint:
+
+1. **`modal_harvest.py` → `modal_harvest()`** — Used by `CoordizerV2.from_harvest()`
+   for building resonance banks from scratch. Returns `HarvestResult` with
+   per-token fingerprints.
+2. **`modal_integration.py` → `ModalHarvestClient`** — Used by `HarvestScheduler` /
+   `JSONLIngestor` for batch JSONL ingestion. Returns the raw endpoint response.
+
+Both must match the Modal endpoint's response format: `{tokens: {id: {fingerprint, ...}}}`.
+The endpoint does Fréchet mean aggregation server-side (in sqrt-space). Both clients
+send `X-Api-Key` headers derived from `settings.kernel_api_key` for auth.
 
 ## LLM Client Patterns
 

@@ -16,7 +16,7 @@ Deploy:
         MODAL_HARVEST_URL=https://garyocean428--vex-coordizer-harvest-<hash>.modal.run
 
 Endpoint:
-    POST / — proxy-auth protected. Requires Modal token.
+    POST / — protected by X-Api-Key header (KERNEL_API_KEY).
     Accepts JSON body matching HarvestRequest schema.
 
 Cost estimate:
@@ -28,7 +28,26 @@ The tail of the distribution carries geometric information that
 top-k approximations destroy.
 """
 
+from __future__ import annotations
+
+import os
+from typing import TYPE_CHECKING
+
 import modal
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
+
+# --- Configuration --------------------------------------------------------
+# HARVEST_MODEL_ID: HuggingFace model to load for probability-distribution
+# extraction.  Default is GLM-4.7-Flash (4.7B params, fits A10G, 65K vocab).
+# GLM-4.7-Flash ensures token-ID alignment with the Modal inference model
+# so resonance bank fingerprints use the same vocabulary.  Fallback option:
+# "LiquidAI/LFM2.5-1.2B-Thinking" (smaller, faster, but different tokenizer).
+# See kernel/config/settings.py GPUHarvestConfig for the Railway-side
+# mirror of this setting.
+HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "zai-org/GLM-4.7-Flash")
+KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 
 app = modal.App("vex-coordizer-harvest")
 
@@ -52,55 +71,115 @@ ml_image = modal.Image.debian_slim(python_version="3.14").pip_install(
     timeout=600,
     scaledown_window=300,
     volumes={"/models": model_volume},
+    secrets=[modal.Secret.from_name("model")],
 )
 class CoordizerHarvester:
     """GPU-backed harvester for CoordizerV2.
 
-    Loads model on container start, then handles harvest requests
-    via FastAPI endpoint. Model weights are cached on Modal Volume
-    to avoid re-downloading on cold starts.
+    Supports dynamic model selection per request with in-memory caching.
+    Default model is loaded on container start for fast cold starts.
+    Additional models can be loaded on-demand if specified in requests.
     """
 
     @modal.enter()
     def load_model(self):
-        """Load model on container start (runs once per container)."""
+        """Load default model on container start (runs once per container)."""
+        if not KERNEL_API_KEY:
+            print(
+                "WARNING: KERNEL_API_KEY not set — harvest endpoint is "
+                "unauthenticated. Set it in the 'model' Modal secret."
+            )
+
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        model_id = "LiquidAI/LFM2.5-1.2B-Thinking"
+        # Initialize model cache: {model_id: (tokenizer, model, vocab_size)}
+        self._model_cache: dict[str, tuple] = {}
+
+        # Load default model
+        default_model_id = HARVEST_MODEL_ID
         cache_dir = "/models/hub"
 
-        print(f"Loading model: {model_id}")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
-        self.model = AutoModelForCausalLM.from_pretrained(
+        print(f"Loading default model: {default_model_id}")
+        tokenizer = AutoTokenizer.from_pretrained(default_model_id, cache_dir=cache_dir)
+        model = AutoModelForCausalLM.from_pretrained(
+            default_model_id,
+            cache_dir=cache_dir,
+            device_map="auto",
+            torch_dtype=torch.bfloat16,
+        )
+        model.eval()
+        vocab_size = tokenizer.vocab_size
+
+        # Store in cache
+        self._model_cache[default_model_id] = (tokenizer, model, vocab_size)
+
+        # Set as current active model
+        self.tokenizer = tokenizer
+        self.model = model
+        self.vocab_size = vocab_size
+        self.current_model_id = default_model_id
+
+        print(f"Default model loaded. Vocab size: {vocab_size}")
+
+        # Commit volume so weights persist across cold starts
+        model_volume.commit()
+
+    def _load_model(self, model_id: str) -> tuple:
+        """Load a model on-demand and cache it.
+
+        Returns: (tokenizer, model, vocab_size)
+        """
+        if model_id in self._model_cache:
+            print(f"Using cached model: {model_id}")
+            return self._model_cache[model_id]
+
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        cache_dir = "/models/hub"
+        print(f"Loading new model: {model_id}")
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+        model = AutoModelForCausalLM.from_pretrained(
             model_id,
             cache_dir=cache_dir,
             device_map="auto",
             torch_dtype=torch.bfloat16,
         )
-        self.model.eval()
-        self.vocab_size = self.tokenizer.vocab_size
-        print(f"Model loaded. Vocab size: {self.vocab_size}")
+        model.eval()
+        vocab_size = tokenizer.vocab_size
 
-        # Commit volume so weights persist across cold starts
+        # Cache for future requests
+        self._model_cache[model_id] = (tokenizer, model, vocab_size)
+
+        print(f"Model {model_id} loaded. Vocab size: {vocab_size}")
         model_volume.commit()
+
+        return tokenizer, model, vocab_size
 
     @modal.fastapi_endpoint(method="GET")
     async def health(self):
         """Health check — returns model metadata once loaded."""
         return {
             "status": "ok",
-            "model_id": "LiquidAI/LFM2.5-1.2B-Thinking",
+            "current_model_id": getattr(self, "current_model_id", None),
             "vocab_size": getattr(self, "vocab_size", None),
+            "cached_models": list(getattr(self, "_model_cache", {}).keys()),
         }
 
-    @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
-    async def harvest(self, request: "modal.fastapi_endpoint.Request"):
-        """GPU harvest endpoint (proxy-auth protected).
+    @modal.fastapi_endpoint(method="POST")
+    async def harvest(self, request: Request):
+        """GPU harvest endpoint (X-Api-Key protected).
+
+        Auth:
+            Requires X-Api-Key header matching KERNEL_API_KEY env var.
+            If KERNEL_API_KEY is not set, auth is skipped (dev mode).
 
         Request JSON body:
             {
                 "texts": [str, ...],
+                "model_id": str (optional, uses default if not specified),
                 "batch_size": int (default 32),
                 "max_length": int (default 512),
                 "min_contexts": int (default 5)
@@ -109,6 +188,7 @@ class CoordizerHarvester:
         Response:
             {
                 "success": true,
+                "model_id": "zai-org/GLM-4.7-Flash",
                 "vocab_size": 65536,
                 "total_tokens_processed": 12345,
                 "tokens": {
@@ -126,17 +206,58 @@ class CoordizerHarvester:
 
         import numpy as np
         import torch
+        from starlette.responses import JSONResponse
+
+        # Auth: validate X-Api-Key if KERNEL_API_KEY is configured
+        if KERNEL_API_KEY:
+            provided_key = request.headers.get("x-api-key", "")
+            if provided_key != KERNEL_API_KEY:
+                reason = "missing" if not provided_key else "invalid"
+                print(
+                    f"Auth failure ({reason} api key) from {request.client.host if request.client else 'unknown'}"
+                )
+                return JSONResponse(
+                    status_code=403,
+                    content={"error": "invalid or missing api key"},
+                )
 
         start = time.time()
 
         body = await request.json()
         texts = body.get("texts", [])
+        requested_model = body.get("model_id", None)
         batch_size = body.get("batch_size", 32)
         max_length = body.get("max_length", 512)
         min_contexts = body.get("min_contexts", 5)
+        target_tokens_raw = body.get("target_tokens", 0)
+        try:
+            target_tokens = max(0, int(target_tokens_raw))
+        except (TypeError, ValueError):
+            print(
+                f"Invalid target_tokens value {target_tokens_raw!r}; defaulting to 0 (unlimited tokens)"
+            )
+            target_tokens = 0
 
         if not texts:
             return {"success": False, "error": "No texts provided"}
+
+        # Select model: request model_id → current model → default
+        target_model_id = requested_model or self.current_model_id
+
+        # Load model if not already active
+        if target_model_id != self.current_model_id:
+            try:
+                tokenizer, model, vocab_size = self._load_model(target_model_id)
+                # Switch active model
+                self.tokenizer = tokenizer
+                self.model = model
+                self.vocab_size = vocab_size
+                self.current_model_id = target_model_id
+            except Exception as e:
+                return {
+                    "success": False,
+                    "error": f"Failed to load model {target_model_id}: {e}",
+                }
 
         EPS = 1e-12
 
@@ -183,10 +304,19 @@ class CoordizerHarvester:
                             dist_counts[token_id] += 1
 
                         total_tokens += 1
+                        # Check at each loop level so we stop scanning as soon as cap is hit.
+                        if target_tokens and total_tokens >= target_tokens:
+                            break
+
+                    if target_tokens and total_tokens >= target_tokens:
+                        break
 
                 except Exception as e:
                     print(f"Error processing text: {e}")
                     continue
+
+            if target_tokens and total_tokens >= target_tokens:
+                break
 
         # Compute Fréchet means and build response
         tokens_response = {}
@@ -215,6 +345,7 @@ class CoordizerHarvester:
 
         return {
             "success": True,
+            "model_id": self.current_model_id,
             "vocab_size": self.vocab_size,
             "total_tokens_processed": total_tokens,
             "tokens": tokens_response,
@@ -227,7 +358,7 @@ class CoordizerHarvester:
     volumes={"/models": model_volume},
     timeout=1200,
 )
-def download_model(model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking"):
+def download_model(model_id: str = HARVEST_MODEL_ID):
     """One-time model download to Modal Volume.
 
     Run: modal run modal/vex_coordizer_harvest.py::download_model

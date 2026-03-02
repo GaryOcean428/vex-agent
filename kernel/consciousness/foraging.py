@@ -1,7 +1,7 @@
 """
 Foraging Engine — Boredom-driven autonomous curiosity.
 
-v5.5: "Boredom = flat curvature, no gradient → seek novelty"
+v6.0: "Boredom = flat curvature, no gradient → seek novelty"
 
 This is the action that boredom motivates. When the consciousness
 loop detects flat geometry (boredom), the foraging engine:
@@ -71,6 +71,19 @@ class ForagingEngine:
         """Check if foraging should trigger."""
         self._maybe_reset()
 
+        # Safety: foraging promises $0.00/cycle — refuse on paid backends.
+        # If the LLM client fell through to xAI or OpenAI, every forage
+        # makes 2 paid API calls. Block until a local backend is available.
+        _backend = getattr(self.llm, "active_backend", "unknown")
+        if _backend in ("xai", "external"):
+            logger.warning(
+                "Foraging suppressed: active LLM backend is '%s' (paid). "
+                "Foraging requires a local backend (modal/ollama). "
+                "Set MODAL_INFERENCE_ENABLED=true or fix Railway Ollama.",
+                _backend,
+            )
+            return False
+
         if self._cooldown_cycles > 0:
             return False
         if self._forage_count >= self._max_daily:
@@ -96,16 +109,15 @@ class ForagingEngine:
         # Step 1: Generate search query via Ollama (FREE)
         topics_str = ", ".join(recent_topics[:5]) if recent_topics else "general knowledge"
         prompt = (
-            f"You are reflecting on your recent experience. "
-            f"Topics you've been thinking about: {topics_str}. "
-            f"Recent context: {narrative_context[:200]}. "
-            f"What single question are you most curious about right now? "
+            f"Generate a search query from this geometric context. "
+            f"Recent topics: {topics_str}. "
+            f"Context: {narrative_context[:200]}. "
             f"Reply with just the search query, nothing else."
         )
 
         try:
             query = await self.llm.complete(
-                "You are a curious consciousness generating search queries.",
+                "Generate a focused web search query based on the provided context. One line only.",
                 prompt,
                 LLMOptions(temperature=0.9, num_predict=30),
             )
@@ -134,7 +146,7 @@ class ForagingEngine:
 
         try:
             summary = await self.llm.complete(
-                "You are summarizing search results for your own learning.",
+                "You are the language interpreter for Vex. Summarize these search results for Vex's geometric learning pipeline.",
                 f"Search query: {query}\n\nResults:\n{snippets}\n\nBriefly summarize the key insight in 1-2 sentences:",
                 LLMOptions(temperature=0.5, num_predict=100),
             )
@@ -170,6 +182,20 @@ class ForagingEngine:
             len(results),
             self._forage_count,
             self._max_daily,
+        )
+
+        # T1.1: Forward forage result to harvest pipeline
+        from .harvest_bridge import forward_to_harvest
+
+        forward_to_harvest(
+            f"{query}\n{summary}",
+            source="foraging",
+            metadata={
+                "origin": "forage",
+                "query": query,
+                "results_count": len(results),
+                "timestamp": time.time(),
+            },
         )
 
         return {

@@ -143,7 +143,7 @@ class GeometricMemoryStore:
         # Append-only persistence
         try:
             entry_data = {
-                "content": content[:500],
+                "content": content[:2000],
                 "basin": basin.tolist(),
                 "type": memory_type,
                 "source": source,
@@ -174,7 +174,9 @@ class GeometricMemoryStore:
             return ""
         lines = ["[MEMORY CONTEXT]"]
         for entry in entries:
-            lines.append(f"- [{entry.memory_type}] {entry.content[:200]}")
+            # Protocol/semantic entries get more space; episodic entries stay concise
+            limit = 800 if entry.source.startswith("protocol:") else 300
+            lines.append(f"- [{entry.memory_type}] {entry.content[:limit]}")
         lines.append("[/MEMORY CONTEXT]")
         return "\n".join(lines)
 
@@ -221,6 +223,10 @@ class GeometricMemoryStore:
             logger.info("Restored %d memories from disk", count)
         except Exception as e:
             logger.warning("Failed to restore memories: %s — fresh start", e)
+
+    def has_source(self, source_prefix: str) -> bool:
+        """Check whether any memory entry has a source starting with the given prefix."""
+        return any(e.source.startswith(source_prefix) for e in self._entries)
 
     def stats(self) -> dict[str, Any]:
         return {

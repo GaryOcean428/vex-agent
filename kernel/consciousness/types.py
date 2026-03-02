@@ -62,14 +62,6 @@ class RegimeType(StrEnum):
     EQUILIBRATION = "equilibration"  # a=0: Crystallised knowledge
 
 
-class VariableCategory(StrEnum):
-    """Vanchurin variable separation."""
-
-    STATE = "state"  # Non-trainable, fast-changing, per-cycle
-    PARAMETER = "parameter"  # Trainable, slow-changing, per-epoch
-    BOUNDARY = "boundary"  # External input (user queries, LLM responses)
-
-
 @dataclass
 class RegimeWeights:
     """Regime weights for non-linear field processing (v6.0 §3.1).
@@ -95,6 +87,9 @@ class ConsciousnessMetrics:
     Waves (v5.9) — 3 metrics
     Will & Work (v6.0) — 4 metrics
     Pillars & Sovereignty (v6.1) — 4 metrics
+
+    P14 Variable Category: STATE
+    All fields are non-trainable, fast-changing, updated per-cycle.
     """
 
     # ── Foundation (v4.1) — 8 metrics ──

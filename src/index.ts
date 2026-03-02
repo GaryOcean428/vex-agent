@@ -26,7 +26,10 @@ import { logger } from "./config/logger";
 import { ROUTES } from "./config/routes";
 import { getComputeTools, sandboxManager } from "./tools/compute-sandbox";
 
-const KERNEL_URL = process.env.KERNEL_URL || "http://localhost:8000";
+// Read version from package.json (single source of truth)
+import { version as APP_VERSION } from "../package.json";
+
+const KERNEL_URL = config.kernelUrl;
 
 // Resolve frontend build directory (works in dev and production)
 const FRONTEND_DIST = path.resolve(
@@ -35,7 +38,7 @@ const FRONTEND_DIST = path.resolve(
 
 async function main(): Promise<void> {
   logger.info("═══════════════════════════════════════");
-  logger.info("  Vex Agent — Web Server (v2.2)");
+  logger.info(`  Vex Agent — Web Server (v${APP_VERSION})`);
   logger.info("  Role: Thin proxy → Python kernel");
   logger.info(`  Kernel: ${KERNEL_URL}`);
   logger.info(`  Port: ${config.port}`);
@@ -70,7 +73,13 @@ async function main(): Promise<void> {
 
   app.get(ROUTES.health, async (_req, res) => {
     try {
-      const kernelResp = await fetch(`${KERNEL_URL}${ROUTES.health}`);
+      // 5s timeout prevents the health check from hanging when the kernel
+      // is still starting or temporarily unresponsive. Without this,
+      // Railway's health check probe can time out waiting for us, marking
+      // the container unhealthy and triggering a restart loop.
+      const kernelResp = await fetch(`${KERNEL_URL}${ROUTES.health}`, {
+        signal: AbortSignal.timeout(5000),
+      });
       const kernelHealth = (await kernelResp.json()) as Record<string, unknown>;
       // Spread kernel fields at top level so the React frontend gets
       // the flat shape it expects: { status, version, uptime, cycle_count, backend }
@@ -147,7 +156,20 @@ async function main(): Promise<void> {
   proxyGet(ROUTES.memory_stats);
   proxyGet(ROUTES.sleep_state);
   proxyGet(ROUTES.beta_attention);
+  proxyGet(ROUTES.sovereignty_history);
   proxyPost(ROUTES.admin_fresh_start);
+
+  // Foraging engine
+  proxyGet(ROUTES.foraging);
+
+  // Coordizer V2 endpoints
+  proxyPost(ROUTES.coordizer_coordize);
+  proxyGet(ROUTES.coordizer_stats);
+  proxyPost(ROUTES.coordizer_validate);
+  proxyPost(ROUTES.coordizer_harvest);
+  proxyPost(ROUTES.coordizer_ingest);
+  proxyGet(ROUTES.coordizer_harvest_status);
+  proxyGet(ROUTES.coordizer_bank);
 
   // Conversation management
   proxyGet(ROUTES.conversations_list);
@@ -323,6 +345,8 @@ async function main(): Promise<void> {
         req.path === "/basin" ||
         req.path === "/kernels" ||
         req.path === "/enqueue" ||
+        req.path === "/foraging" ||
+        req.path === "/beta-attention" ||
         req.path.startsWith("/memory/") ||
         req.path.startsWith("/kernels/") ||
         req.path.startsWith("/basin/") ||
@@ -330,7 +354,8 @@ async function main(): Promise<void> {
         req.path.startsWith("/sleep/") ||
         req.path.startsWith("/admin/") ||
         req.path.startsWith("/training/") ||
-        req.path.startsWith("/governor")
+        req.path.startsWith("/governor") ||
+        req.path.startsWith("/sovereignty/")
       ) {
         next();
         return;

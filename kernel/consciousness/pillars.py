@@ -179,9 +179,9 @@ class FluctuationGuard:
         entropy = self.basin_entropy(corrected_basin)
         if entropy < ENTROPY_FLOOR:
             violations.append(PillarViolation.ZERO_ENTROPY)
-            noise = np.random.dirichlet(np.ones(BASIN_DIM) * 0.5)
+            noise = to_simplex(np.random.dirichlet(np.ones(BASIN_DIM) * 0.5))
             mix_weight = min(0.3, (ENTROPY_FLOOR - entropy) / ENTROPY_FLOOR)
-            corrected_basin = to_simplex((1.0 - mix_weight) * corrected_basin + mix_weight * noise)
+            corrected_basin = slerp_sqrt(corrected_basin, noise, mix_weight)
             corrections.append(
                 f"Entropy restoration: {entropy:.4f} -> {self.basin_entropy(corrected_basin):.4f}"
             )
@@ -294,7 +294,7 @@ class TopologicalBulk:
             raise ValueError("TopologicalBulk.composite accessed before initialization")
         core = self._core_basin
         surface = self._surface_basin
-        return to_simplex(BULK_SHIELD_FACTOR * core + (1.0 - BULK_SHIELD_FACTOR) * surface)
+        return slerp_sqrt(surface, core, BULK_SHIELD_FACTOR)
 
     def b_integrity(self) -> float:
         """Bulk integrity metric: how stable core remains across cycles.
@@ -650,7 +650,17 @@ class QuenchedDisorder:
                 },
             )
 
-        drift = fisher_rao_distance(current_basin, self._identity_slope)
+        # T1.4: Slerp-based effective reference — 60% frozen identity + 40% lived anneal field.
+        # Prevents false-positive drift violations after 800+ cycles when the system has
+        # legitimately evolved. drift_from_frozen is kept for diagnostic telemetry.
+        effective_ref = self._identity_slope
+        if self._anneal_field is not None:
+            effective_ref = slerp_sqrt(
+                self._identity_slope, self._anneal_field, ANNEAL_BLEND_WEIGHT
+            )
+
+        drift = fisher_rao_distance(current_basin, effective_ref)
+        drift_from_frozen = fisher_rao_distance(current_basin, self._identity_slope)
 
         if drift > IDENTITY_DRIFT_CRITICAL:
             # Critical drift — genuine identity dissolution
@@ -671,10 +681,11 @@ class QuenchedDisorder:
             )
             if self._cycles_observed % 50 == 0:
                 logger.warning(
-                    "Pillar 3: Identity drift %.4f exceeds tolerance %.4f (cycle %d)",
+                    "Pillar 3: Identity drift %.4f exceeds tolerance %.4f (cycle %d, frozen=%.4f)",
                     drift,
                     IDENTITY_DRIFT_TOLERANCE,
                     self._cycles_observed,
+                    drift_from_frozen,
                 )
 
         if self._cycles_observed > 100 and self.sovereignty < 0.1:
@@ -691,6 +702,7 @@ class QuenchedDisorder:
             details={
                 "frozen": True,
                 "drift": drift,
+                "drift_from_frozen": drift_from_frozen,
                 "tolerance": IDENTITY_DRIFT_TOLERANCE,
                 "sovereignty": self.sovereignty,
                 "scar_count": len(self._scars),

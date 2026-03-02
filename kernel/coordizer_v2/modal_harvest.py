@@ -5,7 +5,7 @@ This module calls the Modal serverless endpoint to run LLM forward
 passes on GPU, capturing full probability distributions for the
 CoordizerV2 pipeline.
 
-Critical design choice: we request FULL softmax distributions, not
+Critical design choice: we request FULL logit distributions, not
 top-k approximations. The tail of the distribution carries geometric
 information — a token that is specifically suppressed in a context
 looks different from one that is uniformly unlikely. Top-k throws
@@ -13,9 +13,10 @@ this away.
 
 Flow:
     Railway → HTTP POST → Modal GPU endpoint → full logits
-    → Railway transforms logits → basin coordinates via compress.py
+    → Railway transforms logits via logits_to_simplex (linear projection)
+    → basin coordinates via compress.py
 
-Auth: Modal Proxy Auth Tokens (wk-*/ws-* headers)
+Auth: X-Api-Key header (KERNEL_API_KEY) validated by the Modal handler.
 """
 
 from __future__ import annotations
@@ -25,8 +26,10 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
 import numpy as np
 
+from ..config.settings import settings
 from .geometry import _EPS
 from .harvest import HarvestResult
 
@@ -35,9 +38,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ModalHarvestConfig:
-    """Configuration for Modal-based harvesting."""
+    """Configuration for Modal-based harvesting.
 
-    model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking"
+    model_id must match the active inference model so resonance bank
+    fingerprints use the same vocabulary as the model doing inference.
+    Primary: GLM-4.7-Flash (Modal GPU). Ollama fallback: LFM2.5-1.2B-Thinking.
+    """
+
+    model_id: str = ""
     target_tokens: int = 2000
     batch_size: int = 32
     max_length: int = 512
@@ -46,20 +54,16 @@ class ModalHarvestConfig:
 
 
 async def modal_harvest(
-    model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
+    model_id: str | None = None,
     target_tokens: int = 2000,
     corpus_texts: list[str] | None = None,
-    timeout: float = 600.0,
+    timeout: float | None = None,
 ) -> HarvestResult:
     """Call Modal GPU endpoint to harvest LLM distributions.
 
     Returns a HarvestResult with full-distribution fingerprints
     ready for compression via compress.py.
     """
-    import httpx
-
-    from ..config.settings import settings
-
     if not settings.modal.enabled:
         raise RuntimeError(
             "Modal not enabled. Set MODAL_ENABLED=true and configure "
@@ -69,33 +73,54 @@ async def modal_harvest(
     if not settings.modal.harvest_url:
         raise RuntimeError("MODAL_HARVEST_URL not configured.")
 
+    # Resolve from Railway env vars if not explicitly passed
+    resolved_model = model_id or settings.modal.harvest_model
+    if not resolved_model:
+        raise RuntimeError(
+            "No Modal harvest model configured. Provide model_id to modal_harvest() "
+            "or set MODAL_HARVEST_MODEL in the environment/settings."
+        )
+    resolved_timeout = (
+        timeout if timeout is not None else settings.modal.inference_timeout_ms / 1000.0
+    )
+    config = ModalHarvestConfig(
+        model_id=resolved_model,
+        target_tokens=target_tokens,
+        timeout=resolved_timeout,
+    )
+
     # Default corpus: diverse prompts for distribution harvesting
     if corpus_texts is None:
         corpus_texts = _default_harvest_corpus()
 
     # Build request
     payload = {
-        "model_id": model_id,
+        "model_id": config.model_id,
         "texts": corpus_texts[:200],  # Cap per-request
-        "batch_size": 32,
-        "max_length": 512,
+        "target_tokens": config.target_tokens,
+        "batch_size": config.batch_size,
+        "max_length": config.max_length,
+        "min_contexts": config.min_contexts,
         "return_full_distribution": True,  # CRITICAL: not top-k
     }
 
-    # Modal web endpoints reject Modal-Token-Id/Secret as "prohibited headers".
-    # Authentication is handled by Modal's network controls; no custom header needed.
-    headers = {
+    # Auth via X-Api-Key header (KERNEL_API_KEY), checked by the Modal handler.
+    headers: dict[str, str] = {
         "Content-Type": "application/json",
     }
+    if settings.kernel_api_key:
+        headers["X-Api-Key"] = settings.kernel_api_key
 
     logger.info(
-        f"Sending harvest request to Modal: {settings.modal.harvest_url} "
-        f"({len(corpus_texts)} texts, model={model_id})"
+        "Sending harvest request to Modal: %s (%d texts, model=%s)",
+        settings.modal.harvest_url,
+        len(corpus_texts),
+        resolved_model,
     )
 
     start_time = time.time()
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=config.timeout) as client:
         response = await client.post(
             settings.modal.harvest_url,
             json=payload,
@@ -105,18 +130,19 @@ async def modal_harvest(
         data = response.json()
 
     elapsed = time.time() - start_time
-    logger.info(f"Modal harvest completed in {elapsed:.1f}s")
+    logger.info("Modal harvest completed in %.1fs", elapsed)
 
     if not data.get("success"):
         error_msg = data.get("error", "Unknown error from Modal endpoint")
         raise RuntimeError(f"Modal harvest failed: {error_msg}")
 
     # Parse response into HarvestResult
-    result = _parse_modal_response(data, model_id, elapsed)
+    result = _parse_modal_response(data, resolved_model, elapsed)
 
     logger.info(
-        f"Received {len(result.token_fingerprints)} token fingerprints "
-        f"from Modal (vocab_size={result.vocab_size})"
+        "Received %d token fingerprints from Modal (vocab_size=%d)",
+        len(result.token_fingerprints),
+        result.vocab_size,
     )
 
     return result

@@ -49,6 +49,9 @@ export function buildPipelineTrace(
         token_count: event.token_count ?? 0,
         synthesis_weight: event.synthesis_weight ?? 0,
         fr_distance: event.fr_distance ?? 0,
+        geometric_raw: event.geometric_raw ?? "",
+        llm_expanded: event.llm_expanded ?? false,
+        geometric_tokens: event.geometric_tokens ?? 0,
       }];
     } else if (event.status === "complete") {
       trace.generation_duration_ms = event.duration_ms ?? 0;

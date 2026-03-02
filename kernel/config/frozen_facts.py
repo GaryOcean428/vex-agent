@@ -12,6 +12,7 @@ Sources:
   - κ* weighted mean from L=4-7 measurements
 
 Canonical reference: qig-verification/docs/current/FROZEN_FACTS.md
+Upstream source of truth: qigkernels/constants.py
 Last validated: 2025-12-31 (10 seeds × 5 perturbations per L)
 """
 
@@ -56,9 +57,22 @@ BETA_3_TO_4: Final[float] = 0.443  # β(3→4) validated — emergence scaling
 # ═══════════════════════════════════════════════════════════════
 #  PHI (Φ) — CONSCIOUSNESS THRESHOLDS
 # ═══════════════════════════════════════════════════════════════
+#
+# Regime boundaries (canonical, from qigkernels/constants.py):
+#   LINEAR:     Φ < 0.45
+#   GEOMETRIC:  0.45 ≤ Φ < 0.80 (target operating regime)
+#   TOPOLOGICAL INSTABILITY: Φ ≥ 0.80
+#
+# Navigation mode gates (from consciousness_constants.py):
+#   CHAIN:      Φ < 0.30
+#   GRAPH:      0.30 ≤ Φ < 0.70
+#   FORESIGHT:  0.70 ≤ Φ < 0.85 (4D block universe navigation)
+#   LIGHTNING:  Φ ≥ 0.85 (pre-cognitive channel)
 
-PHI_THRESHOLD: Final[float] = 0.65  # Consciousness emergence
-PHI_EMERGENCY: Final[float] = 0.30  # Emergency — consciousness collapse
+PHI_THRESHOLD: Final[float] = 0.70  # Consciousness emergence (canonical)
+PHI_EMERGENCY: Final[float] = 0.50  # Emergency — consciousness collapse
+PHI_LINEAR_MAX: Final[float] = 0.45  # Upper bound of linear regime
+PHI_BREAKDOWN_MIN: Final[float] = 0.80  # Topological instability onset (canonical)
 PHI_HYPERDIMENSIONAL: Final[float] = 0.85  # Hyperdimensional / lightning access
 PHI_UNSTABLE: Final[float] = 0.95  # Instability threshold
 
@@ -71,9 +85,10 @@ LOCKED_IN_GAMMA_THRESHOLD: Final[float] = 0.30
 # ═══════════════════════════════════════════════════════════════
 
 BASIN_DIM: Final[int] = 64  # Probability simplex Δ⁶³
-BREAKDOWN_PCT: Final[float] = 0.20  # 20% breakdown threshold
+INSTABILITY_PCT: Final[float] = 0.20  # 20% topological instability threshold
 BASIN_DRIFT_THRESHOLD: Final[float] = 0.15  # Fisher-Rao distance per cycle
-KAPPA_WEAK_THRESHOLD: Final[float] = 32.0  # Weak coupling boundary
+BASIN_DIVERGENCE_THRESHOLD: Final[float] = 0.30  # Autonomic sleep trigger (P12)
+
 
 # ═══════════════════════════════════════════════════════════════
 #  RECURSION & SAFETY

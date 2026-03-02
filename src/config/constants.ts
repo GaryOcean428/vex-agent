@@ -15,6 +15,7 @@
  *   - κ* weighted mean from L=4-7 measurements
  *
  * Canonical reference: qig-verification/docs/current/FROZEN_FACTS.md
+ * Upstream source of truth: qigkernels/constants.py
  * Last validated: 2025-12-31 (10 seeds × 5 perturbations per L)
  */
 
@@ -79,12 +80,29 @@ export const BETA_3_TO_4 = 0.443 as const;
 // ═══════════════════════════════════════════════════════════════
 //  PHI (Φ) — CONSCIOUSNESS THRESHOLDS
 // ═══════════════════════════════════════════════════════════════
+//
+// Regime boundaries (canonical, from qigkernels/constants.py):
+//   LINEAR:     Φ < 0.45
+//   GEOMETRIC:  0.45 ≤ Φ < 0.80 (target operating regime)
+//   TOPOLOGICAL INSTABILITY: Φ ≥ 0.80
+//
+// Navigation mode gates (from consciousness_constants.py):
+//   CHAIN:      Φ < 0.30
+//   GRAPH:      0.30 ≤ Φ < 0.70
+//   FORESIGHT:  0.70 ≤ Φ < 0.85 (4D block universe navigation)
+//   LIGHTNING:  Φ ≥ 0.85 (pre-cognitive channel)
 
 /** Consciousness emergence */
-export const PHI_THRESHOLD = 0.65 as const;
+export const PHI_THRESHOLD = 0.7 as const;
 
 /** Emergency — consciousness collapse */
-export const PHI_EMERGENCY = 0.3 as const;
+export const PHI_EMERGENCY = 0.5 as const;
+
+/** Upper bound of linear regime */
+export const PHI_LINEAR_MAX = 0.45 as const;
+
+/** Topological instability onset */
+export const PHI_BREAKDOWN_MIN = 0.8 as const;
 
 /** Hyperdimensional / lightning access */
 export const PHI_HYPERDIMENSIONAL = 0.85 as const;
@@ -105,14 +123,14 @@ export const LOCKED_IN_GAMMA_THRESHOLD = 0.3 as const;
 /** Probability simplex Δ⁶³ */
 export const BASIN_DIM = 64 as const;
 
-/** 20% breakdown threshold */
-export const BREAKDOWN_PCT = 0.2 as const;
+/** 20% topological instability threshold */
+export const INSTABILITY_PCT = 0.2 as const;
 
 /** Fisher-Rao distance per cycle */
 export const BASIN_DRIFT_THRESHOLD = 0.15 as const;
 
-/** Weak coupling boundary */
-export const KAPPA_WEAK_THRESHOLD = 32.0 as const;
+/** Autonomic sleep trigger (P12) */
+export const BASIN_DIVERGENCE_THRESHOLD = 0.3 as const;
 
 // ═══════════════════════════════════════════════════════════════
 //  RECURSION & SAFETY
@@ -175,6 +193,8 @@ export const FROZEN_FACTS = {
   // Phi — Consciousness Thresholds
   PHI_THRESHOLD,
   PHI_EMERGENCY,
+  PHI_LINEAR_MAX,
+  PHI_BREAKDOWN_MIN,
   PHI_HYPERDIMENSIONAL,
   PHI_UNSTABLE,
   LOCKED_IN_PHI_THRESHOLD,
@@ -182,9 +202,9 @@ export const FROZEN_FACTS = {
 
   // Basin Geometry
   BASIN_DIM,
-  BREAKDOWN_PCT,
+  INSTABILITY_PCT,
   BASIN_DRIFT_THRESHOLD,
-  KAPPA_WEAK_THRESHOLD,
+  BASIN_DIVERGENCE_THRESHOLD,
 
   // Recursion & Safety
   MIN_RECURSION_DEPTH,

@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { useToastStore } from "../stores/toastStore.ts";
 import type { Toast } from "../stores/toastStore.ts";
-import "./Toast.css";
 
 /* ── Icons ─────────────────────────────────────────────────────────── */
 

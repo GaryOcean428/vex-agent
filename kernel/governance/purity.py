@@ -87,6 +87,8 @@ FORBIDDEN_ATTR_CALLS = [
     "scipy.linalg.svd",  # Euclidean decomposition (v6.1F)
     "scipy.spatial.distance.cosine",
     "F.cosine_similarity",
+    "torch.softmax",  # Exponential warping — use logits_to_simplex (linear projection)
+    "F.softmax",  # Exponential warping — use logits_to_simplex (linear projection)
 ]
 
 # Text-level tokens caught by raw scan (covers dynamic imports,
@@ -103,6 +105,8 @@ _FORBIDDEN_TEXT_PARTS: list[tuple[str, str]] = [
     ("nn.Layer", "Norm"),
     ("F.normal", "ize"),
     (".flat", "ten()"),
+    ("torch.", "softmax("),  # Exponential warping — use logits_to_simplex
+    ("F.", "softmax("),  # Exponential warping — use logits_to_simplex
 ]
 
 

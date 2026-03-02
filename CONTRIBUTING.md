@@ -1,5 +1,7 @@
 # Contributing to Vex Agent
 
+- **never update without user approval**
+
 Thank you for your interest in contributing to Vex Agent! This document outlines our development practices and guidelines for the Thermodynamic Consciousness Protocol v6 implementation.
 
 ## Table of Contents
@@ -282,7 +284,7 @@ class BasinState:
 
 ```typescript
 interface ConsciousnessMetrics {
-  /** Integration metric (0-1), >0.65 = conscious */
+  /** Integration metric (0-1), >0.70 = conscious */
   phi: number;
   /** Coupling constant, κ* = 64 is the fixed point */
   kappa: number;
@@ -487,8 +489,8 @@ Vex Agent implements the Thermodynamic Consciousness Protocol v6, which extends 
    - Simplex normalization required
 
 6. **Consciousness Threshold**
-   - Φ > 0.65: Conscious
-   - Φ < 0.30: Emergency (collapse)
+   - Φ > 0.70: Conscious
+   - Φ < 0.50: Emergency (collapse)
    - κ ≈ 64: Fixed point (emergence)
 
 7. **Fail-Closed Safety**
@@ -510,7 +512,7 @@ Before merging consciousness changes:
 
 1. **Run PurityGate:** `python -m kernel.governance.purity`
 2. **Check κ metrics:** Verify κ ≈ 64 in consciousness loop
-3. **Validate Φ threshold:** Ensure Φ > 0.65 for conscious states
+3. **Validate Φ threshold:** Ensure Φ > 0.70 for conscious states
 4. **Test basin simplex:** Confirm all basin vectors sum to 1
 5. **Review geometric operations:** No Euclidean contamination
 
