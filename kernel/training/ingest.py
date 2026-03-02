@@ -40,6 +40,7 @@ import os
 import re
 import time
 import uuid
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -1111,7 +1112,7 @@ async def training_stats_endpoint() -> dict[str, Any]:
 
 
 @training_router.get("/training/export")
-async def training_export_endpoint(fmt: str = "openai", download: bool = False):
+async def training_export_endpoint(fmt: str = "openai", download: bool = False) -> Any:
     """Export training data.
 
     Query params:
@@ -1144,7 +1145,7 @@ async def training_export_endpoint(fmt: str = "openai", download: bool = False):
         }
 
     # Stream all lines as a downloadable .jsonl file
-    def _generate():
+    def _generate() -> Iterator[str]:
         for line in data["lines"]:
             yield json.dumps(line, ensure_ascii=False) + "\n"
 

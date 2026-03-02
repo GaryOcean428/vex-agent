@@ -213,7 +213,9 @@ class CoordizerHarvester:
             provided_key = request.headers.get("x-api-key", "")
             if provided_key != KERNEL_API_KEY:
                 reason = "missing" if not provided_key else "invalid"
-                print(f"Auth failure ({reason} api key) from {request.client.host if request.client else 'unknown'}")
+                print(
+                    f"Auth failure ({reason} api key) from {request.client.host if request.client else 'unknown'}"
+                )
                 return JSONResponse(
                     status_code=403,
                     content={"error": "invalid or missing api key"},

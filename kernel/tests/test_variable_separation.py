@@ -199,9 +199,7 @@ class TestEnforceCategory:
         assert enforce_category("basin", VariableCategory.STATE, UpdateFrequency.PER_CYCLE)
 
     def test_parameter_at_correct_frequency_passes(self) -> None:
-        assert enforce_category(
-            "KAPPA_STAR", VariableCategory.PARAMETER, UpdateFrequency.PER_EPOCH
-        )
+        assert enforce_category("KAPPA_STAR", VariableCategory.PARAMETER, UpdateFrequency.PER_EPOCH)
 
     def test_boundary_at_correct_frequency_passes(self) -> None:
         assert enforce_category(
@@ -336,6 +334,4 @@ class TestBoundaryEntrySanitized:
             if mod == "server" and cat == VariableCategory.BOUNDARY
         ]
         missing = [f for f in server_boundary if f not in validated]
-        assert not missing, (
-            f"BOUNDARY fields without validation constraint: {missing}"
-        )
+        assert not missing, f"BOUNDARY fields without validation constraint: {missing}"

@@ -169,8 +169,7 @@ def enforce_category(
     expected_freq = _EXPECTED_FREQUENCY.get(expected)
     if expected_freq is not None and actual_update_freq != expected_freq:
         _logger.warning(
-            "P14 violation: variable %r (category=%s) updated at %s "
-            "frequency, expected %s",
+            "P14 violation: variable %r (category=%s) updated at %s frequency, expected %s",
             var_name,
             expected.value,
             actual_update_freq,
