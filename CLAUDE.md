@@ -77,11 +77,16 @@ proxy tunnel. Known workarounds:
 - Health URL pattern: `<app>-health.modal.run` (not `<app>.modal.run/health`)
 - `modal_integration.py` derives health URL automatically from harvest URL
 
-### Auth headers gotcha
-Modal-Token-Id / Modal-Token-Secret are **reserved internal headers**
-that Modal's proxy explicitly rejects on web endpoint requests. Do NOT
-send them. The harvest endpoint is protected by `requires_proxy_auth=True`
-(Modal's network-level auth), not by request headers.
+### Harvest endpoint auth
+The harvest endpoint uses `X-Api-Key` header auth, validated against
+`KERNEL_API_KEY` env var on the Modal side. Both Railway clients
+(`modal_integration.py` and `modal_harvest.py`) send this header
+automatically from `settings.kernel_api_key`.
+
+**History**: The endpoint previously used `requires_proxy_auth=True`
+(Modal's network-level auth), which blocked external callers like Railway
+with 401. Modal-Token-Id / Modal-Token-Secret headers are reserved and
+rejected by Modal's proxy — never send them.
 
 ### Two harvest client paths
 There are two Railway-side clients for the Modal harvest endpoint:

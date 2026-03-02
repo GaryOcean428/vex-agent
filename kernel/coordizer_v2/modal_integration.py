@@ -50,6 +50,7 @@ class ModalIntegrationConfig:
     health_url: str = ""
     token_id: str = ""
     token_secret: str = ""
+    harvest_auth_token: str = ""
     timeout: int = 120
     max_retries: int = 3
     batch_size: int = 32
@@ -77,6 +78,7 @@ class ModalIntegrationConfig:
             health_url=health_url,
             token_id=modal.token_id,
             token_secret=modal.token_secret,
+            harvest_auth_token=kernel_settings.kernel_api_key,
         )
 
     def is_configured(self) -> bool:
@@ -301,14 +303,14 @@ class ModalHarvestClient:
     def _auth_headers(self) -> dict[str, str]:
         """Build request headers for the Modal harvest endpoint.
 
-        Modal-Token-Id / Modal-Token-Secret are reserved internal headers
-        that Modal's proxy explicitly rejects for web endpoint requests.
-        The harvest endpoint is authenticated via Modal's own network
-        controls; no additional auth header is needed.
+        Auth uses X-Api-Key header checked against KERNEL_API_KEY on the
+        Modal side. This replaces the old requires_proxy_auth=True which
+        blocked external callers (Railway) with 401.
         """
-        return {
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
+        if self.config.harvest_auth_token:
+            headers["X-Api-Key"] = self.config.harvest_auth_token
+        return headers
 
 
 # ─── Fallback: Synthetic Harvest ─────────────────────────────────────
