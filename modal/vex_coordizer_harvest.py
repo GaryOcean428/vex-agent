@@ -234,7 +234,7 @@ class CoordizerHarvester:
             target_tokens = max(0, int(target_tokens_raw))
         except (TypeError, ValueError):
             print(
-                f"Invalid target_tokens value {target_tokens_raw!r}; defaulting to unlimited tokens"
+                f"Invalid target_tokens value {target_tokens_raw!r}; defaulting to 0 (unlimited tokens)"
             )
             target_tokens = 0
 
@@ -304,6 +304,7 @@ class CoordizerHarvester:
                             dist_counts[token_id] += 1
 
                         total_tokens += 1
+                        # Check at each loop level so we stop scanning as soon as cap is hit.
                         if target_tokens and total_tokens >= target_tokens:
                             break
 
