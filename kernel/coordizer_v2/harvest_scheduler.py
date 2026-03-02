@@ -177,6 +177,10 @@ class HarvestQueueStatus:
     budget: dict[str, Any] = field(default_factory=dict)
     last_scan: str = ""
     scheduler_running: bool = False
+    last_errors: list[str] = field(default_factory=list)
+    total_batches_harvested: int = 0
+    total_batches_failed: int = 0
+    modal_healthy: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -189,6 +193,10 @@ class HarvestQueueStatus:
             "budget": self.budget,
             "last_scan": self.last_scan,
             "scheduler_running": self.scheduler_running,
+            "last_errors": self.last_errors,
+            "total_batches_harvested": self.total_batches_harvested,
+            "total_batches_failed": self.total_batches_failed,
+            "modal_healthy": self.modal_healthy,
         }
 
 
@@ -216,6 +224,10 @@ class HarvestScheduler:
         )
         self._running = False
         self._last_scan: str | None = None
+        self._last_errors: list[str] = []  # Recent errors for diagnostics
+        self._total_batches_harvested: int = 0
+        self._total_batches_failed: int = 0
+        self._modal_healthy: bool | None = None
         self._ensure_directories()
 
     def _ensure_directories(self) -> None:
@@ -257,6 +269,10 @@ class HarvestScheduler:
             budget=self.budget.status(),
             last_scan=self._last_scan or "",
             scheduler_running=self._running,
+            last_errors=self._last_errors[-5:],
+            total_batches_harvested=self._total_batches_harvested,
+            total_batches_failed=self._total_batches_failed,
+            modal_healthy=self._modal_healthy,
         )
 
     def list_pending(self) -> list[Path]:
@@ -337,6 +353,22 @@ class HarvestScheduler:
                 shutil.move(str(processing_path), str(dest))
                 logger.error(f"Failed: {file_path.name} → {dest}")
 
+            # Track cumulative stats for diagnostics
+            self._total_batches_harvested += result.batches_harvested
+            self._total_batches_failed += result.batches_failed
+            if result.errors:
+                self._last_errors = (self._last_errors + result.errors)[-10:]
+
+            if result.batches_failed > 0:
+                logger.warning(
+                    "Harvest %s: %d/%d batches failed (backend=%s) — %s",
+                    file_path.name,
+                    result.batches_failed,
+                    result.batches_created,
+                    result.harvest_backend,
+                    "; ".join(result.errors[:3]),
+                )
+
             return {
                 "success": result.entries_coordized > 0,
                 "file": file_path.name,
@@ -352,7 +384,9 @@ class HarvestScheduler:
             }
 
         except Exception as e:
-            logger.error(f"Ingest error for {file_path.name}: {e}", exc_info=True)
+            err_msg = f"Ingest error for {file_path.name}: {e}"
+            self._last_errors = (self._last_errors + [err_msg])[-10:]
+            logger.error(err_msg, exc_info=True)
             # Move to failed
             try:
                 dest = self.config.failed_dir / file_path.name
@@ -402,7 +436,8 @@ class HarvestScheduler:
         """Run the scheduler in a continuous loop.
 
         Scans every scan_interval_seconds. Stops when self._running
-        is set to False.
+        is set to False. Runs a Modal health check on startup to
+        surface configuration issues early.
         """
         self._running = True
         logger.info(
@@ -411,11 +446,32 @@ class HarvestScheduler:
             f"budget=${self.config.daily_harvest_budget:.2f}/day)"
         )
 
+        # Initial health check — surface Modal connectivity issues early
+        if self.ingestor and hasattr(self.ingestor, "modal_client") and self.ingestor.modal_client:
+            try:
+                healthy = await self.ingestor.modal_client.check_health()
+                self._modal_healthy = healthy
+                if healthy:
+                    logger.info("Modal harvest endpoint reachable — health OK")
+                else:
+                    logger.warning(
+                        "Modal harvest endpoint UNREACHABLE — "
+                        "batches will fail until Modal is available"
+                    )
+            except Exception as e:
+                self._modal_healthy = False
+                logger.warning("Modal health check error: %s", e)
+
         while self._running:
             try:
                 results = await self.run_once()
                 if results:
-                    logger.info(f"Scan complete: {len(results)} files processed")
+                    successes = sum(1 for r in results if r.get("success"))
+                    failures = len(results) - successes
+                    logger.info(
+                        f"Scan complete: {len(results)} files processed "
+                        f"({successes} OK, {failures} failed)"
+                    )
             except Exception as e:
                 logger.error(f"Scheduler error: {e}", exc_info=True)
 

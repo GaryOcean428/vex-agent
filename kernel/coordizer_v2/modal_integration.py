@@ -250,6 +250,7 @@ class ModalHarvestClient:
         """Send a single batch with retry."""
         import httpx
 
+        last_error = ""
         for attempt in range(self.config.max_retries):
             try:
                 async with httpx.AsyncClient(
@@ -268,17 +269,33 @@ class ModalHarvestClient:
                     return result
 
             except httpx.TimeoutException:
-                logger.warning(f"Modal timeout (attempt {attempt + 1}/{self.config.max_retries})")
-            except httpx.HTTPStatusError as e:
+                last_error = f"timeout after {self.config.timeout}s"
                 logger.warning(
-                    f"Modal HTTP {e.response.status_code} "
-                    f"(attempt {attempt + 1}/{self.config.max_retries})"
+                    "Modal timeout (attempt %d/%d, url=%s)",
+                    attempt + 1, self.config.max_retries, self.config.harvest_url,
                 )
-            except Exception as e:
+            except httpx.HTTPStatusError as e:
+                last_error = f"HTTP {e.response.status_code}"
+                body_preview = e.response.text[:200] if e.response.text else ""
                 logger.warning(
-                    f"Modal request failed: {e} (attempt {attempt + 1}/{self.config.max_retries})"
+                    "Modal HTTP %d (attempt %d/%d, url=%s): %s",
+                    e.response.status_code, attempt + 1, self.config.max_retries,
+                    self.config.harvest_url, body_preview,
+                )
+                # Don't retry auth errors — they won't self-heal
+                if e.response.status_code in (401, 403):
+                    break
+            except Exception as e:
+                last_error = str(e)
+                logger.warning(
+                    "Modal request failed: %s (attempt %d/%d)",
+                    e, attempt + 1, self.config.max_retries,
                 )
 
+        logger.error(
+            "Modal harvest failed after %d attempts: %s (url=%s, texts=%d)",
+            self.config.max_retries, last_error, self.config.harvest_url, len(texts),
+        )
         return None
 
     def _auth_headers(self) -> dict[str, str]:
