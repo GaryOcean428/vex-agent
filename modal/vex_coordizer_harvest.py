@@ -78,6 +78,12 @@ class CoordizerHarvester:
     @modal.enter()
     def load_model(self):
         """Load default model on container start (runs once per container)."""
+        if not KERNEL_API_KEY:
+            print(
+                "WARNING: KERNEL_API_KEY not set — harvest endpoint is "
+                "unauthenticated. Set it in the 'model' Modal secret."
+            )
+
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -200,6 +206,8 @@ class CoordizerHarvester:
         if KERNEL_API_KEY:
             provided_key = request.headers.get("x-api-key", "")
             if provided_key != KERNEL_API_KEY:
+                reason = "missing" if not provided_key else "invalid"
+                print(f"Auth failure ({reason} api key) from {request.client.host if request.client else 'unknown'}")
                 return JSONResponse(
                     status_code=403,
                     content={"error": "invalid or missing api key"},
