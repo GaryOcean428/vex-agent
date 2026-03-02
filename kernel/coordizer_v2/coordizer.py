@@ -215,7 +215,7 @@ class CoordizerV2:
         try:
             harvest = await modal_harvest(
                 model_id=model_id,
-                _target_tokens=target_tokens,
+                target_tokens=target_tokens,
                 corpus_texts=corpus_texts,
                 timeout=timeout,
             )

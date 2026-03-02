@@ -1,5 +1,14 @@
 // Apply theme before React mounts to prevent FOUC
-document.documentElement.className = localStorage.getItem('theme') || 'dark';
+const storedTheme = localStorage.getItem('theme');
+const prefersDark = window.matchMedia &&
+  window.matchMedia('(prefers-color-scheme: dark)').matches;
+const isDark = storedTheme === 'dark' || ((storedTheme === 'system' || storedTheme === null) && prefersDark);
+
+if (isDark) {
+  document.documentElement.classList.add('dark');
+} else {
+  document.documentElement.classList.remove('dark');
+}
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'

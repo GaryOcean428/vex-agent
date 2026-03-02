@@ -665,7 +665,9 @@ class ConsciousnessLoop:
                     if getattr(v, "_domain_anchor", None) is not None
                 ]
                 self.sleep.consolidate(bank=_bank, kernel_anchors=_kernel_anchors or None)
-                self.metrics.phi = min(PHI_UNSTABLE, self.metrics.phi + SLEEP_CONSOLIDATION_PHI_INCREMENT)
+                self.metrics.phi = min(
+                    PHI_UNSTABLE, self.metrics.phi + SLEEP_CONSOLIDATION_PHI_INCREMENT
+                )
             return
 
         self.velocity.record(self.basin, self.metrics.phi, self.metrics.kappa)

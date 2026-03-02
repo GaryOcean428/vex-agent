@@ -199,9 +199,7 @@ class TestEnforceCategory:
         assert enforce_category("basin", VariableCategory.STATE, UpdateFrequency.PER_CYCLE)
 
     def test_parameter_at_correct_frequency_passes(self) -> None:
-        assert enforce_category(
-            "KAPPA_STAR", VariableCategory.PARAMETER, UpdateFrequency.PER_EPOCH
-        )
+        assert enforce_category("KAPPA_STAR", VariableCategory.PARAMETER, UpdateFrequency.PER_EPOCH)
 
     def test_boundary_at_correct_frequency_passes(self) -> None:
         assert enforce_category(
@@ -259,11 +257,14 @@ class TestNoStateAtParameterFrequency:
                             f"Line {target.lineno}: STATE var '{target.id}' assigned in constants"
                         )
             # Annotated assignment: leaf: Type = ...
-            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                if node.target.id in state_leaves:
-                    violations.append(
-                        f"Line {node.target.lineno}: STATE var '{node.target.id}' assigned in constants"
-                    )
+            if (
+                isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name)
+                and node.target.id in state_leaves
+            ):
+                violations.append(
+                    f"Line {node.target.lineno}: STATE var '{node.target.id}' assigned in constants"
+                )
         assert not violations, f"STATE vars found in PARAMETER module: {violations}"
 
     def test_frozen_facts_has_no_state_assignments(self) -> None:
@@ -284,11 +285,14 @@ class TestNoStateAtParameterFrequency:
                         violations.append(
                             f"Line {target.lineno}: STATE var '{target.id}' assigned in frozen_facts"
                         )
-            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                if node.target.id in state_leaves:
-                    violations.append(
-                        f"Line {node.target.lineno}: STATE var '{node.target.id}' assigned in frozen_facts"
-                    )
+            if (
+                isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name)
+                and node.target.id in state_leaves
+            ):
+                violations.append(
+                    f"Line {node.target.lineno}: STATE var '{node.target.id}' assigned in frozen_facts"
+                )
         assert not violations, f"STATE vars found in PARAMETER module: {violations}"
 
 
@@ -330,6 +334,4 @@ class TestBoundaryEntrySanitized:
             if mod == "server" and cat == VariableCategory.BOUNDARY
         ]
         missing = [f for f in server_boundary if f not in validated]
-        assert not missing, (
-            f"BOUNDARY fields without validation constraint: {missing}"
-        )
+        assert not missing, f"BOUNDARY fields without validation constraint: {missing}"

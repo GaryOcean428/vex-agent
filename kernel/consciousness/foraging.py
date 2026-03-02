@@ -74,7 +74,7 @@ class ForagingEngine:
         # Safety: foraging promises $0.00/cycle — refuse on paid backends.
         # If the LLM client fell through to xAI or OpenAI, every forage
         # makes 2 paid API calls. Block until a local backend is available.
-        _backend = getattr(self.llm, "_active_backend", "unknown")
+        _backend = getattr(self.llm, "active_backend", "unknown")
         if _backend in ("xai", "external"):
             logger.warning(
                 "Foraging suppressed: active LLM backend is '%s' (paid). "
@@ -189,8 +189,9 @@ class ForagingEngine:
 
         forward_to_harvest(
             f"{query}\n{summary}",
-            source="forage",
+            source="foraging",
             metadata={
+                "origin": "forage",
                 "query": query,
                 "results_count": len(results),
                 "timestamp": time.time(),
