@@ -93,11 +93,12 @@ async def modal_harvest(
         "return_full_distribution": True,  # CRITICAL: not top-k
     }
 
-    # Modal web endpoints reject Modal-Token-Id/Secret as "prohibited headers".
-    # Authentication is handled by Modal's network controls; no custom header needed.
-    headers = {
+    # Auth via X-Api-Key header (KERNEL_API_KEY), checked by the Modal handler.
+    headers: dict[str, str] = {
         "Content-Type": "application/json",
     }
+    if settings.kernel_api_key:
+        headers["X-Api-Key"] = settings.kernel_api_key
 
     logger.info(
         "Sending harvest request to Modal: %s (%d texts, model=%s)",

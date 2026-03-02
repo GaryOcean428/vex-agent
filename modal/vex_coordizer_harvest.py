@@ -16,7 +16,7 @@ Deploy:
         MODAL_HARVEST_URL=https://garyocean428--vex-coordizer-harvest-<hash>.modal.run
 
 Endpoint:
-    POST / — proxy-auth protected. Requires Modal token.
+    POST / — protected by X-Api-Key header (KERNEL_API_KEY).
     Accepts JSON body matching HarvestRequest schema.
 
 Cost estimate:
@@ -41,6 +41,7 @@ import modal
 # See kernel/config/settings.py GPUHarvestConfig for the Railway-side
 # mirror of this setting.
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "zai-org/GLM-4.7-Flash")
+KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 
 app = modal.App("vex-coordizer-harvest")
 
@@ -154,9 +155,13 @@ class CoordizerHarvester:
             "cached_models": list(getattr(self, "_model_cache", {}).keys()),
         }
 
-    @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
+    @modal.fastapi_endpoint(method="POST")
     async def harvest(self, request: "modal.fastapi_endpoint.Request"):
-        """GPU harvest endpoint (proxy-auth protected).
+        """GPU harvest endpoint (X-Api-Key protected).
+
+        Auth:
+            Requires X-Api-Key header matching KERNEL_API_KEY env var.
+            If KERNEL_API_KEY is not set, auth is skipped (dev mode).
 
         Request JSON body:
             {
@@ -188,6 +193,16 @@ class CoordizerHarvester:
 
         import numpy as np
         import torch
+        from starlette.responses import JSONResponse
+
+        # Auth: validate X-Api-Key if KERNEL_API_KEY is configured
+        if KERNEL_API_KEY:
+            provided_key = request.headers.get("x-api-key", "")
+            if provided_key != KERNEL_API_KEY:
+                return JSONResponse(
+                    status_code=403,
+                    content={"error": "invalid or missing api key"},
+                )
 
         start = time.time()
 
