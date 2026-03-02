@@ -1112,7 +1112,9 @@ async def training_stats_endpoint() -> dict[str, Any]:
 
 
 @training_router.get("/training/export")
-async def training_export_endpoint(fmt: str = "openai", download: bool = False) -> Any:
+async def training_export_endpoint(
+    fmt: str = "openai", download: bool = False
+) -> dict[str, Any] | StreamingResponse:
     """Export training data.
 
     Query params:
