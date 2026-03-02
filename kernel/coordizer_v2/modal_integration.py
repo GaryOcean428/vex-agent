@@ -274,15 +274,20 @@ class ModalHarvestClient:
                 last_error = f"timeout after {self.config.timeout}s"
                 logger.warning(
                     "Modal timeout (attempt %d/%d, url=%s)",
-                    attempt + 1, self.config.max_retries, self.config.harvest_url,
+                    attempt + 1,
+                    self.config.max_retries,
+                    self.config.harvest_url,
                 )
             except httpx.HTTPStatusError as e:
                 last_error = f"HTTP {e.response.status_code}"
                 body_preview = e.response.text[:200] if e.response.text else ""
                 logger.warning(
                     "Modal HTTP %d (attempt %d/%d, url=%s): %s",
-                    e.response.status_code, attempt + 1, self.config.max_retries,
-                    self.config.harvest_url, body_preview,
+                    e.response.status_code,
+                    attempt + 1,
+                    self.config.max_retries,
+                    self.config.harvest_url,
+                    body_preview,
                 )
                 # Don't retry auth errors — they won't self-heal
                 if e.response.status_code in (401, 403):
@@ -291,12 +296,17 @@ class ModalHarvestClient:
                 last_error = str(e)
                 logger.warning(
                     "Modal request failed: %s (attempt %d/%d)",
-                    e, attempt + 1, self.config.max_retries,
+                    e,
+                    attempt + 1,
+                    self.config.max_retries,
                 )
 
         logger.error(
             "Modal harvest failed after %d attempts: %s (url=%s, texts=%d)",
-            self.config.max_retries, last_error, self.config.harvest_url, len(texts),
+            self.config.max_retries,
+            last_error,
+            self.config.harvest_url,
+            len(texts),
         )
         return None
 

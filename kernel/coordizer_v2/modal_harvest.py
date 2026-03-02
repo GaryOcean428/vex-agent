@@ -100,6 +100,7 @@ async def modal_harvest(
         "target_tokens": config.target_tokens,
         "batch_size": config.batch_size,
         "max_length": config.max_length,
+        "min_contexts": config.min_contexts,
         "return_full_distribution": True,  # CRITICAL: not top-k
     }
 
