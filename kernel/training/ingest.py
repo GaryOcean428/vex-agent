@@ -1105,13 +1105,13 @@ async def _run_ingestion_job(
 training_router = APIRouter()
 
 
-@training_router.get("/training/stats")
+@training_router.get("/training/stats", response_model=None)
 async def training_stats_endpoint() -> dict[str, Any]:
     """Get training data statistics."""
     return get_stats()
 
 
-@training_router.get("/training/export")
+@training_router.get("/training/export", response_model=None)
 async def training_export_endpoint(
     fmt: str = "openai", download: bool = False
 ) -> dict[str, Any] | StreamingResponse:
@@ -1162,7 +1162,7 @@ async def training_export_endpoint(
     )
 
 
-@training_router.post("/training/upload")
+@training_router.post("/training/upload", response_model=None)
 async def training_upload_endpoint(
     file: UploadFile = File(...),
     category: str = Form(default="curriculum"),
@@ -1237,7 +1237,7 @@ async def training_upload_endpoint(
     return {"status": "processing", "job_id": job_id, "filename": filename}
 
 
-@training_router.get("/training/upload/status/{job_id}")
+@training_router.get("/training/upload/status/{job_id}", response_model=None)
 async def training_upload_status(job_id: str) -> dict[str, Any]:
     """Poll ingestion job status. Returns full result when complete."""
     job = _jobs.get(job_id)
@@ -1246,7 +1246,7 @@ async def training_upload_status(job_id: str) -> dict[str, Any]:
     return job
 
 
-@training_router.post("/training/feedback")
+@training_router.post("/training/feedback", response_model=None)
 async def training_feedback_endpoint(req: FeedbackRequest) -> dict[str, str]:
     """Submit feedback on a response."""
     await _log_feedback(req.conversation_id, req.rating, req.comment)
