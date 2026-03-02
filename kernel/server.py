@@ -534,7 +534,8 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
             token_count=estimate_tokens(response),
         ),
     )
-    # T1.1: Forward chat exchange to harvest pipeline
+    # T1.1: Forward chat exchange to harvest pipeline.
+    # harvest_bridge only accepts canonical source categories (conversation/foraging/etc.).
     forward_to_harvest(
         f"User: {req.message}\nVex: {response}",
         source="conversation",
