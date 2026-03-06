@@ -71,7 +71,7 @@ class GPUHarvestConfig:
 
     enabled: bool = os.environ.get("GPU_HARVEST_ENABLED", "false").lower() == "true"
     # Harvest model MUST match the active inference model.
-    # Primary: GLM-4.7-Flash (Modal GPU, 30B-A3B MoE).
+    # Primary: GLM-4.7-Flash (Modal GPU).
     # Ollama fallback uses LFM2.5-1.2B-Thinking (vex-brain base).
     # Override GPU_HARVEST_MODEL if deploying with a different backend.
     model_id: str = os.environ.get("GPU_HARVEST_MODEL", "zai-org/GLM-4.7-Flash")
