@@ -61,7 +61,7 @@ from .geometry import (
     slerp,
     to_simplex,
 )
-from .harvest import HarvestConfig, Harvester
+from .harvest import DEFAULT_HARVEST_MODEL_ID, HarvestConfig, Harvester
 from .resonance_bank import ResonanceBank
 from .types import (
     BasinCoordinate,
@@ -117,7 +117,7 @@ class CoordizerV2:
     @classmethod
     def from_harvest(
         cls,
-        model_id: str = "zai-org/GLM-4.7-Flash",
+        model_id: str = DEFAULT_HARVEST_MODEL_ID,
         corpus_path: str | None = None,
         corpus_texts: list[str] | None = None,
         output_dir: str = "./coordizer_data",
