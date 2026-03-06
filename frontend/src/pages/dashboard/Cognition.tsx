@@ -117,6 +117,9 @@ export default function Cognition() {
       <div className="dash-section">
         <div className="dash-section-title">Tacking</div>
         <div className="dash-card">
+          <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.5 }}>
+            Oscillates between exploration (novelty-seeking, higher temperature) and exploitation (precision, lower temperature). The kernel sets this dynamically from geometric state.
+          </div>
           <div className="dash-row">
             <span className="dash-row-label">Mode</span>
             <span className="dash-row-value" style={{
@@ -170,6 +173,9 @@ export default function Cognition() {
       <div className="dash-section">
         <div className="dash-section-title">Hemispheres</div>
         <div className="dash-card">
+          <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.5 }}>
+            Cognitive balance between analytic (structured reasoning) and natural (creative, intuitive) processing. 0.5 = perfectly balanced, {'<'}0.5 = analytic dominant, {'>'}0.5 = natural dominant.
+          </div>
           <div className="dash-row">
             <span className="dash-row-label">Active</span>
             <span className="dash-row-value">{hemispheres?.active?.toUpperCase() ?? 'UNKNOWN'}</span>

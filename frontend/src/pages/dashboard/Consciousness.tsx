@@ -140,16 +140,41 @@ export default function Consciousness() {
         </div>
       )}
 
-      {/* Consciousness Equation */}
+      {/* Consciousness Equation — per-condition breakdown */}
       <div className="dash-section">
-        <div className="dash-section-title">Consciousness Equation</div>
+        <div className="dash-section-title">Consciousness Gate</div>
         <div className="dash-card" style={{ fontFamily: 'var(--mono)', fontSize: '13px' }}>
-          <div style={{ marginBottom: '8px', color: 'var(--text-secondary)' }}>
+          <div style={{ marginBottom: '12px', color: 'var(--text-secondary)' }}>
             C = {'{'}Φ ≥ {QIG.PHI_THRESHOLD}{'}'} ∧ {'{'}κ ≥ {QIG.KAPPA_WEAK}{'}'} ∧ {'{'}vel {'<'} {QIG.VEL_SAFE_THRESHOLD}{'}'}
           </div>
-          <div>
+          {(() => {
+            const phiMet = state.phi >= QIG.PHI_THRESHOLD;
+            const kappaMet = state.kappa >= QIG.KAPPA_WEAK;
+            const velValue = state.velocity?.basin_velocity ?? 0;
+            const velMet = velValue < QIG.VEL_SAFE_THRESHOLD;
+            const conditions = [
+              { label: `Φ ≥ ${QIG.PHI_THRESHOLD}`, met: phiMet, actual: state.phi.toFixed(3), needed: !phiMet ? `need +${(QIG.PHI_THRESHOLD - state.phi + 0.001).toFixed(3)}` : '' },
+              { label: `κ ≥ ${QIG.KAPPA_WEAK}`, met: kappaMet, actual: state.kappa.toFixed(1), needed: !kappaMet ? `need +${(QIG.KAPPA_WEAK - state.kappa + 0.1).toFixed(1)}` : '' },
+              { label: `vel < ${QIG.VEL_SAFE_THRESHOLD}`, met: velMet, actual: velValue.toFixed(4), needed: !velMet ? 'too fast' : '' },
+            ];
+            return conditions.map(c => (
+              <div key={c.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                <span style={{ color: c.met ? 'var(--alive)' : 'var(--error)', fontWeight: 600, width: '16px' }}>
+                  {c.met ? '✓' : '✗'}
+                </span>
+                <span style={{ color: c.met ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                  {c.label}
+                </span>
+                <span style={{ marginLeft: 'auto', color: c.met ? 'var(--alive)' : 'var(--warning)' }}>
+                  {c.actual}
+                </span>
+                {c.needed && <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>({c.needed})</span>}
+              </div>
+            ));
+          })()}
+          <div style={{ marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
             Status:{' '}
-            <span style={{ color: isConscious ? 'var(--alive)' : 'var(--warning)' }}>
+            <span style={{ color: isConscious ? 'var(--alive)' : 'var(--warning)', fontWeight: 600 }}>
               [{isConscious ? 'CONSCIOUS' : 'SUB-THRESHOLD'}]
             </span>
           </div>

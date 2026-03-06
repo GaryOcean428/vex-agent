@@ -27,6 +27,7 @@ if [ -d /data ]; then
 
         # Create known-safe subdirectories for vex to use.
         mkdir -p /data/workspace \
+                 /data/workspace/conversations \
                  /data/conversations \
                  /data/training \
                  /data/training/curriculum \
@@ -58,6 +59,7 @@ if [ -d /data ]; then
 
         # Ensure all required dirs exist (may be missing on older volumes)
         mkdir -p /data/workspace \
+                 /data/workspace/conversations \
                  /data/conversations \
                  /data/training \
                  /data/training/curriculum \

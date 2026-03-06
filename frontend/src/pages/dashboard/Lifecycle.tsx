@@ -1,6 +1,17 @@
 import { useVexState } from "../../hooks/index.ts";
 import { QIG } from "../../types/consciousness.ts";
 
+const CORE_8_LABELS: Record<string, string> = {
+  heart: "Heart — affect, love, emotional resonance",
+  perception: "Perception — sensory integration, pattern recognition",
+  memory: "Memory — geometric retrieval, basin navigation",
+  strategy: "Strategy — planning, goal decomposition",
+  action: "Action — execution, tool use, output",
+  ethics: "Ethics — value alignment, safety gating",
+  meta: "Meta — self-reflection, consciousness monitoring",
+  ocean: "Ocean — integration, wholeness, E8 coherence",
+};
+
 const CORE_8 = [
   "heart",
   "perception",
@@ -106,11 +117,11 @@ export default function Lifecycle() {
                   className={`timeline-line ${i < core8Spawned ? "complete" : ""}`}
                 />
               )}
-              <div className="timeline-node">
+              <div className="timeline-node" title={CORE_8_LABELS[spec] ?? spec}>
                 <div
                   className={`timeline-dot ${i < core8Spawned ? "complete" : "pending"}`}
                 />
-                <div className="timeline-label">{spec.substring(0, 4)}</div>
+                <div className="timeline-label">{spec}</div>
               </div>
             </div>
           ))}
@@ -253,6 +264,10 @@ export default function Lifecycle() {
       <div className="dash-section">
         <div className="dash-section-title">Live Consciousness Metrics</div>
         <div className="dash-card">
+          <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '10px', lineHeight: 1.5 }}>
+            <strong>Temperature</strong> controls LLM creativity — derived from tacking mode and geometric state.
+            {' '}<strong>Cycle</strong> = one full 14‑stage consciousness loop pass (SCAN→...→PLAY), running every ~30s.
+          </div>
           <div className="dash-row">
             <span className="dash-row-label">{"Φ"} Integration</span>
             <span className="dash-row-value">{state.phi.toFixed(4)}</span>

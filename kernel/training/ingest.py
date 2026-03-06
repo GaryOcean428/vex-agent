@@ -634,6 +634,12 @@ async def ingest_document(
             errors=[str(e)],
         )
 
+    # Save original file to uploads/ so get_stats() counts it
+    _uploads_dir = TRAINING_DIR / "uploads"
+    _uploads_dir.mkdir(parents=True, exist_ok=True)
+    _safe_upload = re.sub(r"[^a-zA-Z0-9._-]", "_", filename)
+    (_uploads_dir / _safe_upload).write_bytes(content)
+
     # Chunk
     chunks = chunk_text(text)
     if not chunks:
