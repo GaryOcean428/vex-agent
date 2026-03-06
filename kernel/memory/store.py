@@ -33,7 +33,7 @@ logger = logging.getLogger("vex.memory")
 
 
 def _text_to_basin(text: str) -> Basin:
-    """Map text to a point on Δ⁶³ using SHA-256 hash chain.
+    """Map text to a deterministic point on Δ⁶³.
 
     Deterministic: same text always maps to same basin point.
     Delegates to the canonical hash_to_basin utility.

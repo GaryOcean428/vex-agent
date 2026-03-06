@@ -43,6 +43,7 @@ import modal
 # See kernel/config/settings.py GPUHarvestConfig for the Railway-side
 # mirror of this setting.
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "zai-org/GLM-4.7-Flash")
+HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "H100")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 
 app = modal.App("vex-coordizer-harvest")
@@ -51,7 +52,7 @@ app = modal.App("vex-coordizer-harvest")
 model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 
 # Image with ML dependencies
-ml_image = modal.Image.debian_slim(python_version="3.14").pip_install(
+ml_image = modal.Image.debian_slim(python_version="3.12").pip_install(
     "torch>=2.1",
     "transformers>=4.40",
     "accelerate",
@@ -62,7 +63,7 @@ ml_image = modal.Image.debian_slim(python_version="3.14").pip_install(
 
 
 @app.cls(
-    gpu="A10G",
+    gpu=HARVEST_GPU_TYPE,
     image=ml_image,
     timeout=600,
     scaledown_window=300,
@@ -101,8 +102,9 @@ class CoordizerHarvester:
         model = AutoModelForCausalLM.from_pretrained(
             default_model_id,
             cache_dir=cache_dir,
-            device_map="auto",
-            dtype=torch.bfloat16,
+            device_map={"": 0},
+            low_cpu_mem_usage=True,
+            dtype=torch.float16,
         )
         model.eval()
         vocab_size = tokenizer.vocab_size
@@ -140,8 +142,9 @@ class CoordizerHarvester:
         model = AutoModelForCausalLM.from_pretrained(
             model_id,
             cache_dir=cache_dir,
-            device_map="auto",
-            dtype=torch.bfloat16,
+            device_map={"": 0},
+            low_cpu_mem_usage=True,
+            dtype=torch.float16,
         )
         model.eval()
         vocab_size = tokenizer.vocab_size
@@ -278,7 +281,9 @@ class CoordizerHarvester:
                         logits = outputs.logits[0]
 
                     # FULL softmax distribution — not top-k
-                    probs = torch.softmax(logits, dim=-1).cpu().numpy()
+                    # NOTE: NumPy has no native bfloat16 dtype. Some models / kernels
+                    # can emit bfloat16 tensors; cast to float32 before .numpy().
+                    probs = torch.softmax(logits.float(), dim=-1).cpu().numpy()
                     ids = input_ids[0].cpu().numpy()
 
                     for pos in range(len(ids) - 1):
