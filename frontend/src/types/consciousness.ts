@@ -741,9 +741,8 @@ export interface BasinCoordinate {
 
 /** Coordizer transform stats from /api/coordizer/stats. */
 export interface CoordizerStats {
-  status: string;
+  vocab_size: number;
   bank_size: number;
+  dim: number;
   tier_distribution: Record<string, number>;
-  last_harvest: string | null;
-  version: string;
 }

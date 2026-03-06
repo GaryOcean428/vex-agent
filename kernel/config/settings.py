@@ -121,6 +121,9 @@ class ModalConfig:
 
     # --- Harvest (CoordizerV2 fingerprinting) ---
     harvest_url: str = os.environ.get("MODAL_HARVEST_URL", "")
+    # Optional explicit health URL override. If unset, the client derives it
+    # from MODAL_HARVEST_URL using Modal's *-health.modal.run pattern.
+    harvest_health_url: str = os.environ.get("MODAL_HARVEST_HEALTH_URL", "")
 
     # Harvest model for Modal-active deployments.
     # MUST match inference_model so resonance bank fingerprints use the same

@@ -61,16 +61,19 @@ class ModalIntegrationConfig:
         modal = kernel_settings.modal
         harvest_url = modal.harvest_url
 
-        # Health endpoint: prefer hostname-based pattern when present,
-        # otherwise fall back to a conventional /health path to avoid
-        # health == harvest (which would send GET to a POST endpoint).
-        if "-harvest.modal.run" in harvest_url:
-            health_url = harvest_url.replace(
-                "-harvest.modal.run",
-                "-health.modal.run",
-            )
+        if modal.harvest_health_url:
+            health_url = modal.harvest_health_url
         else:
-            health_url = harvest_url.rstrip("/") + "/health"
+            # Health endpoint: prefer hostname-based pattern when present,
+            # otherwise fall back to a conventional /health path to avoid
+            # health == harvest (which would send GET to a POST endpoint).
+            if "-harvest.modal.run" in harvest_url:
+                health_url = harvest_url.replace(
+                    "-harvest.modal.run",
+                    "-health.modal.run",
+                )
+            else:
+                health_url = harvest_url.rstrip("/") + "/health"
 
         return cls(
             enabled=modal.enabled,
