@@ -63,6 +63,9 @@ export const API = {
 	trainingUpload: '/training/upload',
 	trainingUploadStatus: (jobId: string) => `/training/upload/status/${jobId}`,
 
+	// ─── Coordizer ──────────────────────────────────────────────
+	coordizerStats: '/coordizer/stats',
+
 	// ─── Feedback ──────────────────────────────────────────────
 	feedback: '/training/feedback',
 } as const;

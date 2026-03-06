@@ -970,6 +970,7 @@ async def coordizer_stats() -> dict[str, Any]:
     coordizer = consciousness._coordizer_v2
     return {
         "vocab_size": coordizer.vocab_size,  # type: ignore[union-attr]
+        "bank_size": len(coordizer.bank),  # type: ignore[union-attr]
         "dim": coordizer.dim,  # type: ignore[union-attr]
         "tier_distribution": coordizer.bank.tier_distribution(),  # type: ignore[union-attr]
     }

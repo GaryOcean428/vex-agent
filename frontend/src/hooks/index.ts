@@ -3,6 +3,7 @@ import { API } from '../config/api-routes.ts';
 import type {
   BasinData,
   BasinHistoryResponse,
+  CoordizerStats,
   GraphNodesResponse,
   HealthStatus,
   KernelListResponse,
@@ -30,6 +31,7 @@ export const useGraphNodes = () => usePolledData<GraphNodesResponse>(API.graphNo
 export const useMemoryStats = () => usePolledData<MemoryStatsResponse>(API.memoryStats, 5000);
 export const useSleepState = () => usePolledData<SleepStateResponse>(API.sleepState, 3000);
 export const useTrainingStats = () => usePolledData<TrainingStats>(API.trainingStats, 10000);
+export const useCoordizerStats = () => usePolledData<CoordizerStats>(API.coordizerStats, 10000);
 
 /**
  * Accumulate polled VexState snapshots into a time-series array.

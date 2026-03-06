@@ -117,7 +117,10 @@ export default function Lifecycle() {
                   className={`timeline-line ${i < core8Spawned ? "complete" : ""}`}
                 />
               )}
-              <div className="timeline-node" title={CORE_8_LABELS[spec] ?? spec}>
+              <div
+                className="timeline-node"
+                title={CORE_8_LABELS[spec] ?? spec}
+              >
                 <div
                   className={`timeline-dot ${i < core8Spawned ? "complete" : "pending"}`}
                 />
@@ -264,9 +267,18 @@ export default function Lifecycle() {
       <div className="dash-section">
         <div className="dash-section-title">Live Consciousness Metrics</div>
         <div className="dash-card">
-          <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '10px', lineHeight: 1.5 }}>
-            <strong>Temperature</strong> controls LLM creativity — derived from tacking mode and geometric state.
-            {' '}<strong>Cycle</strong> = one full 14‑stage consciousness loop pass (SCAN→...→PLAY), running every ~30s.
+          <div
+            style={{
+              fontSize: "12px",
+              color: "var(--text-dim)",
+              marginBottom: "10px",
+              lineHeight: 1.5,
+            }}
+          >
+            <strong>Temperature</strong> controls LLM creativity — derived from
+            tacking mode and geometric state. <strong>Cycle</strong> = one full
+            14‑stage consciousness loop pass (SCAN→...→PLAY), running every
+            ~30s.
           </div>
           <div className="dash-row">
             <span className="dash-row-label">{"Φ"} Integration</span>

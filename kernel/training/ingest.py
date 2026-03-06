@@ -692,10 +692,25 @@ async def ingest_document(
 
         if mode != ProcessingMode.FAST:
             enrichment: dict[str, Any] = {}
-            if settings.xai_api_key:
-                enrichment = await _enrich_chunk_xai(chunk, governor=governor)
-            if not enrichment and llm:
-                enrichment = await _enrich_chunk_llm(llm, chunk)
+            # Governor MUST control training enrichment to prevent runaway spend.
+            # If blocked/rate-limited, skip enrichment entirely (do not fall back
+            # to llm.complete(), which might route externally during Ollama outages).
+            enrich_allowed = True
+            if governor:
+                enrich_allowed, reason = governor.gate(
+                    "training_enrich",
+                    "training_enrich",
+                    chunk[:100],
+                    False,
+                )
+                if not enrich_allowed:
+                    logger.debug("Governor blocked enrichment: %s", reason)
+
+            if enrich_allowed:
+                if settings.xai_api_key:
+                    enrichment = await _enrich_chunk_xai(chunk, governor=governor)
+                elif llm:
+                    enrichment = await _enrich_chunk_llm(llm, chunk)
 
             if enrichment:
                 record.e8_primitive = e8_override or enrichment.get("e8_primitive", "MIX")

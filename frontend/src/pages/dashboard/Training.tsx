@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import MetricCard from "../../components/MetricCard.tsx";
 import { API } from "../../config/api-routes.ts";
-import { useTrainingStats } from "../../hooks/index.ts";
+import { useCoordizerStats, useTrainingStats } from "../../hooks/index.ts";
 import type { TrainingUploadResponse } from "../../types/consciousness.ts";
 
 const E8_PRIMITIVES = [
@@ -33,6 +33,7 @@ interface FileUploadJob {
 
 export default function Training() {
   const { data: stats, loading, refetch } = useTrainingStats();
+  const { data: coordizerStats } = useCoordizerStats();
 
   const [files, setFiles] = useState<File[]>([]);
   const [category, setCategory] = useState("curriculum");
@@ -48,9 +49,7 @@ export default function Training() {
 
   // Poll active jobs every 2s
   useEffect(() => {
-    const activeJobs = jobs.filter(
-      (j) => j.status === "processing" && j.jobId,
-    );
+    const activeJobs = jobs.filter((j) => j.status === "processing" && j.jobId);
     if (activeJobs.length === 0) {
       if (pollRef.current) {
         clearInterval(pollRef.current);
@@ -73,9 +72,7 @@ export default function Training() {
 
       for (const job of stillActive) {
         try {
-          const resp = await fetch(
-            API.trainingUploadStatus(job.jobId!),
-          );
+          const resp = await fetch(API.trainingUploadStatus(job.jobId!));
           if (!resp.ok) continue;
           const data: TrainingUploadResponse = await resp.json();
           if (data.status !== "processing") {
@@ -130,9 +127,7 @@ export default function Training() {
 
       // Mark as uploading
       setJobs((prev) =>
-        prev.map((j, idx) =>
-          idx === i ? { ...j, status: "uploading" } : j,
-        ),
+        prev.map((j, idx) => (idx === i ? { ...j, status: "uploading" } : j)),
       );
 
       try {
@@ -161,18 +156,14 @@ export default function Training() {
         } else if (data.status === "error") {
           setJobs((prev) =>
             prev.map((j, idx) =>
-              idx === i
-                ? { ...j, status: "error", result: data }
-                : j,
+              idx === i ? { ...j, status: "error", result: data } : j,
             ),
           );
         } else {
           // Immediate result (JSONL pass-through, validation error)
           setJobs((prev) =>
             prev.map((j, idx) =>
-              idx === i
-                ? { ...j, status: "done", result: data }
-                : j,
+              idx === i ? { ...j, status: "done", result: data } : j,
             ),
           );
         }
@@ -192,8 +183,7 @@ export default function Training() {
                     category,
                     mode,
                     processing_time_s: 0,
-                    error:
-                      err instanceof Error ? err.message : String(err),
+                    error: err instanceof Error ? err.message : String(err),
                   },
                 }
               : j,
@@ -262,6 +252,53 @@ export default function Training() {
           value={stats?.uploads ?? 0}
           color="var(--gamma)"
         />
+      </div>
+
+      {/* Coordizer / Collective Vocabulary */}
+      <div className="dash-section">
+        <div className="dash-section-title">Collective Vocabulary</div>
+        <div className="dash-grid">
+          <MetricCard
+            label="Model Vocab Size"
+            value={coordizerStats?.vocab_size ?? 0}
+            color="var(--accent)"
+          />
+          <MetricCard
+            label="Resonance Bank Tokens"
+            value={coordizerStats?.bank_size ?? 0}
+            color="var(--kappa)"
+          />
+          <MetricCard
+            label="Basin Dim"
+            value={coordizerStats?.dim ?? 64}
+            color="var(--phi)"
+          />
+          <MetricCard
+            label="Tier Buckets"
+            value={
+              coordizerStats
+                ? Object.keys(coordizerStats.tier_distribution).length
+                : 0
+            }
+            color="var(--gamma)"
+          />
+        </div>
+
+        {coordizerStats && (
+          <div className="dash-card" style={{ marginTop: "10px" }}>
+            <div className="dash-row">
+              <span className="dash-row-label">Tier distribution</span>
+              <span
+                className="dash-row-value"
+                style={{ fontFamily: "var(--mono)", fontSize: "12px" }}
+              >
+                {Object.entries(coordizerStats.tier_distribution)
+                  .map(([k, v]) => `${k}:${v}`)
+                  .join("  ")}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Volume Status */}
@@ -373,9 +410,7 @@ export default function Training() {
                 color: "white",
                 fontWeight: 600,
                 cursor:
-                  files.length === 0 || uploading
-                    ? "not-allowed"
-                    : "pointer",
+                  files.length === 0 || uploading ? "not-allowed" : "pointer",
                 opacity: files.length === 0 || uploading ? 0.5 : 1,
                 fontSize: "14px",
                 alignSelf: "flex-start",

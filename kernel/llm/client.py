@@ -651,6 +651,14 @@ class LLMClient:
                 f"{settings.ollama.url}/api/chat",
                 json=request_body,
             )
+            if resp.status_code != 200:
+                body_preview = resp.text[:300]
+                logger.error(
+                    "Ollama /api/chat HTTP %d. Body (truncated): %s",
+                    resp.status_code,
+                    body_preview,
+                )
+                resp.raise_for_status()
             data = resp.json()
             self._last_backend = "ollama"
             text = _extract_ollama_content(data)
@@ -663,7 +671,12 @@ class LLMClient:
 
             return text
         except Exception as e:
-            logger.error("Ollama completion failed: %s", e)
+            logger.error(
+                "Ollama completion failed (%s): %r",
+                type(e).__name__,
+                e,
+                exc_info=True,
+            )
             # Fallback chain: try xAI, then external
             if settings.xai.api_key:
                 logger.info("Falling back to xAI from Ollama")
