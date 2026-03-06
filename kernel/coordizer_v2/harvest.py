@@ -40,6 +40,8 @@ from .geometry import (
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_HARVEST_MODEL_ID: str = "zai-org/GLM-4.7-Flash"
+
 
 @dataclass
 class HarvestConfig:
@@ -133,7 +135,7 @@ class Harvester:
 
     def harvest_transformers(
         self,
-        model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
+        model_id: str = DEFAULT_HARVEST_MODEL_ID,
     ) -> HarvestResult:
         """Harvest using HuggingFace Transformers (direct model access).
 
@@ -153,7 +155,7 @@ class Harvester:
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         model = AutoModelForCausalLM.from_pretrained(
             model_id,
-            device_map=self.config.device if self.config.device != "cpu" else None,
+            device_map="auto" if self.config.device != "cpu" else None,
             torch_dtype=(torch.bfloat16 if self.config.device != "cpu" else torch.float32),
         )
         model.eval()
@@ -379,7 +381,7 @@ class Harvester:
 
 
 def harvest_model(
-    model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
+    model_id: str = DEFAULT_HARVEST_MODEL_ID,
     corpus_path: str | None = None,
     corpus_texts: list[str] | None = None,
     output_dir: str = "./harvest_output",
@@ -401,7 +403,7 @@ def harvest_model(
 
 
 async def harvest_model_auto(
-    model_id: str = "LiquidAI/LFM2.5-1.2B-Thinking",
+    model_id: str = DEFAULT_HARVEST_MODEL_ID,
     corpus_path: str | None = None,
     corpus_texts: list[str] | None = None,
     output_dir: str = "./harvest_output",
