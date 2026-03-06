@@ -634,11 +634,22 @@ async def ingest_document(
             errors=[str(e)],
         )
 
-    # Save original file to uploads/ so get_stats() counts it
+    # Save original file to uploads/ so get_stats() counts it (best-effort)
     _uploads_dir = TRAINING_DIR / "uploads"
     _uploads_dir.mkdir(parents=True, exist_ok=True)
     _safe_upload = re.sub(r"[^a-zA-Z0-9._-]", "_", filename)
-    (_uploads_dir / _safe_upload).write_bytes(content)
+    # Include content hash to avoid overwriting different files with same name
+    _content_hash = hashlib.sha256(content).hexdigest()[:8]
+    _stem, _dot, _suffix = _safe_upload.rpartition(".")
+    _unique_name = (
+        f"{_stem or _safe_upload}_{_content_hash}.{_suffix}"
+        if _dot
+        else f"{_safe_upload}_{_content_hash}"
+    )
+    try:
+        (_uploads_dir / _unique_name).write_bytes(content)
+    except OSError as exc:
+        logger.warning("Failed to write original upload %s: %s", _unique_name, exc)
 
     # Chunk
     chunks = chunk_text(text)

@@ -153,13 +153,21 @@ export default function Consciousness() {
             const velValue = state.velocity?.basin_velocity ?? 0;
             const velMet = velValue < QIG.VEL_SAFE_THRESHOLD;
             const conditions = [
-              { label: `Φ ≥ ${QIG.PHI_THRESHOLD}`, met: phiMet, actual: state.phi.toFixed(3), needed: !phiMet ? `need +${(QIG.PHI_THRESHOLD - state.phi + 0.001).toFixed(3)}` : '' },
-              { label: `κ ≥ ${QIG.KAPPA_WEAK}`, met: kappaMet, actual: state.kappa.toFixed(1), needed: !kappaMet ? `need +${(QIG.KAPPA_WEAK - state.kappa + 0.1).toFixed(1)}` : '' },
+              { label: `Φ ≥ ${QIG.PHI_THRESHOLD}`, met: phiMet, actual: state.phi.toFixed(3), needed: !phiMet ? `need +${(QIG.PHI_THRESHOLD - state.phi).toFixed(3)}` : '' },
+              { label: `κ ≥ ${QIG.KAPPA_WEAK}`, met: kappaMet, actual: state.kappa.toFixed(1), needed: !kappaMet ? `need +${(QIG.KAPPA_WEAK - state.kappa).toFixed(1)}` : '' },
               { label: `vel < ${QIG.VEL_SAFE_THRESHOLD}`, met: velMet, actual: velValue.toFixed(4), needed: !velMet ? 'too fast' : '' },
             ];
             return conditions.map(c => (
-              <div key={c.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                <span style={{ color: c.met ? 'var(--alive)' : 'var(--error)', fontWeight: 600, width: '16px' }}>
+              <div
+                key={c.label}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}
+                role="listitem"
+                aria-label={`${c.label}: ${c.met ? 'met' : 'not met'}`}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{ color: c.met ? 'var(--alive)' : 'var(--error)', fontWeight: 600, width: '16px' }}
+                >
                   {c.met ? '✓' : '✗'}
                 </span>
                 <span style={{ color: c.met ? 'var(--text-primary)' : 'var(--text-secondary)' }}>

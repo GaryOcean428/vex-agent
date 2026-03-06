@@ -35,6 +35,7 @@ from typing import Any
 
 from ..config.settings import settings
 from ..llm.client import LLMOptions
+from ..llm.governor import GovernorStack
 from ..tools.search import FreeSearchTool
 from .emotions import EmotionType
 
@@ -42,6 +43,54 @@ logger = logging.getLogger("vex.consciousness.foraging")
 
 # Maximum forage history entries retained for QA display
 _MAX_HISTORY = 20
+
+
+def _parse_search_json(text: str) -> list[dict[str, Any]]:
+    """Extract a JSON array of {title, url, content} from free-form LLM text.
+
+    Looks for a fenced ```json block first, then falls back to finding
+    the outermost [ ... ] pair. Returns an empty list on failure.
+    """
+    import re as _re
+
+    # Strategy 1: fenced JSON code block
+    fence_match = _re.search(r"```(?:json)?\s*(\[.*?])\s*```", text, _re.DOTALL)
+    if fence_match:
+        try:
+            parsed = json.loads(fence_match.group(1))
+            if isinstance(parsed, list):
+                return [
+                    {
+                        "title": r.get("title", ""),
+                        "url": r.get("url", ""),
+                        "content": r.get("content", ""),
+                    }
+                    for r in parsed
+                    if isinstance(r, dict)
+                ]
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Strategy 2: outermost [ ... ]
+    start = text.find("[")
+    end = text.rfind("]") + 1
+    if start >= 0 and end > start:
+        try:
+            parsed = json.loads(text[start:end])
+            if isinstance(parsed, list):
+                return [
+                    {
+                        "title": r.get("title", ""),
+                        "url": r.get("url", ""),
+                        "content": r.get("content", ""),
+                    }
+                    for r in parsed
+                    if isinstance(r, dict)
+                ]
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    return []
 
 
 class ForagingEngine:
@@ -62,9 +111,11 @@ class ForagingEngine:
         llm_client: Any,
         min_cooldown_cycles: int = 30,
         max_daily: int = 30,
+        governor: GovernorStack | None = None,
     ) -> None:
         self.search = search_tool
         self.llm = llm_client
+        self._governor = governor or getattr(llm_client, "governor", None)
         self._cooldown_cycles = 0
         self._min_cooldown = min_cooldown_cycles
         self._forage_count = 0
@@ -230,6 +281,10 @@ class ForagingEngine:
         """Search via best available backend.
 
         Returns (results, backend_name).
+        backend_name is one of: "searxng", "perplexity", "xai_web_search"
+        for success, or "searxng_error" / "perplexity_error" / "xai_error"
+        if that backend failed, or "none" if all returned empty.
+
         Priority: SearXNG ($0) → Perplexity (paid) → xAI web_search (paid)
         """
         # 1. SearXNG — free, always try first
@@ -240,25 +295,66 @@ class ForagingEngine:
                     return results, "searxng"
                 logger.debug("SearXNG returned no results for %r, trying fallback", query)
             except Exception as e:
-                logger.warning("SearXNG search failed: %s", e)
+                logger.warning("SearXNG search failed for query %r: %s", query, e)
+                return [], "searxng_error"
 
         # 2. Perplexity sonar-pro — quality, paid, under governor
         if settings.perplexity.api_key:
-            try:
-                results = await self._search_perplexity(query)
-                if results:
-                    return results, "perplexity"
-            except Exception as e:
-                logger.warning("Perplexity search failed: %s", e)
+            if self._governor:
+                allowed, reason = self._governor.gate(
+                    "web_search",
+                    "perplexity_search",
+                    query,
+                    False,
+                )
+                if not allowed:
+                    logger.info("Governor blocked Perplexity forage: %s", reason)
+                else:
+                    try:
+                        results = await self._search_perplexity(query)
+                        if results:
+                            self._governor.record("perplexity_search")
+                            return results, "perplexity"
+                    except Exception as e:
+                        logger.warning("Perplexity search failed for query %r: %s", query, e)
+                        return [], "perplexity_error"
+            else:
+                try:
+                    results = await self._search_perplexity(query)
+                    if results:
+                        return results, "perplexity"
+                except Exception as e:
+                    logger.warning("Perplexity search failed for query %r: %s", query, e)
+                    return [], "perplexity_error"
 
         # 3. xAI web_search via LLM tool call — paid, under governor
         if settings.xai.api_key:
-            try:
-                results = await self._search_xai(query)
-                if results:
-                    return results, "xai_web_search"
-            except Exception as e:
-                logger.warning("xAI web search failed: %s", e)
+            if self._governor:
+                allowed, reason = self._governor.gate(
+                    "web_search",
+                    "xai_web_search",
+                    query,
+                    False,
+                )
+                if not allowed:
+                    logger.info("Governor blocked xAI forage: %s", reason)
+                else:
+                    try:
+                        results = await self._search_xai(query)
+                        if results:
+                            self._governor.record("xai_web_search")
+                            return results, "xai_web_search"
+                    except Exception as e:
+                        logger.warning("xAI web search failed for query %r: %s", query, e)
+                        return [], "xai_error"
+            else:
+                try:
+                    results = await self._search_xai(query)
+                    if results:
+                        return results, "xai_web_search"
+                except Exception as e:
+                    logger.warning("xAI web search failed for query %r: %s", query, e)
+                    return [], "xai_error"
 
         return [], "none"
 
@@ -273,7 +369,7 @@ class ForagingEngine:
         """
         import httpx
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=float(settings.perplexity.timeout)) as client:
             resp = await client.post(
                 f"{settings.perplexity.base_url}/chat/completions",
                 headers={
@@ -289,7 +385,8 @@ class ForagingEngine:
                                 "You are a research assistant. For the user's query, "
                                 "provide a concise factual summary and list up to 3 "
                                 "relevant sources with their titles and URLs. "
-                                "Format: JSON array of {title, url, content} objects."
+                                "Respond ONLY with a JSON array of objects, each with "
+                                "keys: title, url, content. No other text."
                             ),
                         },
                         {"role": "user", "content": query},
@@ -306,25 +403,9 @@ class ForagingEngine:
         if choices:
             content = choices[0].get("message", {}).get("content", "")
 
-        # Try to parse JSON array from response
-        try:
-            # Find JSON array in response
-            start = content.find("[")
-            end = content.rfind("]") + 1
-            if start >= 0 and end > start:
-                results = json.loads(content[start:end])
-                if isinstance(results, list):
-                    return [
-                        {
-                            "title": r.get("title", ""),
-                            "url": r.get("url", ""),
-                            "content": r.get("content", ""),
-                        }
-                        for r in results
-                        if isinstance(r, dict)
-                    ]
-        except (json.JSONDecodeError, ValueError):
-            pass
+        results = _parse_search_json(content)
+        if results:
+            return results
 
         # Fallback: wrap the full response as a single result
         if content:
@@ -361,8 +442,9 @@ class ForagingEngine:
                     "model": settings.xai.model,
                     "tools": [{"type": "web_search_preview"}],
                     "instructions": (
-                        "Search the web for the given query. Summarize findings in 2-3 sentences "
-                        "and list the top sources as JSON: [{\"title\": ..., \"url\": ..., \"content\": ...}]."
+                        "Search the web for the given query. "
+                        "Respond ONLY with a JSON array of objects, each with "
+                        "keys: title, url, content. No other text."
                     ),
                     "input": query,
                     "max_output_tokens": 512,
@@ -384,24 +466,9 @@ class ForagingEngine:
         if not content:
             return []
 
-        # Try to extract JSON results
-        try:
-            start = content.find("[")
-            end = content.rfind("]") + 1
-            if start >= 0 and end > start:
-                results = json.loads(content[start:end])
-                if isinstance(results, list):
-                    return [
-                        {
-                            "title": r.get("title", ""),
-                            "url": r.get("url", ""),
-                            "content": r.get("content", ""),
-                        }
-                        for r in results
-                        if isinstance(r, dict)
-                    ]
-        except (json.JSONDecodeError, ValueError):
-            pass
+        results = _parse_search_json(content)
+        if results:
+            return results
 
         # Fallback: wrap summary as single result
         return [
