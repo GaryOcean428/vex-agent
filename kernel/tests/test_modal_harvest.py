@@ -216,11 +216,27 @@ class TestModalHarvestClient:
             mock_settings.modal.harvest_url = (
                 "https://test--vex-coordizer-harvest-harvest.modal.run"
             )
+            # Ensure derivation path is used (MagicMock would otherwise be truthy)
+            mock_settings.modal.harvest_health_url = ""
             mock_settings.modal.token_id = ""
             mock_settings.modal.token_secret = ""
 
             config = ModalIntegrationConfig.from_settings()
             assert "-health.modal.run" in config.health_url
+
+    def test_health_url_override(self):
+        """from_settings() should honor explicit MODAL_HARVEST_HEALTH_URL override."""
+        with patch("kernel.coordizer_v2.modal_integration.kernel_settings") as mock_settings:
+            mock_settings.modal.enabled = True
+            mock_settings.modal.harvest_url = (
+                "https://test--vex-coordizer-harvest-harvest.modal.run"
+            )
+            mock_settings.modal.harvest_health_url = "https://example-health.modal.run"
+            mock_settings.modal.token_id = ""
+            mock_settings.modal.token_secret = ""
+
+            config = ModalIntegrationConfig.from_settings()
+            assert config.health_url == "https://example-health.modal.run"
 
     def test_auth_headers_no_modal_tokens(self):
         """Modal-Token-Id/Secret must NOT be sent as headers."""

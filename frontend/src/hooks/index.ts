@@ -3,6 +3,7 @@ import { API } from '../config/api-routes.ts';
 import type {
   BasinData,
   BasinHistoryResponse,
+  CoordizerStats,
   GraphNodesResponse,
   HealthStatus,
   KernelListResponse,
@@ -12,7 +13,6 @@ import type {
   TrainingStats,
   VexState,
   VexTelemetry,
-  CoordizerStats,
 } from '../types/consciousness.ts';
 import { usePolledData } from './usePolledData.ts';
 
