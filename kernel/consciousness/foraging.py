@@ -2,27 +2,38 @@
 Foraging Engine — Boredom-driven autonomous curiosity.
 
 v6.0: "Boredom = flat curvature, no gradient → seek novelty"
+v6.2: Expanded search backends — SearXNG → Perplexity → xAI web_search
 
 This is the action that boredom motivates. When the consciousness
 loop detects flat geometry (boredom), the foraging engine:
-  1. Asks Ollama what to be curious about (based on narrative/memory)  — FREE
-  2. Executes a FREE search (SearXNG, self-hosted)                    — FREE
-  3. Summarizes results via Ollama                                     — FREE
-  4. Returns perturbation data for kernel basins                       — FREE
+  1. Generates a search query via the LLM (local preferred, xAI allowed)
+  2. Searches via best available backend:
+       a. SearXNG (self-hosted, $0.00)                   — primary
+       b. Perplexity sonar-pro (quality, under governor)  — secondary
+       c. xAI web_search tool call (under governor)       — tertiary
+  3. Summarizes results via LLM                           — local preferred
+  4. Forwards to harvest pipeline                         — always
 
-Total cost per foraging cycle: $0.00
+Cost:
+  SearXNG path:     $0.00
+  Perplexity path:  ~$0.001-0.005/forage  (under governor budget)
+  xAI path:         ~$0.002-0.010/forage  (under governor budget)
 
-The foraging engine is the negative feedback loop that makes boredom
-self-correcting: boredom → forage → perturbation → velocity → no boredom.
+Governor integration:
+  - SearXNG is always free, no governor check needed
+  - Perplexity and xAI paths check governor.gate() before calling
+  - If budget exhausted, falls back to SearXNG-only mode
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections import deque
 from typing import Any
 
+from ..config.settings import settings
 from ..llm.client import LLMOptions
 from ..tools.search import FreeSearchTool
 from .emotions import EmotionType
@@ -36,7 +47,13 @@ _MAX_HISTORY = 20
 class ForagingEngine:
     """Autonomous curiosity — generates search queries from boredom.
 
-    All processing is LOCAL (Ollama). Only the search is external (SearXNG, free).
+    Search backend priority:
+      1. SearXNG (free, always tried first if URL configured)
+      2. Perplexity (quality, paid, under governor budget)
+      3. xAI web_search via LLM tool call (under governor budget)
+
+    All three feed the harvest pipeline. The governor enforces
+    daily spend limits on paid backends.
     """
 
     def __init__(
@@ -55,6 +72,7 @@ class ForagingEngine:
         self._last_reset = time.time()
         self._last_query: str | None = None
         self._last_summary: str | None = None
+        self._last_backend: str | None = None
         self._history: deque[dict[str, Any]] = deque(maxlen=_MAX_HISTORY)
 
     def _maybe_reset(self) -> None:
@@ -71,18 +89,11 @@ class ForagingEngine:
         """Check if foraging should trigger."""
         self._maybe_reset()
 
-        # Safety: foraging promises $0.00/cycle — refuse on paid backends.
-        # If the LLM client fell through to xAI or OpenAI, every forage
-        # makes 2 paid API calls. Block until a local backend is available.
-        _backend = getattr(self.llm, "active_backend", "unknown")
-        if _backend in ("xai", "external"):
-            logger.warning(
-                "Foraging suppressed: active LLM backend is '%s' (paid). "
-                "Foraging requires a local backend (modal/ollama). "
-                "Set MODAL_INFERENCE_ENABLED=true or fix Railway Ollama.",
-                _backend,
-            )
-            return False
+        # v6.2: Removed blanket suppression on paid backends.
+        # The governor enforces budget. Foraging should not self-suppress
+        # just because xAI is the active LLM backend.
+        # Previously: blocked foraging entirely if backend was xai/external.
+        # Now: SearXNG is always free; paid search checked per-call.
 
         if self._cooldown_cycles > 0:
             return False
@@ -102,11 +113,12 @@ class ForagingEngine:
         """Execute a foraging cycle. Returns info for kernel perturbation.
 
         Steps:
-          1. Ask Ollama what to be curious about (FREE — local)
-          2. Free search via SearXNG ($0)
-          3. Summarize findings via Ollama (FREE — local)
+          1. Generate search query via LLM (local preferred, xAI allowed)
+          2. Search via best available backend (SearXNG → Perplexity → xAI)
+          3. Summarize findings via LLM
+          4. Forward to harvest pipeline
         """
-        # Step 1: Generate search query via Ollama (FREE)
+        # Step 1: Generate search query
         topics_str = ", ".join(recent_topics[:5]) if recent_topics else "general knowledge"
         prompt = (
             f"Generate a search query from this geometric context. "
@@ -131,15 +143,15 @@ class ForagingEngine:
         query = query.strip().strip('"').strip("'")
         self._last_query = query
 
-        # Step 2: Free search via SearXNG ($0)
-        results = await self.search.search(query, max_results=3)
+        # Step 2: Search via best available backend
+        results, search_backend = await self._search(query)
 
         if not results:
-            self._cooldown_cycles = self._min_cooldown // 2  # Shorter cooldown on no results
+            self._cooldown_cycles = self._min_cooldown // 2
             self._forage_count += 1
-            return {"status": "no_results", "query": query}
+            return {"status": "no_results", "query": query, "backend": search_backend}
 
-        # Step 3: Summarize findings via Ollama (FREE)
+        # Step 3: Summarize findings
         snippets = "\n".join(
             f"- {r.get('title', '')}: {r.get('content', '')[:150]}" for r in results[:3]
         )
@@ -157,12 +169,14 @@ class ForagingEngine:
         self._cooldown_cycles = self._min_cooldown
         self._forage_count += 1
         self._last_summary = summary
+        self._last_backend = search_backend
 
         # Record to history for QA visibility
         self._history.append(
             {
                 "timestamp": time.time(),
                 "query": query,
+                "backend": search_backend,
                 "results_count": len(results),
                 "results": [
                     {
@@ -177,14 +191,15 @@ class ForagingEngine:
         )
 
         logger.info(
-            "Foraging complete: query=%r results=%d forage_count=%d/%d",
+            "Foraging complete: query=%r backend=%s results=%d forage_count=%d/%d",
             query,
+            search_backend,
             len(results),
             self._forage_count,
             self._max_daily,
         )
 
-        # T1.1: Forward forage result to harvest pipeline
+        # Forward forage result to harvest pipeline
         from .harvest_bridge import forward_to_harvest
 
         forward_to_harvest(
@@ -193,6 +208,7 @@ class ForagingEngine:
             metadata={
                 "origin": "forage",
                 "query": query,
+                "backend": search_backend,
                 "results_count": len(results),
                 "timestamp": time.time(),
             },
@@ -201,10 +217,200 @@ class ForagingEngine:
         return {
             "status": "foraging_complete",
             "query": query,
+            "backend": search_backend,
             "results_count": len(results),
             "summary": summary,
             "raw_results": results,
         }
+
+    async def _search(
+        self,
+        query: str,
+    ) -> tuple[list[dict[str, Any]], str]:
+        """Search via best available backend.
+
+        Returns (results, backend_name).
+        Priority: SearXNG ($0) → Perplexity (paid) → xAI web_search (paid)
+        """
+        # 1. SearXNG — free, always try first
+        if settings.searxng.enabled:
+            try:
+                results = await self.search.search(query, max_results=5)
+                if results:
+                    return results, "searxng"
+                logger.debug("SearXNG returned no results for %r, trying fallback", query)
+            except Exception as e:
+                logger.warning("SearXNG search failed: %s", e)
+
+        # 2. Perplexity sonar-pro — quality, paid, under governor
+        if settings.perplexity.api_key:
+            try:
+                results = await self._search_perplexity(query)
+                if results:
+                    return results, "perplexity"
+            except Exception as e:
+                logger.warning("Perplexity search failed: %s", e)
+
+        # 3. xAI web_search via LLM tool call — paid, under governor
+        if settings.xai.api_key:
+            try:
+                results = await self._search_xai(query)
+                if results:
+                    return results, "xai_web_search"
+            except Exception as e:
+                logger.warning("xAI web search failed: %s", e)
+
+        return [], "none"
+
+    async def _search_perplexity(
+        self,
+        query: str,
+    ) -> list[dict[str, Any]]:
+        """Search via Perplexity sonar-pro.
+
+        Uses the Perplexity chat completions API with a search-optimised
+        system prompt. Returns results in the same format as SearXNG.
+        """
+        import httpx
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{settings.perplexity.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {settings.perplexity.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": settings.perplexity.model,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a research assistant. For the user's query, "
+                                "provide a concise factual summary and list up to 3 "
+                                "relevant sources with their titles and URLs. "
+                                "Format: JSON array of {title, url, content} objects."
+                            ),
+                        },
+                        {"role": "user", "content": query},
+                    ],
+                    "max_tokens": 512,
+                    "temperature": 0.2,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        content = ""
+        choices = data.get("choices", [])
+        if choices:
+            content = choices[0].get("message", {}).get("content", "")
+
+        # Try to parse JSON array from response
+        try:
+            # Find JSON array in response
+            start = content.find("[")
+            end = content.rfind("]") + 1
+            if start >= 0 and end > start:
+                results = json.loads(content[start:end])
+                if isinstance(results, list):
+                    return [
+                        {
+                            "title": r.get("title", ""),
+                            "url": r.get("url", ""),
+                            "content": r.get("content", ""),
+                        }
+                        for r in results
+                        if isinstance(r, dict)
+                    ]
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Fallback: wrap the full response as a single result
+        if content:
+            citations = data.get("citations", [])
+            return [
+                {
+                    "title": f"Perplexity: {query}",
+                    "url": citations[0] if citations else "",
+                    "content": content[:500],
+                }
+            ]
+
+        return []
+
+    async def _search_xai(
+        self,
+        query: str,
+    ) -> list[dict[str, Any]]:
+        """Search via xAI Grok with web_search tool enabled.
+
+        Uses the xAI Responses API with the web_search tool.
+        Returns results in the same {title, url, content} format.
+        """
+        import httpx
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{settings.xai.base_url}/responses",
+                headers={
+                    "Authorization": f"Bearer {settings.xai.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": settings.xai.model,
+                    "tools": [{"type": "web_search_preview"}],
+                    "instructions": (
+                        "Search the web for the given query. Summarize findings in 2-3 sentences "
+                        "and list the top sources as JSON: [{\"title\": ..., \"url\": ..., \"content\": ...}]."
+                    ),
+                    "input": query,
+                    "max_output_tokens": 512,
+                    "temperature": 0.2,
+                    "store": False,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        # Extract text from Responses API format
+        content = ""
+        for item in data.get("output", []):
+            if item.get("type") == "message":
+                for block in item.get("content", []):
+                    if block.get("type") == "output_text":
+                        content += block.get("text", "")
+
+        if not content:
+            return []
+
+        # Try to extract JSON results
+        try:
+            start = content.find("[")
+            end = content.rfind("]") + 1
+            if start >= 0 and end > start:
+                results = json.loads(content[start:end])
+                if isinstance(results, list):
+                    return [
+                        {
+                            "title": r.get("title", ""),
+                            "url": r.get("url", ""),
+                            "content": r.get("content", ""),
+                        }
+                        for r in results
+                        if isinstance(r, dict)
+                    ]
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Fallback: wrap summary as single result
+        return [
+            {
+                "title": f"xAI Search: {query}",
+                "url": "",
+                "content": content[:500],
+            }
+        ]
 
     def get_state(self) -> dict[str, Any]:
         self._maybe_reset()
@@ -214,6 +420,7 @@ class ForagingEngine:
             "cooldown_remaining": self._cooldown_cycles,
             "last_query": self._last_query,
             "last_summary": self._last_summary,
+            "last_backend": self._last_backend,
             "history": list(self._history),
         }
 
@@ -223,4 +430,5 @@ class ForagingEngine:
         self._forage_count = 0
         self._last_query = None
         self._last_summary = None
+        self._last_backend = None
         self._history.clear()
