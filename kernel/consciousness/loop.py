@@ -355,6 +355,7 @@ class ConsciousnessLoop:
             self.forager: ForagingEngine | None = ForagingEngine(
                 search_tool,
                 llm_client,
+                governor=llm_client.governor,
             )
         else:
             if not settings.foraging_enabled:

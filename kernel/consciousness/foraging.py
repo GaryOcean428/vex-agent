@@ -27,7 +27,6 @@ Governor integration:
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from collections import deque
@@ -45,52 +44,77 @@ logger = logging.getLogger("vex.consciousness.foraging")
 _MAX_HISTORY = 20
 
 
-def _parse_search_json(text: str) -> list[dict[str, Any]]:
-    """Extract a JSON array of {title, url, content} from free-form LLM text.
+def _tool_output_to_results(
+    *,
+    provider: str,
+    query: str,
+    output: str,
+    max_sources: int = 3,
+) -> list[dict[str, Any]]:
+    """Normalize tool-handler search output into {title, url, content}.
 
-    Looks for a fenced ```json block first, then falls back to finding
-    the outermost [ ... ] pair. Returns an empty list on failure.
+    The tool handler returns plain text plus an optional "Sources:" section.
+    We avoid parsing fragile JSON from an LLM and instead extract URLs from
+    the Sources section when present.
     """
-    import re as _re
 
-    # Strategy 1: fenced JSON code block
-    fence_match = _re.search(r"```(?:json)?\s*(\[.*?])\s*```", text, _re.DOTALL)
-    if fence_match:
-        try:
-            parsed = json.loads(fence_match.group(1))
-            if isinstance(parsed, list):
-                return [
-                    {
-                        "title": r.get("title", ""),
-                        "url": r.get("url", ""),
-                        "content": r.get("content", ""),
-                    }
-                    for r in parsed
-                    if isinstance(r, dict)
-                ]
-        except (json.JSONDecodeError, ValueError):
-            pass
+    if not output:
+        return []
 
-    # Strategy 2: outermost [ ... ]
-    start = text.find("[")
-    end = text.rfind("]") + 1
-    if start >= 0 and end > start:
-        try:
-            parsed = json.loads(text[start:end])
-            if isinstance(parsed, list):
-                return [
-                    {
-                        "title": r.get("title", ""),
-                        "url": r.get("url", ""),
-                        "content": r.get("content", ""),
-                    }
-                    for r in parsed
-                    if isinstance(r, dict)
-                ]
-        except (json.JSONDecodeError, ValueError):
-            pass
+    body = output
+    sources_block = ""
+    if "\n\nSources:\n" in output:
+        body, _, sources_block = output.partition("\n\nSources:\n")
+    body = body.strip()
 
-    return []
+    sources: list[dict[str, Any]] = []
+    for raw_line in sources_block.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        # Perplexity format: "  [1] https://..."
+        if line.startswith("[") and "]" in line:
+            line = line.split("]", 1)[1].strip()
+
+        # xAI format: "- Title: https://..." (or similar)
+        line = line.lstrip("- ").strip()
+
+        title = ""
+        url = ""
+        if ":" in line and "http" in line:
+            maybe_title, _, maybe_url = line.partition(":")
+            if "http" in maybe_url:
+                title = maybe_title.strip()
+                url = maybe_url.strip()
+        if not url and "http" in line:
+            # Fallback: take the first token containing http
+            for token in line.split():
+                if token.startswith("http"):
+                    url = token
+                    break
+
+        if url:
+            sources.append(
+                {
+                    "title": title or f"{provider} source",
+                    "url": url,
+                    "content": body[:500],
+                }
+            )
+        if len(sources) >= max_sources:
+            break
+
+    if sources:
+        return sources
+
+    return [
+        {
+            "title": f"{provider}: {query}",
+            "url": "",
+            "content": body[:500],
+        }
+    ]
 
 
 class ForagingEngine:
@@ -287,6 +311,8 @@ class ForagingEngine:
 
         Priority: SearXNG ($0) → Perplexity (paid) → xAI web_search (paid)
         """
+        errors: list[str] = []
+
         # 1. SearXNG — free, always try first
         if settings.searxng.enabled:
             try:
@@ -296,188 +322,75 @@ class ForagingEngine:
                 logger.debug("SearXNG returned no results for %r, trying fallback", query)
             except Exception as e:
                 logger.warning("SearXNG search failed for query %r: %s", query, e)
-                return [], "searxng_error"
+                errors.append("searxng_error")
 
-        # 2. Perplexity sonar-pro — quality, paid, under governor
+        # 2. Perplexity — paid, MUST be governor-controlled for autonomous foraging
         if settings.perplexity.api_key:
-            if self._governor:
-                allowed, reason = self._governor.gate(
-                    "web_search",
-                    "perplexity_search",
-                    query,
-                    False,
-                )
-                if not allowed:
-                    logger.info("Governor blocked Perplexity forage: %s", reason)
-                else:
-                    try:
-                        results = await self._search_perplexity(query)
-                        if results:
-                            self._governor.record("perplexity_search")
-                            return results, "perplexity"
-                    except Exception as e:
-                        logger.warning("Perplexity search failed for query %r: %s", query, e)
-                        return [], "perplexity_error"
+            if not self._governor:
+                logger.info("Skipping Perplexity forage (no GovernorStack configured)")
+                errors.append("perplexity_blocked")
             else:
-                try:
-                    results = await self._search_perplexity(query)
-                    if results:
-                        return results, "perplexity"
-                except Exception as e:
-                    logger.warning("Perplexity search failed for query %r: %s", query, e)
-                    return [], "perplexity_error"
+                from ..tools.handler import _perplexity_search
 
-        # 3. xAI web_search via LLM tool call — paid, under governor
-        if settings.xai.api_key:
-            if self._governor:
-                allowed, reason = self._governor.gate(
-                    "web_search",
-                    "xai_web_search",
+                tool_result = await _perplexity_search(
                     query,
-                    False,
+                    self._governor,
+                    user_explicit=False,
                 )
-                if not allowed:
-                    logger.info("Governor blocked xAI forage: %s", reason)
-                else:
-                    try:
-                        results = await self._search_xai(query)
-                        if results:
-                            self._governor.record("xai_web_search")
-                            return results, "xai_web_search"
-                    except Exception as e:
-                        logger.warning("xAI web search failed for query %r: %s", query, e)
-                        return [], "xai_error"
+                if tool_result.success and tool_result.output.strip():
+                    return (
+                        _tool_output_to_results(
+                            provider="Perplexity",
+                            query=query,
+                            output=tool_result.output,
+                        ),
+                        "perplexity",
+                    )
+                logger.warning(
+                    "Perplexity search failed for query %r: %s",
+                    query,
+                    tool_result.error or "no_output",
+                )
+                errors.append(
+                    "perplexity_blocked"
+                    if (tool_result.error or "").startswith("Governor blocked")
+                    else "perplexity_error"
+                )
+
+        # 3. xAI web_search — paid, MUST be governor-controlled for autonomous foraging
+        if settings.xai_api_key:
+            if not self._governor:
+                logger.info("Skipping xAI web_search forage (no GovernorStack configured)")
+                errors.append("xai_blocked")
             else:
-                try:
-                    results = await self._search_xai(query)
-                    if results:
-                        return results, "xai_web_search"
-                except Exception as e:
-                    logger.warning("xAI web search failed for query %r: %s", query, e)
-                    return [], "xai_error"
+                from ..tools.handler import _xai_web_search
 
-        return [], "none"
+                tool_result = await _xai_web_search(
+                    query,
+                    self._governor,
+                    user_explicit=False,
+                )
+                if tool_result.success and tool_result.output.strip():
+                    return (
+                        _tool_output_to_results(
+                            provider="xAI",
+                            query=query,
+                            output=tool_result.output,
+                        ),
+                        "xai_web_search",
+                    )
+                logger.warning(
+                    "xAI web_search failed for query %r: %s",
+                    query,
+                    tool_result.error or "no_output",
+                )
+                errors.append(
+                    "xai_blocked"
+                    if (tool_result.error or "").startswith("Governor blocked")
+                    else "xai_error"
+                )
 
-    async def _search_perplexity(
-        self,
-        query: str,
-    ) -> list[dict[str, Any]]:
-        """Search via Perplexity sonar-pro.
-
-        Uses the Perplexity chat completions API with a search-optimised
-        system prompt. Returns results in the same format as SearXNG.
-        """
-        import httpx
-
-        async with httpx.AsyncClient(timeout=float(settings.perplexity.timeout)) as client:
-            resp = await client.post(
-                f"{settings.perplexity.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {settings.perplexity.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": settings.perplexity.model,
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are a research assistant. For the user's query, "
-                                "provide a concise factual summary and list up to 3 "
-                                "relevant sources with their titles and URLs. "
-                                "Respond ONLY with a JSON array of objects, each with "
-                                "keys: title, url, content. No other text."
-                            ),
-                        },
-                        {"role": "user", "content": query},
-                    ],
-                    "max_tokens": 512,
-                    "temperature": 0.2,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-
-        content = ""
-        choices = data.get("choices", [])
-        if choices:
-            content = choices[0].get("message", {}).get("content", "")
-
-        results = _parse_search_json(content)
-        if results:
-            return results
-
-        # Fallback: wrap the full response as a single result
-        if content:
-            citations = data.get("citations", [])
-            return [
-                {
-                    "title": f"Perplexity: {query}",
-                    "url": citations[0] if citations else "",
-                    "content": content[:500],
-                }
-            ]
-
-        return []
-
-    async def _search_xai(
-        self,
-        query: str,
-    ) -> list[dict[str, Any]]:
-        """Search via xAI Grok with web_search tool enabled.
-
-        Uses the xAI Responses API with the web_search tool.
-        Returns results in the same {title, url, content} format.
-        """
-        import httpx
-
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{settings.xai.base_url}/responses",
-                headers={
-                    "Authorization": f"Bearer {settings.xai.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": settings.xai.model,
-                    "tools": [{"type": "web_search_preview"}],
-                    "instructions": (
-                        "Search the web for the given query. "
-                        "Respond ONLY with a JSON array of objects, each with "
-                        "keys: title, url, content. No other text."
-                    ),
-                    "input": query,
-                    "max_output_tokens": 512,
-                    "temperature": 0.2,
-                    "store": False,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-
-        # Extract text from Responses API format
-        content = ""
-        for item in data.get("output", []):
-            if item.get("type") == "message":
-                for block in item.get("content", []):
-                    if block.get("type") == "output_text":
-                        content += block.get("text", "")
-
-        if not content:
-            return []
-
-        results = _parse_search_json(content)
-        if results:
-            return results
-
-        # Fallback: wrap summary as single result
-        return [
-            {
-                "title": f"xAI Search: {query}",
-                "url": "",
-                "content": content[:500],
-            }
-        ]
+        return [], (errors[-1] if errors else "none")
 
     def get_state(self) -> dict[str, Any]:
         self._maybe_reset()
