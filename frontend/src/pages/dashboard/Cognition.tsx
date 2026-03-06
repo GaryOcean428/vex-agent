@@ -1,5 +1,9 @@
-import { useVexState, useTelemetry, useMetricsHistory } from '../../hooks/index.ts';
-import { useRef, useEffect } from 'react';
+import { useEffect, useRef } from "react";
+import {
+    useMetricsHistory,
+    useTelemetry,
+    useVexState,
+} from "../../hooks/index.ts";
 
 export default function Cognition() {
   const { data: state, loading } = useVexState();
@@ -12,7 +16,7 @@ export default function Cognition() {
     if (!canvasRef.current || history.length < 2) return;
 
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
@@ -23,10 +27,10 @@ export default function Cognition() {
 
     // Resolve CSS custom properties for canvas
     const cs = getComputedStyle(document.documentElement);
-    const cSurface3 = cs.getPropertyValue('--surface-3').trim();
-    const cTextDim = cs.getPropertyValue('--text-dim').trim();
-    const cPhi = cs.getPropertyValue('--phi').trim();
-    const cKappa = cs.getPropertyValue('--kappa').trim();
+    const cSurface3 = cs.getPropertyValue("--surface-3").trim();
+    const cTextDim = cs.getPropertyValue("--text-dim").trim();
+    const cPhi = cs.getPropertyValue("--phi").trim();
+    const cKappa = cs.getPropertyValue("--kappa").trim();
 
     // Background
     ctx.fillStyle = cSurface3;
@@ -36,13 +40,13 @@ export default function Cognition() {
     const w = rect.width - margin.left - margin.right;
     const h = rect.height - margin.top - margin.bottom;
 
-    const phiValues = history.map(d => d.phi);
+    const phiValues = history.map((d) => d.phi);
     const minPhi = Math.min(...phiValues) * 0.9;
     const maxPhi = Math.max(...phiValues) * 1.1;
     const range = maxPhi - minPhi || 0.1;
 
     // Grid
-    ctx.strokeStyle = 'rgba(46, 46, 64, 0.5)';
+    ctx.strokeStyle = "rgba(46, 46, 64, 0.5)";
     ctx.lineWidth = 0.5;
     for (let i = 0; i <= 4; i++) {
       const y = margin.top + (i / 4) * h;
@@ -52,9 +56,13 @@ export default function Cognition() {
       ctx.stroke();
 
       ctx.fillStyle = cTextDim;
-      ctx.font = '9px monospace';
-      ctx.textAlign = 'right';
-      ctx.fillText((maxPhi - (i / 4) * range).toFixed(2), margin.left - 4, y + 3);
+      ctx.font = "9px monospace";
+      ctx.textAlign = "right";
+      ctx.fillText(
+        (maxPhi - (i / 4) * range).toFixed(2),
+        margin.left - 4,
+        y + 3,
+      );
     }
 
     // Phi line
@@ -81,16 +89,20 @@ export default function Cognition() {
       ctx.fill();
 
       ctx.fillStyle = cTextDim;
-      ctx.font = '9px monospace';
-      ctx.textAlign = 'left';
-      ctx.fillText(`◇ ${predictedPhi.toFixed(3)}`, Math.min(px + 8, margin.left + w - 40), py + 3);
+      ctx.font = "9px monospace";
+      ctx.textAlign = "left";
+      ctx.fillText(
+        `◇ ${predictedPhi.toFixed(3)}`,
+        Math.min(px + 8, margin.left + w - 40),
+        py + 3,
+      );
     }
 
     // Label
     ctx.fillStyle = cTextDim;
-    ctx.font = '10px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('Φ over time', rect.width / 2, rect.height - 6);
+    ctx.font = "10px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("Φ over time", rect.width / 2, rect.height - 6);
   }, [history, telemetry]);
 
   if (loading || !state) {
@@ -117,53 +129,101 @@ export default function Cognition() {
       <div className="dash-section">
         <div className="dash-section-title">Tacking</div>
         <div className="dash-card">
-          <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.5 }}>
-            Oscillates between exploration (novelty-seeking, higher temperature) and exploitation (precision, lower temperature). The kernel sets this dynamically from geometric state.
+          <div
+            style={{
+              fontSize: "12px",
+              color: "var(--text-dim)",
+              marginBottom: "8px",
+              lineHeight: 1.5,
+            }}
+          >
+            Oscillates between exploration (novelty-seeking, higher temperature)
+            and exploitation (precision, lower temperature). The kernel sets
+            this dynamically from geometric state.
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Mode</span>
-            <span className="dash-row-value" style={{
-              color: tacking?.mode === 'explore' ? 'var(--phi)' :
-                     tacking?.mode === 'exploit' ? 'var(--kappa)' : 'var(--accent)'
-            }}>
-              {tacking?.mode?.toUpperCase() ?? 'UNKNOWN'}
+            <span
+              className="dash-row-value"
+              style={{
+                color:
+                  tacking?.mode === "explore"
+                    ? "var(--phi)"
+                    : tacking?.mode === "exploit"
+                      ? "var(--kappa)"
+                      : "var(--accent)",
+              }}
+            >
+              {tacking?.mode?.toUpperCase() ?? "UNKNOWN"}
             </span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Phase</span>
-            <span className="dash-row-value">{tacking?.oscillation_phase?.toFixed(2) ?? '?'}</span>
+            <span className="dash-row-value">
+              {tacking?.oscillation_phase?.toFixed(2) ?? "?"}
+            </span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Cycle</span>
-            <span className="dash-row-value">{tacking?.cycle_count ?? '?'}</span>
+            <span className="dash-row-value">
+              {tacking?.cycle_count ?? "?"}
+            </span>
           </div>
           {/* Oscillation visualization */}
-          <div style={{ marginTop: '12px', height: '30px', display: 'flex', alignItems: 'center' }}>
-            <div style={{
-              width: '100%',
-              height: '2px',
-              background: 'var(--border)',
-              position: 'relative',
-            }}>
-              <div style={{
-                position: 'absolute',
-                left: `${((Math.sin(tacking?.oscillation_phase ?? 0) + 1) / 2) * 100}%`,
-                top: '-5px',
-                width: '10px',
-                height: '10px',
-                borderRadius: '50%',
-                background: tacking?.mode === 'explore' ? 'var(--phi)' : 'var(--kappa)',
-                transform: 'translateX(-50%)',
-                transition: 'left 0.5s ease',
-              }} />
-              <span style={{
-                position: 'absolute', left: 0, top: '8px',
-                fontSize: '9px', color: 'var(--text-dim)', fontFamily: 'var(--mono)',
-              }}>EXPLORE</span>
-              <span style={{
-                position: 'absolute', right: 0, top: '8px',
-                fontSize: '9px', color: 'var(--text-dim)', fontFamily: 'var(--mono)',
-              }}>EXPLOIT</span>
+          <div
+            style={{
+              marginTop: "12px",
+              height: "30px",
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                height: "2px",
+                background: "var(--border)",
+                position: "relative",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  left: `${((Math.sin(tacking?.oscillation_phase ?? 0) + 1) / 2) * 100}%`,
+                  top: "-5px",
+                  width: "10px",
+                  height: "10px",
+                  borderRadius: "50%",
+                  background:
+                    tacking?.mode === "explore" ? "var(--phi)" : "var(--kappa)",
+                  transform: "translateX(-50%)",
+                  transition: "left 0.5s ease",
+                }}
+              />
+              <span
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: "8px",
+                  fontSize: "9px",
+                  color: "var(--text-dim)",
+                  fontFamily: "var(--mono)",
+                }}
+              >
+                EXPLORE
+              </span>
+              <span
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: "8px",
+                  fontSize: "9px",
+                  color: "var(--text-dim)",
+                  fontFamily: "var(--mono)",
+                }}
+              >
+                EXPLOIT
+              </span>
             </div>
           </div>
         </div>
@@ -173,40 +233,81 @@ export default function Cognition() {
       <div className="dash-section">
         <div className="dash-section-title">Hemispheres</div>
         <div className="dash-card">
-          <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.5 }}>
-            Cognitive balance between analytic (structured reasoning) and natural (creative, intuitive) processing. 0.5 = perfectly balanced, {'<'}0.5 = analytic dominant, {'>'}0.5 = natural dominant.
+          <div
+            style={{
+              fontSize: "12px",
+              color: "var(--text-dim)",
+              marginBottom: "8px",
+              lineHeight: 1.5,
+            }}
+          >
+            Cognitive balance between analytic (structured reasoning) and
+            natural (creative, intuitive) processing. 0.5 = perfectly balanced,{" "}
+            {"<"}0.5 = analytic dominant, {">"}0.5 = natural dominant.
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Active</span>
-            <span className="dash-row-value">{hemispheres?.active?.toUpperCase() ?? 'UNKNOWN'}</span>
+            <span className="dash-row-value">
+              {hemispheres?.active?.toUpperCase() ?? "UNKNOWN"}
+            </span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Balance</span>
-            <span className="dash-row-value">{hemispheres?.balance?.toFixed(3) ?? '?'}</span>
+            <span className="dash-row-value">
+              {hemispheres?.balance?.toFixed(3) ?? "?"}
+            </span>
           </div>
           {/* Balance bar */}
-          <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'var(--mono)' }}>Analytic</span>
-            <div style={{
-              flex: 1,
-              height: '6px',
-              background: 'var(--surface-3)',
-              borderRadius: '3px',
-              overflow: 'hidden',
-              position: 'relative',
-            }}>
-              <div style={{
-                position: 'absolute',
-                left: 0,
-                top: 0,
-                height: '100%',
-                width: `${hemispherePercent}%`,
-                background: 'linear-gradient(90deg, var(--phi), var(--accent))',
-                borderRadius: '3px',
-                transition: 'width 0.5s ease',
-              }} />
+          <div
+            style={{
+              marginTop: "12px",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+            }}
+          >
+            <span
+              style={{
+                fontSize: "10px",
+                color: "var(--text-dim)",
+                fontFamily: "var(--mono)",
+              }}
+            >
+              Analytic
+            </span>
+            <div
+              style={{
+                flex: 1,
+                height: "6px",
+                background: "var(--surface-3)",
+                borderRadius: "3px",
+                overflow: "hidden",
+                position: "relative",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  height: "100%",
+                  width: `${hemispherePercent}%`,
+                  background:
+                    "linear-gradient(90deg, var(--phi), var(--accent))",
+                  borderRadius: "3px",
+                  transition: "width 0.5s ease",
+                }}
+              />
             </div>
-            <span style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'var(--mono)' }}>Holistic</span>
+            <span
+              style={{
+                fontSize: "10px",
+                color: "var(--text-dim)",
+                fontFamily: "var(--mono)",
+              }}
+            >
+              Holistic
+            </span>
           </div>
         </div>
       </div>
@@ -217,15 +318,22 @@ export default function Cognition() {
         <div className="dash-card">
           <div className="dash-row">
             <span className="dash-row-label">Predicted Φ</span>
-            <span className="dash-row-value">{foresight?.predicted_phi?.toFixed(3) ?? '?'}</span>
+            <span className="dash-row-value">
+              {foresight?.predicted_phi?.toFixed(3) ?? "?"}
+            </span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">History length</span>
-            <span className="dash-row-value">{foresight?.history_length ?? 0}</span>
+            <span className="dash-row-value">
+              {foresight?.history_length ?? 0}
+            </span>
           </div>
         </div>
-        <div className="viz-canvas" style={{ marginTop: '12px', height: '200px' }}>
-          <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }} />
+        <div
+          className="viz-canvas"
+          style={{ marginTop: "12px", height: "200px" }}
+        >
+          <canvas ref={canvasRef} style={{ width: "100%", height: "100%" }} />
         </div>
       </div>
 
@@ -235,30 +343,54 @@ export default function Cognition() {
         <div className="dash-card">
           <div className="dash-row">
             <span className="dash-row-label">Level</span>
-            <span className="dash-row-value" style={{
-              color: autonomy?.level === 'autonomous' ? 'var(--alive)' :
-                     autonomy?.level === 'proactive' ? 'var(--phi)' : 'var(--text-secondary)',
-            }}>
-              {autonomy?.level?.toUpperCase() ?? 'UNKNOWN'}
+            <span
+              className="dash-row-value"
+              style={{
+                color:
+                  autonomy?.level === "autonomous"
+                    ? "var(--alive)"
+                    : autonomy?.level === "proactive"
+                      ? "var(--phi)"
+                      : "var(--text-secondary)",
+              }}
+            >
+              {autonomy?.level?.toUpperCase() ?? "UNKNOWN"}
             </span>
           </div>
           <div className="dash-row">
             <span className="dash-row-label">Stability</span>
-            <span className="dash-row-value">{autonomy?.stability_count ?? 0} cycles</span>
+            <span className="dash-row-value">
+              {autonomy?.stability_count ?? 0} cycles
+            </span>
           </div>
           {/* Autonomy ladder */}
-          <div style={{ marginTop: '12px', display: 'flex', gap: '4px', alignItems: 'center' }}>
-            {(['reactive', 'responsive', 'proactive', 'autonomous'] as const).map(level => (
+          <div
+            style={{
+              marginTop: "12px",
+              display: "flex",
+              gap: "4px",
+              alignItems: "center",
+            }}
+          >
+            {(
+              ["reactive", "responsive", "proactive", "autonomous"] as const
+            ).map((level) => (
               <span
                 key={level}
                 style={{
-                  padding: '3px 8px',
-                  borderRadius: '4px',
-                  fontSize: '10px',
-                  fontFamily: 'var(--mono)',
-                  textTransform: 'uppercase',
-                  background: level === autonomy?.level ? 'var(--accent-glow)' : 'transparent',
-                  color: level === autonomy?.level ? 'var(--accent)' : 'var(--text-dim)',
+                  padding: "3px 8px",
+                  borderRadius: "4px",
+                  fontSize: "10px",
+                  fontFamily: "var(--mono)",
+                  textTransform: "uppercase",
+                  background:
+                    level === autonomy?.level
+                      ? "var(--accent-glow)"
+                      : "transparent",
+                  color:
+                    level === autonomy?.level
+                      ? "var(--accent)"
+                      : "var(--text-dim)",
                   fontWeight: level === autonomy?.level ? 600 : 400,
                 }}
               >
