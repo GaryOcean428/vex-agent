@@ -323,6 +323,8 @@ async def _web_search(
 async def _perplexity_search(
     query: str,
     governor: GovernorStack | None = None,
+    *,
+    user_explicit: bool = True,
 ) -> ToolResult:
     """Search via Perplexity sonar (fast, citation-backed web search).
 
@@ -338,7 +340,12 @@ async def _perplexity_search(
 
     # Governor gate
     if governor:
-        allowed, reason = governor.gate("web_search", "perplexity_search", query, True)
+        allowed, reason = governor.gate(
+            "web_search",
+            "perplexity_search",
+            query,
+            user_explicit,
+        )
         if not allowed:
             logger.warning("Governor blocked perplexity_search: %s", reason)
             return ToolResult(success=False, output="", error=f"Governor blocked: {reason}")
@@ -415,6 +422,8 @@ async def _perplexity_search(
 async def _xai_web_search(
     query: str,
     governor: GovernorStack | None = None,
+    *,
+    user_explicit: bool = True,
 ) -> ToolResult:
     """Search the web via xAI's built-in web_search tool (Responses API)."""
     api_key = settings.xai_api_key
@@ -423,7 +432,12 @@ async def _xai_web_search(
 
     # Governor gate — blocks if kill switch, budget exceeded, or rate limited
     if governor:
-        allowed, reason = governor.gate("web_search", "xai_web_search", query, True)
+        allowed, reason = governor.gate(
+            "web_search",
+            "xai_web_search",
+            query,
+            user_explicit,
+        )
         if not allowed:
             logger.warning("Governor blocked web_search: %s", reason)
             return ToolResult(success=False, output="", error=f"Governor blocked: {reason}")

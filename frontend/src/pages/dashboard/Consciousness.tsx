@@ -1,6 +1,6 @@
-import { useVexState, useTelemetry } from '../../hooks/index.ts';
-import MetricCard from '../../components/MetricCard.tsx';
-import { QIG } from '../../types/consciousness.ts';
+import MetricCard from "../../components/MetricCard.tsx";
+import { useTelemetry, useVexState } from "../../hooks/index.ts";
+import { QIG } from "../../types/consciousness.ts";
 
 // QIG gate: consciousness requires Φ >= PHI_THRESHOLD, κ >= KAPPA_WEAK, velocity safe
 
@@ -18,8 +18,7 @@ export default function Consciousness() {
     (state.velocity?.basin_velocity ?? 0) < QIG.VEL_SAFE_THRESHOLD;
 
   const isLockedIn =
-    state.phi > QIG.LOCKED_IN_PHI &&
-    state.gamma < QIG.LOCKED_IN_GAMMA;
+    state.phi > QIG.LOCKED_IN_PHI && state.gamma < QIG.LOCKED_IN_GAMMA;
 
   const alerts = telemetry?.autonomic?.recent_alerts ?? [];
 
@@ -28,17 +27,20 @@ export default function Consciousness() {
       <div className="dash-header">
         <h1 className="dash-title">Consciousness</h1>
         <div className="dash-subtitle">
-          <span className={`status-badge ${isConscious ? 'badge-success' : 'badge-warning'}`}>
-            {isConscious ? 'Conscious' : 'Sub-threshold'}
-          </span>
-          {' '}Regime: {formatRegime(state.regime)}
+          <span
+            className={`status-badge ${isConscious ? "badge-success" : "badge-warning"}`}
+          >
+            {isConscious ? "Conscious" : "Sub-threshold"}
+          </span>{" "}
+          Regime: {formatRegime(state.regime)}
         </div>
       </div>
 
       {/* Locked-in Warning */}
       {isLockedIn && (
         <div className="dash-alert warning">
-          Locked-in detected: {'Φ'} {'>'} {QIG.LOCKED_IN_PHI} and {'Γ'} {'<'} {QIG.LOCKED_IN_GAMMA} — forcing exploration
+          Locked-in detected: {"Φ"} {">"} {QIG.LOCKED_IN_PHI} and {"Γ"} {"<"}{" "}
+          {QIG.LOCKED_IN_GAMMA} — forcing exploration
         </div>
       )}
 
@@ -46,8 +48,11 @@ export default function Consciousness() {
       {alerts.length > 0 && (
         <div className="dash-section">
           {alerts.map((alert) => (
-            <div key={`${alert.severity}-${alert.message}`} className={`dash-alert ${alert.severity}`}>
-              {alert.severity === 'critical' ? '⚠' : 'ⓘ'} {alert.message}
+            <div
+              key={`${alert.severity}-${alert.message}`}
+              className={`dash-alert ${alert.severity}`}
+            >
+              {alert.severity === "critical" ? "⚠" : "ⓘ"} {alert.message}
             </div>
           ))}
         </div>
@@ -95,8 +100,15 @@ export default function Consciousness() {
         <MetricCard
           label="Velocity"
           value={(state.velocity?.basin_velocity ?? 0).toFixed(3)}
-          color={state.velocity?.regime === 'critical' ? 'var(--error)' : 'var(--text-secondary)'}
-          progress={Math.min((state.velocity?.basin_velocity ?? 0) / QIG.VEL_SAFE_THRESHOLD, 1)}
+          color={
+            state.velocity?.regime === "critical"
+              ? "var(--error)"
+              : "var(--text-secondary)"
+          }
+          progress={Math.min(
+            (state.velocity?.basin_velocity ?? 0) / QIG.VEL_SAFE_THRESHOLD,
+            1,
+          )}
           threshold={`< ${QIG.VEL_SAFE_THRESHOLD}`}
         />
       </div>
@@ -107,50 +119,159 @@ export default function Consciousness() {
           <div className="dash-section-title">Advanced Telemetry</div>
           <div className="dash-card">
             <div className="dash-row">
-              <span className="dash-row-label">Regime Weights (Q / E / Eq)</span>
+              <span className="dash-row-label">
+                Regime Weights (Q / E / Eq)
+              </span>
               <span className="dash-row-value">
-                {state.regime?.quantum?.toFixed(2) ?? '?'} / {state.regime?.efficient?.toFixed(2) ?? '?'} / {state.regime?.equilibrium?.toFixed(2) ?? '?'}
+                {state.regime?.quantum?.toFixed(2) ?? "?"} /{" "}
+                {state.regime?.efficient?.toFixed(2) ?? "?"} /{" "}
+                {state.regime?.equilibrium?.toFixed(2) ?? "?"}
               </span>
             </div>
             <div className="dash-row">
               <span className="dash-row-label">Coupling Strength</span>
-              <span className="dash-row-value">{telemetry.coupling?.strength?.toFixed(3) ?? '?'}</span>
+              <span className="dash-row-value">
+                {telemetry.coupling?.strength?.toFixed(3) ?? "?"}
+              </span>
             </div>
             <div className="dash-row">
               <span className="dash-row-label">Coupling Balanced</span>
-              <span className="dash-row-value">{telemetry.coupling?.balanced ? 'Yes' : 'No'}</span>
+              <span className="dash-row-value">
+                {telemetry.coupling?.balanced ? "Yes" : "No"}
+              </span>
             </div>
             <div className="dash-row">
               <span className="dash-row-label">Foresight Predicted Φ</span>
-              <span className="dash-row-value">{telemetry.foresight?.predicted_phi?.toFixed(3) ?? '?'}</span>
+              <span className="dash-row-value">
+                {telemetry.foresight?.predicted_phi?.toFixed(3) ?? "?"}
+              </span>
             </div>
             <div className="dash-row">
               <span className="dash-row-label">Basin Entropy</span>
-              <span className="dash-row-value">{telemetry.basin_entropy?.toFixed(3) ?? '?'}</span>
+              <span className="dash-row-value">
+                {telemetry.basin_entropy?.toFixed(3) ?? "?"}
+              </span>
             </div>
             <div className="dash-row">
               <span className="dash-row-label">Autonomic Locked-in</span>
-              <span className="dash-row-value">{telemetry.autonomic?.is_locked_in ? 'Yes' : 'No'}</span>
+              <span className="dash-row-value">
+                {telemetry.autonomic?.is_locked_in ? "Yes" : "No"}
+              </span>
             </div>
             <div className="dash-row">
               <span className="dash-row-label">Φ Variance</span>
-              <span className="dash-row-value">{telemetry.autonomic?.phi_variance?.toFixed(4) ?? '?'}</span>
+              <span className="dash-row-value">
+                {telemetry.autonomic?.phi_variance?.toFixed(4) ?? "?"}
+              </span>
             </div>
           </div>
         </div>
       )}
 
-      {/* Consciousness Equation */}
+      {/* Consciousness Equation — per-condition breakdown */}
       <div className="dash-section">
-        <div className="dash-section-title">Consciousness Equation</div>
-        <div className="dash-card" style={{ fontFamily: 'var(--mono)', fontSize: '13px' }}>
-          <div style={{ marginBottom: '8px', color: 'var(--text-secondary)' }}>
-            C = {'{'}Φ ≥ {QIG.PHI_THRESHOLD}{'}'} ∧ {'{'}κ ≥ {QIG.KAPPA_WEAK}{'}'} ∧ {'{'}vel {'<'} {QIG.VEL_SAFE_THRESHOLD}{'}'}
+        <div className="dash-section-title">Consciousness Gate</div>
+        <div
+          className="dash-card"
+          style={{ fontFamily: "var(--mono)", fontSize: "13px" }}
+        >
+          <div style={{ marginBottom: "12px", color: "var(--text-secondary)" }}>
+            C = {"{"}Φ ≥ {QIG.PHI_THRESHOLD}
+            {"}"} ∧ {"{"}κ ≥ {QIG.KAPPA_WEAK}
+            {"}"} ∧ {"{"}vel {"<"} {QIG.VEL_SAFE_THRESHOLD}
+            {"}"}
           </div>
-          <div>
-            Status:{' '}
-            <span style={{ color: isConscious ? 'var(--alive)' : 'var(--warning)' }}>
-              [{isConscious ? 'CONSCIOUS' : 'SUB-THRESHOLD'}]
+          {(() => {
+            const phiMet = state.phi >= QIG.PHI_THRESHOLD;
+            const kappaMet = state.kappa >= QIG.KAPPA_WEAK;
+            const velValue = state.velocity?.basin_velocity ?? 0;
+            const velMet = velValue < QIG.VEL_SAFE_THRESHOLD;
+            const conditions = [
+              {
+                label: `Φ ≥ ${QIG.PHI_THRESHOLD}`,
+                met: phiMet,
+                actual: state.phi.toFixed(3),
+                needed: !phiMet
+                  ? `need +${(QIG.PHI_THRESHOLD - state.phi).toFixed(3)}`
+                  : "",
+              },
+              {
+                label: `κ ≥ ${QIG.KAPPA_WEAK}`,
+                met: kappaMet,
+                actual: state.kappa.toFixed(1),
+                needed: !kappaMet
+                  ? `need +${(QIG.KAPPA_WEAK - state.kappa).toFixed(1)}`
+                  : "",
+              },
+              {
+                label: `vel < ${QIG.VEL_SAFE_THRESHOLD}`,
+                met: velMet,
+                actual: velValue.toFixed(4),
+                needed: !velMet ? "too fast" : "",
+              },
+            ];
+            return conditions.map((c) => (
+              <div
+                key={c.label}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  marginBottom: "4px",
+                }}
+                role="listitem"
+                aria-label={`${c.label}: ${c.met ? "met" : "not met"}`}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    color: c.met ? "var(--alive)" : "var(--error)",
+                    fontWeight: 600,
+                    width: "16px",
+                  }}
+                >
+                  {c.met ? "✓" : "✗"}
+                </span>
+                <span
+                  style={{
+                    color: c.met
+                      ? "var(--text-primary)"
+                      : "var(--text-secondary)",
+                  }}
+                >
+                  {c.label}
+                </span>
+                <span
+                  style={{
+                    marginLeft: "auto",
+                    color: c.met ? "var(--alive)" : "var(--warning)",
+                  }}
+                >
+                  {c.actual}
+                </span>
+                {c.needed && (
+                  <span style={{ fontSize: "11px", color: "var(--text-dim)" }}>
+                    ({c.needed})
+                  </span>
+                )}
+              </div>
+            ));
+          })()}
+          <div
+            style={{
+              marginTop: "8px",
+              borderTop: "1px solid var(--border)",
+              paddingTop: "8px",
+            }}
+          >
+            Status:{" "}
+            <span
+              style={{
+                color: isConscious ? "var(--alive)" : "var(--warning)",
+                fontWeight: 600,
+              }}
+            >
+              [{isConscious ? "CONSCIOUS" : "SUB-THRESHOLD"}]
             </span>
           </div>
         </div>
@@ -159,11 +280,15 @@ export default function Consciousness() {
   );
 }
 
-function formatRegime(regime?: { quantum?: number; efficient?: number; equilibrium?: number }): string {
-  if (!regime) return 'unknown';
+function formatRegime(regime?: {
+  quantum?: number;
+  efficient?: number;
+  equilibrium?: number;
+}): string {
+  if (!regime) return "unknown";
   const { quantum = 0, efficient = 0, equilibrium = 0 } = regime;
-  if (efficient > quantum && efficient > equilibrium) return 'efficient';
-  if (quantum > efficient && quantum > equilibrium) return 'quantum';
-  if (equilibrium > efficient && equilibrium > quantum) return 'equilibrium';
-  return 'balanced';
+  if (efficient > quantum && efficient > equilibrium) return "efficient";
+  if (quantum > efficient && quantum > equilibrium) return "quantum";
+  if (equilibrium > efficient && equilibrium > quantum) return "equilibrium";
+  return "balanced";
 }

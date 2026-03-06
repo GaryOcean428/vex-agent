@@ -301,10 +301,14 @@ class ConversationStore:
             probe = self._base_dir / ".write_probe"
             probe.touch()
             probe.unlink()
-        except OSError:
-            self._base_dir = Path("/tmp/vex-conversations")
-            self._base_dir.mkdir(parents=True, exist_ok=True)
-            logger.warning("Data volume not writable — using ephemeral %s", self._base_dir)
+        except OSError as e:
+            # NEVER silently fall back to /tmp — that loses data on restart.
+            # If the volume isn't writable, fail loudly so the infra gets fixed.
+            raise RuntimeError(
+                f"Conversation store at {self._base_dir} is not writable: {e}. "
+                f"Check Railway volume mount. Chat history WILL be lost without "
+                f"a persistent volume. Previously this silently fell back to /tmp."
+            ) from e
         self._index_path = self._base_dir / "_index.json"
         self._index: dict[str, Conversation] = {}
         self._load_index()
