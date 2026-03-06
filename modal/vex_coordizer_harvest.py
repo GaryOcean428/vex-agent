@@ -28,15 +28,11 @@ The tail of the distribution carries geometric information that
 top-k approximations destroy.
 """
 
-from __future__ import annotations
-
 import os
-from typing import TYPE_CHECKING
+
+from starlette.requests import Request
 
 import modal
-
-if TYPE_CHECKING:
-    from starlette.requests import Request
 
 # --- Configuration --------------------------------------------------------
 # HARVEST_MODEL_ID: HuggingFace model to load for probability-distribution
@@ -106,7 +102,7 @@ class CoordizerHarvester:
             default_model_id,
             cache_dir=cache_dir,
             device_map="auto",
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
         model.eval()
         vocab_size = tokenizer.vocab_size
@@ -145,7 +141,7 @@ class CoordizerHarvester:
             model_id,
             cache_dir=cache_dir,
             device_map="auto",
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
         model.eval()
         vocab_size = tokenizer.vocab_size
@@ -213,17 +209,16 @@ class CoordizerHarvester:
             provided_key = request.headers.get("x-api-key", "")
             if provided_key != KERNEL_API_KEY:
                 reason = "missing" if not provided_key else "invalid"
-                print(
-                    f"Auth failure ({reason} api key) from {request.client.host if request.client else 'unknown'}"
-                )
+                print(f"Auth failure ({reason} api key)")
                 return JSONResponse(
                     status_code=403,
                     content={"error": "invalid or missing api key"},
                 )
 
+        body = await request.json()
+
         start = time.time()
 
-        body = await request.json()
         texts = body.get("texts", [])
         requested_model = body.get("model_id", None)
         batch_size = body.get("batch_size", 32)
