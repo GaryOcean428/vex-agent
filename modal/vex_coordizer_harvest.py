@@ -102,7 +102,7 @@ class CoordizerHarvester:
             default_model_id,
             cache_dir=cache_dir,
             device_map="auto",
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
         model.eval()
         vocab_size = tokenizer.vocab_size
@@ -141,7 +141,7 @@ class CoordizerHarvester:
             model_id,
             cache_dir=cache_dir,
             device_map="auto",
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
         model.eval()
         vocab_size = tokenizer.vocab_size
