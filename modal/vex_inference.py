@@ -92,6 +92,7 @@ ollama_image = (
     # Container stays warm for 5 minutes after last request.
     # At A10G pricing this costs ~$0.063 per idle window.
     scaledown_window=300,
+    secrets=[modal.Secret.from_name("model")],
 )
 class VexOllamaServer:
     """GPU-backed Ollama server for Vex inference.
