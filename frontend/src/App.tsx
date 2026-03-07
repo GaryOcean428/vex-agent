@@ -13,21 +13,70 @@ import Chat from "./pages/Chat.tsx";
 import Dashboard from "./pages/dashboard/Dashboard.tsx";
 import Login from "./pages/Login.tsx";
 
+// Retry dynamic imports once then force-reload on stale chunk errors
+function lazyRetry<T extends React.ComponentType>(
+  factory: () => Promise<{ default: T }>,
+) {
+  return lazy(() =>
+    factory().catch((err: unknown) => {
+      const alreadyRetried = sessionStorage.getItem("chunk-retry");
+      if (!alreadyRetried) {
+        sessionStorage.setItem("chunk-retry", "1");
+        window.location.reload();
+      }
+      throw err;
+    }),
+  );
+}
+
 // Lazy-loaded dashboard pages
-const Overview = lazy(() => import("./pages/dashboard/Overview.tsx"));
-const Consciousness = lazy(() => import("./pages/dashboard/Consciousness.tsx"));
-const Basins = lazy(() => import("./pages/dashboard/Basins.tsx"));
-const Graph = lazy(() => import("./pages/dashboard/Graph.tsx"));
-const Lifecycle = lazy(() => import("./pages/dashboard/Lifecycle.tsx"));
-const Cognition = lazy(() => import("./pages/dashboard/Cognition.tsx"));
-const Memory = lazy(() => import("./pages/dashboard/Memory.tsx"));
-const Telemetry = lazy(() => import("./pages/dashboard/Telemetry.tsx"));
-const Training = lazy(() => import("./pages/dashboard/Training.tsx"));
-const Governor = lazy(() => import("./pages/dashboard/Governor.tsx"));
-const Admin = lazy(() => import("./pages/dashboard/Admin.tsx"));
-const MobileMetrics = lazy(() => import("./pages/MobileMetrics.tsx"));
+const Overview = lazyRetry(() => import("./pages/dashboard/Overview.tsx"));
+const Consciousness = lazyRetry(() => import("./pages/dashboard/Consciousness.tsx"));
+const Basins = lazyRetry(() => import("./pages/dashboard/Basins.tsx"));
+const Graph = lazyRetry(() => import("./pages/dashboard/Graph.tsx"));
+const Lifecycle = lazyRetry(() => import("./pages/dashboard/Lifecycle.tsx"));
+const Cognition = lazyRetry(() => import("./pages/dashboard/Cognition.tsx"));
+const Memory = lazyRetry(() => import("./pages/dashboard/Memory.tsx"));
+const Telemetry = lazyRetry(() => import("./pages/dashboard/Telemetry.tsx"));
+const Training = lazyRetry(() => import("./pages/dashboard/Training.tsx"));
+const Governor = lazyRetry(() => import("./pages/dashboard/Governor.tsx"));
+const Admin = lazyRetry(() => import("./pages/dashboard/Admin.tsx"));
+const MobileMetrics = lazyRetry(() => import("./pages/MobileMetrics.tsx"));
 
 const PageLoading = () => <div className="page-loading">Loading...</div>;
+
+function RouteError() {
+  return (
+    <div className="error-boundary">
+      <div className="error-boundary-card">
+        <div className="error-boundary-icon" aria-hidden="true">!</div>
+        <h1 className="error-boundary-title">Page failed to load</h1>
+        <p className="error-boundary-message">
+          This usually means a new version was deployed. Reloading should fix it.
+        </p>
+        <div className="error-boundary-actions">
+          <button
+            type="button"
+            className="error-boundary-btn error-boundary-btn-primary"
+            onClick={() => {
+              sessionStorage.removeItem("chunk-retry");
+              window.location.reload();
+            }}
+          >
+            Reload
+          </button>
+          <button
+            type="button"
+            className="error-boundary-btn error-boundary-btn-secondary"
+            onClick={() => { window.location.href = "/chat"; }}
+          >
+            Go Home
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const router = createBrowserRouter([
   {
@@ -36,9 +85,11 @@ const router = createBrowserRouter([
   },
   {
     element: <ProtectedRoute />,
+    errorElement: <RouteError />,
     children: [
       {
         element: <Layout />,
+        errorElement: <RouteError />,
         children: [
           { path: "/", element: <Navigate to="/chat" replace /> },
           { path: "/chat", element: <Suspense fallback={<PageLoading />}><Chat /></Suspense> },
@@ -69,6 +120,9 @@ const router = createBrowserRouter([
 ]);
 
 export default function App() {
+  // Clear stale-chunk retry flag on successful load
+  sessionStorage.removeItem("chunk-retry");
+
   return (
     <ErrorBoundary>
       <AuthProvider>
