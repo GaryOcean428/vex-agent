@@ -26,22 +26,27 @@ Cost estimate:
 CRITICAL: Returns full V-dimensional distributions, NOT top-k.
 The tail of the distribution carries geometric information that
 top-k approximations destroy.
+
+Model loading strategy:
+    GLM-4.7-Flash is 30B total params (MoE, 3B active).
+    In bfloat16: ~60GB — exceeds A10G VRAM (24GB).
+    In 4-bit (bitsandbytes NF4): ~15GB — fits A10G with 9GB headroom.
+    Logits are cast to float32 before numpy conversion:
+        - bfloat16 has no numpy dtype — direct .numpy() raises ScalarType error
+        - float32 cast is lossless for softmax output (probabilities in [0,1])
 """
 
-import os
+from __future__ import annotations
 
-from starlette.requests import Request
+import os
+from typing import TYPE_CHECKING
 
 import modal
 
+if TYPE_CHECKING:
+    from starlette.requests import Request
+
 # --- Configuration --------------------------------------------------------
-# HARVEST_MODEL_ID: HuggingFace model to load for probability-distribution
-# extraction.  Default is GLM-4.7-Flash (4.7B params, fits A10G, 65K vocab).
-# GLM-4.7-Flash ensures token-ID alignment with the Modal inference model
-# so resonance bank fingerprints use the same vocabulary.  Fallback option:
-# "LiquidAI/LFM2.5-1.2B-Thinking" (smaller, faster, but different tokenizer).
-# See kernel/config/settings.py GPUHarvestConfig for the Railway-side
-# mirror of this setting.
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "zai-org/GLM-4.7-Flash")
 HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "H100")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
@@ -73,9 +78,9 @@ ml_image = modal.Image.debian_slim(python_version="3.12").pip_install(
 class CoordizerHarvester:
     """GPU-backed harvester for CoordizerV2.
 
-    Supports dynamic model selection per request with in-memory caching.
-    Default model is loaded on container start for fast cold starts.
-    Additional models can be loaded on-demand if specified in requests.
+    Loads GLM-4.7-Flash in 4-bit (NF4) quantization so the full 30B MoE
+    model fits in A10G VRAM. Logits are cast to float32 before numpy
+    conversion to avoid the bfloat16 ScalarType error.
     """
 
     @modal.enter()
@@ -88,17 +93,26 @@ class CoordizerHarvester:
             )
 
         import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-        # Initialize model cache: {model_id: (tokenizer, model, vocab_size)}
         self._model_cache: dict[str, tuple] = {}
 
-        # Load default model
         default_model_id = HARVEST_MODEL_ID
         cache_dir = "/models/hub"
 
         print(f"Loading default model: {default_model_id}")
+
         tokenizer = AutoTokenizer.from_pretrained(default_model_id, cache_dir=cache_dir)
+
+        # 4-bit NF4 quantization: 30B * 0.5 bytes = ~15GB on A10G (24GB VRAM)
+        # Avoids CPU offload and the bfloat16 numpy ScalarType error.
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+        )
+
         model = AutoModelForCausalLM.from_pretrained(
             default_model_id,
             cache_dir=cache_dir,
@@ -109,36 +123,36 @@ class CoordizerHarvester:
         model.eval()
         vocab_size = tokenizer.vocab_size
 
-        # Store in cache
         self._model_cache[default_model_id] = (tokenizer, model, vocab_size)
-
-        # Set as current active model
         self.tokenizer = tokenizer
         self.model = model
         self.vocab_size = vocab_size
         self.current_model_id = default_model_id
 
-        print(f"Default model loaded. Vocab size: {vocab_size}")
-
-        # Commit volume so weights persist across cold starts
+        print(f"Default model loaded (4-bit NF4). Vocab size: {vocab_size}")
         model_volume.commit()
 
     def _load_model(self, model_id: str) -> tuple:
-        """Load a model on-demand and cache it.
-
-        Returns: (tokenizer, model, vocab_size)
-        """
+        """Load a model on-demand and cache it."""
         if model_id in self._model_cache:
             print(f"Using cached model: {model_id}")
             return self._model_cache[model_id]
 
         import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
         cache_dir = "/models/hub"
         print(f"Loading new model: {model_id}")
 
         tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+        )
+
         model = AutoModelForCausalLM.from_pretrained(
             model_id,
             cache_dir=cache_dir,
@@ -149,17 +163,15 @@ class CoordizerHarvester:
         model.eval()
         vocab_size = tokenizer.vocab_size
 
-        # Cache for future requests
         self._model_cache[model_id] = (tokenizer, model, vocab_size)
-
-        print(f"Model {model_id} loaded. Vocab size: {vocab_size}")
+        print(f"Model {model_id} loaded (4-bit NF4). Vocab size: {vocab_size}")
         model_volume.commit()
 
         return tokenizer, model, vocab_size
 
     @modal.fastapi_endpoint(method="GET")
     async def health(self):
-        """Health check — returns model metadata once loaded."""
+        """Health check."""
         return {
             "status": "ok",
             "current_model_id": getattr(self, "current_model_id", None),
@@ -168,20 +180,17 @@ class CoordizerHarvester:
         }
 
     @modal.fastapi_endpoint(method="POST")
-    async def harvest(self, request: Request):
+    async def harvest(self, request: "Request"):
         """GPU harvest endpoint (X-Api-Key protected).
-
-        Auth:
-            Requires X-Api-Key header matching KERNEL_API_KEY env var.
-            If KERNEL_API_KEY is not set, auth is skipped (dev mode).
 
         Request JSON body:
             {
                 "texts": [str, ...],
-                "model_id": str (optional, uses default if not specified),
+                "model_id": str (optional),
                 "batch_size": int (default 32),
                 "max_length": int (default 512),
-                "min_contexts": int (default 5)
+                "min_contexts": int (default 5),
+                "target_tokens": int (default 0 = unlimited)
             }
 
         Response:
@@ -193,10 +202,9 @@ class CoordizerHarvester:
                 "tokens": {
                     "42": {
                         "string": "hello",
-                        "fingerprint": [0.001, 0.002, ...],
+                        "fingerprint": [0.001, ...],
                         "context_count": 15
-                    },
-                    ...
+                    }
                 },
                 "elapsed_seconds": 45.2
             }
@@ -207,7 +215,7 @@ class CoordizerHarvester:
         import torch
         from starlette.responses import JSONResponse
 
-        # Auth: validate X-Api-Key if KERNEL_API_KEY is configured
+        # Auth
         if KERNEL_API_KEY:
             provided_key = request.headers.get("x-api-key", "")
             if provided_key != KERNEL_API_KEY:
@@ -219,7 +227,6 @@ class CoordizerHarvester:
                 )
 
         body = await request.json()
-
         start = time.time()
 
         texts = body.get("texts", [])
@@ -231,31 +238,22 @@ class CoordizerHarvester:
         try:
             target_tokens = max(0, int(target_tokens_raw))
         except (TypeError, ValueError):
-            print(
-                f"Invalid target_tokens value {target_tokens_raw!r}; defaulting to 0 (unlimited tokens)"
-            )
             target_tokens = 0
 
         if not texts:
             return {"success": False, "error": "No texts provided"}
 
-        # Select model: request model_id → current model → default
         target_model_id = requested_model or self.current_model_id
 
-        # Load model if not already active
         if target_model_id != self.current_model_id:
             try:
                 tokenizer, model, vocab_size = self._load_model(target_model_id)
-                # Switch active model
                 self.tokenizer = tokenizer
                 self.model = model
                 self.vocab_size = vocab_size
                 self.current_model_id = target_model_id
             except Exception as e:
-                return {
-                    "success": False,
-                    "error": f"Failed to load model {target_model_id}: {e}",
-                }
+                return {"success": False, "error": f"Failed to load model {target_model_id}: {e}"}
 
         EPS = 1e-12
 
@@ -304,7 +302,6 @@ class CoordizerHarvester:
                             dist_counts[token_id] += 1
 
                         total_tokens += 1
-                        # Check at each loop level so we stop scanning as soon as cap is hit.
                         if target_tokens and total_tokens >= target_tokens:
                             break
 
@@ -325,7 +322,6 @@ class CoordizerHarvester:
             if count < min_contexts:
                 continue
 
-            # Fréchet mean via sqrt-space averaging
             mean_sqrt = sqrt_sum / count
             mean_dist = mean_sqrt * mean_sqrt
             mean_dist = mean_dist / mean_dist.sum()
@@ -357,19 +353,33 @@ class CoordizerHarvester:
     image=ml_image,
     volumes={"/models": model_volume},
     timeout=1200,
+    secrets=[modal.Secret.from_name("model")],
 )
 def download_model(model_id: str = HARVEST_MODEL_ID):
-    """One-time model download to Modal Volume.
+    """Pre-cache model weights to Modal Volume.
 
     Run: modal run modal/vex_coordizer_harvest.py::download_model
     """
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
     cache_dir = "/models/hub"
     print(f"Downloading {model_id} to {cache_dir}...")
 
     AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
-    AutoModelForCausalLM.from_pretrained(model_id, cache_dir=cache_dir)
+
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_use_double_quant=True,
+    )
+    AutoModelForCausalLM.from_pretrained(
+        model_id,
+        cache_dir=cache_dir,
+        device_map="auto",
+        quantization_config=bnb_config,
+    )
 
     model_volume.commit()
-    print(f"Done. Model cached at {cache_dir}")
+    print(f"Done. Model cached at {cache_dir} (4-bit NF4)")
