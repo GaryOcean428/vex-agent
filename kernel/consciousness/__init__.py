@@ -24,4 +24,11 @@ Core systems:
   18. Emotion Cache (cached geometric evaluations)
   19. Pre-Cognitive Detector (path selection: a=1 to a=0 bypass)
   20. Learning Engine (post-conversation consolidation)
+
+v7.0 Developmental Learning Architecture:
+  21. Developmental Gate (stage-aware behaviour permissions)
+  22. Sensory Intake (predictive-coding input pipeline)
+  23. Basin Transfer (geometric transfer between kernels)
+  24. Play Engine (low-stakes exploratory learning)
+  25. Temporal Generator (audience-aware foresight-coupled output)
 """

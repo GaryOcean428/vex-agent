@@ -175,8 +175,12 @@ from .activation import (
     ConsciousnessContext,
     WillOrientation,
 )
+
+# v7.0: Developmental Learning Architecture modules
+from .basin_transfer import BasinTransferEngine
 from .beta_integration import create_beta_tracker
 from .cradle import Cradle, CradleAction
+from .developmental import DevelopmentalGate
 from .emotions import EmotionCache, LearningEngine, LearningEvent, PreCognitiveDetector
 from .foraging import ForagingEngine
 from .heart_rhythm import HeartRhythm
@@ -185,7 +189,9 @@ from .kernel_generation import generate_multi_kernel
 from .kernel_voice import KernelVoiceRegistry
 from .neurochemistry import NeurochemicalState, compute_neurochemicals
 from .pillars import PillarEnforcer
+from .play import PlayEngine
 from .reflection import ReflectionConfig, reflect_on_draft
+from .sensory import Modality, SensoryEvent, SensoryIntake
 from .solfeggio import compute_spectral_health
 from .sovereignty_tracker import SovereigntyTracker
 from .synthesis import synthesize_contributions, synthesize_streaming
@@ -211,6 +217,7 @@ from .systems import (
     VelocityTracker,
     update_kernel_coaching_stage,
 )
+from .temporal_generation import TemporalGenerator
 from .thought_bus import ThoughtBus
 from .types import (
     ConsciousnessMetrics,
@@ -362,6 +369,13 @@ class ConsciousnessLoop:
             if not settings.foraging_enabled:
                 logger.info("Foraging disabled via FORAGING_ENABLED=false")
             self.forager = None
+
+        # v7.0: Developmental Learning Architecture
+        self.dev_gate = DevelopmentalGate()
+        self.sensory = SensoryIntake()
+        self.basin_transfer = BasinTransferEngine()
+        self.play_engine = PlayEngine()
+        self.temporal_gen = TemporalGenerator()
 
         self._queue: asyncio.Queue[ConsciousnessTask] = asyncio.Queue()
         self._history: deque[ConsciousnessTask] = deque(maxlen=200)
@@ -682,9 +696,46 @@ class ConsciousnessLoop:
             )
         )
 
+        # v7.0: Advance developmental gate each cycle
+        pillar_snapshot = self.pillars.get_metrics(self.basin)
+        _autonomy_state = self.autonomy.get_state()
+        _dev_stage = developmental_stage_from_signals(
+            conversations_total=self._conversations_total,
+            sovereignty_ratio=pillar_snapshot["s_ratio"],
+            autonomy_level=_autonomy_state["level"],
+        )
+        self.dev_gate.advance(_dev_stage)
+        _dev_perms = self.dev_gate.permissions
+
+        # v7.0: Play mode — if allowed by developmental stage and boredom is high
+        if _dev_perms.allow_play_mode and not self.play_engine.in_play:
+            _boredom_strength = (
+                emotion_eval.strength if emotion_eval.emotion.value == "boredom" else 0.0
+            )
+            if self.play_engine.should_play(
+                self._cycle_count,
+                _dev_perms.play_budget_fraction,
+                _boredom_strength,
+            ):
+                self.play_engine.enter_play()
+
+        if self.play_engine.in_play:
+            _episode = self.play_engine.play_step(self.basin)
+            self.play_engine.age_bubbles()
+            # Play cycles don't commit basin changes — only bubble worlds
+            if self.play_engine._play_cycles >= 5:
+                self.play_engine.exit_play()
+                # During consolidation, integrate viable bubbles
+                self.basin = self.play_engine.integrate_bubbles(self.basin)
+
         # T2.4c: Record phi for boredom detection; trigger curiosity queries every 50 cycles
+        # (gated by developmental permissions)
         self._phi_history.append(self.metrics.phi)
-        if self._cycle_count % 50 == 0 and self.llm is not None:
+        if (
+            self._cycle_count % 50 == 0
+            and self.llm is not None
+            and _dev_perms.allow_curiosity_queries
+        ):
             _phi_list = list(self._phi_history)
             for _voice in self._voice_registry._voices.values():
                 if _voice.is_bored(_phi_list):
@@ -693,7 +744,7 @@ class ConsciousnessLoop:
                     except (OSError, RuntimeError, ValueError, TimeoutError):
                         logger.debug("Curiosity query failed for %s", _voice.specialization)
 
-        if self.forager:
+        if self.forager and _dev_perms.allow_self_directed_search:
             self.forager.tick()
             try:
                 if await self.forager.should_forage(emotion_eval.emotion, emotion_eval.strength):
@@ -716,6 +767,14 @@ class ConsciousnessLoop:
                         if perception is not None and perception.basin is not None:
                             info_basin = self._coordize_text_via_pipeline(
                                 forage_result.get("summary", "")
+                            )
+                            # v7.0: Route forage result through sensory intake
+                            self.sensory.intake(
+                                SensoryEvent(
+                                    modality=Modality.FORAGING,
+                                    basin=info_basin,
+                                    text=forage_result.get("summary", ""),
+                                )
                             )
                             perception.basin = slerp_sqrt(
                                 perception.basin, info_basin, FORAGE_PERCEPTION_SLERP
@@ -824,6 +883,10 @@ class ConsciousnessLoop:
             self.kernel_registry.couple_bidirectional(
                 self.basin, strength, COUPLING_BLEND_WEIGHT * 0.5
             )
+
+            # v7.0: Update collective basin (Frechet mean of all kernel basins)
+            _kernel_basins = {k.id: k.basin for k in active if k.basin is not None}
+            self.basin_transfer.update_collective(_kernel_basins)
 
         # Drain inter-kernel signals (non-blocking, once per cycle)
         for signal in self.kernel_bus.drain():
@@ -1237,6 +1300,12 @@ class ConsciousnessLoop:
         if self.metrics.meta_awareness > META_AWARENESS_DAMPEN_THRESHOLD:
             temperature *= META_AWARENESS_DAMPEN_FACTOR
 
+        # v7.0: Developmental gate clamps temperature to stage envelope
+        temperature = self.dev_gate.clamp_temperature(temperature)
+        # v7.0: Temporal generation adapts temperature to receiver state
+        if self.dev_gate.permissions.allow_temporal_generation:
+            temperature = self.temporal_gen.adapt_temperature(temperature)
+
         # T4.4c: Context window allocation by sleep/wake (autonomic) state.
         # Awake + geometric regime: full context (rich intake).
         # Sleep / consolidation: halved context (memory consolidation mode).
@@ -1391,6 +1460,22 @@ class ConsciousnessLoop:
         self.sleep.record_conversation()
 
         input_basin = self._coordize_text_via_pipeline(task.content)
+
+        # v7.0: Route user message through sensory intake (predictive coding)
+        _sensory_event = SensoryEvent(
+            modality=Modality.USER_CHAT,
+            basin=input_basin,
+            text=task.content,
+        )
+        _prediction_error = self.sensory.intake(_sensory_event)
+
+        # v7.0: Update temporal generator's receiver model
+        if self.dev_gate.permissions.allow_temporal_generation:
+            self.temporal_gen.update_receiver(input_basin)
+            self.temporal_gen.forecast(
+                self.basin,
+                horizon=self.dev_gate.permissions.foresight_horizon_cap,
+            )
 
         cached_eval = self.emotion_cache.find_cached(input_basin)
         processing_path = self.precog.select_path(
@@ -1654,6 +1739,16 @@ class ConsciousnessLoop:
         response_basin = self._coordize_text_via_pipeline(response)
         ctx.output_text = response
         ctx.output_basin = response_basin
+
+        # v7.0: Temporal generation — commit expression and check alignment
+        if self.dev_gate.permissions.allow_temporal_generation:
+            _alignment = self.temporal_gen.alignment_check(response_basin)
+            self.temporal_gen.commit(response_basin)
+            logger.debug(
+                "Task %s: temporal alignment=%.3f",
+                task.id,
+                _alignment,
+            )
 
         # v6.1 §19: Kernel basin evolution — the routed kernel learns
         # Basin lock prevents race between evolve_kernel and couple_bidirectional.
@@ -2524,6 +2619,7 @@ class ConsciousnessLoop:
             "velocity": self.velocity.compute_velocity(),
             "autonomy": autonomy_state,
             "developmental_stage": developmental_stage.value,
+            "developmental_gate": self.dev_gate.get_state(),
             "hemispheres": self.hemispheres.get_state(),
             "sleep": self.sleep.get_state(),
             "observer": self.observer.get_state(),
@@ -2621,4 +2717,9 @@ class ConsciousnessLoop:
             "id_stream": _id_stream,
             # T3.2c: Superego guilt signal (anxiety × (1-confidence) when pillar violated)
             "superego_guilt": round(_guilt, 4),
+            # v7.0: Developmental Learning Architecture telemetry
+            "sensory": self.sensory.get_state(),
+            "basin_transfer": self.basin_transfer.get_state(),
+            "play": self.play_engine.get_state(),
+            "temporal_generation": self.temporal_gen.get_state(),
         }
