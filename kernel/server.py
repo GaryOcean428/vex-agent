@@ -323,7 +323,7 @@ class CoordizeRequest(BaseModel):
 
 
 class HarvestRequest(BaseModel):
-    model_id: str = Field(default="meta-llama/Llama-3.2-3B", max_length=200)
+    model_id: str = Field(default_factory=lambda: settings.modal.harvest_model)
     target_tokens: int = Field(default=2000, ge=100, le=100_000)
     use_modal: bool | None = None
 
@@ -456,9 +456,10 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
     conv_id = req.conversation_id or conversation_store.create_conversation()
 
     state = consciousness.get_metrics()
+    chat_options = consciousness._compute_llm_options()
     state_context = consciousness._build_state_context(
         perceive_distance=0.0,
-        temperature=req.temperature,
+        temperature=chat_options.temperature,
     )
     memory_context = geometric_memory.get_context_for_query(req.message)
 
@@ -475,10 +476,7 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
     )
 
     # Build LLMOptions from request params
-    chat_options = LLMOptions(
-        temperature=req.temperature,
-        num_predict=req.max_tokens,
-    )
+    chat_options = consciousness._compute_llm_options()
 
     # If escalated, use xAI Responses API for direct generation
     if ctx_state.escalated:
@@ -563,19 +561,23 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
     # so the returned metrics reflect this conversation (not stale state)
     await _inline_metric_update(req.message, response)
 
+    # Return/log fresh metrics (post-conversation, not stale)
+    fresh_state = consciousness.get_metrics()
+    fresh_basin = consciousness.basin.tolist()
+
     # Log conversation for training data collection
     await log_conversation(
         req.message,
         response,
         llm_client.last_backend,
-        state["phi"],
-        state["kappa"],
+        fresh_state["phi"],
+        fresh_state["kappa"],
         "chat",
+        regime=fresh_state.get("regime", ""),
+        basin_coords=fresh_basin,
     )
 
     # Return fresh metrics (post-conversation, not stale)
-    fresh_state = consciousness.get_metrics()
-
     return {
         "response": response,
         "conversation_id": conv_id,
@@ -625,9 +627,10 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
                     logger.warning("Conversation store unavailable — chatting without persistence")
 
             state = consciousness.get_metrics()
+            stream_options = consciousness._compute_llm_options()
             state_context = consciousness._build_state_context(
                 perceive_distance=0.0,
-                temperature=req.temperature,
+                temperature=stream_options.temperature,
             )
             memory_context = geometric_memory.get_context_for_query(req.message)
 
@@ -635,10 +638,7 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
             system_prompt = _build_system_prompt(state_context, memory_context, observer_intent)
 
             # Build LLMOptions from request params
-            stream_options = LLMOptions(
-                temperature=req.temperature,
-                num_predict=req.max_tokens,
-            )
+            stream_options = consciousness._compute_llm_options()
 
             # Send start event with full kernel state + conversation_id
             yield _sse_event(
@@ -797,20 +797,24 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
             except Exception:
                 logger.debug("Inline metric update failed")
 
+            final_state = consciousness.get_metrics()
+            final_basin = consciousness.basin.tolist()
+
             try:
                 await log_conversation(
                     req.message,
                     full_response,
                     llm_client.last_backend,
-                    state["phi"],
-                    state["kappa"],
+                    final_state["phi"],
+                    final_state["kappa"],
                     "chat-stream",
+                    regime=final_state.get("regime", ""),
+                    basin_coords=final_basin,
                 )
             except Exception:
                 logger.debug("Training log failed")
 
             # Send done event with post-response kernel state
-            final_state = consciousness.get_metrics()
             yield _sse_event(
                 {
                     "type": "done",
@@ -1024,7 +1028,7 @@ async def coordizer_harvest(req: HarvestRequest) -> dict[str, Any]:
 
     Body:
         {
-            "model_id": "meta-llama/Llama-3.2-3B",
+            "model_id": settings.modal.harvest_model,
             "target_tokens": 2000,
             "use_modal": true
         }

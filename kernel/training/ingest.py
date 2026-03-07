@@ -311,17 +311,23 @@ async def log_conversation(
     phi: float,
     kappa: float,
     source: str = "chat",
+    regime: str = "",
+    basin_coords: list[float] | None = None,
 ) -> None:
     """Append a chat exchange to conversations.jsonl (on volume)."""
     entry = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "user_message": user_message,
-        "response": response[:2000],
+        "response": response,
         "backend": backend,
         "phi": round(phi, 4),
         "kappa": round(kappa, 2),
         "source": source,
     }
+    if regime:
+        entry["regime"] = regime
+    if basin_coords:
+        entry["basin_coords"] = [round(v, 6) for v in basin_coords]
     try:
         await _append_jsonl(TRAINING_DIR / "conversations.jsonl", entry)
     except Exception as e:
