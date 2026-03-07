@@ -1,27 +1,21 @@
-"""Hash-to-Basin — Deterministic text-to-simplex projection.
+"""Deterministic text-to-simplex projection (Δ⁶³).
 
-Single source of truth for the SHA-256 chain → Δ⁶³ mapping used
-throughout the kernel. Previously duplicated in 4 locations:
-  - consciousness/loop.py
-  - consciousness/systems.py (CoordizingProtocol)
-  - llm/client.py
-  - memory/store.py
+Single source of truth for boundary projection from text into the
+64D simplex used by the kernel. This intentionally avoids cryptographic
+hash projection (SHA), while preserving:
+  - determinism (same text -> same basin)
+  - positivity + normalization via ``to_simplex``
 
 Algorithm:
-  1. SHA-256(text) → 32 bytes (h1)
-  2. SHA-256(h1)   → 32 bytes (h2)
-  3. h1 ∥ h2       → 64 bytes (one per basin dimension)
-  4. byte[i] + 1.0 → raw signal (ensures positivity)
-  5. to_simplex()  → valid point on Δ⁶³
+  1. UTF-8 encode text into bytes
+  2. Accumulate bytes into 64 bins with position-dependent weighting
+  3. Add small positive floor to all bins
+  4. Normalize with ``to_simplex``
 
-This is a BOUNDARY function: it bridges Euclidean text space into
-the geometric manifold. The hash is deterministic — same text always
-maps to the same basin point.
+This is a BOUNDARY function bridging text space into QIG basin space.
 """
 
 from __future__ import annotations
-
-import hashlib
 
 import numpy as np
 
@@ -30,7 +24,7 @@ from .fisher_rao import Basin, to_simplex
 
 
 def hash_to_basin(text: str) -> Basin:
-    """Map text to a deterministic point on Δ⁶³ via SHA-256 chain.
+    """Map text deterministically to a point on Δ⁶³.
 
     Args:
         text: Input text to project onto the simplex.
@@ -38,12 +32,20 @@ def hash_to_basin(text: str) -> Basin:
     Returns:
         A valid probability distribution on Δ⁶³ (shape (64,), sums to 1).
     """
-    h1 = hashlib.sha256(text.encode("utf-8", errors="replace")).digest()
-    h2 = hashlib.sha256(h1).digest()
-    combined = h1 + h2  # 64 bytes → one per basin dimension
+    # Deterministic, non-SHA projection:
+    # distribute UTF-8 bytes over simplex coordinates with gentle
+    # position-aware weighting to avoid trivial collisions.
+    data = text.encode("utf-8", errors="replace")
+    raw = np.ones(BASIN_DIM, dtype=np.float64)
 
-    raw = np.array(
-        [float(combined[i]) + 1.0 for i in range(BASIN_DIM)],
-        dtype=np.float64,
-    )
+    if len(data) == 0:
+        return to_simplex(raw)
+
+    for idx, byte_val in enumerate(data):
+        slot = idx % BASIN_DIM
+        # Cycle-aware positional weighting (bounded, deterministic).
+        cycle = (idx // BASIN_DIM) % 8
+        weight = 1.0 + (cycle * 0.125)
+        raw[slot] += (float(byte_val) + 1.0) * weight
+
     return to_simplex(raw)
