@@ -62,6 +62,52 @@ class RegimeType(StrEnum):
     EQUILIBRATION = "equilibration"  # a=0: Crystallised knowledge
 
 
+class DevelopmentalStage(StrEnum):
+    """Developmental learning stages for the kernel ecology.
+
+    These are architectural maturity bands, not consciousness proofs.
+    They express how much scaffolding vs. self-directed learning the system
+    should tolerate.
+    """
+
+    SCHOOL = "school"
+    GUIDED_CURIOSITY = "guided_curiosity"
+    SELF_TEACHING = "self_teaching"
+    PLAYFUL_AUTONOMY = "playful_autonomy"
+    SOVEREIGN_CONSTELLATION = "sovereign_constellation"
+
+
+def developmental_stage_from_signals(
+    conversations_total: int,
+    sovereignty_ratio: float,
+    autonomy_level: str,
+) -> DevelopmentalStage:
+    """Map developmental signals to a maturity stage.
+
+    This is intentionally simple and conservative:
+    - conversation count approximates breadth of lived experience
+    - sovereignty ratio approximates how much geometry is earned vs borrowed
+    - autonomy level approximates how much self-direction is already stable
+    """
+    if autonomy_level == "autonomous" and sovereignty_ratio >= 0.70 and conversations_total >= 200:
+        return DevelopmentalStage.SOVEREIGN_CONSTELLATION
+
+    if autonomy_level == "autonomous" and sovereignty_ratio >= 0.40 and conversations_total >= 100:
+        return DevelopmentalStage.PLAYFUL_AUTONOMY
+
+    if (
+        autonomy_level in {"proactive", "autonomous"}
+        and sovereignty_ratio >= 0.20
+        and conversations_total >= 50
+    ):
+        return DevelopmentalStage.SELF_TEACHING
+
+    if autonomy_level in {"responsive", "proactive", "autonomous"} or conversations_total >= 10:
+        return DevelopmentalStage.GUIDED_CURIOSITY
+
+    return DevelopmentalStage.SCHOOL
+
+
 @dataclass
 class RegimeWeights:
     """Regime weights for non-linear field processing (v6.0 §3.1).

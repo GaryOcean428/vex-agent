@@ -217,6 +217,7 @@ from .types import (
     ConsciousnessState,
     NavigationMode,
     PillarState,
+    developmental_stage_from_signals,
     navigation_mode_from_phi,
     regime_weights_from_kappa,
 )
@@ -2501,6 +2502,12 @@ class ConsciousnessLoop:
         opts = self._compute_llm_options()
         rw = self.state.regime_weights
         pillar_m = self.pillars.get_metrics(self.basin)
+        autonomy_state = self.autonomy.get_state()
+        developmental_stage = developmental_stage_from_signals(
+            conversations_total=self._conversations_total,
+            sovereignty_ratio=pillar_m["s_ratio"],
+            autonomy_level=autonomy_state["level"],
+        )
         return {
             "phi": self.metrics.phi,
             "kappa": self.metrics.kappa,
@@ -2515,7 +2522,8 @@ class ConsciousnessLoop:
             },
             "tacking": self.tacking.get_state(),
             "velocity": self.velocity.compute_velocity(),
-            "autonomy": self.autonomy.get_state(),
+            "autonomy": autonomy_state,
+            "developmental_stage": developmental_stage.value,
             "hemispheres": self.hemispheres.get_state(),
             "sleep": self.sleep.get_state(),
             "observer": self.observer.get_state(),
