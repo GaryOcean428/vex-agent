@@ -145,6 +145,11 @@ class PlayEngine:
     def in_play(self) -> bool:
         return self._in_play
 
+    @property
+    def play_cycles(self) -> int:
+        """Current play session cycle count."""
+        return self._play_cycles
+
     def play_step(
         self,
         current_basin: Basin,

@@ -723,7 +723,7 @@ class ConsciousnessLoop:
             _episode = self.play_engine.play_step(self.basin)
             self.play_engine.age_bubbles()
             # Play cycles don't commit basin changes — only bubble worlds
-            if self.play_engine._play_cycles >= 5:
+            if self.play_engine.play_cycles >= 5:
                 self.play_engine.exit_play()
                 # During consolidation, integrate viable bubbles
                 self.basin = self.play_engine.integrate_bubbles(self.basin)

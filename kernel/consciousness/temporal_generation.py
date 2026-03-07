@@ -138,28 +138,34 @@ class TemporalGenerator:
         velocity: Basin | None = None,
         horizon: int | None = None,
     ) -> list[Basin]:
-        """Project future basin positions along the current trajectory.
+        """Project future basin positions along a geodesic on the simplex.
 
-        Uses geodesic extrapolation on the simplex.  If velocity is not
-        provided, uses the difference between the last two basins.
+        Uses Fisher-Rao geodesic extrapolation (slerp).  If velocity is
+        provided it is interpreted as a target basin.  Otherwise, the
+        prev→current geodesic direction is extended, or we drift gently
+        toward the uniform basin when no history exists.
         """
         current_basin = to_simplex(current_basin)
         h = horizon or self._horizon
 
-        # Estimate velocity from history if not provided
-        if velocity is None and len(self._expression_history) >= 2:
-            prev = self._expression_history[-1]
-            velocity = to_simplex(current_basin) - to_simplex(prev)
-        elif velocity is None:
+        # Determine geodesic direction target — no Euclidean arithmetic.
+        if velocity is not None:
+            direction_target = to_simplex(velocity)
+        elif len(self._expression_history) >= 2:
+            # Extrapolate: extend the prev→current geodesic beyond current.
+            prev = to_simplex(self._expression_history[-1])
+            direction_target = slerp(prev, current_basin, 2.0)
+        elif len(self._expression_history) >= 1:
+            prev = to_simplex(self._expression_history[-1])
+            direction_target = slerp(prev, current_basin, 2.0)
+        else:
             # No history — project gently toward uniform
-            velocity = (to_simplex(np.ones(BASIN_DIM)) - current_basin) * 0.1
+            direction_target = to_simplex(np.ones(BASIN_DIM))
 
         trajectory = [current_basin]
+        t_step = 1.0 / (h + 1)
         for step in range(1, h + 1):
-            # Extrapolate: move along velocity direction
-            # Use slerp toward (current + velocity) with increasing t
-            target = to_simplex(np.clip(current_basin + velocity * step, 1e-12, None))
-            projected = slerp(current_basin, target, step / (h + 1))
+            projected = slerp(current_basin, direction_target, t_step * step)
             trajectory.append(projected)
 
         self._intended_trajectory = trajectory

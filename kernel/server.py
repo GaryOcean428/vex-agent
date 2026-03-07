@@ -475,9 +475,6 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
         req.message,
     )
 
-    # Build LLMOptions from request params
-    chat_options = consciousness._compute_llm_options()
-
     # If escalated, use xAI Responses API for direct generation
     if ctx_state.escalated:
         response = await _escalated_complete(conv_id, system_prompt, req.message, chat_options)
@@ -636,9 +633,6 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
 
             observer_intent = silent_observer.get_refined_intent(conv_id)
             system_prompt = _build_system_prompt(state_context, memory_context, observer_intent)
-
-            # Build LLMOptions from request params
-            stream_options = consciousness._compute_llm_options()
 
             # Send start event with full kernel state + conversation_id
             yield _sse_event(
