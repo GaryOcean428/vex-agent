@@ -197,11 +197,10 @@ class SensoryIntake:
         """Serialisable snapshot for telemetry."""
         active_modalities = [m.value for m in Modality if self._expectations[m] is not None]
         recent_count = len(self._recent_errors)
+        dominant = self.dominant_modality()
         return {
             "surprise_ema": round(self._surprise_ema, 4),
             "active_modalities": active_modalities,
             "recent_errors": recent_count,
-            "dominant_modality": (
-                self.dominant_modality().value if self.dominant_modality() else None
-            ),
+            "dominant_modality": dominant.value if dominant is not None else None,
         }

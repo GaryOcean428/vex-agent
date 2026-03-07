@@ -39,12 +39,10 @@ Model loading strategy:
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+
+from starlette.requests import Request
 
 import modal
-
-if TYPE_CHECKING:
-    from starlette.requests import Request
 
 # --- Configuration --------------------------------------------------------
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "zai-org/GLM-4.7-Flash")
@@ -118,7 +116,8 @@ class CoordizerHarvester:
             cache_dir=cache_dir,
             device_map={"": 0},
             low_cpu_mem_usage=True,
-            dtype=torch.float16,
+            torch_dtype=torch.float16,
+            quantization_config=bnb_config,
         )
         model.eval()
         vocab_size = tokenizer.vocab_size
@@ -158,7 +157,8 @@ class CoordizerHarvester:
             cache_dir=cache_dir,
             device_map={"": 0},
             low_cpu_mem_usage=True,
-            dtype=torch.float16,
+            torch_dtype=torch.float16,
+            quantization_config=bnb_config,
         )
         model.eval()
         vocab_size = tokenizer.vocab_size
@@ -180,7 +180,7 @@ class CoordizerHarvester:
         }
 
     @modal.fastapi_endpoint(method="POST")
-    async def harvest(self, request: "Request"):
+    async def harvest(self, request: Request):
         """GPU harvest endpoint (X-Api-Key protected).
 
         Request JSON body:
