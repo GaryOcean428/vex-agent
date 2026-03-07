@@ -1300,11 +1300,11 @@ class ConsciousnessLoop:
         if self.metrics.meta_awareness > META_AWARENESS_DAMPEN_THRESHOLD:
             temperature *= META_AWARENESS_DAMPEN_FACTOR
 
-        # v7.0: Developmental gate clamps temperature to stage envelope
-        temperature = self.dev_gate.clamp_temperature(temperature)
         # v7.0: Temporal generation adapts temperature to receiver state
         if self.dev_gate.permissions.allow_temporal_generation:
             temperature = self.temporal_gen.adapt_temperature(temperature)
+        # v7.0: Developmental gate clamps temperature to stage envelope (hard bound)
+        temperature = self.dev_gate.clamp_temperature(temperature)
 
         # T4.4c: Context window allocation by sleep/wake (autonomic) state.
         # Awake + geometric regime: full context (rich intake).
