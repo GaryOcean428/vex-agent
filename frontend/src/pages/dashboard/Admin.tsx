@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { API } from "../../config/api-routes.ts";
 import { useHealth, useVexState } from "../../hooks/index.ts";
 
@@ -11,6 +11,63 @@ export default function Admin() {
   const [freshStartResult, setFreshStartResult] = useState<string | null>(null);
   const [freshStartLoading, setFreshStartLoading] = useState(false);
   const [confirmFreshStart, setConfirmFreshStart] = useState(false);
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const [objectivesInput, setObjectivesInput] = useState("");
+  const [objectivesResult, setObjectivesResult] = useState<string | null>(null);
+  const [savingObjectives, setSavingObjectives] = useState(false);
+
+  useEffect(() => {
+    setObjectivesInput((state?.active_objectives ?? []).join("\n"));
+  }, [state?.active_objectives]);
+
+  useEffect(() => {
+    if (!taskId) return;
+    const timer = setInterval(async () => {
+      try {
+        const resp = await fetch(API.taskStatus(taskId));
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (data.status === "completed" || data.status === "error") {
+          setTaskResult(
+            data.result
+              ? `${data.status.toUpperCase()}: ${data.result}`
+              : `${data.status.toUpperCase()} — no result returned`,
+          );
+          setTaskId(null);
+        } else {
+          setTaskResult(`${data.status.toUpperCase()}: ${data.content ?? "Task in progress"}`);
+        }
+      } catch {
+        // ignore polling hiccups
+      }
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [taskId]);
+
+  const saveObjectives = useCallback(async () => {
+    if (savingObjectives) return;
+    setSavingObjectives(true);
+    setObjectivesResult(null);
+    try {
+      const objectives = objectivesInput
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const resp = await fetch(API.contextObjectives, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ objectives }),
+      });
+      if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+      const data = await resp.json();
+      setObjectivesResult(`Saved ${data.active_objectives?.length ?? 0} objectives`);
+      refetchState();
+    } catch (err) {
+      setObjectivesResult(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSavingObjectives(false);
+    }
+  }, [objectivesInput, refetchState, savingObjectives]);
 
   const triggerFreshStart = useCallback(async () => {
     if (!confirmFreshStart || freshStartLoading) return;
@@ -50,7 +107,8 @@ export default function Admin() {
       });
       if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
       const data = await resp.json();
-      setTaskResult(`Task enqueued: ${data.task_id ?? "unknown"}`);
+      setTaskId(data.task_id ?? null);
+      setTaskResult(`QUEUED: ${data.task_id ?? "unknown"}`);
       setTaskInput("");
       refetchState();
     } catch (err) {
@@ -273,6 +331,60 @@ export default function Admin() {
         </div>
       </div>
 
+      {/* Objectives / Purpose */}
+      <div className="dash-section">
+        <div className="dash-section-title">Objectives / Purpose</div>
+        <div className="dash-card">
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <textarea
+              value={objectivesInput}
+              onChange={(e) => setObjectivesInput(e.target.value)}
+              placeholder="One objective per line..."
+              rows={5}
+              style={{
+                background: "var(--surface-3)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                padding: "10px 14px",
+                color: "var(--text)",
+                fontFamily: "inherit",
+                fontSize: "14px",
+                outline: "none",
+                resize: "vertical",
+              }}
+            />
+            <button
+              onClick={saveObjectives}
+              disabled={savingObjectives}
+              style={{
+                background: "var(--phi)",
+                border: "none",
+                borderRadius: "var(--radius-sm)",
+                padding: "10px 20px",
+                color: "white",
+                fontWeight: 600,
+                cursor: savingObjectives ? "not-allowed" : "pointer",
+                opacity: savingObjectives ? 0.5 : 1,
+                fontSize: "14px",
+                alignSelf: "flex-start",
+              }}
+            >
+              {savingObjectives ? "Saving..." : "Save Objectives"}
+            </button>
+            {objectivesResult && (
+              <div style={{ padding: "8px 12px", background: "var(--surface-3)", borderRadius: "6px", fontFamily: "var(--mono)", fontSize: "12px", color: objectivesResult.startsWith("Error") ? "var(--error)" : "var(--alive)" }}>
+                {objectivesResult}
+              </div>
+            )}
+          </div>
+          {state?.active_objectives && state.active_objectives.length > 0 && (
+            <div style={{ marginTop: "10px", fontSize: "12px", color: "var(--text-secondary)" }}>
+              Active: {state.active_objectives.join(" | ")}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Queue Status */}
       <div className="dash-section">
         <div className="dash-section-title">Queue</div>
@@ -290,6 +402,10 @@ export default function Admin() {
             <span className="dash-row-value">
               {state?.conversations_total ?? 0}
             </span>
+          </div>
+          <div className="dash-row">
+            <span className="dash-row-label">Active task</span>
+            <span className="dash-row-value">{state?.active_task ?? "—"}</span>
           </div>
         </div>
       </div>

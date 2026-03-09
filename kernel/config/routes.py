@@ -70,6 +70,8 @@ ROUTES: dict[str, str] = {
     "training_export": "/training/export",
     "training_upload": "/training/upload",
     "training_upload_status": "/training/upload/status/{job_id}",
+    "task_status": "/task/{task_id}",
+    "context_objectives": "/context/objectives",
 }
 
 
@@ -116,6 +118,8 @@ ROUTE_GROUPS: dict[str, list[str]] = {
         "training_export",
         "training_upload",
         "training_upload_status",
+        "task_status",
+        "context_objectives",
     ],
     "admin": [
         "admin_fresh_start",

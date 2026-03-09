@@ -571,6 +571,66 @@ async def _enrich_chunk_llm(
 
 
 # ═══════════════════════════════════════════════════════════════
+#  LOCAL BANK INJECTION
+# ═══════════════════════════════════════════════════════════════
+
+
+def _select_local_bank_tier(record: ChunkRecord) -> HarmonicTier:
+    from ..coordizer_v2.types import HarmonicTier
+
+    if record.qa_pairs or record.relevance_score >= 0.8:
+        return HarmonicTier.FUNDAMENTAL
+    if record.summary or len(record.concepts) >= 4:
+        return HarmonicTier.FIRST_HARMONIC
+    if record.coordized:
+        return HarmonicTier.UPPER_HARMONIC
+    return HarmonicTier.OVERTONE_HAZE
+
+
+def _inject_records_into_local_bank(records: list[ChunkRecord], source_filename: str) -> int:
+    """Immediately add coordized curriculum records into the live resonance bank."""
+    if _coordizer is None:
+        return 0
+
+    coordizer = getattr(_coordizer, "coordizer", _coordizer)
+    bank = getattr(coordizer, "bank", None)
+    if bank is None:
+        return 0
+
+    existing_strings = {s.strip().lower() for s in bank.token_strings.values() if s}
+    added = 0
+    for record in records:
+        if len(record.basin_coords) != 64:
+            continue
+        label = (record.summary or record.text).replace("\n", " ").strip()
+        label = re.sub(r"\s+", " ", label)[:160]
+        if len(label) < 8:
+            continue
+        key = label.lower()
+        if key in existing_strings:
+            continue
+
+        tid = bank.add_entry(label, record.basin_coords, tier=_select_local_bank_tier(record))
+        bank.origin[tid] = "lived"
+        added += 1
+        existing_strings.add(key)
+
+    if added:
+        bank.mark_dirty()
+        if hasattr(coordizer, "rebuild_string_cache"):
+            coordizer.rebuild_string_cache()
+        try:
+            coordizer.save(settings.coordizer_v2.bank_path)
+        except Exception as exc:
+            logger.warning("Failed to persist updated resonance bank: %s", exc)
+        logger.info(
+            "Training pipeline: injected %d local bank entries from %s", added, source_filename
+        )
+
+    return added
+
+
+# ═══════════════════════════════════════════════════════════════
 #  MAIN INGESTION PIPELINE
 # ═══════════════════════════════════════════════════════════════
 
@@ -747,6 +807,7 @@ async def ingest_document(
 
     # Forward chunks to harvest pending so HarvestScheduler populates the bank
     harvest_path, harvest_count = _forward_chunks_to_harvest(records, filename)
+    _inject_records_into_local_bank(records, filename)
 
     return IngestionResult(
         status="ingested",

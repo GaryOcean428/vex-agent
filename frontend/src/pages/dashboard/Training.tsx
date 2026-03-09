@@ -33,7 +33,7 @@ interface FileUploadJob {
 
 export default function Training() {
   const { data: stats, loading, refetch } = useTrainingStats();
-  const { data: coordizerStats } = useCoordizerStats();
+  const { data: coordizerStats, error: coordizerError } = useCoordizerStats();
 
   const [files, setFiles] = useState<File[]>([]);
   const [category, setCategory] = useState("curriculum");
@@ -284,6 +284,11 @@ export default function Training() {
           />
         </div>
 
+        {coordizerError && (
+          <div className="dash-card" style={{ marginTop: "10px", color: "var(--error)" }}>
+            Coordizer stats unavailable: {coordizerError}
+          </div>
+        )}
         {coordizerStats && (
           <div className="dash-card" style={{ marginTop: "10px" }}>
             <div className="dash-row">
@@ -316,6 +321,14 @@ export default function Training() {
             <span className="dash-row-value">
               {stats?.dir_exists ? "Yes" : "No"}
             </span>
+          </div>
+          <div className="dash-row">
+            <span className="dash-row-label">Harvest Pending Files</span>
+            <span className="dash-row-value">{stats?.harvest_pending_files ?? 0}</span>
+          </div>
+          <div className="dash-row">
+            <span className="dash-row-label">Coordized Chunks</span>
+            <span className="dash-row-value">{stats?.coordized_chunks ?? 0}</span>
           </div>
         </div>
       </div>

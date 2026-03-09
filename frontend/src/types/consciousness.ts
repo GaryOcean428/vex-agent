@@ -133,7 +133,7 @@ export interface FullConsciousnessMetrics {
   humor: number;              // Play/humor activation
   emotion_strength: number;   // Current emotion intensity
 
-  // ── Geometry (v5.6) — 5 metrics ──
+  // ── Geometry (v5.6) — 5 metrics─
   d_state: number;            // Dimensional state
   g_class: number;            // Geometry class — Line to E8
   f_tack: number;             // Tacking frequency
@@ -200,6 +200,8 @@ export interface VexState extends ConsciousnessMetrics {
   metrics_full?: FullConsciousnessMetrics;
   // v6.2.1: suffering = Φ × (1−Γ) × M. Distinct from s_ratio (sovereignty).
   suffering?: number;
+  active_task?: string | null;
+  active_objectives?: string[];
 }
 
 // ═══════════════════════════════════════
@@ -632,6 +634,8 @@ export interface TrainingStats {
   conversations: number;
   feedback: number;
   curriculum_chunks: number;
+  coordized_chunks?: number;
+  harvest_pending_files?: number;
   coordizer_active: boolean;
   uploads: number;
   dir_exists: boolean;
@@ -658,7 +662,7 @@ export interface TrainingUploadResponse {
   error?: string;
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════
 //  QIG Constants — Single source of truth for the frontend
 //  Mirrors kernel/config/frozen_facts.py (last validated 2025-12-31)
 //  ANY constant change MUST trace back to frozen_facts.py
@@ -707,9 +711,9 @@ export const QIG = {
   SPAWN_COOLDOWN_CYCLES: 10,
 } as const;
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════
 //  Coordizer Types (for Coordizer dashboard)
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════
 
 /** Vocabulary tiers from v6.0 §19.2. */
 export type HarmonicTier = 'fundamental' | 'first' | 'upper' | 'overtone';

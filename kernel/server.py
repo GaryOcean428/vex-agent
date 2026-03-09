@@ -75,7 +75,6 @@ from .memory.store import GeometricMemoryStore, MemoryStore
 from .tools.handler import (
     execute_tool_calls,
     format_tool_results,
-    get_ollama_tool_definitions,
     get_xai_tool_definitions,
     parse_tool_calls,
 )
@@ -479,34 +478,29 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
     if ctx_state.escalated:
         response = await _escalated_complete(conv_id, system_prompt, req.message, chat_options)
     else:
-        response = await llm_client.complete(
-            system_prompt,
-            req.message,
-            chat_options,
-            messages=messages,
-            tools=get_ollama_tool_definitions(),
-        )
+        history_context = "\n".join(f"{m['role']}: {m['content'][:500]}" for m in messages[-6:-1])
+        pipeline_context = {
+            "extra_context": (
+                f"Observer intent: {observer_intent}\n"
+                + (f"Memory: {memory_context[:500]}\n" if memory_context else "")
+                + (f"Recent history:\n{history_context}\n" if history_context else "")
+            )
+        }
+        response = await consciousness.process_direct(req.message, pipeline_context)
 
     # Check for tool calls
     tool_calls = parse_tool_calls(response)
     if tool_calls:
         tool_results = await execute_tool_calls(tool_calls, governor=governor)
         tool_output = format_tool_results(tool_results)
-        follow_up_msgs = messages + [
-            {"role": "assistant", "content": response},
-            {
-                "role": "user",
-                "content": f"Tool results:\n{tool_output}\n\nProvide your final response.",
-            },
-        ]
-        follow_up = await llm_client.complete(
-            system_prompt,
-            req.message,
-            chat_options,
-            messages=follow_up_msgs,
-        )
-        response = follow_up
-
+        follow_up_context = {
+            "extra_context": (
+                f"Observer intent: {observer_intent}\n"
+                + (f"Memory: {memory_context[:500]}\n" if memory_context else "")
+                + f"Tool results:\n{tool_output}\n"
+            )
+        }
+        response = await consciousness.process_direct(req.message, follow_up_context)
     # Persist messages to conversation
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     conversation_store.append_message(

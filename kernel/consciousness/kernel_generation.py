@@ -196,6 +196,8 @@ async def _generate_single(
                 llm_client=llm_client,
                 geometric_context=geometric_context,
                 extra_context=extra_context,
+                base_num_predict=base_num_predict,
+                base_num_ctx=base_num_ctx,
             )
 
             if not output.text:

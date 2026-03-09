@@ -305,6 +305,8 @@ class KernelVoice:
         llm_client: Any = None,
         geometric_context: str = "",
         extra_context: str = "",
+        base_num_predict: int = 2048,
+        base_num_ctx: int = 32768,
     ) -> VoiceOutput:
         """Generate text from this kernel's geometric perspective.
 
@@ -344,10 +346,7 @@ class KernelVoice:
             _MIN_GEOMETRIC_TOKENS
             + self._bias_strength * (_MAX_GEOMETRIC_TOKENS - _MIN_GEOMETRIC_TOKENS)
         )
-        _llm_budget = int(
-            _LLM_EXPAND_TOKENS
-            - self._bias_strength * (_LLM_EXPAND_TOKENS - _LLM_TOKENS_SAFETY_FLOOR)
-        )
+        _llm_budget = base_num_predict
 
         gain_scale = float(np.clip(2.0 - quenched_gain, 0.5, 1.5))
         geo_temp = float(
@@ -399,12 +398,21 @@ class KernelVoice:
         # ── Step 5: Assess quality and decide on generation path ──
         geo_token_count = len(generated_ids)
 
-        # Null detection: all-same token IDs indicate empty resonance bank.
-        # This catches the bootstrap case where generate_next() returns
-        # token 0 for every step — velocity may be low (looks "coherent")
-        # but output is semantically empty.
+        # Null detection: all-same token IDs or zero-dispersion generated basins
+        # indicate an effectively empty/bootstrap resonance bank.
         unique_ids = set(generated_ids)
-        is_null_output = len(unique_ids) <= 1
+        generated_basins = [
+            self._coordizer.bank.coordinates[tid]
+            for tid in generated_ids
+            if tid in self._coordizer.bank.coordinates
+        ]
+        zero_dispersion = False
+        if generated_basins:
+            first_basin = generated_basins[0]
+            zero_dispersion = all(
+                fisher_rao_distance(first_basin, basin) < 1e-9 for basin in generated_basins[1:]
+            )
+        is_null_output = len(unique_ids) <= 1 or zero_dispersion
 
         is_coherent = (
             not is_null_output
@@ -418,40 +426,22 @@ class KernelVoice:
 
         # Branch ordering: null FIRST (always fallback), then sparse,
         # then low-coherence expand. Null output trumps all other checks.
-        if is_null_output and llm_client is not None:
-            # Null bank — geometric output is empty/degenerate.
-            # Full LLM fallback; geometric_raw preserved for hybrid display.
+        if is_null_output:
             logger.info(
-                "KernelVoice[%s] null output detected (%d unique IDs in %d tokens) "
-                "— routing to LLM fallback",
+                "KernelVoice[%s] null output detected (%d unique IDs in %d tokens) — failing closed",
                 self.specialization.value,
                 len(unique_ids),
                 geo_token_count,
             )
-            final_text = await self._llm_fallback(
-                user_message=user_message,
-                quenched_gain=quenched_gain,
-                base_temperature=base_temperature,
-                llm_client=llm_client,
-                llm_budget=_llm_budget,
-                geometric_context=geometric_context,
-                extra_context=extra_context,
+            final_text = ""
+        elif geo_token_count < _MIN_GEOMETRIC_TOKENS:
+            logger.info(
+                "KernelVoice[%s] sparse output (%d geometric tokens) — failing closed",
+                self.specialization.value,
+                geo_token_count,
             )
-            llm_expanded = True
-        elif geo_token_count < _MIN_GEOMETRIC_TOKENS and llm_client is not None:
-            # Sparse bank — full LLM fallback (bootstrap path)
-            final_text = await self._llm_fallback(
-                user_message=user_message,
-                quenched_gain=quenched_gain,
-                base_temperature=base_temperature,
-                llm_client=llm_client,
-                llm_budget=_llm_budget,
-                geometric_context=geometric_context,
-                extra_context=extra_context,
-            )
-            llm_expanded = True
+            final_text = ""
         elif not is_coherent and llm_client is not None:
-            # Enough tokens but low coherence — LLM expands skeleton
             final_text = await self._llm_expand(
                 geometric_skeleton=geometric_text,
                 user_message=user_message,
@@ -459,6 +449,7 @@ class KernelVoice:
                 base_temperature=base_temperature,
                 llm_client=llm_client,
                 llm_budget=_llm_budget,
+                llm_num_ctx=base_num_ctx,
                 geometric_context=geometric_context,
                 extra_context=extra_context,
             )
@@ -485,6 +476,7 @@ class KernelVoice:
         base_temperature: float,
         llm_client: Any,
         llm_budget: int,
+        llm_num_ctx: int,
         geometric_context: str = "",
         extra_context: str = "",
     ) -> str:
@@ -513,7 +505,7 @@ class KernelVoice:
         opts = LLMOptions(
             temperature=temp,
             num_predict=llm_budget,
-            num_ctx=2048,
+            num_ctx=llm_num_ctx,
         )
 
         try:
@@ -573,7 +565,7 @@ class KernelVoice:
         opts = LLMOptions(
             temperature=temp,
             num_predict=llm_budget,
-            num_ctx=2048,
+            num_ctx=llm_budget,
         )
 
         try:

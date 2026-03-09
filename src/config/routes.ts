@@ -82,6 +82,12 @@ export const ROUTES = {
   // ─── Tools ─────────────────────────────────────────────────
   tools_execute_code: "/api/tools/execute_code",
   tools_run_command: "/api/tools/run_command",
+
+  // ─── Task Status ───────────────────────────────────────────
+  task_status: "/task/:task_id",
+
+  // ─── Objective Management ─────────────────────────────────
+  context_objectives: "/context/objectives",
 } as const;
 
 export type RouteName = keyof typeof ROUTES;
