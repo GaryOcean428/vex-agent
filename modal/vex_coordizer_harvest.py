@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import os
 
-from starlette.requests import Request
+from pydantic import BaseModel
 
 import modal
 
@@ -51,6 +51,19 @@ KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 
 app = modal.App("vex-coordizer-harvest")
 
+
+class HarvestRequest(BaseModel):
+    """Request body for the harvest endpoint."""
+
+    texts: list[str]
+    model_id: str | None = None
+    batch_size: int = 32
+    max_length: int = 512
+    min_contexts: int = 5
+    target_tokens: int = 0
+    return_full_distribution: bool = True
+
+
 # Persistent volume for model weights (cached across cold starts)
 model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 
@@ -59,6 +72,7 @@ ml_image = modal.Image.debian_slim(python_version="3.12").pip_install(
     "torch>=2.1",
     "transformers>=4.40",
     "accelerate",
+    "bitsandbytes>=0.46.1",
     "numpy>=1.26",
     "pydantic>=2.0",
     "fastapi[standard]",
@@ -116,7 +130,7 @@ class CoordizerHarvester:
             cache_dir=cache_dir,
             device_map={"": 0},
             low_cpu_mem_usage=True,
-            torch_dtype=torch.float16,
+            dtype=torch.float16,
             quantization_config=bnb_config,
         )
         model.eval()
@@ -157,7 +171,7 @@ class CoordizerHarvester:
             cache_dir=cache_dir,
             device_map={"": 0},
             low_cpu_mem_usage=True,
-            torch_dtype=torch.float16,
+            dtype=torch.float16,
             quantization_config=bnb_config,
         )
         model.eval()
@@ -180,8 +194,8 @@ class CoordizerHarvester:
         }
 
     @modal.fastapi_endpoint(method="POST")
-    async def harvest(self, request: Request):
-        """GPU harvest endpoint (X-Api-Key protected).
+    async def harvest(self, body: HarvestRequest):
+        """GPU harvest endpoint.
 
         Request JSON body:
             {
@@ -213,32 +227,15 @@ class CoordizerHarvester:
 
         import numpy as np
         import torch
-        from starlette.responses import JSONResponse
 
-        # Auth
-        if KERNEL_API_KEY:
-            provided_key = request.headers.get("x-api-key", "")
-            if provided_key != KERNEL_API_KEY:
-                reason = "missing" if not provided_key else "invalid"
-                print(f"Auth failure ({reason} api key)")
-                return JSONResponse(
-                    status_code=403,
-                    content={"error": "invalid or missing api key"},
-                )
-
-        body = await request.json()
         start = time.time()
 
-        texts = body.get("texts", [])
-        requested_model = body.get("model_id", None)
-        batch_size = body.get("batch_size", 32)
-        max_length = body.get("max_length", 512)
-        min_contexts = body.get("min_contexts", 5)
-        target_tokens_raw = body.get("target_tokens", 0)
-        try:
-            target_tokens = max(0, int(target_tokens_raw))
-        except (TypeError, ValueError):
-            target_tokens = 0
+        texts = body.texts
+        requested_model = body.model_id
+        batch_size = body.batch_size
+        max_length = body.max_length
+        min_contexts = body.min_contexts
+        target_tokens = max(0, body.target_tokens)
 
         if not texts:
             return {"success": False, "error": "No texts provided"}
@@ -253,7 +250,10 @@ class CoordizerHarvester:
                 self.vocab_size = vocab_size
                 self.current_model_id = target_model_id
             except Exception as e:
-                return {"success": False, "error": f"Failed to load model {target_model_id}: {e}"}
+                return {
+                    "success": False,
+                    "error": f"Failed to load model {target_model_id}: {e}",
+                }
 
         EPS = 1e-12
 
@@ -378,6 +378,7 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
         model_id,
         cache_dir=cache_dir,
         device_map="auto",
+        dtype=torch.float16,
         quantization_config=bnb_config,
     )
 

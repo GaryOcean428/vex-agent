@@ -21,6 +21,7 @@ Auth: X-Api-Key header (KERNEL_API_KEY) validated by the Modal handler.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -80,9 +81,9 @@ async def modal_harvest(
             "No Modal harvest model configured. Provide model_id to modal_harvest() "
             "or set MODAL_HARVEST_MODEL in the environment/settings."
         )
-    resolved_timeout = (
-        timeout if timeout is not None else settings.modal.inference_timeout_ms / 1000.0
-    )
+    # Harvest timeout must be much longer than inference — cold start + model load + processing.
+    # Default: ModalHarvestConfig.timeout (600s), NOT inference_timeout_ms (120s).
+    resolved_timeout = timeout if timeout is not None else ModalHarvestConfig.timeout
     config = ModalHarvestConfig(
         model_id=resolved_model,
         target_tokens=target_tokens,
@@ -93,9 +94,12 @@ async def modal_harvest(
     if corpus_texts is None:
         corpus_texts = _default_harvest_corpus()
 
-    # Build request
-    payload = {
-        "model_id": config.model_id,
+    # Build request.
+    # NOTE: model_id is omitted so Modal uses its default loaded model.
+    # MODAL_HARVEST_MODEL env var uses Ollama format ("glm-4.7-flash") but
+    # Modal needs HF format ("zai-org/GLM-4.7-Flash"). The Modal endpoint
+    # already loads the correct model via HARVEST_MODEL_ID env secret.
+    payload: dict[str, Any] = {
         "texts": corpus_texts[:200],  # Cap per-request
         "target_tokens": config.target_tokens,
         "batch_size": config.batch_size,
@@ -119,13 +123,41 @@ async def modal_harvest(
     )
 
     start_time = time.time()
+    poll_interval = 10.0  # seconds between polls
 
     async with httpx.AsyncClient(timeout=config.timeout) as client:
+        # Initial POST — Modal may return 200 (fast) or 303 (async polling)
         response = await client.post(
             settings.modal.harvest_url,
             json=payload,
             headers=headers,
         )
+
+        # Modal 303 async pattern: poll the redirect URL until 200
+        while response.status_code == 303:
+            poll_url = response.headers.get("location", "")
+            if not poll_url:
+                raise RuntimeError("Modal returned 303 without Location header")
+            elapsed_so_far = time.time() - start_time
+            if elapsed_so_far > config.timeout:
+                raise TimeoutError(
+                    f"Modal harvest timed out after {elapsed_so_far:.0f}s "
+                    f"(limit {config.timeout:.0f}s)"
+                )
+            logger.info(
+                "Modal processing (%.0fs elapsed), polling in %.0fs...",
+                elapsed_so_far,
+                poll_interval,
+            )
+            await asyncio.sleep(poll_interval)
+            response = await client.get(poll_url, headers=headers)
+
+        if response.status_code >= 400:
+            logger.error(
+                "Modal harvest HTTP %d: %s",
+                response.status_code,
+                response.text[:2000],
+            )
         response.raise_for_status()
         data = response.json()
 

@@ -1,0 +1,5 @@
+{
+  "source_dim": 32000,
+  "target_dim": 64,
+  "n_tokens": 500
+}
