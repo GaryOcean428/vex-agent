@@ -37,6 +37,7 @@ Architecture:
     types.py            BasinCoordinate, tiers, domain bias, results
     harvest.py          LLM output distribution harvesting (Method 1)
     compress.py         Fisher-Rao PGA (Δ^(V-1) → Δ⁶³)
+    principal_direction_bank.py  Persistent PGA directions (.npy artifacts)
     resonance_bank.py   Standing-wave vocabulary with activation
     coordizer.py        Main CoordizerV2 class
     adapter.py          Drop-in replacement for CoordinatorPipeline (v6.1F)
@@ -72,6 +73,7 @@ from .harvest import (
     harvest_model,
     harvest_model_auto,
 )
+from .principal_direction_bank import PrincipalDirectionBank
 from .resonance_bank import ResonanceBank
 from .types import (
     BasinCoordinate,
@@ -101,6 +103,7 @@ __all__ = [
     # Compression
     "compress",
     "CompressionResult",
+    "PrincipalDirectionBank",
     # Geometry
     "BASIN_DIM",
     "KAPPA_STAR",

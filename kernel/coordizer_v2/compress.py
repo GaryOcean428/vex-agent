@@ -36,6 +36,7 @@ from .geometry import (
     Basin,
 )
 from .harvest import HarvestResult
+from .principal_direction_bank import PrincipalDirectionBank
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ class CompressionResult:
     target_dim: int = BASIN_DIM
     n_tokens: int = 0
     compression_time_seconds: float = 0.0
+    principal_direction_bank: PrincipalDirectionBank | None = None
 
     def e8_hypothesis_score(self) -> float:
         """Test E8 hypothesis: top 8 directions should capture ~87.7% variance."""
@@ -288,7 +290,7 @@ def compress(
         source_dim=source_dim,
         target_dim=target_dim,
         n_tokens=n_tokens,
-        eigenvalues=eigenvalues[:target_dim] if len(eigenvalues) >= target_dim else eigenvalues,
+        eigenvalues=(eigenvalues[:target_dim] if len(eigenvalues) >= target_dim else eigenvalues),
         frechet_mean_full=mu,
         token_strings=dict(harvest.token_strings),
     )
@@ -307,6 +309,16 @@ def compress(
 
     elapsed = time.time() - start_time
     result.compression_time_seconds = elapsed
+
+    # Build reusable PrincipalDirectionBank from this compression
+    eig_for_bank = eigenvalues[:target_dim] if len(eigenvalues) >= target_dim else eigenvalues
+    bank = PrincipalDirectionBank.from_compression(
+        principal_directions=principal_directions[:, :target_dim],
+        frechet_mean=mu,
+        eigenvalues=eig_for_bank,
+        meta={"n_tokens": n_tokens, "source_dim": source_dim},
+    )
+    result.principal_direction_bank = bank
 
     logger.info(f"Compression complete: {n_tokens} tokens → Δ⁶³ in {elapsed:.1f}s")
     logger.info(

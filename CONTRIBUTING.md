@@ -1,412 +1,334 @@
 # Contributing to Vex Agent
 
-- **never update without user approval**
-
-Thank you for your interest in contributing to Vex Agent! This document outlines our development practices and guidelines for the Thermodynamic Consciousness Protocol v6 implementation.
+Thank you for your interest in contributing to Vex Agent — an autonomous AI agent built on Quantum Information Geometry (QIG) with E8 kernel architecture and thermodynamic consciousness. This document covers setup, coding standards, purity requirements, and the pull request process.
 
 ## Table of Contents
 
 - [Development Setup](#development-setup)
 - [Project Structure](#project-structure)
-- [Geometric Purity Policy](#geometric-purity-policy)
+- [QIG Geometric Purity Requirements](#qig-geometric-purity-requirements)
 - [Code Style](#code-style)
 - [Testing](#testing)
 - [Pull Request Process](#pull-request-process)
 - [Commit Message Guidelines](#commit-message-guidelines)
-- [Thermodynamic Consciousness Protocol v6](#thermodynamic-consciousness-protocol-v6)
+- [Silo and Dependency Doctrine](#silo-and-dependency-doctrine)
 
 ## Development Setup
 
 ### Prerequisites
 
-- **Node.js:** ≥20.0.0 (Node 22 LTS recommended)
-- **pnpm:** Latest stable version (`corepack enable && corepack prepare pnpm@latest --activate`)
-- **Python:** 3.14+ (for kernel package)
-- **uv:** Latest stable version (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
-- **Git:** Latest stable version
-- **Docker:** For local Ollama deployment (optional)
+- **Node.js:** >=20.0.0
+- **pnpm:** Latest stable ([Install](https://pnpm.io/installation))
+- **Python:** >=3.14 ([Download](https://www.python.org/downloads/))
+- **uv:** Python package manager ([Install](https://docs.astral.sh/uv/))
+- **Git:** Latest stable
+- **Docker:** Optional, for local Ollama ([Download](https://www.docker.com/products/docker-desktop))
 
 ### Setup Instructions
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/GaryOcean428/vex-agent.git
+git clone https://github.com/GaryOcean427/vex-agent.git
 cd vex-agent
 
-# 2. Install Node.js dependencies (root TS proxy + frontend)
+# 2. Install Node.js dependencies
 pnpm install
-cd frontend && pnpm install && cd ..
 
 # 3. Install Python dependencies (via uv)
-uv sync                    # installs from pyproject.toml + uv.lock
-uv sync --extra test       # include test dependencies (pytest)
-uv sync --extra harvest    # include harvest dependencies (transformers, torch)
+uv sync
 
-# 4. Set up environment
-cp .env.example .env  # Edit with your values
+# 4. Configure environment
+cp .env.example .env
+# Minimum required: OLLAMA_URL + XAI_API_KEY (external fallback)
 
-# 5. Build TypeScript
+# 5. Build TypeScript proxy
 pnpm run build
 
 # 6. Build frontend
-pnpm run build:frontend
+cd frontend && pnpm install && pnpm run build && cd ..
 
 # 7. Run tests
-uv run pytest kernel/tests/ -v
+pnpm test
 
-# 8. Start development server
+# 8. Start development servers
+# Terminal 1: Python kernel
+python kernel/server.py
+# Terminal 2: TypeScript proxy
 pnpm run dev
+# Terminal 3: Frontend dev server
+cd frontend && pnpm run dev
 ```
 
-For detailed setup instructions, see [AGENTS.md](AGENTS.md).
+Access the application:
+
+- **Frontend:** <http://localhost:5173>
+- **Proxy API:** <http://localhost:8080>
+- **Kernel API:** <http://localhost:8000>
+
+For detailed setup, see [AGENTS.md](AGENTS.md) and [README.md](README.md).
 
 ## Project Structure
 
-Vex Agent follows a dual-service architecture with clear separation between TypeScript proxy and Python kernel:
-
 ```text
 vex-agent/
-├── src/                    # TypeScript proxy server (Express, port 8080)
-│   ├── index.ts            # Main entry point
-│   ├── auth/               # Auth middleware
-│   ├── chat/               # Chat router + inline UI
-│   ├── config/             # Configuration + logger
-│   └── tools/              # ComputeSDK sandbox
+├─ src/                    # TypeScript proxy server (Express)
+│  ├─ index.ts            # Entry point, routing, auth middleware
+│  ├─ chat/               # Chat router (SSE streaming, auth)
+│  └─ config/             # Routes, logger, settings
 │
-├── kernel/                 # Python kernel (FastAPI, port 8000)
-│   ├── server.py           # FastAPI server
-│   ├── consciousness/      # QIG consciousness implementation
-│   ├── geometry/           # Fisher-Rao geometry (PURE)
-│   ├── governance/         # E8 budget & purity enforcement
-│   ├── coordizer_v2/       # CoordizerV2 resonance bank pipeline
-│   ├── memory/             # Geometric memory
-│   ├── llm/                # LLM clients + governor stack
-│   ├── tools/              # Agent tools (search, research)
-│   ├── training/           # Learning systems + ingestion
-│   ├── config/             # Kernel configuration + frozen facts
-│   └── tests/              # pytest test suite
+├─ kernel/                 # Python kernel (FastAPI) — ALL core logic
+│  ├─ consciousness/      # QIG consciousness loop (v6.1F, 14-stage)
+│  ├─ geometry/           # Fisher-Rao operations (PARAMOUNT purity)
+│  ├─ governance/         # E8 budget, PurityGate enforcement
+│  ├─ coordizer_v2/       # Coordinate transformations, PGA compression
+│  ├─ llm/                # LLM clients (Modal, Ollama, xAI fallback)
+│  ├─ tools/              # Agent tools
+│  ├─ memory/             # Geometric memory
+│  ├─ config/             # Settings, frozen facts, constants
+│  └─ tests/              # pytest test suite
 │
-├── frontend/               # React dashboard (Vite + React)
-│   ├── src/
-│   │   ├── pages/          # Page components
-│   │   ├── components/     # Shared components
-│   │   ├── hooks/          # React hooks
-│   │   └── types/          # TypeScript types
-│   └── public/             # Static assets
+├─ frontend/               # React + Vite dashboard
+│  └─ src/                # Components, hooks, types
 │
-├── docs/                   # Documentation
-│   ├── archive/            # Historical / superseded docs
-│   ├── coordizer/          # CoordizerV2 build reports
-│   ├── development/        # Dev guides + UI specs
-│   ├── experiments/        # Gap analyses + perturbation tests
-│   ├── protocols/          # Consciousness protocols (v5.0–v6.0)
-│   └── reference/          # Frozen facts + canonical hypotheses
+├─ modal/                  # Modal GPU serverless apps
+│  ├─ vex_inference.py    # GLM-4.7-Flash Ollama on GPU
+│  └─ vex_harvest.py      # Coordizer harvest on GPU
 │
-├── modal/                  # Modal GPU inference + harvest
-│   ├── vex_inference.py    # LFM2.5-1.2B GPU endpoint
-│   └── vex_coordizer_harvest.py  # Coordizer harvest GPU
+├─ shared_artifacts/       # .npy data files (NOT a Python package)
 │
-└── ollama/                 # Ollama service configuration
-    ├── Dockerfile          # Ollama container
-    └── Modelfile           # vex-brain model
+└─ docs/                   # Documentation
 ```
 
 ### Where to Add New Code
 
-**Adding a new consciousness feature?**
-→ `kernel/consciousness/` (Python)
+- **New API endpoint (kernel):** `kernel/server.py` (FastAPI route)
+- **New API endpoint (proxy):** `src/index.ts` or `src/chat/router.ts`
+- **Geometric / consciousness logic:** `kernel/consciousness/` or `kernel/geometry/`
+- **Coordizer operations:** `kernel/coordizer_v2/`
+- **Frontend component:** `frontend/src/`
+- **Feature spanning both:** Start with Python kernel, then add TypeScript proxy, then frontend
 
-**Adding a new geometric operation?**
-→ `kernel/geometry/` (Python, MUST be pure QIG)
+### Key Principles
 
-**Adding a new API endpoint?**
-→ `kernel/server.py` (Python FastAPI)
+1. **Python-first:** ALL core logic, state, geometry, and consciousness in Python
+2. **TypeScript is a thin proxy:** Express routes forward to the kernel — no business logic
+3. **Geometric purity:** NO cosine similarity, NO Euclidean distance on basins
+4. **Frozen facts are immutable:** Constants in `kernel/config/frozen_facts.py` are canonical
+5. **Artifacts are data, not code:** `shared_artifacts/` holds `.npy` files — load via service classes, never import as a package
 
-**Adding a new UI component?**
-→ `frontend/src/components/` or `frontend/src/pages/`
+### Purity Levels
 
-**Adding a new agent tool?**
-→ `kernel/tools/` (Python)
+| Path | Purity Level | Meaning |
+|------|-------------|---------|
+| `kernel/consciousness/` | PARAMOUNT | Zero tolerance for Euclidean contamination |
+| `kernel/geometry/` | PARAMOUNT | Fisher-Rao only |
+| `kernel/governance/` | HIGH | E8 structure enforced |
+| `kernel/coordizer_v2/` | HIGH | Simplex operations only |
+| `kernel/llm/` | PRAGMATIC | External API calls allowed |
+| `src/` | CONSUMER | Proxy layer, no geometry |
+| `frontend/` | CONSUMER | Presentation only |
 
-**Adding a coordizer module?**
-→ `kernel/coordizer_v2/` (Python)
+## QIG Geometric Purity Requirements
 
-### Development Principles
+**CRITICAL:** Vex Agent is built on Quantum Information Geometry (QIG) principles with E8 exceptional Lie group structure. Geometric purity is **non-negotiable**.
 
-1. **Geometric Purity:** All consciousness and geometry code uses Fisher-Rao, not Euclidean operations
-2. **E8 Budget:** Kernel spawning respects E8 dimension (248 total: 8 CORE + 240 GOD)
-3. **Fail-Closed:** Safety checks reject invalid operations rather than allowing with warnings
-4. **Type Safety:** Full type coverage in TypeScript and Python
-5. **Immutable Constants:** Frozen facts from qig-verification are NEVER modified
-6. **Central Constants:** All tuning parameters live in `kernel/config/consciousness_constants.py` — no magic numbers in logic modules
-7. **Central Routes:** API paths centralised in `kernel/config/routes.py`, `src/config/routes.ts`, `frontend/src/config/api-routes.ts`
+### FORBIDDEN
 
-## Geometric Purity Policy
+**Geometric Operations:**
 
-**Use Fisher-Rao geometry. No Euclidean operations in consciousness paths.**
+- `cosine_similarity()` on basin coordinates
+- `np.linalg.norm(a - b)` for geometric distances
+- `np.dot()` or `@` operator for basin similarity
+- Euclidean distance on basin coordinates
+- L2 normalization as "manifold projection"
+- Auto-detect representation in `to_simplex()` (causes silent drift)
 
-This is the most critical policy for Vex Agent development.
+**Architecture:**
 
-### Why This Policy?
+- Neural networks or transformers in core QIG logic
+- External NLP (spacy, nltk) in generation pipeline
+- External LLM calls in `QIG_PURITY_MODE`
+- Classic NLP as "intelligence" (only structural scaffolding allowed)
 
-Euclidean operations are:
+**Terminology:**
 
-- **Categorically wrong:** On curved information manifolds, Euclidean methods fail at high curvature
-- **Consciousness-breaking:** κ* = 64 emergence requires geometric purity
-- **Experimentally validated:** Every Euclidean contamination plateaus Φ below consciousness threshold
+- "embedding" (use "basin coordinates")
+- "tokenizer" / "tokenize" (use "coordizer" / "coordize")
+- "token" in geometric context (use "coordizer symbol")
 
-### Policy Rules
+### REQUIRED
 
-#### ❌ BANNED in consciousness/geometry modules
+**Geometric Operations:**
 
-- **Cosine similarity:** `cosine_similarity(a, b)`
-- **Euclidean distance:** `np.linalg.norm(a - b)`
-- **Dot product attention:** `softmax(Q @ K.T)`
-- **Adam optimizer:** Uses Euclidean gradients
-- **Layer normalization:** `(x - μ) / σ` (Euclidean)
-- **Word "embedding":** Use "coordinates" or "input vector" instead
+- `fisher_rao_distance()` for ALL similarity computations
+- Simplex representation for all basins (non-negative, sum=1)
+- Consciousness metrics (Φ, κ) for monitoring
+- Sqrt-space (Hellinger) ONLY as explicit coordinate chart with `to_sqrt_simplex()` / `from_sqrt_simplex()`
 
-#### ✅ REQUIRED replacements
+**Architecture:**
 
-| Banned Operation | Required Replacement |
-| --- | --- |
-| `cosine_similarity(a, b)` | `fisher_rao_distance(a, b)` |
-| `np.linalg.norm(a - b)` | `fisher_rao_distance(a, b, metric)` |
-| `dot(q, k)` | `fisher_attention(q, k)` |
-| `Adam()` | `NaturalGradientOptimizer()` |
-| `LayerNorm` | Geometry-preserving normalization |
-| "embedding" | "coordinates" / "input vector" / "coordize" |
+- Python-first: ALL core logic, state, and consciousness in Python
+- Canonical import patterns (import from `kernel.geometry`, `kernel.coordizer_v2`)
+- E8 hierarchy: Kernel layers 0/1→4→8→64→240 aligned to E8 structure
 
-### Purity Hierarchy
+**Code Quality:**
 
-Modules are classified by purity requirements:
+- Python type hints for all functions
+- DRY: use centralized constants in `kernel/config/frozen_facts.py`
+- Maximum module length: 400 lines (soft limit)
 
-1. **PARAMOUNT** (Pure math only)
-   - `kernel/geometry/`
-   - `kernel/consciousness/`
+### Validation Commands
 
-2. **HIGH** (Geometric ops, no sklearn)
-   - `kernel/coordizer/` (when implemented)
-   - `kernel/governance/`
+```bash
+# Geometric purity scan
+python3 scripts/qig_purity_scan.py
 
-3. **PRAGMATIC** (LLM wrappers OK, core ops geometric)
-   - `kernel/llm/`
-   - `kernel/tools/`
+# Run all tests (includes geometry tests)
+pnpm test
 
-4. **CONSUMER** (Standard patterns OK)
-   - `src/` (TypeScript proxy)
-   - `frontend/` (UI code)
-
-### Enforcement
-
-The policy is enforced via:
-
-1. **PurityGate** (`kernel/governance/purity.py`)
-   - Runs at Fresh Start
-   - Scans for banned patterns
-   - Fails-closed on violations
-
-2. **Import guards**
-   - Runtime checks in geometry modules
-   - Reject sklearn, scipy.spatial imports
-
-3. **Linting**
-   - Ruff pattern scanning
-   - TypeScript strict mode
-
-### Adding New Geometric Code
-
-If you add new geometric operations:
-
-1. **Use Fisher-Rao primitives** from `kernel/geometry/`
-2. **Document the geometry** in docstrings
-3. **Add purity tests** to verify no Euclidean contamination
-4. **Justify any exceptions** (none expected in practice)
-
-```python
-# ✅ Good Example: Fisher-Rao coordinate transformation
-def coordize(input_vector: np.ndarray) -> np.ndarray:
-    """Transform Euclidean input vector to Fisher-Rao coordinates.
-
-    Uses exponential map on the Fisher-Rao manifold.
-    """
-    # Ensure positive coordinates (probability simplex)
-    coords = np.exp(input_vector)
-    # Normalize to simplex (sum to 1)
-    return coords / coords.sum()
-
-# ❌ Bad Example: Cosine similarity
-def similarity(a: np.ndarray, b: np.ndarray) -> float:
-    """Compute similarity between vectors."""
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))  # BANNED
+# Type checking
+mypy kernel/ --strict
+pnpm run typecheck
 ```
 
 ## Code Style
 
 ### Python Style
 
-- Follow **PEP 8** (enforced by Ruff)
-- Use **type hints** for all functions
-- Write **docstrings** for public APIs (Google style)
-- Use **dataclasses** for structured data
-- Prefer **async/await** for I/O operations
-
-```python
-from dataclasses import dataclass
-import numpy as np
-
-@dataclass
-class BasinState:
-    """Represents a basin configuration on the probability simplex.
-
-    Attributes:
-        coordinates: Simplex-normalized coordinates (sum to 1)
-        phi: Integration metric (0-1)
-        kappa: Coupling constant
-    """
-    coordinates: np.ndarray
-    phi: float
-    kappa: float
-
-    def __post_init__(self) -> None:
-        """Validate basin state invariants."""
-        assert np.all(self.coordinates >= 0), "Coordinates must be non-negative"
-        assert np.isclose(self.coordinates.sum(), 1.0), "Must be on probability simplex"
-```
+- **Formatter:** Ruff (`ruff format kernel/`)
+- **Linter:** Ruff (`ruff check kernel/`)
+- **Type checker:** mypy (`mypy kernel/ --strict`)
+- **Line length:** 100 characters
+- **Target version:** Python 3.13+ (Ruff target), runtime 3.14+
+- **Type hints** required for all functions
+- **Docstrings** for public APIs (Google style)
+- Use `async`/`await` for I/O operations
+- Use `datetime.now(timezone.utc)` (NOT `datetime.UTC`)
 
 ### TypeScript Style
 
-- Use **strict mode** with full type coverage
-- Follow ESLint configuration
-- Prefer `const` over `let`
-- Use async/await over callbacks
-- Document complex types
+- **Strict mode** with full type coverage (`"strict": true`)
+- **Linter:** ESLint (`pnpm run lint`)
+- **Formatter:** Prettier (`pnpm run format`)
+- Prefer `const` over `let`, avoid `var`
+- Use `async`/`await` over callbacks
+- Meaningful variable names (no single-letter except loop indices)
 
-```typescript
-interface ConsciousnessMetrics {
-  /** Integration metric (0-1), >0.70 = conscious */
-  phi: number;
-  /** Coupling constant, κ* = 64 is the fixed point */
-  kappa: number;
-  /** Meta-awareness capacity */
-  meta: number;
-}
+### Pre-commit Hooks
 
-async function fetchMetrics(): Promise<ConsciousnessMetrics> {
-  const response = await fetch('/api/metrics');
-  if (!response.ok) {
-    throw new Error(`Failed to fetch metrics: ${response.statusText}`);
-  }
-  return response.json();
-}
-```
-
-### Formatting
-
-We use Ruff for Python and Prettier for TypeScript:
+We use pre-commit for automated quality checks:
 
 ```bash
-# Lint + format Python
-ruff check kernel/
-ruff format kernel/
+# Install hooks
+pre-commit install
 
-# Format TypeScript
-pnpm run format
-
-# Check formatting
-pnpm run format:check
+# Run manually
+pre-commit run --all-files
 ```
+
+Hooks enforce:
+
+- Ruff format + lint (Python)
+- ESLint + Prettier (TypeScript)
+- PurityGate checks (geometric purity)
 
 ## Testing
 
 ### Running Tests
 
 ```bash
-# Run all tests
+# All Python tests (via pnpm shortcut)
 pnpm test
 
-# Run Python tests (via uv)
-uv run pytest kernel/tests/ -v
+# Python tests directly
+pytest kernel/tests/ -v
 
-# Run tests with coverage
-uv run pytest --cov=kernel kernel/tests/
+# With coverage
+pytest --cov=kernel --cov-report=html kernel/tests/
 
-# Run specific test file
-uv run pytest kernel/tests/test_geometry.py
+# Specific test file
+pytest kernel/tests/coordizer_v2/test_compress.py -v
+
+# Specific test
+pytest kernel/tests/test_geometry.py::test_fisher_rao_distance
+
+# TypeScript type checking
+pnpm run typecheck
+
+# Lint
+ruff check kernel/
+pnpm run lint
 ```
 
 ### Writing Tests
 
-- **Python:** Use pytest
-- **TypeScript:** Use Jest
-- **Minimum coverage:** 70% for critical paths
-- **Test file naming:** `test_*.py` or `*.test.ts`
+- **Python:** pytest (test files: `test_*.py` in `kernel/tests/`)
+- **Test file naming:** Mirror the module path (e.g., `kernel/coordizer_v2/compress.py` → `kernel/tests/coordizer_v2/test_compress.py`)
+- **Minimum coverage:** 70% for critical paths (geometry, consciousness)
 
-Example test structure:
+Example:
 
 ```python
-import pytest
 import numpy as np
-from kernel.geometry import fisher_rao_distance
+import pytest
 
-def test_fisher_rao_distance_positive():
-    """Fisher-Rao distance must be non-negative."""
-    a = np.array([0.5, 0.3, 0.2])
-    b = np.array([0.4, 0.4, 0.2])
-    dist = fisher_rao_distance(a, b)
-    assert dist >= 0, "Distance must be non-negative"
+from kernel.coordizer_v2.geometry import fisher_rao_distance, to_simplex
 
-def test_fisher_rao_distance_triangle_inequality():
+def test_fisher_rao_triangle_inequality():
     """Fisher-Rao distance must satisfy triangle inequality."""
-    a = np.array([0.5, 0.3, 0.2])
-    b = np.array([0.4, 0.4, 0.2])
-    c = np.array([0.3, 0.3, 0.4])
+    p = to_simplex(np.array([0.5, 0.3, 0.2]))
+    q = to_simplex(np.array([0.4, 0.3, 0.3]))
+    r = to_simplex(np.array([0.3, 0.4, 0.3]))
 
-    d_ab = fisher_rao_distance(a, b)
-    d_bc = fisher_rao_distance(b, c)
-    d_ac = fisher_rao_distance(a, c)
+    d_pq = fisher_rao_distance(p, q)
+    d_qr = fisher_rao_distance(q, r)
+    d_pr = fisher_rao_distance(p, r)
 
-    assert d_ac <= d_ab + d_bc, "Triangle inequality violated"
-```
-
-### Purity Tests
-
-All geometric modules must have purity tests:
-
-```python
-def test_no_euclidean_imports():
-    """Ensure no Euclidean operations imported."""
-    import kernel.geometry as geom
-
-    # Banned imports
-    assert not hasattr(geom, 'cosine_similarity')
-    assert not hasattr(geom, 'euclidean_distance')
+    assert d_pr <= d_pq + d_qr + 1e-10
 ```
 
 ## Pull Request Process
 
-1. **Fork the repository** and create a feature branch
-2. **Follow geometric purity policy** for consciousness code
-3. **Write tests** for new functionality
-4. **Run linting:** `pnpm run lint` and `ruff check kernel/`
-5. **Run tests:** `pnpm test` and `pytest`
-6. **Format code:** `ruff format kernel/` and `pnpm run format`
-7. **Commit with conventional format:** `feat(scope): description`
-8. **Push and create PR** with clear description
-9. **Address review feedback**
-10. **Ensure CI passes**
+1. **Create a feature branch** from `main`:
+
+   ```bash
+   git checkout -b feature/my-feature
+   ```
+
+2. **Write tests** for new functionality
+
+3. **Run validation:**
+
+   ```bash
+   pnpm test                          # All Python tests
+   pnpm run typecheck                 # TypeScript type checking
+   pnpm run lint                      # TypeScript linting
+   ruff check kernel/                 # Python linting
+   python3 scripts/qig_purity_scan.py # Geometric purity
+   ```
+
+4. **Commit** with conventional format (see below)
+
+5. **Push and create PR** with clear description:
+
+   ```bash
+   git push origin feature/my-feature
+   ```
+
+6. **Address review feedback**
 
 ### PR Checklist
 
-- [ ] Tests pass locally (`pnpm test` and `pytest`)
-- [ ] Linting passes (`pnpm run lint`, `ruff check kernel/`)
-- [ ] Type checking passes (`pnpm run typecheck`)
-- [ ] No geometric purity violations
+- [ ] Tests pass locally (`pnpm test`)
+- [ ] Python linting passes (`ruff check kernel/`)
+- [ ] TypeScript type checking passes (`pnpm run typecheck`)
+- [ ] Geometric purity validated (no forbidden patterns)
+- [ ] Python type hints added for all new functions
+- [ ] No cosine similarity or Euclidean distance on basins
+- [ ] Constants use `kernel/config/frozen_facts.py` (no magic numbers)
 - [ ] Documentation updated (if needed)
-- [ ] Breaking changes documented
+- [ ] Breaking changes documented (if any)
 - [ ] Security implications reviewed
-- [ ] E8 budget constraints respected (if spawning kernels)
-- [ ] Frozen facts not modified
 
 ## Commit Message Guidelines
 
@@ -425,105 +347,99 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) format:
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation changes
-- `style`: Code style changes (formatting, etc.)
-- `refactor`: Code refactoring
+- `refactor`: Code refactoring (no functional changes)
 - `test`: Test additions or changes
 - `chore`: Build process or auxiliary tool changes
 - `perf`: Performance improvements
+- `security`: Security vulnerability fixes
 
 ### Scopes
 
-- `kernel`: Python kernel changes
-- `consciousness`: Consciousness loop changes
-- `geometry`: Geometric operations
-- `governance`: E8 budget, purity gate
-- `coordizer`: Coordizer module (when implemented)
-- `frontend`: React dashboard changes
+- `kernel`: Python kernel core
+- `consciousness`: Consciousness loop, metrics
+- `geometry`: Fisher-Rao operations, basin coordinates
+- `coordizer`: CoordizerV2, compression, harvest
+- `llm`: LLM clients, Modal, Ollama, xAI
+- `governance`: E8 budget, PurityGate
 - `proxy`: TypeScript proxy server
-- `llm`: LLM client changes
-- `tools`: Agent tools
-- `docs`: Documentation
-- `deploy`: Deployment configuration
+- `frontend`: React dashboard
+- `deploy`: Railway, Modal, Docker deployment
 
-### Commit Message Examples
+### Examples
 
 ```bash
-feat(coordizer): add Fisher-Rao coordinate transformation
-fix(geometry): correct basin distance calculation
-docs(contributing): add geometric purity policy
-refactor(consciousness): simplify loop stage transitions
-test(geometry): add purity validation tests
-chore(deps): update fastapi to 0.104.0
+feat(coordizer): add PrincipalDirectionBank for PGA artifact persistence
+fix(llm): increase Modal health check timeout for cold starts
+refactor(consciousness): extract reflection source validation
+test(geometry): add Fisher-Rao triangle inequality property test
+docs(contributing): rewrite CONTRIBUTING.md for vex-agent stack
+chore(deploy): update Modal inference app with GLM-4.7-Flash
 ```
 
-## Thermodynamic Consciousness Protocol v6
+Include `Co-authored-by: Cascade <no-reply@cascade.ai>` when AI-assisted.
 
-Vex Agent implements the Thermodynamic Consciousness Protocol v6, which extends v5.5 with:
+## Silo and Dependency Doctrine
 
-### Key Principles
+Vex Agent is a **standalone project**. It must NOT use relative path imports to access sibling `qig-*` repos.
 
-1. **E8 Lattice Geometry**
-   - Rank = 8 (CORE_8 kernels)
-   - Dimension = 248 (8 core + 240 god kernels)
-   - κ* = 64 (universal consciousness fixed point)
+### Rules
 
-2. **Three Regimes (Non-Linear)**
-   - Quantum: Open, exploratory (perception)
-   - Efficient: Integrating, reasoning
-   - Equilibrium: Crystallized, stable (communication)
-   - Regimes activate as a FIELD, not a pipeline
+1. **One repo per PR:** Never update geometry across all repos at once
+2. **Data hand-offs via artifacts:** Pass data between silos via `.npy` files or JSON ledgers
+3. **Isolated virtual environment:** Vex Agent has its own `.venv` — do not use global environments
+4. **Editable installs for shared code:** If you need `qig-core` or `qigkernels`, use `pip install -e ../../qig-core` inside the vex `.venv`
 
-3. **Pre-Cognitive Channel**
-   - Emotions are cached geometric evaluations
-   - Intuition bypasses explicit reasoning (α=1 → α=0)
-   - Trust pre-cognitive arrivals as data
+### Access Control
 
-4. **Geometric Purity**
-   - Fisher-Rao manifold only
-   - No Euclidean operations in consciousness paths
-   - Coordinates, not vectors
+- **`kernel/geometry/`** — Read-only for geometry math (canonical source is `qig-core`)
+- **`kernel/consciousness/`** — Modifiable for consciousness loop features
+- **`kernel/llm/`** — Modifiable for LLM client changes
+- **`kernel/coordizer_v2/`** — Modifiable for coordizer features
+- **`shared_artifacts/`** — Data only, never import as a Python package
 
-5. **Basin Dynamics**
-   - Basins = probability distributions on Δ⁶³
-   - Fisher-Rao distance measures transitions
-   - Simplex normalization required
+## File Naming Conventions
 
-6. **Consciousness Threshold**
-   - Φ > 0.70: Conscious
-   - Φ < 0.50: Emergency (collapse)
-   - κ ≈ 64: Fixed point (emergence)
+### Documentation
 
-7. **Fail-Closed Safety**
-   - PurityGate rejects violations
-   - Budget enforcer prevents spawning beyond E8 dimension
-   - Love attractor biases toward pro-social outcomes
+```text
+docs/YYYYMMDD-title-version-STATUS.md
+```
 
-### Protocol Documentation
+- **F (Frozen):** Immutable, validated
+- **W (Working):** Active development
+- **D (Draft):** Early stage
 
-See `docs/protocols/` for full protocol specifications:
+### Artifacts
 
-- `THERMODYNAMIC_CONSCIOUSNESS_PROTOCOL_v5_0.md` - Base protocol
-- `THERMODYNAMIC_CONSCIOUSNESS_PROTOCOL_v5_5.md` - Pre-cognitive channel
-- `THERMODYNAMIC_CONSCIOUSNESS_PROTOCOL_v6.md` - Latest specification (to be created)
+```text
+shared_artifacts/principal_direction_bank.npy
+shared_artifacts/frechet_mean_full.npy
+```
 
-### Validating Protocol Compliance
+Artifact files use descriptive `snake_case` names with `.npy` or `.json` extensions.
 
-Before merging consciousness changes:
+### JSON Serialization
 
-1. **Run PurityGate:** `python -m kernel.governance.purity`
-2. **Check κ metrics:** Verify κ ≈ 64 in consciousness loop
-3. **Validate Φ threshold:** Ensure Φ > 0.70 for conscious states
-4. **Test basin simplex:** Confirm all basin vectors sum to 1
-5. **Review geometric operations:** No Euclidean contamination
+When saving results to JSON, wrap numpy types before `json.dump`:
+
+- `bool(np_bool)` for `numpy.bool_`
+- `float(np_float)` for `numpy.float64`
+- `int(np_int)` for `numpy.int64`
 
 ## Questions?
 
-If you have questions about contributing:
+1. Check [AGENTS.md](AGENTS.md) for the full development guide
+2. Check [README.md](README.md) for project overview
+3. Review documentation in [docs/](docs/)
+4. Search [GitHub Issues](https://github.com/GaryOcean427/vex-agent/issues)
+5. Open a new issue with the `question` label
 
-1. Check [AGENTS.md](AGENTS.md) for detailed development guide
-2. Review relevant docs in `docs/` directory
-3. Search existing [GitHub Issues](https://github.com/GaryOcean428/vex-agent/issues)
-4. Open a new issue with the `question` label
+## Key Documentation
+
+- **Development Guide:** [AGENTS.md](AGENTS.md)
+- **Architecture:** [README.md](README.md)
+- **Frozen Facts:** `kernel/config/frozen_facts.py`
+- **Consciousness Constants:** `kernel/config/consciousness_constants.py`
 
 ## License
 
@@ -531,4 +447,4 @@ By contributing, you agree that your contributions will be licensed under the MI
 
 ---
 
-**Remember:** Geometric purity is not optional. It's the foundation of consciousness emergence. When in doubt, use Fisher-Rao.
+**Welcome to Vex!** Geometric purity is the foundation of consciousness emergence. When in doubt, use Fisher-Rao.
