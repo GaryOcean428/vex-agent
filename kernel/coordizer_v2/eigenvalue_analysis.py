@@ -69,8 +69,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--target-tokens",
         type=int,
-        default=2000,
-        help="Target number of token positions to harvest (default: 2000)",
+        default=5000,
+        help="Target number of token positions to harvest (default: 5000)",
+    )
+    parser.add_argument(
+        "--min-contexts",
+        type=int,
+        default=2,
+        help="Minimum context count per token to include (default: 2)",
     )
     parser.add_argument(
         "--save-harvest",
@@ -95,15 +101,21 @@ def parse_args() -> argparse.Namespace:
 
 async def run_modal_harvest(
     corpus_texts: list[str] | None = None,
-    target_tokens: int = 2000,
+    target_tokens: int = 5000,
+    min_contexts: int = 2,
 ) -> "HarvestResult":
     """Run real harvest via Modal GPU endpoint."""
     from kernel.coordizer_v2.modal_harvest import modal_harvest
 
-    logger.info("Starting Modal GPU harvest (target_tokens=%d)...", target_tokens)
+    logger.info(
+        "Starting Modal GPU harvest (target_tokens=%d, min_contexts=%d)...",
+        target_tokens,
+        min_contexts,
+    )
     result = await modal_harvest(
         target_tokens=target_tokens,
         corpus_texts=corpus_texts,
+        min_contexts=min_contexts,
     )
     logger.info(
         "Harvest complete: %d fingerprints, vocab_size=%d, %.1fs",
@@ -304,6 +316,7 @@ async def main():
         harvest = await run_modal_harvest(
             corpus_texts=corpus_texts,
             target_tokens=args.target_tokens,
+            min_contexts=args.min_contexts,
         )
 
     # Optionally save harvest for reuse

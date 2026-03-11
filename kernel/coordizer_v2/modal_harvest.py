@@ -59,6 +59,7 @@ async def modal_harvest(
     target_tokens: int = 2000,
     corpus_texts: list[str] | None = None,
     timeout: float | None = None,
+    min_contexts: int | None = None,
 ) -> HarvestResult:
     """Call Modal GPU endpoint to harvest LLM distributions.
 
@@ -84,10 +85,12 @@ async def modal_harvest(
     # Harvest timeout must be much longer than inference — cold start + model load + processing.
     # Default: ModalHarvestConfig.timeout (600s), NOT inference_timeout_ms (120s).
     resolved_timeout = timeout if timeout is not None else ModalHarvestConfig.timeout
+    resolved_min_contexts = min_contexts if min_contexts is not None else ModalHarvestConfig.min_contexts
     config = ModalHarvestConfig(
         model_id=resolved_model,
         target_tokens=target_tokens,
         timeout=resolved_timeout,
+        min_contexts=resolved_min_contexts,
     )
 
     # Default corpus: diverse prompts for distribution harvesting
