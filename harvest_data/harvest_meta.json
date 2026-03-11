@@ -2,7 +2,7 @@
   "model_name": "glm-4.7-flash",
   "vocab_size": 154820,
   "corpus_size": 407,
-  "harvest_time_seconds": 82.75277280807495,
+  "harvest_time_seconds": 65.10145378112793,
   "n_tokens_harvested": 4,
   "context_counts": {
     "785": 26,

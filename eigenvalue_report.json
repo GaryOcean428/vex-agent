@@ -1,0 +1,27 @@
+{
+  "e8_hypothesis_score": 0.0,
+  "recommendation": "E8 hypothesis NOT SUPPORTED -- variance broadly distributed, use n=32",
+  "recommended_n": 32,
+  "effective_dim_90pct": 2,
+  "effective_dim_95pct": 2,
+  "effective_dim_99pct": 2,
+  "spectral_gap_1_to_8": 0.0,
+  "total_geodesic_variance": 0.52118,
+  "n_tokens_compressed": 4,
+  "source_dim": 154880,
+  "target_dim": 64,
+  "compression_time_seconds": 0.8,
+  "eigenvalue_spectrum_top_16": [
+    0.393522,
+    0.125989,
+    0.001669,
+    0.0
+  ],
+  "cumulative_variance_top_16": [
+    0.7551,
+    0.9968,
+    1.0,
+    1.0
+  ],
+  "is_synthetic": false
+}
