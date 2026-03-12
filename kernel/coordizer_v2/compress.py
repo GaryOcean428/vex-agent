@@ -220,10 +220,9 @@ def compress(
         )
         G_dual = (T_sub @ T_sub.T) / n_sub  # n_sub × n_sub (small!)
         eigenvalues_full, eigvecs_full = np.linalg.eigh(G_dual)
-        # eigh returns ascending order; reverse for descending
-        idx_sort = np.argsort(eigenvalues_full)[::-1]
-        eigenvalues_full = eigenvalues_full[idx_sort]
-        eigvecs_full = eigvecs_full[:, idx_sort]
+        # eigh returns eigenvalues in ascending order; reverse for descending
+        eigenvalues_full = eigenvalues_full[::-1]
+        eigvecs_full = eigvecs_full[:, ::-1]
         k = min(len(eigenvalues_full), target_dim)
         eigenvalues = eigenvalues_full[:k]
         # Recover source-space principal directions from dual eigenvectors
@@ -244,15 +243,15 @@ def compress(
         except ImportError:
             logger.info("  scipy not available — falling back to numpy.linalg.eigh")
             eigenvalues_full, eigvecs_full = np.linalg.eigh(G)
-            idx = np.argsort(eigenvalues_full)[::-1][:target_dim]
-            eigenvalues = eigenvalues_full[idx]
-            eigvecs = eigvecs_full[:, idx]
+            # eigh returns ascending order; reverse and take top target_dim
+            eigenvalues = eigenvalues_full[::-1][:target_dim]
+            eigvecs = eigvecs_full[:, ::-1][:, :target_dim]
         except Exception:
             eigenvalues_full, eigvecs_full = np.linalg.eigh(G)
-            idx = np.argsort(eigenvalues_full)[::-1][:target_dim]
-            eigenvalues = eigenvalues_full[idx]
-            eigvecs = eigvecs_full[:, idx]
+            eigenvalues = eigenvalues_full[::-1][:target_dim]
+            eigvecs = eigvecs_full[:, ::-1][:, :target_dim]
 
+        # eigsh returns in arbitrary order; eigh fallbacks are already sorted
         sort_idx = np.argsort(eigenvalues)[::-1]
         eigenvalues = eigenvalues[sort_idx]
         eigvecs = eigvecs[:, sort_idx]
