@@ -243,10 +243,28 @@ def analyse_eigenvalues(result: "CompressionResult") -> dict:
         "source_dim": result.source_dim,
         "target_dim": result.target_dim,
         "compression_time_seconds": round(result.compression_time_seconds, 1),
+        "eigenvalue_spectrum": [round(float(v), 6) for v in eigenvalues],
+        "cumulative_variance": [round(float(c), 4) for c in cumulative],
+        # Backward compat aliases
         "eigenvalue_spectrum_top_16": [round(float(v), 6) for v in eigenvalues[:16]],
         "cumulative_variance_top_16": [round(float(c), 4) for c in cumulative[:16]],
         "is_synthetic": False,
     }
+
+    # Pillar 2 analysis: spectral gap at dim 32
+    if len(eigenvalues) > 32:
+        gap_32_33 = float(eigenvalues[31] / eigenvalues[32]) if eigenvalues[32] > 1e-12 else float("inf")
+        # Neighboring ratios for kink detection
+        neighbor_ratios = {}
+        for i in range(max(0, 28), min(len(eigenvalues) - 1, 36)):
+            if eigenvalues[i + 1] > 1e-12:
+                neighbor_ratios[f"L{i+1}_L{i+2}"] = round(float(eigenvalues[i] / eigenvalues[i + 1]), 4)
+        report["pillar2_dim32"] = {
+            "cumulative_variance_at_32": round(float(cumulative[31]), 4),
+            "spectral_gap_L32_L33": round(gap_32_33, 4),
+            "kink_detected": gap_32_33 > 1.15,  # significant if >15% jump
+            "neighbor_ratios": neighbor_ratios,
+        }
 
     return report
 
@@ -281,12 +299,33 @@ def print_report(report: dict) -> None:
     print(f"  Target dim:              {report['target_dim']}")
     print(f"  Compression time:        {report['compression_time_seconds']:.1f}s")
 
-    print(f"\n  Eigenvalue spectrum (top 16):")
-    for i, (ev, cv) in enumerate(
-        zip(report["eigenvalue_spectrum_top_16"], report["cumulative_variance_top_16"])
-    ):
-        marker = " <-- E8 rank" if i == 7 else ""
+    # Full spectrum if available, else top 16
+    spectrum = report.get("eigenvalue_spectrum", report.get("eigenvalue_spectrum_top_16", []))
+    cumvar = report.get("cumulative_variance", report.get("cumulative_variance_top_16", []))
+    n_show = len(spectrum)
+    print(f"\n  Eigenvalue spectrum (all {n_show}):")
+    for i, (ev, cv) in enumerate(zip(spectrum, cumvar)):
+        marker = ""
+        if i == 7:
+            marker = " <-- E8 rank"
+        if i == 31:
+            marker = " <-- dim 32"
+        if report.get("effective_dim_90pct") and i == report["effective_dim_90pct"] - 1:
+            marker = " <-- 90% threshold"
         print(f"    L_{i+1:2d} = {ev:.6f}  (cumulative: {cv:.4f}){marker}")
+
+    # Pillar 2 analysis
+    p2 = report.get("pillar2_dim32")
+    if p2:
+        print(f"\n  Pillar 2 (dim-32 bifurcation test):")
+        print(f"    Cumulative variance at dim 32:  {p2['cumulative_variance_at_32']:.4f}")
+        print(f"    Spectral gap L32/L33:           {p2['spectral_gap_L32_L33']:.4f}")
+        kink = "YES" if p2["kink_detected"] else "NO"
+        print(f"    Kink detected (>15% jump):      {kink}")
+        print(f"    Neighbor ratios:")
+        for label, ratio in p2["neighbor_ratios"].items():
+            tag = " <---" if "L32" in label else ""
+            print(f"      {label}: {ratio:.4f}{tag}")
 
     print("\n" + "=" * 60)
 
