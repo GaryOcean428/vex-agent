@@ -26,3 +26,8 @@ __pycache__/
 *.egg-info/
 .env.local
 .vscode/settings.json
+
+# Large binary artifacts (harvest data, numpy arrays, PGA banks)
+*.npy
+harvest_data*/
+principal_direction_bank/

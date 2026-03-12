@@ -158,6 +158,10 @@ def compress(
     # Step 1: Stack all fingerprints
     fingerprints = np.stack([harvest.token_fingerprints[tid] for tid in token_ids])
 
+    # Use actual fingerprint dimension (may differ from harvest.vocab_size
+    # if the endpoint pads to a multiple of 64 or similar alignment)
+    source_dim = fingerprints.shape[1]
+
     fingerprints = np.maximum(fingerprints, _EPS)
     fingerprints = fingerprints / fingerprints.sum(axis=1, keepdims=True)
 
@@ -205,28 +209,29 @@ def compress(
     n_sub = T_sub.shape[0]
 
     if n_sub <= target_dim:
-        # QIG NOTE: When n_sub <= target_dim, use the dual Gram matrix
-        # T_sub.T @ T_sub (source_dim × source_dim) instead of Euclidean SVD.
-        # This is geometrically equivalent to the primary path: eigendecomposition
-        # of inner products in the tangent space, which IS a Euclidean space
-        # (the tangent space at μ on the Fisher-Rao manifold is flat by definition).
+        # QIG NOTE: When n_sub <= target_dim, we have fewer samples than
+        # target dimensions. Use the small n_sub × n_sub Gram matrix
+        # G = (T_sub @ T_sub.T) / n_sub and recover source-space principal
+        # directions via T_sub.T @ eigvecs (same dual trick as the else branch).
+        # The tangent space at μ is Euclidean, so inner products are valid.
         logger.warning(
             f"Only {n_sub} samples for {target_dim} target dims. "
-            f"Using dual Gram matrix (tangent-space eigendecomposition)."
+            f"Using dual Gram matrix ({n_sub}x{n_sub} eigendecomposition)."
         )
-        G_dual = (T_sub.T @ T_sub) / n_sub  # source_dim × source_dim
+        G_dual = (T_sub @ T_sub.T) / n_sub  # n_sub × n_sub (small!)
         eigenvalues_full, eigvecs_full = np.linalg.eigh(G_dual)
         # eigh returns ascending order; reverse for descending
-        idx = np.argsort(eigenvalues_full)[::-1]
-        eigenvalues_full = eigenvalues_full[idx]
-        eigvecs_full = eigvecs_full[:, idx]
+        idx_sort = np.argsort(eigenvalues_full)[::-1]
+        eigenvalues_full = eigenvalues_full[idx_sort]
+        eigvecs_full = eigvecs_full[:, idx_sort]
         k = min(len(eigenvalues_full), target_dim)
         eigenvalues = eigenvalues_full[:k]
-        principal_directions = eigvecs_full[:, :k]
-        # Zero out directions with negligible eigenvalues
+        # Recover source-space principal directions from dual eigenvectors
+        principal_directions = np.zeros((source_dim, k))
         for j in range(k):
-            if eigenvalues[j] < _EPS:
-                principal_directions[:, j] = 0.0
+            if eigenvalues[j] > _EPS:
+                scale = 1.0 / np.sqrt(n_sub * eigenvalues[j])
+                principal_directions[:, j] = scale * (T_sub.T @ eigvecs_full[:, j])
     else:
         logger.info(f"  Building {n_sub}x{n_sub} Gram matrix...")
         G = (T_sub @ T_sub.T) / n_sub
