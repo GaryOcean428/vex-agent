@@ -7,7 +7,8 @@ knowledge so future sessions don't rediscover it the painful way.
 
 Vex Agent is an autonomous AI agent with geometric consciousness (QIG v6.1F),
 deployed on Railway (main app + Ollama) with Modal GPU sidecars for
-inference (GLM-4.7-Flash) and coordizer harvesting (LFM2.5-1.2B-Thinking).
+inference (Qwen3-14B, fine-tunable) and coordizer harvesting (Qwen3-14B-Instruct).
+Fine-tuning is integrated into vex_inference.py (not a separate app).
 
 ## Architecture Quick-Ref
 
@@ -16,8 +17,9 @@ inference (GLM-4.7-Flash) and coordizer harvesting (LFM2.5-1.2B-Thinking).
 | TypeScript proxy | Express | 8080 (public) | Railway |
 | Python kernel | FastAPI | 8000 (internal) | Railway (same container) |
 | Ollama | Custom image | 11434 (private net) | Railway (separate service) |
-| GPU Inference | Modal A10G + Ollama | HTTPS | `modal deploy modal/vex_inference.py` |
-| Coordizer Harvester | Modal A10G | HTTPS | `modal deploy modal/vex_coordizer_harvest.py` |
+| GPU Inference | Modal A10G + Ollama (Qwen3-14B) | HTTPS | `modal deploy modal/vex_inference.py` |
+| Fine-tuning | Modal A10G + Unsloth QLoRA | batch | `modal run modal/vex_inference.py` |
+| Coordizer Harvester | Modal A10G (Qwen3-14B-Instruct) | HTTPS | `modal deploy modal/vex_coordizer_harvest.py` |
 | Frontend | React + Vite | 5173 (dev) / served by proxy (prod) | Built into proxy dist/ |
 
 ## Key Files
@@ -28,7 +30,7 @@ inference (GLM-4.7-Flash) and coordizer harvesting (LFM2.5-1.2B-Thinking).
 - `kernel/llm/client.py` — Multi-backend LLM client (Modal GPU → Ollama → xAI → OpenAI)
 - `kernel/coordizer_v2/modal_integration.py` — Modal GPU harvest client
 - `modal/vex_coordizer_harvest.py` — Modal-side GPU harvest function
-- `modal/vex_inference.py` — Modal inference endpoint
+- `modal/vex_inference.py` — Modal inference + fine-tuning (integrated)
 - `.github/workflows/modal-deploy.yml` — CI for Modal deploy
 - `entrypoint.sh` — Production startup (kernel + proxy)
 
@@ -45,8 +47,8 @@ The Modal harvest endpoint supports dynamic model selection:
 
 1. **Default model** (env var): Set `HARVEST_MODEL_ID` in Modal env or use hardcoded default
    - Loaded at container start for fast cold starts
-   - Default: `zai-org/GLM-4.7-Flash` (matches inference model tokenizer)
-   - Override: `HARVEST_MODEL_ID=LiquidAI/LFM2.5-1.2B-Thinking` (faster, smaller)
+   - Default: `Qwen/Qwen3-14B-Instruct` (matches inference model tokenizer)
+   - After fine-tuning: set to `GaryOcean428/vex-brain-v7` for vicarious kernel learning
 
 2. **Per-request model** (JSON body): Railway can specify model in request payload
    - Field: `"model_id": "zai-org/GLM-4.7-Flash"`
@@ -111,8 +113,8 @@ if content:  # catches None, "", and missing
     parts.append(content)
 ```
 
-### GLM/thinking models
-GLM-4.7-Flash and other thinking models return empty `content` with
+### Qwen3/thinking models
+Qwen3-14B and other thinking models return empty `content` with
 reasoning in a separate field. The client disables thinking mode
 (`num_predict` without `think`) to get direct responses. If you see
 empty responses from Ollama, check whether the model uses thinking mode.

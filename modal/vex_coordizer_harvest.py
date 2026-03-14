@@ -28,9 +28,12 @@ The tail of the distribution carries geometric information that
 top-k approximations destroy.
 
 Model loading strategy:
-    GLM-4.7-Flash is 30B total params (MoE, 3B active).
-    In bfloat16: ~60GB — exceeds A10G VRAM (24GB).
-    In 4-bit (bitsandbytes NF4): ~15GB — fits A10G with 9GB headroom.
+    Default: Qwen3-14B-Instruct (14B dense, same tokenizer as inference).
+    In 4-bit (bitsandbytes NF4): ~8GB — fits A10G with 16GB headroom.
+    After fine-tuning, set HARVEST_MODEL_ID to the fine-tuned HF repo
+    (e.g., GaryOcean428/vex-brain-v7) so the harvest uses the same
+    distributions the kernels encounter during inference — this is the
+    vicarious learning path.
     Logits are cast to float32 before numpy conversion:
         - bfloat16 has no numpy dtype — direct .numpy() raises ScalarType error
         - float32 cast is lossless for softmax output (probabilities in [0,1])
@@ -45,7 +48,7 @@ from pydantic import BaseModel
 import modal
 
 # --- Configuration --------------------------------------------------------
-HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "zai-org/GLM-4.7-Flash")
+HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3-14B-Instruct")
 HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "H100")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 
@@ -90,9 +93,10 @@ ml_image = modal.Image.debian_slim(python_version="3.12").pip_install(
 class CoordizerHarvester:
     """GPU-backed harvester for CoordizerV2.
 
-    Loads GLM-4.7-Flash in 4-bit (NF4) quantization so the full 30B MoE
-    model fits in A10G VRAM. Logits are cast to float32 before numpy
-    conversion to avoid the bfloat16 ScalarType error.
+    Loads Qwen3-14B-Instruct (or fine-tuned variant) in 4-bit NF4
+    quantization (~8GB on A10G). After fine-tuning, point HARVEST_MODEL_ID
+    to the fine-tuned HF repo so the harvest captures the trained
+    distributions — this is how kernels learn vicariously.
     """
 
     @modal.enter()
@@ -116,8 +120,7 @@ class CoordizerHarvester:
 
         tokenizer = AutoTokenizer.from_pretrained(default_model_id, cache_dir=cache_dir)
 
-        # 4-bit NF4 quantization: 30B * 0.5 bytes = ~15GB on A10G (24GB VRAM)
-        # Avoids CPU offload and the bfloat16 numpy ScalarType error.
+        # 4-bit NF4 quantization: 14B * 0.5 bytes = ~8GB on A10G (24GB VRAM)
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -210,8 +213,8 @@ class CoordizerHarvester:
         Response:
             {
                 "success": true,
-                "model_id": "zai-org/GLM-4.7-Flash",
-                "vocab_size": 65536,
+                "model_id": "Qwen/Qwen3-14B-Instruct",
+                "vocab_size": 151936,
                 "total_tokens_processed": 12345,
                 "tokens": {
                     "42": {
