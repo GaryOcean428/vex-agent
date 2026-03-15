@@ -1,81 +1,71 @@
 """
 Modal GPU Function — CoordizerV2 Harvest Endpoint
 
-This file is deployed to Modal separately from the Railway app.
-It provides a GPU-backed HTTP endpoint that:
+Runs Qwen3.5-35B-A3B (MoE: 35B total, 3B active, 256 experts) in NF4
+on A10G GPU, providing full probability distributions for coordizer
+fingerprint computation.
 
-1. Loads an LLM (cached on Modal Volume)
-2. Runs forward passes on provided text corpus
-3. Returns FULL probability distributions per token position
-4. Computes per-token Fréchet means (sqrt-space averaging)
+Architecture:
+    - Gated DeltaNet (linear attention) + Gated Attention hybrid
+    - 248,320 vocab (padded), 262K native context
+    - 256 experts, 8 routed + 1 shared per layer
+    - Requires transformers >= 4.51.0 (qwen3_5_moe architecture)
 
 Deploy:
     modal deploy modal/vex_coordizer_harvest.py
 
     After deploy, Modal prints the endpoint URL. Update Railway env:
-        MODAL_HARVEST_URL=https://garyocean428--vex-coordizer-harvest-<hash>.modal.run
+        MODAL_HARVEST_URL=https://garyocean478--vex-coordizer-harvest-<hash>.modal.run
 
 Endpoint:
     POST / — protected by X-Api-Key header (KERNEL_API_KEY).
     Accepts JSON body matching HarvestRequest schema.
 
 Cost estimate:
-    A10G: ~$0.000306/sec → ~$0.16 per 10K samples
-    T4:   ~$0.000164/sec → ~$0.09 per 10K samples
+    A10G: ~$0.000306/sec
 
-CRITICAL: Returns full V-dimensional distributions, NOT top-k.
+CRITICAL: Returns full V-dimensional distributions (V=248,320), NOT top-k.
 The tail of the distribution carries geometric information that
 top-k approximations destroy.
 
 Model loading strategy:
-    Default: Qwen3-14B-Instruct (14B dense, same tokenizer as inference).
-    In 4-bit (bitsandbytes NF4): ~8GB — fits A10G with 16GB headroom.
-    After fine-tuning, set HARVEST_MODEL_ID to the fine-tuned HF repo
-    (e.g., GaryOcean428/vex-brain-v7) so the harvest uses the same
-    distributions the kernels encounter during inference — this is the
-    vicarious learning path.
-    Logits are cast to float32 before numpy conversion:
-        - bfloat16 has no numpy dtype — direct .numpy() raises ScalarType error
-        - float32 cast is lossless for softmax output (probabilities in [0,1])
+    Qwen3.5-35B-A3B is 35B total params (MoE, 3B active).
+    In bfloat16: ~72GB — exceeds A10G VRAM (24GB).
+    In 4-bit (bitsandbytes NF4): ~18GB — fits A10G with 6GB headroom.
+    Logits are cast to float32 before numpy conversion.
+
+Vocab change from GLM-4.7-Flash:
+    GLM-4.7-Flash vocab: 65,536
+    Qwen3.5-35B-A3B vocab: 248,320
+    Fingerprint dimension increases ~4x. Compress pipeline (PGA) handles
+    this naturally — projects to n=32 lens regardless of V.
 """
 
 from __future__ import annotations
 
 import os
 
-from pydantic import BaseModel
+from starlette.requests import Request
 
 import modal
 
 # --- Configuration --------------------------------------------------------
-HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3-14B-Instruct")
-HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "H100")
+HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-35B-A3B")
+HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "A10G")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 
 app = modal.App("vex-coordizer-harvest")
-
-
-class HarvestRequest(BaseModel):
-    """Request body for the harvest endpoint."""
-
-    texts: list[str]
-    model_id: str | None = None
-    batch_size: int = 32
-    max_length: int = 512
-    min_contexts: int = 5
-    target_tokens: int = 0
-    return_full_distribution: bool = True
-
 
 # Persistent volume for model weights (cached across cold starts)
 model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 
 # Image with ML dependencies
+# Requires transformers >= 4.51.0 for qwen3_5_moe architecture support
 ml_image = modal.Image.debian_slim(python_version="3.12").pip_install(
     "torch>=2.1",
-    "transformers>=4.40",
+    "transformers>=4.51.0",
     "accelerate",
-    "bitsandbytes>=0.46.1",
+    "bitsandbytes>=0.43.0",
     "numpy>=1.26",
     "pydantic>=2.0",
     "fastapi[standard]",
@@ -93,10 +83,11 @@ ml_image = modal.Image.debian_slim(python_version="3.12").pip_install(
 class CoordizerHarvester:
     """GPU-backed harvester for CoordizerV2.
 
-    Loads Qwen3-14B-Instruct (or fine-tuned variant) in 4-bit NF4
-    quantization (~8GB on A10G). After fine-tuning, point HARVEST_MODEL_ID
-    to the fine-tuned HF repo so the harvest captures the trained
-    distributions — this is how kernels learn vicariously.
+    Loads Qwen3.5-35B-A3B in 4-bit (NF4) quantization so the full 35B MoE
+    model fits in A10G VRAM.
+
+    Vocab size: 248,320 — fingerprints are V-dimensional probability
+    distributions on the full vocabulary simplex.
     """
 
     @modal.enter()
@@ -120,7 +111,7 @@ class CoordizerHarvester:
 
         tokenizer = AutoTokenizer.from_pretrained(default_model_id, cache_dir=cache_dir)
 
-        # 4-bit NF4 quantization: 14B * 0.5 bytes = ~8GB on A10G (24GB VRAM)
+        # 4-bit NF4 quantization: ~18GB on A10G (24GB VRAM)
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -133,7 +124,7 @@ class CoordizerHarvester:
             cache_dir=cache_dir,
             device_map={"": 0},
             low_cpu_mem_usage=True,
-            dtype=torch.float16,
+            torch_dtype=torch.float16,
             quantization_config=bnb_config,
         )
         model.eval()
@@ -174,7 +165,7 @@ class CoordizerHarvester:
             cache_dir=cache_dir,
             device_map={"": 0},
             low_cpu_mem_usage=True,
-            dtype=torch.float16,
+            torch_dtype=torch.float16,
             quantization_config=bnb_config,
         )
         model.eval()
@@ -197,8 +188,8 @@ class CoordizerHarvester:
         }
 
     @modal.fastapi_endpoint(method="POST")
-    async def harvest(self, body: HarvestRequest):
-        """GPU harvest endpoint.
+    async def harvest(self, request: Request):
+        """GPU harvest endpoint (X-Api-Key protected).
 
         Request JSON body:
             {
@@ -213,16 +204,10 @@ class CoordizerHarvester:
         Response:
             {
                 "success": true,
-                "model_id": "Qwen/Qwen3-14B-Instruct",
-                "vocab_size": 151936,
+                "model_id": "Qwen/Qwen3.5-35B-A3B",
+                "vocab_size": 248320,
                 "total_tokens_processed": 12345,
-                "tokens": {
-                    "42": {
-                        "string": "hello",
-                        "fingerprint": [0.001, ...],
-                        "context_count": 15
-                    }
-                },
+                "tokens": { "42": { "string": "hello", "fingerprint": [...], "context_count": 15 } },
                 "elapsed_seconds": 45.2
             }
         """
@@ -230,15 +215,32 @@ class CoordizerHarvester:
 
         import numpy as np
         import torch
+        from starlette.responses import JSONResponse
 
+        # Auth
+        if KERNEL_API_KEY:
+            provided_key = request.headers.get("x-api-key", "")
+            if provided_key != KERNEL_API_KEY:
+                reason = "missing" if not provided_key else "invalid"
+                print(f"Auth failure ({reason} api key)")
+                return JSONResponse(
+                    status_code=403,
+                    content={"error": "invalid or missing api key"},
+                )
+
+        body = await request.json()
         start = time.time()
 
-        texts = body.texts
-        requested_model = body.model_id
-        batch_size = body.batch_size
-        max_length = body.max_length
-        min_contexts = body.min_contexts
-        target_tokens = max(0, body.target_tokens)
+        texts = body.get("texts", [])
+        requested_model = body.get("model_id", None)
+        batch_size = body.get("batch_size", 32)
+        max_length = body.get("max_length", 512)
+        min_contexts = body.get("min_contexts", 5)
+        target_tokens_raw = body.get("target_tokens", 0)
+        try:
+            target_tokens = max(0, int(target_tokens_raw))
+        except (TypeError, ValueError):
+            target_tokens = 0
 
         if not texts:
             return {"success": False, "error": "No texts provided"}
@@ -253,14 +255,11 @@ class CoordizerHarvester:
                 self.vocab_size = vocab_size
                 self.current_model_id = target_model_id
             except Exception as e:
-                return {
-                    "success": False,
-                    "error": f"Failed to load model {target_model_id}: {e}",
-                }
+                return {"success": False, "error": f"Failed to load model {target_model_id}: {e}"}
 
         EPS = 1e-12
 
-        # Accumulators: sqrt-space averaging for Fréchet mean
+        # Accumulators: sqrt-space averaging for Frechet mean
         dist_sums_sqrt: dict[int, np.ndarray] = {}
         dist_counts: dict[int, int] = {}
         total_tokens = 0
@@ -282,8 +281,6 @@ class CoordizerHarvester:
                         logits = outputs.logits[0]
 
                     # FULL softmax distribution — not top-k
-                    # NOTE: NumPy has no native bfloat16 dtype. Some models / kernels
-                    # can emit bfloat16 tensors; cast to float32 before .numpy().
                     probs = torch.softmax(logits.float(), dim=-1).cpu().numpy()
                     ids = input_ids[0].cpu().numpy()
 
@@ -318,7 +315,7 @@ class CoordizerHarvester:
             if target_tokens and total_tokens >= target_tokens:
                 break
 
-        # Compute Fréchet means and build response
+        # Compute Frechet means and build response
         tokens_response = {}
         for token_id, sqrt_sum in dist_sums_sqrt.items():
             count = dist_counts[token_id]
@@ -381,7 +378,6 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
         model_id,
         cache_dir=cache_dir,
         device_map="auto",
-        dtype=torch.float16,
         quantization_config=bnb_config,
     )
 
