@@ -205,6 +205,36 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Load protocol reference material into geometric memory
     _load_protocol_knowledge(geometric_memory)
 
+    # ── AUTO-BUILD RESONANCE BANK FROM COORDIZED OUTPUT ──────────
+    # On every deploy, rebuild the CoordizerV2 resonance bank from
+    # coordized JSONL files sitting in /data/harvest/output/.
+    try:
+        from .coordizer_v2.bank_builder import rebuild_bank_from_output
+
+        output_dir = "/data/harvest/output"
+        bank_dir = "/data/harvest/bank"
+        bank = rebuild_bank_from_output(output_dir, bank_dir)
+        if bank and len(bank) > 0:
+            if consciousness._coordizer_v2 is not None:
+                consciousness._coordizer_v2.bank = bank
+                logger.info(
+                    "Resonance bank rebuilt: %d entries, tiers=%s",
+                    len(bank),
+                    bank.tier_distribution(),
+                )
+            else:
+                logger.warning(
+                    "Resonance bank built (%d entries) but no coordizer to inject into",
+                    len(bank),
+                )
+        else:
+            logger.info(
+                "No coordized output found — resonance bank empty (will populate on first harvest)"
+            )
+    except Exception as e:
+        logger.error("Failed to auto-build resonance bank: %s", e)
+    # ── END RESONANCE BANK AUTO-BUILD ────────────────────────────
+
     # Start CoordizerV2 HarvestScheduler if Modal is enabled.
     # Routes pending JSONL files from /data/harvest/pending/ to Modal GPU.
     # Foraging, search, and curriculum coordizing go through this path.
