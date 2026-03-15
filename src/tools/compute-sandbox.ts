@@ -13,6 +13,12 @@
  * /api/tools/execute_code and /api/tools/run_command endpoints.
  *
  * Docs: https://www.computesdk.com/docs/providers/railway/
+ *
+ * IMPORTANT: isAvailable() requires COMPUTESDK_API_KEY to be explicitly
+ * set. RAILWAY_API_KEY alone is NOT sufficient — Railway sets that
+ * automatically on all containers, which caused ComputeSDK to try
+ * connecting even when no ComputeSDK service was deployed, flooding
+ * logs with WebSocket handshake failures.
  */
 
 import { logger } from "../config/logger";
@@ -86,16 +92,23 @@ export class SandboxManager {
   private async ensureInit(): Promise<void> {
     if (this.initialised) return;
 
+    // Guard: require explicit COMPUTESDK_API_KEY. Without it, don't
+    // even attempt to import the SDK — prevents WebSocket reconnection
+    // spam when no ComputeSDK service is deployed.
+    if (!process.env.COMPUTESDK_API_KEY) {
+      throw new Error(
+        "ComputeSDK not configured — set COMPUTESDK_API_KEY to enable sandbox tools",
+      );
+    }
+
     try {
       const { compute } = (await import("computesdk")) as {
         compute: ComputeSdkClient;
       };
       this.compute = compute;
 
-      // ComputeSDK auto-detects Railway from env vars:
-      // COMPUTESDK_API_KEY, RAILWAY_API_KEY, RAILWAY_PROJECT_ID, RAILWAY_ENVIRONMENT_ID
+      // ComputeSDK needs both its own key and Railway credentials
       if (
-        process.env.COMPUTESDK_API_KEY &&
         process.env.RAILWAY_API_KEY &&
         process.env.RAILWAY_PROJECT_ID &&
         process.env.RAILWAY_ENVIRONMENT_ID
@@ -179,9 +192,14 @@ export class SandboxManager {
 
   /**
    * Check if ComputeSDK is available.
+   *
+   * CRITICAL: Only returns true when COMPUTESDK_API_KEY is explicitly set.
+   * RAILWAY_API_KEY alone is NOT sufficient — Railway auto-sets that on all
+   * containers, which caused the SDK to initialize and flood logs with
+   * WebSocket handshake failures when no ComputeSDK service was deployed.
    */
   isAvailable(): boolean {
-    return !!process.env.COMPUTESDK_API_KEY || !!process.env.RAILWAY_API_KEY;
+    return !!process.env.COMPUTESDK_API_KEY;
   }
 }
 
@@ -275,7 +293,7 @@ export const runCommandTool: VexTool = {
       return {
         success: false,
         output: "",
-        error: "ComputeSDK not configured — shell commands require a sandbox",
+        error: "ComputeSDK not configured — set COMPUTESDK_API_KEY to enable sandbox tools",
       };
     }
 
