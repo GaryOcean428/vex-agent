@@ -1,31 +1,18 @@
 """
 Modal GPU Function — CoordizerV2 Harvest Endpoint
 
-Runs Qwen3.5-4B (dense, 4B params) in NF4 on A10G GPU (~2GB VRAM),
-providing full probability distributions for coordizer fingerprint
-computation.
+Runs Qwen3.5-4B (dense, 4B params) in NF4 on A10G GPU (~2GB VRAM).
 
-Deploy:
-    modal deploy modal/vex_coordizer_harvest.py
-
-Endpoint:
-    POST / — protected by X-Api-Key header (KERNEL_API_KEY).
-
-Cost estimate:
-    A10G: ~$0.000306/sec
-
-CRITICAL: Returns full V-dimensional distributions (V=151,936), NOT top-k.
+Deploy: modal deploy modal/vex_coordizer_harvest.py
 
 Model persistence:
     Weights cached on Modal Volume "vex-models" — persists across deploys.
-    This model is the harvest substrate and future fine-tuning base
-    (like Matrix/GPT-4.1 fine-tunes, but for coordizer distributions).
+    Future fine-tuning base (like Matrix/GPT-4.1 fine-tunes).
 """
 
 import os
 
 import modal
-from starlette.requests import Request
 
 # --- Configuration --------------------------------------------------------
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
@@ -105,29 +92,33 @@ class CoordizerHarvester:
         return {"status": "ok", "model_id": self.current_model_id, "vocab_size": self.vocab_size}
 
     @modal.fastapi_endpoint(method="POST")
-    async def harvest(self, request: Request):
+    async def harvest(self, data: dict):
         """Harvest fingerprints from text.
 
-        With starlette.requests.Request imported at module level (no
-        from __future__ import annotations), FastAPI recognizes the
-        type hint and injects the raw request object.
+        Uses Modal's canonical `data: dict` pattern for POST bodies.
+        Auth via api_key field in body (not headers — Modal fastapi_endpoint
+        doesn't expose raw Request without starlette import at deploy time).
+
+        Body: {
+            "texts": [...], "api_key": "...",
+            "min_contexts": 5, "max_length": 512,
+            "batch_size": 32, "target_tokens": 0
+        }
         """
         import time
         import numpy as np
         import torch
 
         if KERNEL_API_KEY:
-            api_key = request.headers.get("x-api-key", "")
+            api_key = data.get("api_key", "")
             if api_key != KERNEL_API_KEY:
                 return {"error": "Invalid API key", "success": False}
 
-        body = await request.json()
-        texts = body.get("texts", [])
-        model_id = body.get("model_id", self.current_model_id)
-        batch_size = body.get("batch_size", 32)
-        max_length = body.get("max_length", 512)
-        min_contexts = body.get("min_contexts", 5)
-        target_tokens = body.get("target_tokens", 0)
+        texts = data.get("texts", [])
+        batch_size = data.get("batch_size", 32)
+        max_length = data.get("max_length", 512)
+        min_contexts = data.get("min_contexts", 5)
+        target_tokens = data.get("target_tokens", 0)
 
         if not texts:
             return {"error": "No texts provided", "success": False}
@@ -184,7 +175,7 @@ class CoordizerHarvester:
 
         return {
             "success": True,
-            "model_id": model_id,
+            "model_id": self.current_model_id,
             "vocab_size": vocab_size,
             "total_tokens_processed": total_tokens,
             "unique_tokens_returned": len(result_tokens),
