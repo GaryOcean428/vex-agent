@@ -16,11 +16,6 @@ Cost estimate:
 
 CRITICAL: Returns full V-dimensional distributions (V=151,936), NOT top-k.
 
-Model loading strategy:
-    Qwen3.5-4B is 4B dense params.
-    In 4-bit (bitsandbytes NF4): ~2GB — fits A10G with 22GB headroom.
-    Logits are cast to float32 before numpy conversion.
-
 Model persistence:
     Weights cached on Modal Volume "vex-models" — persists across deploys.
     This model is the harvest substrate and future fine-tuning base
@@ -30,6 +25,7 @@ Model persistence:
 import os
 
 import modal
+from starlette.requests import Request
 
 # --- Configuration --------------------------------------------------------
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
@@ -109,9 +105,13 @@ class CoordizerHarvester:
         return {"status": "ok", "model_id": self.current_model_id, "vocab_size": self.vocab_size}
 
     @modal.fastapi_endpoint(method="POST")
-    async def harvest(self, request):
-        """Harvest fingerprints. No type annotation on request — from __future__
-        import annotations breaks FastAPI's Request detection."""
+    async def harvest(self, request: Request):
+        """Harvest fingerprints from text.
+
+        With starlette.requests.Request imported at module level (no
+        from __future__ import annotations), FastAPI recognizes the
+        type hint and injects the raw request object.
+        """
         import time
         import numpy as np
         import torch
