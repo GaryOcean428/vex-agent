@@ -257,6 +257,25 @@ async function main(): Promise<void> {
     }
   });
 
+  // Task status — GET with path param
+  app.get(ROUTES.task_status, async (req, res) => {
+    try {
+      const resp = await fetch(
+        `${KERNEL_URL}/task/${req.params.task_id}`,
+      );
+      const data = await resp.json();
+      res.status(resp.status).json(data);
+    } catch (err) {
+      res
+        .status(502)
+        .json({ error: `Kernel unreachable: ${(err as Error).message}` });
+    }
+  });
+
+  // Context objectives
+  proxyGet(ROUTES.context_objectives);
+  proxyPost(ROUTES.context_objectives);
+
   // ─── Chat routes (UI + streaming proxy) ─────────────────────
   // Check for React frontend BEFORE creating chat router so we can
   // skip the inline HTML fallback when the SPA handles /chat.
