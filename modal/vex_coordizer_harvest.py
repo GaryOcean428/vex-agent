@@ -9,7 +9,8 @@ Deploy:
     modal deploy modal/vex_coordizer_harvest.py
 
 Endpoint:
-    POST / — protected by X-Api-Key header (KERNEL_API_KEY).
+    POST /harvest — JSON body with texts array.
+    GET  /health  — unauthenticated health check.
 
 Cost estimate:
     A10G: ~$0.000306/sec
@@ -24,7 +25,6 @@ Model persistence:
 import os
 
 import modal
-from starlette.requests import Request
 
 # --- Configuration --------------------------------------------------------
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
@@ -58,7 +58,9 @@ class CoordizerHarvester:
 
     @modal.enter()
     def load_model(self):
-        if not KERNEL_API_KEY:
+        if KERNEL_API_KEY:
+            print(f"KERNEL_API_KEY loaded: {KERNEL_API_KEY[:4]}...{KERNEL_API_KEY[-4:]}")
+        else:
             print("WARNING: KERNEL_API_KEY not set — harvest endpoint is unauthenticated.")
 
         import torch
@@ -84,7 +86,7 @@ class CoordizerHarvester:
             cache_dir=cache_dir,
             device_map={"": 0},
             low_cpu_mem_usage=True,
-            torch_dtype=torch.float16,
+            dtype=torch.float16,
             quantization_config=bnb_config,
         )
         model.eval()
@@ -100,28 +102,30 @@ class CoordizerHarvester:
         model_volume.commit()
 
     @modal.fastapi_endpoint(method="GET")
-    async def health(self):
+    def health(self):
         return {"status": "ok", "model_id": self.current_model_id, "vocab_size": self.vocab_size}
 
     @modal.fastapi_endpoint(method="POST")
-    async def harvest(self, request: Request):
-        """Harvest fingerprints from text. Returns full V-dim probability distributions."""
+    def harvest(self, data: dict):
+        """Harvest fingerprints from text.
+
+        Per Modal docs: fastapi_endpoint passes JSON body as dict parameter.
+        Auth via _api_key field in body (coordize proxy injects it).
+        """
         import time
         import numpy as np
         import torch
 
-        if KERNEL_API_KEY:
-            api_key = request.headers.get("x-api-key", "")
-            if api_key != KERNEL_API_KEY:
-                return {"error": "Invalid API key", "success": False}
+        texts = data.get("texts", [])
+        model_id = data.get("model_id", self.current_model_id)
+        batch_size = data.get("batch_size", 32)
+        max_length = data.get("max_length", 512)
+        min_contexts = data.get("min_contexts", 5)
+        target_tokens = data.get("target_tokens", 0)
+        api_key = data.get("_api_key", "")
 
-        body = await request.json()
-        texts = body.get("texts", [])
-        model_id = body.get("model_id", self.current_model_id)
-        batch_size = body.get("batch_size", 32)
-        max_length = body.get("max_length", 512)
-        min_contexts = body.get("min_contexts", 5)
-        target_tokens = body.get("target_tokens", 0)
+        if KERNEL_API_KEY and api_key != KERNEL_API_KEY:
+            return {"error": "Invalid API key", "success": False}
 
         if not texts:
             return {"error": "No texts provided", "success": False}
@@ -140,4 +144,78 @@ class CoordizerHarvester:
         total_tokens = 0
 
         with torch.no_grad():
-            for batch
+            for batch_start in range(0, len(all_input_ids), batch_size):
+                batch = all_input_ids[batch_start:batch_start + batch_size]
+                for input_ids in batch:
+                    ids_tensor = torch.tensor([input_ids], device="cuda")
+                    outputs = model(ids_tensor)
+                    logits = outputs.logits[0]
+                    probs = torch.nn.functional.softmax(logits.float(), dim=-1)
+                    probs_np = probs.cpu().numpy()
+
+                    for pos in range(len(input_ids)):
+                        tid = input_ids[pos]
+                        if tid not in token_fingerprints:
+                            token_fingerprints[tid] = []
+                        token_fingerprints[tid].append(probs_np[pos])
+                        total_tokens += 1
+
+                    if target_tokens > 0 and total_tokens >= target_tokens:
+                        break
+                if target_tokens > 0 and total_tokens >= target_tokens:
+                    break
+
+        result_tokens = {}
+        for tid, fp_list in token_fingerprints.items():
+            if len(fp_list) < min_contexts:
+                continue
+            mean_fp = np.mean(fp_list, axis=0)
+            mean_fp = mean_fp / mean_fp.sum()
+            token_str = tokenizer.decode([tid])
+            result_tokens[token_str] = {
+                "token_id": tid,
+                "count": len(fp_list),
+                "fingerprint": mean_fp.tolist(),
+            }
+
+        elapsed = time.time() - start
+
+        return {
+            "success": True,
+            "model_id": model_id,
+            "vocab_size": vocab_size,
+            "total_tokens_processed": total_tokens,
+            "unique_tokens_returned": len(result_tokens),
+            "elapsed_seconds": round(elapsed, 2),
+            "tokens": result_tokens,
+        }
+
+
+@app.function(
+    image=ml_image,
+    volumes={"/models": model_volume},
+    timeout=1200,
+    secrets=[modal.Secret.from_name("model")],
+)
+def download_model(model_id: str = HARVEST_MODEL_ID):
+    """Pre-cache model weights to Modal Volume.
+    Run: modal run modal/vex_coordizer_harvest.py::download_model
+    """
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+    cache_dir = "/models/hub"
+    print(f"Downloading {model_id} to {cache_dir}...")
+
+    AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_use_double_quant=True,
+    )
+    AutoModelForCausalLM.from_pretrained(
+        model_id, cache_dir=cache_dir, device_map="auto", quantization_config=bnb_config,
+    )
+    model_volume.commit()
+    print(f"Done. Model cached at {cache_dir} (4-bit NF4)")
