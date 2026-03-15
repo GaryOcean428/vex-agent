@@ -212,13 +212,18 @@ class HarvestScheduler:
     loop NEVER triggers this — only explicit API calls or scheduled runs.
     """
 
+    # Type alias for the post-harvest callback
+    OnHarvestComplete = Any  # Callable[[list[dict]], Awaitable[None]] | None
+
     def __init__(
         self,
         config: HarvestSchedulerConfig | None = None,
         ingestor: Any = None,  # JSONLIngestor instance
+        on_harvest_complete: Any = None,  # async callback(results) after successful run
     ):
         self.config = config or HarvestSchedulerConfig()
         self.ingestor = ingestor
+        self.on_harvest_complete = on_harvest_complete
         self.budget = HarvestBudget(
             daily_limit=self.config.daily_harvest_budget,
         )
@@ -472,6 +477,12 @@ class HarvestScheduler:
                         f"Scan complete: {len(results)} files processed "
                         f"({successes} OK, {failures} failed)"
                     )
+                    # Fire post-harvest callback (e.g. rebuild resonance bank)
+                    if successes > 0 and self.on_harvest_complete is not None:
+                        try:
+                            await self.on_harvest_complete(results)
+                        except Exception as cb_err:
+                            logger.error("on_harvest_complete callback failed: %s", cb_err)
             except Exception as e:
                 logger.error(f"Scheduler error: {e}", exc_info=True)
 

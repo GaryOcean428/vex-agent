@@ -217,6 +217,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         if bank and len(bank) > 0:
             if consciousness._coordizer_v2 is not None:
                 consciousness._coordizer_v2.bank = bank
+                consciousness._coordizer_v2.rebuild_string_cache()
                 logger.info(
                     "Resonance bank rebuilt: %d entries, tiers=%s",
                     len(bank),
@@ -234,6 +235,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     except Exception as e:
         logger.error("Failed to auto-build resonance bank: %s", e)
     # ── END RESONANCE BANK AUTO-BUILD ────────────────────────────
+
+    # ── RUNTIME BANK REBUILD CALLBACK ──────────────────────────
+    # After each successful harvest run, rebuild the resonance bank
+    # from the freshly-written coordized JSONL and hot-swap it into
+    # the running consciousness loop. No restart required.
+    async def _on_harvest_complete(results: list[dict]) -> None:  # type: ignore[type-arg]
+        try:
+            from .coordizer_v2.bank_builder import rebuild_bank_from_output as _rebuild
+
+            bank = _rebuild("/data/harvest/output", "/data/harvest/bank")
+            if bank and len(bank) > 0 and consciousness._coordizer_v2 is not None:
+                consciousness._coordizer_v2.bank = bank
+                consciousness._coordizer_v2.rebuild_string_cache()
+                logger.info(
+                    "Runtime bank hot-swap: %d entries, tiers=%s",
+                    len(bank),
+                    bank.tier_distribution(),
+                )
+        except Exception as e:
+            logger.error("Runtime bank rebuild failed: %s", e)
 
     # Start CoordizerV2 HarvestScheduler if Modal is enabled.
     # Routes pending JSONL files from /data/harvest/pending/ to Modal GPU.
@@ -253,15 +274,35 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 ollama_url=settings.ollama.url,
                 ollama_model=settings.ollama.model,
             )
-            scheduler = HarvestScheduler(ingestor=ingestor)
+            scheduler = HarvestScheduler(
+                ingestor=ingestor,
+                on_harvest_complete=_on_harvest_complete,
+            )
             app.state.harvest_scheduler = scheduler
             harvest_task = asyncio.create_task(scheduler.run_loop())
             logger.info("CoordizerV2 HarvestScheduler loop started (backend=modal)")
         except Exception as e:
             logger.error("Failed to start HarvestScheduler loop: %s", e)
 
+    # ── PERIODIC MEMORY CONSOLIDATION ────────────────────────────
+    # Prune geometric memory and flat memory every 30 minutes to
+    # prevent unbounded growth during long-running sessions.
+    async def _memory_consolidation_loop() -> None:
+        while True:
+            await asyncio.sleep(1800)  # 30 minutes
+            try:
+                pruned = geometric_memory.consolidate()
+                memory_store.consolidate()
+                if pruned > 0:
+                    logger.info("Memory consolidation: pruned %d geometric entries", pruned)
+            except Exception as e:
+                logger.error("Memory consolidation error: %s", e)
+
+    consolidation_task = asyncio.create_task(_memory_consolidation_loop())
+
     logger.info("Consciousness loop started (20 systems active)")
     yield
+    consolidation_task.cancel()
     if harvest_task:
         if hasattr(app.state, "harvest_scheduler"):
             app.state.harvest_scheduler.stop()
