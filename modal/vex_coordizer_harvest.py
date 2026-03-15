@@ -1,21 +1,23 @@
 """
-Modal GPU Function — CoordizerV2 Harvest Endpoint
+Modal GPU Function — CoordizerV2 Harvest + PGA Compress
 
-Runs Qwen3.5-4B (dense, 4B params) in NF4 on A10G GPU (~2GB VRAM),
-providing full probability distributions for coordizer fingerprint
-computation.
+Runs Qwen3.5-4B (dense, 4B params) in NF4 on A10G GPU (~2GB VRAM).
+Computes full V-dimensional probability distributions AND runs PGA
+compress on-GPU, returning only 64D basin coords + 32D lens coords.
+
+This eliminates the V8 string limit issue — no 248K-float fingerprints
+are ever serialized to JSON. All heavy compute stays on GPU.
 
 Deploy:
     modal deploy modal/vex_coordizer_harvest.py
 
-Endpoint:
-    POST /harvest — JSON body with texts array.
-    GET  /health  — unauthenticated health check.
+Endpoints:
+    POST /harvest — Raw fingerprints (small requests only, for debugging).
+    POST /coordize — Full pipeline: text -> fingerprints -> PGA -> 64D basin coords.
+    GET  /health  — Health check.
 
-Cost estimate:
-    A10G: ~$0.000306/sec
-
-CRITICAL: Returns full V-dimensional distributions, NOT top-k.
+Lens dimension: 32 (from eigenvalue analysis: cumulative variance 0.7661 at dim 32).
+Basin dimension: 64 (frozen). First 32 dims from PGA, rest zero-padded, unit normalized.
 
 Model persistence:
     Weights cached on Modal Volume "vex-models" — persists across deploys.
@@ -30,6 +32,8 @@ import modal
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
 HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "A10G")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
+BASIN_DIM = 64   # frozen
+LENS_DIM = 32    # from eigenvalue analysis
 
 app = modal.App("vex-coordizer-harvest")
 
@@ -101,37 +105,17 @@ class CoordizerHarvester:
         print(f"Default model loaded (4-bit NF4). Vocab size: {vocab_size}")
         model_volume.commit()
 
-    @modal.fastapi_endpoint(method="GET")
-    def health(self):
-        return {"status": "ok", "model_id": self.current_model_id, "vocab_size": self.vocab_size}
+    def _check_auth(self, data):
+        if KERNEL_API_KEY and data.get("_api_key", "") != KERNEL_API_KEY:
+            return {"error": "Invalid API key", "success": False}
+        return None
 
-    @modal.fastapi_endpoint(method="POST")
-    def harvest(self, data: dict):
-        """Harvest fingerprints from text.
-
-        Per Modal docs: fastapi_endpoint passes JSON body as dict parameter.
-        Auth via _api_key field in body (coordize proxy injects it).
-        """
-        import time
+    def _harvest_fingerprints(self, texts, batch_size, max_length, min_contexts, target_tokens):
+        """Core harvest: text -> per-token probability distributions on GPU."""
         import numpy as np
         import torch
 
-        texts = data.get("texts", [])
-        model_id = data.get("model_id", self.current_model_id)
-        batch_size = data.get("batch_size", 32)
-        max_length = data.get("max_length", 512)
-        min_contexts = data.get("min_contexts", 5)
-        target_tokens = data.get("target_tokens", 0)
-        api_key = data.get("_api_key", "")
-
-        if KERNEL_API_KEY and api_key != KERNEL_API_KEY:
-            return {"error": "Invalid API key", "success": False}
-
-        if not texts:
-            return {"error": "No texts provided", "success": False}
-
         tokenizer, model, vocab_size = self.tokenizer, self.model, self.vocab_size
-        start = time.time()
 
         all_input_ids = []
         for text in texts:
@@ -165,29 +149,194 @@ class CoordizerHarvester:
                 if target_tokens > 0 and total_tokens >= target_tokens:
                     break
 
-        result_tokens = {}
+        # Average fingerprints per token (Frechet mean on simplex via arithmetic mean)
+        averaged = {}
         for tid, fp_list in token_fingerprints.items():
             if len(fp_list) < min_contexts:
                 continue
             mean_fp = np.mean(fp_list, axis=0)
             mean_fp = mean_fp / mean_fp.sum()
+            averaged[tid] = mean_fp
+
+        return averaged, total_tokens, vocab_size
+
+    def _pga_compress(self, fingerprints_dict, lens_dim=LENS_DIM, basin_dim=BASIN_DIM):
+        """PGA compress: V-dim fingerprints -> basin coords on GPU via numpy.
+
+        Uses dual Gram trick (N x N instead of V x V) since N << V.
+        All operations in sqrt-space (Bhattacharyya embedding of probability simplex).
+        """
+        import numpy as np
+
+        fps = list(fingerprints_dict.values())
+        N = len(fps)
+        V = fps[0].shape[0]
+
+        # Global mean in sqrt space
+        sqrt_fps = [np.sqrt(np.maximum(fp, 1e-12)) for fp in fps]
+        global_mean = np.mean(sqrt_fps, axis=0)
+        norm = np.sqrt(np.sum(global_mean ** 2))
+        if norm > 1e-10:
+            global_mean /= norm
+
+        # Center in tangent space
+        centered = np.array([s - global_mean for s in sqrt_fps])  # (N, V)
+
+        # Dual Gram matrix (N x N)
+        G = centered @ centered.T  # (N, N)
+
+        # Eigendecomposition of Gram matrix
+        target_dim = min(lens_dim, N, basin_dim)
+        eigenvalues, eigenvectors = np.linalg.eigh(G)
+
+        # Sort descending
+        idx = np.argsort(eigenvalues)[::-1]
+        eigenvalues = eigenvalues[idx]
+        eigenvectors = eigenvectors[:, idx]
+
+        # Project to basin coords
+        # projection = eigenvectors^T @ centered @ global_mean
+        proj_on_mean = centered @ global_mean  # (N,)
+        lens_coords = np.zeros(target_dim)
+        for d in range(target_dim):
+            lens_coords[d] = np.dot(eigenvectors[:, d], proj_on_mean)
+
+        basin_coords = np.zeros(basin_dim)
+        basin_coords[:target_dim] = lens_coords[:target_dim]
+
+        # Unit normalize
+        basin_norm = np.sqrt(np.sum(basin_coords ** 2))
+        if basin_norm > 1e-10:
+            basin_coords /= basin_norm
+
+        return {
+            "basin_coords": basin_coords.tolist(),
+            "lens_coords": lens_coords.tolist(),
+            "eigenvalues": eigenvalues[:10].tolist(),
+            "pga_dim": target_dim,
+            "N": N,
+            "V": V,
+        }
+
+    @modal.fastapi_endpoint(method="GET")
+    def health(self):
+        return {
+            "status": "ok",
+            "model_id": self.current_model_id,
+            "vocab_size": self.vocab_size,
+            "basin_dim": BASIN_DIM,
+            "lens_dim": LENS_DIM,
+        }
+
+    @modal.fastapi_endpoint(method="POST")
+    def harvest(self, data: dict):
+        """Raw harvest — returns per-token fingerprints.
+        WARNING: Large responses. Use /coordize for production."""
+        import time
+
+        auth_err = self._check_auth(data)
+        if auth_err:
+            return auth_err
+
+        texts = data.get("texts", [])
+        if not texts:
+            return {"error": "No texts provided", "success": False}
+
+        start = time.time()
+        averaged, total_tokens, vocab_size = self._harvest_fingerprints(
+            texts,
+            data.get("batch_size", 32),
+            data.get("max_length", 512),
+            data.get("min_contexts", 5),
+            data.get("target_tokens", 0),
+        )
+
+        tokenizer = self.tokenizer
+        result_tokens = {}
+        for tid, fp in averaged.items():
             token_str = tokenizer.decode([tid])
             result_tokens[token_str] = {
                 "token_id": tid,
-                "count": len(fp_list),
-                "fingerprint": mean_fp.tolist(),
+                "count": 1,
+                "fingerprint": fp.tolist(),
             }
-
-        elapsed = time.time() - start
 
         return {
             "success": True,
-            "model_id": model_id,
+            "model_id": self.current_model_id,
             "vocab_size": vocab_size,
             "total_tokens_processed": total_tokens,
             "unique_tokens_returned": len(result_tokens),
-            "elapsed_seconds": round(elapsed, 2),
+            "elapsed_seconds": round(time.time() - start, 2),
             "tokens": result_tokens,
+        }
+
+    @modal.fastapi_endpoint(method="POST")
+    def coordize(self, data: dict):
+        """Full pipeline: text -> harvest -> PGA compress -> 64D basin coords.
+
+        This is the production endpoint. No V-dim fingerprints in the response.
+        Returns only basin_coords (64D), lens_coords (32D), eigenvalues, metadata.
+
+        Body: {
+            texts: string[],
+            min_contexts: int (default 1),
+            target_tokens: int (default 0 = unlimited),
+            max_length: int (default 512),
+            lens_dim: int (default 32),
+            _api_key: string
+        }
+        """
+        import time
+
+        auth_err = self._check_auth(data)
+        if auth_err:
+            return auth_err
+
+        texts = data.get("texts", [])
+        if not texts:
+            return {"error": "No texts provided", "success": False}
+
+        start = time.time()
+
+        # Phase 1: Harvest fingerprints on GPU
+        averaged, total_tokens, vocab_size = self._harvest_fingerprints(
+            texts,
+            data.get("batch_size", 16),
+            data.get("max_length", 512),
+            data.get("min_contexts", 1),
+            data.get("target_tokens", 0),
+        )
+
+        if len(averaged) == 0:
+            return {"error": "No tokens met min_contexts threshold", "success": False}
+
+        harvest_time = time.time() - start
+
+        # Phase 2: PGA compress on GPU (numpy, but data already in CPU memory)
+        pga_start = time.time()
+        lens_dim = data.get("lens_dim", LENS_DIM)
+        pga_result = self._pga_compress(averaged, lens_dim=lens_dim)
+        pga_time = time.time() - pga_start
+
+        total_time = time.time() - start
+
+        return {
+            "success": True,
+            "basin_coords": pga_result["basin_coords"],
+            "lens_coords": pga_result["lens_coords"],
+            "eigenvalues": pga_result["eigenvalues"],
+            "pga_dim": pga_result["pga_dim"],
+            "harvest_meta": {
+                "model_id": self.current_model_id,
+                "vocab_size": vocab_size,
+                "total_tokens_processed": total_tokens,
+                "unique_tokens": pga_result["N"],
+                "fingerprint_dim": pga_result["V"],
+                "harvest_seconds": round(harvest_time, 2),
+                "pga_seconds": round(pga_time, 2),
+            },
+            "elapsed_seconds": round(total_time, 2),
         }
 
 
