@@ -20,9 +20,12 @@ Model loading strategy:
     Qwen3.5-4B is 4B dense params.
     In 4-bit (bitsandbytes NF4): ~2GB — fits A10G with 22GB headroom.
     Logits are cast to float32 before numpy conversion.
-"""
 
-from __future__ import annotations
+Model persistence:
+    Weights cached on Modal Volume "vex-models" — persists across deploys.
+    This model is the harvest substrate and future fine-tuning base
+    (like Matrix/GPT-4.1 fine-tunes, but for coordizer distributions).
+"""
 
 import os
 
@@ -106,7 +109,9 @@ class CoordizerHarvester:
         return {"status": "ok", "model_id": self.current_model_id, "vocab_size": self.vocab_size}
 
     @modal.fastapi_endpoint(method="POST")
-    async def harvest(self, request: "Request"):
+    async def harvest(self, request):
+        """Harvest fingerprints. No type annotation on request — from __future__
+        import annotations breaks FastAPI's Request detection."""
         import time
         import numpy as np
         import torch
