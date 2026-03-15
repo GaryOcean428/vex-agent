@@ -21,7 +21,8 @@ Basin dimension: 64 (frozen). First 32 dims from PGA, rest zero-padded, unit nor
 
 Model persistence:
     Weights cached on Modal Volume "vex-models" — persists across deploys.
-    This model is the harvest substrate and future fine-tuning base.
+    QLoRA adapter loaded from /models/adapters/harvest-qlora if available.
+    This model is the harvest substrate — it evolves with every training run.
 """
 
 import os
@@ -34,6 +35,7 @@ HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "A10G")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 BASIN_DIM = 64   # frozen
 LENS_DIM = 32    # from eigenvalue analysis
+ADAPTER_PATH = "/models/adapters/harvest-qlora"
 
 app = modal.App("vex-coordizer-harvest")
 
@@ -44,6 +46,7 @@ ml_image = modal.Image.debian_slim(python_version="3.12").pip_install(
     "transformers>=4.48.0",
     "accelerate",
     "bitsandbytes>=0.43.0",
+    "peft>=0.13.0",
     "numpy>=1.26",
     "pydantic>=2.0",
     "fastapi[standard]",
@@ -66,6 +69,9 @@ class CoordizerHarvester:
             print(f"KERNEL_API_KEY loaded: {KERNEL_API_KEY[:4]}...{KERNEL_API_KEY[-4:]}")
         else:
             print("WARNING: KERNEL_API_KEY not set — harvest endpoint is unauthenticated.")
+
+        import json
+        from pathlib import Path
 
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -93,6 +99,45 @@ class CoordizerHarvester:
             dtype=torch.float16,
             quantization_config=bnb_config,
         )
+
+        # --- QLoRA adapter loading ---
+        # If a trained adapter exists, load and merge it into the base model.
+        # This is the consumer side of the fine-tuning loop:
+        #   vex_qlora_train.py trains → saves adapter → next cold start loads it here.
+        self.adapter_loaded = False
+        self.adapter_meta = None
+        adapter_config_path = Path(ADAPTER_PATH) / "adapter_config.json"
+
+        if adapter_config_path.exists():
+            try:
+                from peft import PeftModel
+
+                print(f"QLoRA adapter found at {ADAPTER_PATH}, loading...")
+                model = PeftModel.from_pretrained(model, ADAPTER_PATH)
+                # Merge adapter into base model for faster inference
+                # (no adapter overhead at inference time)
+                model = model.merge_and_unload()
+                self.adapter_loaded = True
+
+                # Load training metadata if available
+                meta_path = Path(ADAPTER_PATH) / "training_meta.json"
+                if meta_path.exists():
+                    with open(meta_path) as f:
+                        self.adapter_meta = json.load(f)
+                    print(
+                        f"Adapter merged. Trained: {self.adapter_meta.get('trained_at', 'unknown')}, "
+                        f"loss: {self.adapter_meta.get('train_loss', 'unknown')}, "
+                        f"samples: {self.adapter_meta.get('train_samples', 'unknown')}"
+                    )
+                else:
+                    print("Adapter merged (no training metadata found).")
+            except Exception as e:
+                print(f"WARNING: Failed to load adapter: {e}")
+                print("Continuing with base model only.")
+                self.adapter_loaded = False
+        else:
+            print("No QLoRA adapter found — using base model.")
+
         model.eval()
         vocab_size = tokenizer.vocab_size
 
@@ -102,7 +147,7 @@ class CoordizerHarvester:
         self.vocab_size = vocab_size
         self.current_model_id = default_model_id
 
-        print(f"Default model loaded (4-bit NF4). Vocab size: {vocab_size}")
+        print(f"Model ready (4-bit NF4). Vocab size: {vocab_size}")
         model_volume.commit()
 
     def _check_auth(self, data):
@@ -226,6 +271,8 @@ class CoordizerHarvester:
             "vocab_size": self.vocab_size,
             "basin_dim": BASIN_DIM,
             "lens_dim": LENS_DIM,
+            "adapter_loaded": self.adapter_loaded,
+            "adapter_meta": self.adapter_meta,
         }
 
     @modal.fastapi_endpoint(method="POST")
@@ -335,6 +382,7 @@ class CoordizerHarvester:
                 "fingerprint_dim": pga_result["V"],
                 "harvest_seconds": round(harvest_time, 2),
                 "pga_seconds": round(pga_time, 2),
+                "adapter_loaded": self.adapter_loaded,
             },
             "elapsed_seconds": round(total_time, 2),
         }
