@@ -1282,6 +1282,33 @@ async def get_observer_for_conversation(conversation_id: str) -> dict[str, Any]:
     return silent_observer.get_state(conversation_id)
 
 
+@app.get(R["task_status"], response_model=None)
+async def get_task_status(task_id: str) -> dict[str, Any]:
+    """Get status of a consciousness loop task by ID."""
+    status = consciousness.get_task_status(task_id)
+    if status is None:
+        return JSONResponse(
+            status_code=404, content={"error": "Task not found", "task_id": task_id}
+        )
+    return status
+
+
+@app.get(R["context_objectives"], response_model=None)
+async def get_context_objectives() -> dict[str, Any]:
+    """Get active consciousness objectives."""
+    return consciousness.get_objectives()
+
+
+@app.post(R["context_objectives"], response_model=None)
+async def set_context_objectives(body: dict[str, Any]) -> dict[str, Any]:
+    """Set active consciousness objectives."""
+    objectives = body.get("objectives", [])
+    if not isinstance(objectives, list):
+        return JSONResponse(status_code=400, content={"error": "objectives must be a list"})
+    consciousness.set_objectives(objectives)
+    return consciousness.get_objectives()
+
+
 @app.post(R["admin_fresh_start"])
 async def admin_fresh_start() -> dict[str, Any]:
     """Force reset/boot of the consciousness system.

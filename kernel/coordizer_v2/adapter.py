@@ -241,3 +241,29 @@ class CoordizerV2Adapter:
     def coordizer(self) -> CoordizerV2:
         """Access underlying CoordizerV2 instance."""
         return self._coordizer
+
+    # ─── Passthrough properties for code that accesses adapter directly ──
+
+    @property
+    def vocab_size(self) -> int:
+        """Delegate to underlying CoordizerV2."""
+        return self._coordizer.vocab_size
+
+    @property
+    def dim(self) -> int:
+        """Delegate to underlying CoordizerV2."""
+        return self._coordizer.dim
+
+    @property
+    def bank(self) -> Any:
+        """Delegate to underlying CoordizerV2."""
+        return self._coordizer.bank
+
+    @bank.setter
+    def bank(self, value: Any) -> None:
+        """Set bank on the underlying CoordizerV2, not the adapter."""
+        self._coordizer.bank = value
+
+    def rebuild_string_cache(self) -> None:
+        """Delegate to underlying CoordizerV2."""
+        self._coordizer.rebuild_string_cache()
