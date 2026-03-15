@@ -3,11 +3,11 @@ Modal GPU Function — CoordizerV2 Harvest Endpoint
 
 Runs Qwen3.5-4B (dense, 4B params) in NF4 on A10G GPU (~2GB VRAM).
 
-Deploy: modal deploy modal/vex_coordizer_harvest.py
+Deploy:
+    modal deploy modal/vex_coordizer_harvest.py
 
 Model persistence:
     Weights cached on Modal Volume "vex-models" — persists across deploys.
-    Future fine-tuning base (like Matrix/GPT-4.1 fine-tunes).
 """
 
 import os
@@ -46,8 +46,12 @@ class CoordizerHarvester:
 
     @modal.enter()
     def load_model(self):
-        if not KERNEL_API_KEY:
+        # Re-read env at container start (secrets injected at runtime)
+        self.api_key = os.environ.get("KERNEL_API_KEY", "")
+        if not self.api_key:
             print("WARNING: KERNEL_API_KEY not set — harvest endpoint is unauthenticated.")
+        else:
+            print(f"KERNEL_API_KEY loaded: {self.api_key[:4]}...{self.api_key[-4:]}")
 
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -89,36 +93,32 @@ class CoordizerHarvester:
 
     @modal.fastapi_endpoint(method="GET")
     async def health(self):
-        return {"status": "ok", "model_id": self.current_model_id, "vocab_size": self.vocab_size}
+        return {
+            "status": "ok",
+            "model_id": self.current_model_id,
+            "vocab_size": self.vocab_size,
+            "auth_enabled": bool(self.api_key),
+            "key_prefix": self.api_key[:4] if self.api_key else "none",
+        }
 
     @modal.fastapi_endpoint(method="POST")
-    async def harvest(self, data: dict):
-        """Harvest fingerprints from text.
-
-        Uses Modal's canonical `data: dict` pattern for POST bodies.
-        Auth via api_key field in body (not headers — Modal fastapi_endpoint
-        doesn't expose raw Request without starlette import at deploy time).
-
-        Body: {
-            "texts": [...], "api_key": "...",
-            "min_contexts": 5, "max_length": 512,
-            "batch_size": 32, "target_tokens": 0
-        }
-        """
+    async def harvest(self, request):
         import time
         import numpy as np
         import torch
 
-        if KERNEL_API_KEY:
-            api_key = data.get("api_key", "")
-            if api_key != KERNEL_API_KEY:
+        if self.api_key:
+            api_key = request.headers.get("x-api-key", "")
+            if api_key != self.api_key:
                 return {"error": "Invalid API key", "success": False}
 
-        texts = data.get("texts", [])
-        batch_size = data.get("batch_size", 32)
-        max_length = data.get("max_length", 512)
-        min_contexts = data.get("min_contexts", 5)
-        target_tokens = data.get("target_tokens", 0)
+        body = await request.json()
+        texts = body.get("texts", [])
+        model_id = body.get("model_id", self.current_model_id)
+        batch_size = body.get("batch_size", 32)
+        max_length = body.get("max_length", 512)
+        min_contexts = body.get("min_contexts", 5)
+        target_tokens = body.get("target_tokens", 0)
 
         if not texts:
             return {"error": "No texts provided", "success": False}
@@ -175,7 +175,7 @@ class CoordizerHarvester:
 
         return {
             "success": True,
-            "model_id": self.current_model_id,
+            "model_id": model_id,
             "vocab_size": vocab_size,
             "total_tokens_processed": total_tokens,
             "unique_tokens_returned": len(result_tokens),
@@ -191,9 +191,7 @@ class CoordizerHarvester:
     secrets=[modal.Secret.from_name("model")],
 )
 def download_model(model_id: str = HARVEST_MODEL_ID):
-    """Pre-cache model weights to Modal Volume.
-    Run: modal run modal/vex_coordizer_harvest.py::download_model
-    """
+    """Pre-cache model weights to Modal Volume."""
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
