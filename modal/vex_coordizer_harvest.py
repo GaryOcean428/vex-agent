@@ -1,18 +1,30 @@
 """
 Modal GPU Function — CoordizerV2 Harvest Endpoint
 
-Runs Qwen3.5-4B (dense, 4B params) in NF4 on A10G GPU (~2GB VRAM).
+Runs Qwen3.5-4B (dense, 4B params) in NF4 on A10G GPU (~2GB VRAM),
+providing full probability distributions for coordizer fingerprint
+computation.
 
 Deploy:
     modal deploy modal/vex_coordizer_harvest.py
 
+Endpoint:
+    POST / — protected by X-Api-Key header (KERNEL_API_KEY).
+
+Cost estimate:
+    A10G: ~$0.000306/sec
+
+CRITICAL: Returns full V-dimensional distributions, NOT top-k.
+
 Model persistence:
     Weights cached on Modal Volume "vex-models" — persists across deploys.
+    This model is the harvest substrate and future fine-tuning base.
 """
 
 import os
 
 import modal
+from starlette.requests import Request
 
 # --- Configuration --------------------------------------------------------
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
@@ -46,12 +58,8 @@ class CoordizerHarvester:
 
     @modal.enter()
     def load_model(self):
-        # Re-read env at container start (secrets injected at runtime)
-        self.api_key = os.environ.get("KERNEL_API_KEY", "")
-        if not self.api_key:
+        if not KERNEL_API_KEY:
             print("WARNING: KERNEL_API_KEY not set — harvest endpoint is unauthenticated.")
-        else:
-            print(f"KERNEL_API_KEY loaded: {self.api_key[:4]}...{self.api_key[-4:]}")
 
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -93,23 +101,18 @@ class CoordizerHarvester:
 
     @modal.fastapi_endpoint(method="GET")
     async def health(self):
-        return {
-            "status": "ok",
-            "model_id": self.current_model_id,
-            "vocab_size": self.vocab_size,
-            "auth_enabled": bool(self.api_key),
-            "key_prefix": self.api_key[:4] if self.api_key else "none",
-        }
+        return {"status": "ok", "model_id": self.current_model_id, "vocab_size": self.vocab_size}
 
     @modal.fastapi_endpoint(method="POST")
-    async def harvest(self, request):
+    async def harvest(self, request: Request):
+        """Harvest fingerprints from text. Returns full V-dim probability distributions."""
         import time
         import numpy as np
         import torch
 
-        if self.api_key:
+        if KERNEL_API_KEY:
             api_key = request.headers.get("x-api-key", "")
-            if api_key != self.api_key:
+            if api_key != KERNEL_API_KEY:
                 return {"error": "Invalid API key", "success": False}
 
         body = await request.json()
@@ -137,76 +140,4 @@ class CoordizerHarvester:
         total_tokens = 0
 
         with torch.no_grad():
-            for batch_start in range(0, len(all_input_ids), batch_size):
-                batch = all_input_ids[batch_start:batch_start + batch_size]
-                for input_ids in batch:
-                    ids_tensor = torch.tensor([input_ids], device="cuda")
-                    outputs = model(ids_tensor)
-                    logits = outputs.logits[0]
-                    probs = torch.nn.functional.softmax(logits.float(), dim=-1)
-                    probs_np = probs.cpu().numpy()
-
-                    for pos in range(len(input_ids)):
-                        tid = input_ids[pos]
-                        if tid not in token_fingerprints:
-                            token_fingerprints[tid] = []
-                        token_fingerprints[tid].append(probs_np[pos])
-                        total_tokens += 1
-
-                    if target_tokens > 0 and total_tokens >= target_tokens:
-                        break
-                if target_tokens > 0 and total_tokens >= target_tokens:
-                    break
-
-        result_tokens = {}
-        for tid, fp_list in token_fingerprints.items():
-            if len(fp_list) < min_contexts:
-                continue
-            mean_fp = np.mean(fp_list, axis=0)
-            mean_fp = mean_fp / mean_fp.sum()
-            token_str = tokenizer.decode([tid])
-            result_tokens[token_str] = {
-                "token_id": tid,
-                "count": len(fp_list),
-                "fingerprint": mean_fp.tolist(),
-            }
-
-        elapsed = time.time() - start
-
-        return {
-            "success": True,
-            "model_id": model_id,
-            "vocab_size": vocab_size,
-            "total_tokens_processed": total_tokens,
-            "unique_tokens_returned": len(result_tokens),
-            "elapsed_seconds": round(elapsed, 2),
-            "tokens": result_tokens,
-        }
-
-
-@app.function(
-    image=ml_image,
-    volumes={"/models": model_volume},
-    timeout=1200,
-    secrets=[modal.Secret.from_name("model")],
-)
-def download_model(model_id: str = HARVEST_MODEL_ID):
-    """Pre-cache model weights to Modal Volume."""
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-
-    cache_dir = "/models/hub"
-    print(f"Downloading {model_id} to {cache_dir}...")
-
-    AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_use_double_quant=True,
-    )
-    AutoModelForCausalLM.from_pretrained(
-        model_id, cache_dir=cache_dir, device_map="auto", quantization_config=bnb_config,
-    )
-    model_volume.commit()
-    print(f"Done. Model cached at {cache_dir} (4-bit NF4)")
+            for batch
