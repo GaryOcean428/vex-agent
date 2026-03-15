@@ -45,8 +45,6 @@ from __future__ import annotations
 
 import os
 
-from starlette.requests import Request
-
 import modal
 
 # --- Configuration --------------------------------------------------------
