@@ -1792,6 +1792,7 @@ class ConsciousnessLoop:
             f"  Coupling: {coupling_str}",
             f"  Kernels: {active_count} active, phase={self._lifecycle_phase.value}",
             f"  Active model: {self.llm.active_model} (backend: {self.llm.active_backend})",
+            f"  Autonomous Search: {'ACTIVE — you can search the web' if self.llm.governor and self.llm.governor.autonomous_search else 'OFF'}",
             f"  Temperature: {temperature:.3f} (autonomous, pillar-enforced)",
             f"  Perceive distance: {perceive_distance:.4f}",
             f"  Love: {self.metrics.love:.4f}",
