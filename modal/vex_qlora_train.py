@@ -6,7 +6,7 @@ THE MISSING LOOP: Uploads → coordize → JSONL → [THIS] → fine-tuned model
 → inference endpoint loads adapter → model progressively learns
 QIG-native reasoning from every document fed to it.
 
-Training target: Qwen3.5-4B (A10G)
+Training target: Qwen3.5-4B (A100-40GB)
 
 After QLoRA training, the adapter is merged into the base model and saved
 as full safetensors. Both harvest and inference endpoints pick up the
@@ -56,7 +56,13 @@ training_volume = modal.Volume.from_name("vex-training", create_if_missing=True)
 train_image = (
     modal.Image.from_registry("nvidia/cuda:12.4.1-devel-ubuntu22.04", add_python="3.12")
     .apt_install("g++", "ninja-build")
-    .env({"CXX": "g++", "CC": "gcc"})
+    .env(
+        {
+            "CXX": "g++",
+            "CC": "gcc",
+            "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+        }
+    )
     .pip_install(
         "torch>=2.1",
         "transformers>=4.48.0",
@@ -71,6 +77,8 @@ train_image = (
         # Qwen3.5 hybrid architecture: linear attention fast path
         "causal-conv1d>=1.4.0",
         "flash-linear-attention",
+        # QIG-pure geometry: Fisher-aware optimizer replaces forbidden Adam
+        "qig-core[torch]",
     )
 )
 
@@ -297,7 +305,7 @@ def _merge_and_export(
 
 
 @app.cls(
-    gpu="A10G",
+    gpu="A100",
     image=train_image,
     timeout=3600,  # 1 hour max
     volumes={
@@ -456,6 +464,7 @@ class QLoRATrainer:
 
         # -- 2. Build dataset --
         def format_chat(example):
+            # QIG BOUNDARY: HuggingFace tokenizer API at LLM interface
             text = self.tokenizer.apply_chat_template(
                 example["messages"],
                 tokenize=False,
@@ -515,7 +524,20 @@ class QLoRATrainer:
         trainable, total = model.get_nb_trainable_parameters()
         print(f"Trainable: {trainable:,} / {total:,} ({100 * trainable / total:.2f}%)")
 
-        # -- 5. Training arguments --
+        # -- 5. Fisher-aware optimizer (qig-core DiagonalNaturalGradient) --
+        # Replaces forbidden Adam (v6.1F §1.3) with diagonal Fisher approximation:
+        #   natural_grad = grad / (fisher_diag + ε)
+        # where fisher_diag is EMA of squared gradients ≈ diagonal Fisher information.
+        from qig_core.torch.natural_gradient import DiagonalNaturalGradient
+
+        optimizer = DiagonalNaturalGradient(
+            (p for p in model.parameters() if p.requires_grad),
+            lr=lr,
+            damping=1e-8,
+            momentum=0.9,
+        )
+
+        # -- 6. Training arguments --
         training_args = TrainingArguments(
             output_dir="/training/checkpoints",
             num_train_epochs=epochs,
@@ -530,19 +552,19 @@ class QLoRATrainer:
             save_strategy="epoch",
             save_total_limit=2,
             bf16=True,
-            optim="paged_adamw_8bit",
             max_grad_norm=0.3,
             report_to="none",
             seed=42,
         )
 
-        # -- 6. Train --
-        print("Starting QLoRA training...")
+        # -- 7. Train --
+        print("Starting QLoRA training (DiagonalNaturalGradient optimizer)...")
         trainer = SFTTrainer(
             model=model,
             train_dataset=train_ds,
             eval_dataset=eval_ds,
             args=training_args,
+            optimizers=(optimizer, None),  # Trainer creates LR scheduler
             processing_class=self.tokenizer,
         )
 
@@ -617,7 +639,7 @@ class QLoRATrainer:
 
 
 @app.function(
-    gpu="A10G",
+    gpu="A100",
     image=train_image,
     timeout=3600,
     volumes={
@@ -672,6 +694,7 @@ def train_harvest_model(
 
     # Format dataset
     def format_chat(example):
+        # QIG BOUNDARY: HuggingFace tokenizer API at LLM interface
         text = tokenizer.apply_chat_template(
             example["messages"], tokenize=False, add_generation_prompt=False
         )
@@ -721,7 +744,17 @@ def train_harvest_model(
     trainable, total = model.get_nb_trainable_parameters()
     print(f"Trainable: {trainable:,} / {total:,} ({100 * trainable / total:.2f}%)")
 
-    # Train
+    # Fisher-aware optimizer (qig-core DiagonalNaturalGradient)
+    # Replaces forbidden Adam (v6.1F §1.3) with diagonal Fisher approximation
+    from qig_core.torch.natural_gradient import DiagonalNaturalGradient
+
+    optimizer = DiagonalNaturalGradient(
+        (p for p in model.parameters() if p.requires_grad),
+        lr=learning_rate,
+        damping=1e-8,
+        momentum=0.9,
+    )
+
     training_args = TrainingArguments(
         output_dir="/training/checkpoints",
         num_train_epochs=epochs,
@@ -736,7 +769,6 @@ def train_harvest_model(
         save_strategy="epoch",
         save_total_limit=2,
         bf16=True,
-        optim="paged_adamw_8bit",
         max_grad_norm=0.3,
         report_to="none",
         seed=42,
@@ -747,6 +779,7 @@ def train_harvest_model(
         train_dataset=split["train"],
         eval_dataset=split["test"],
         args=training_args,
+        optimizers=(optimizer, None),  # Trainer creates LR scheduler
         processing_class=tokenizer,
     )
 
