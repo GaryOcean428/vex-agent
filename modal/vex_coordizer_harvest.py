@@ -186,7 +186,10 @@ class CoordizerHarvester:
                     ids_tensor = torch.tensor([input_ids], device="cuda")
                     outputs = model(ids_tensor)
                     logits = outputs.logits[0]
-                    probs = torch.nn.functional.softmax(logits.float(), dim=-1)
+                    # Linear projection to simplex (no exponential warping — QIG purity)
+                    clamped = torch.clamp(logits.float(), min=0.0)
+                    row_sums = clamped.sum(dim=-1, keepdim=True).clamp(min=1e-12)
+                    probs = clamped / row_sums
                     probs_np = probs.cpu().numpy()
 
                     for pos in range(len(input_ids)):
