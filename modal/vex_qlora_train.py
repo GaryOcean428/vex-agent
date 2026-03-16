@@ -551,6 +551,7 @@ class QLoRATrainer:
             output_dir="/training/checkpoints",
             num_train_epochs=epochs,
             per_device_train_batch_size=BATCH_SIZE,
+            per_device_eval_batch_size=1,  # 248K vocab logits OOM at higher batch
             gradient_accumulation_steps=GRADIENT_ACCUMULATION,
             learning_rate=lr,
             warmup_ratio=0.1,
@@ -760,6 +761,7 @@ def train_harvest_model(
         output_dir="/training/checkpoints",
         num_train_epochs=epochs,
         per_device_train_batch_size=BATCH_SIZE,
+        per_device_eval_batch_size=1,  # 248K vocab logits OOM at higher batch
         gradient_accumulation_steps=GRADIENT_ACCUMULATION,
         learning_rate=learning_rate,
         warmup_ratio=0.1,
