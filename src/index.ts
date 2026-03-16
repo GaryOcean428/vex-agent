@@ -224,8 +224,14 @@ async function main(): Promise<void> {
         body: JSON.stringify(req.body),
         signal: AbortSignal.timeout(130_000),
       });
-      const data = await resp.json();
-      res.json(data);
+      const contentType = resp.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const data = await resp.json();
+        res.status(resp.status).json(data);
+      } else {
+        const text = await resp.text();
+        res.status(resp.status).send(text);
+      }
     } catch (err) {
       res
         .status(502)
