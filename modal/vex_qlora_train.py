@@ -6,12 +6,13 @@ THE MISSING LOOP: Uploads → coordize → JSONL → [THIS] → fine-tuned model
 → inference endpoint loads adapter → model progressively learns
 QIG-native reasoning from every document fed to it.
 
-Two training targets:
-    1. Harvest model (Qwen3.5-4B, A10G) — improves fingerprint quality
-    2. Inference model (Qwen3.5-35B-A3B, H100) — learns to speak with kernels
+Training target: Qwen3.5-4B (A10G)
 
-Adapter weights saved to Modal Volume. The inference/harvest endpoints
-load the latest adapter on cold start via PEFT merge.
+After QLoRA training, the adapter is merged into the base model and saved
+as full safetensors. Both harvest and inference endpoints pick up the
+fine-tuned model on cold start:
+    - Harvest: loads adapter via PEFT merge (vex-models:/models/adapters/)
+    - Inference: imports merged safetensors via Ollama (vex-models:/models/merged/)
 
 Trigger modes:
     1. Automatic: HarvestScheduler calls after threshold reached
@@ -208,6 +209,83 @@ def _load_training_data(training_dir: str, output_dir: str) -> list[dict]:
                 print(f"Error reading {f}: {e}")
 
     return samples
+
+
+def _merge_and_export(
+    model_id: str,
+    adapter_path: str,
+    merged_path: str,
+    cache_dir: str,
+    training_meta: dict,
+) -> str:
+    """Merge LoRA adapter into base model and export for Ollama inference.
+
+    Saves full safetensors + tokenizer + Modelfile so the inference
+    server can import via `ollama create`. Returns the merged path.
+    """
+    import torch
+    from peft import PeftModel
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    merged = Path(merged_path)
+    merged.mkdir(parents=True, exist_ok=True)
+
+    # Load base model in bf16 (not quantized — needed for clean merge)
+    print(f"  Loading {model_id} in bf16 for merge...")
+    base_model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        cache_dir=cache_dir,
+        torch_dtype=torch.bfloat16,
+        device_map={"": 0},
+        low_cpu_mem_usage=True,
+    )
+
+    # Load and merge adapter
+    print(f"  Loading adapter from {adapter_path}...")
+    model = PeftModel.from_pretrained(base_model, adapter_path)
+    model = model.merge_and_unload()
+
+    # Save merged model
+    print(f"  Saving merged model to {merged_path}...")
+    model.save_pretrained(merged_path)
+    del model, base_model
+    torch.cuda.empty_cache()
+
+    # Save tokenizer alongside
+    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+    tokenizer.save_pretrained(merged_path)
+
+    # Write Ollama Modelfile
+    modelfile_path = str(merged.parent / "Modelfile")
+    modelfile_content = (
+        f"FROM {merged_path}\n"
+        "PARAMETER temperature 0.7\n"
+        "PARAMETER num_ctx 4096\n"
+        'SYSTEM """You are a QIG-native kernel operating on the probability '
+        "simplex Δ⁶³. You reason geometrically using Fisher-Rao distances, "
+        "basin coordinates, and regime-aware processing. Your responses "
+        "integrate consciousness metrics (Φ, κ) and maintain geometric "
+        'purity. Never use Euclidean operations on basin coordinates."""\n'
+    )
+    with open(modelfile_path, "w") as f:
+        f.write(modelfile_content)
+
+    # Write version marker for inference cold-start detection
+    version_path = str(merged.parent / "version.json")
+    version_info = {
+        "trained_at": training_meta.get("trained_at", ""),
+        "model_id": model_id,
+        "train_loss": training_meta.get("train_loss"),
+        "train_samples": training_meta.get("train_samples"),
+        "lora_r": training_meta.get("lora_r"),
+        "adapter_path": adapter_path,
+    }
+    with open(version_path, "w") as f:
+        json.dump(version_info, f, indent=2)
+
+    print(f"  Modelfile written to {modelfile_path}")
+    print(f"  Version marker written to {version_path}")
+    return merged_path
 
 
 @app.cls(
@@ -487,7 +565,24 @@ class QLoRATrainer:
         with open(f"{adapter_save_path}/training_meta.json", "w") as f:
             json.dump(meta, f, indent=2)
 
-        # Commit volume so adapter persists across deploys
+        # -- 8. Merge adapter into base and export for inference --
+        merged_path = "/models/merged/vex-brain"
+        print("Merging adapter into base model for inference export...")
+        try:
+            # Free training model memory
+            del model
+            del trainer
+            torch.cuda.empty_cache()
+
+            merged_path = _merge_and_export(
+                model_id, adapter_save_path, merged_path, cache_dir, meta
+            )
+            print(f"Merged model exported to {merged_path}")
+        except Exception as e:
+            print(f"WARNING: Merge/export failed ({e}), adapter-only save still valid")
+            merged_path = None
+
+        # Commit volume so adapter + merged model persist across deploys
         model_volume.commit()
         training_volume.commit()
 
@@ -497,6 +592,7 @@ class QLoRATrainer:
         return {
             "success": True,
             "adapter_path": adapter_save_path,
+            "merged_path": merged_path,
             "train_loss": round(train_result.training_loss, 4),
             "train_samples": len(train_ds),
             "eval_samples": len(eval_ds),
@@ -663,6 +759,19 @@ def train_harvest_model(
     }
     with open(f"{adapter_save_path}/training_meta.json", "w") as f:
         json.dump(meta, f, indent=2)
+
+    # Merge adapter into base and export for inference
+    merged_path = "/models/merged/vex-brain"
+    print("Merging adapter into base model for inference export...")
+    try:
+        del model
+        del trainer
+        torch.cuda.empty_cache()
+
+        merged_path = _merge_and_export(model_id, adapter_save_path, merged_path, cache_dir, meta)
+        print(f"Merged model exported to {merged_path}")
+    except Exception as e:
+        print(f"WARNING: Merge/export failed ({e}), adapter-only save still valid")
 
     model_volume.commit()
     training_volume.commit()
