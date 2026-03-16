@@ -102,23 +102,28 @@ class VexOllamaServer:
                 pass
             await asyncio.sleep(1)
 
-        print(f"Pulling model: {MODEL_NAME}")
-        pull_result = subprocess.run(
-            [
-                "ollama",
-                "pull",
-                MODEL_NAME,
-            ],
+        # Check if model is already cached on the volume before pulling
+        check = subprocess.run(
+            ["ollama", "show", MODEL_NAME],
             capture_output=True,
             text=True,
         )
+        if check.returncode == 0:
+            print(f"Model {MODEL_NAME} already cached, skipping pull")
+        else:
+            print(f"Pulling model: {MODEL_NAME}")
+            pull_result = subprocess.run(
+                ["ollama", "pull", MODEL_NAME],
+                capture_output=True,
+                text=True,
+            )
+            if pull_result.returncode != 0:
+                raise RuntimeError(
+                    f"Failed to pull {MODEL_NAME} and no cached version: {pull_result.stderr.decode() if isinstance(pull_result.stderr, bytes) else pull_result.stderr}"
+                )
+
         final_list = subprocess.run(["ollama", "list"], capture_output=True, text=True)
         print(f"  Models available: {final_list.stdout}")
-
-        if pull_result.returncode != 0:
-            raise RuntimeError(
-                f"Failed to pull {MODEL_NAME} and no cached version: {pull_result.stderr.decode() if isinstance(pull_result.stderr, bytes) else pull_result.stderr}"
-            )
 
         model_volume.commit()
         print(f"Model {MODEL_NAME} ready.")

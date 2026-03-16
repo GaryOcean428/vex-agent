@@ -212,15 +212,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     _bank_output_dir = os.getenv("HARVEST_OUTPUT_DIR", str(Path(harvest_base) / "output"))
     _bank_save_dir = os.getenv("HARVEST_BANK_DIR", str(Path(harvest_base) / "bank"))
 
-    def _build_resonance_bank(*, label: str = "startup"):
-        """Rebuild resonance bank from coordized output (pure builder, no mutation)."""
+    def _rebuild_and_inject_bank(*, label: str = "startup") -> None:
+        """Rebuild resonance bank from coordized output and inject into coordizer."""
         from .coordizer_v2.bank_builder import rebuild_bank_from_output
 
         bank = rebuild_bank_from_output(_bank_output_dir, _bank_save_dir)
-        return bank
-
-    def _inject_bank(bank, *, label: str) -> None:
-        """Inject a pre-built resonance bank into the coordizer on the event loop thread."""
         if bank and len(bank) > 0:
             if consciousness._coordizer_v2 is not None:
                 consciousness._coordizer_v2.bank = bank
@@ -243,8 +239,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # ── AUTO-BUILD RESONANCE BANK AT STARTUP ─────────────────────
     try:
-        bank = await asyncio.to_thread(_build_resonance_bank, label="startup")
-        _inject_bank(bank, label="startup")
+        await asyncio.to_thread(_rebuild_and_inject_bank, label="startup")
     except Exception as e:
         logger.error("Failed to auto-build resonance bank: %s", e)
 
@@ -256,8 +251,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     ) -> None:
         nonlocal _training_triggered
         try:
-            bank = await asyncio.to_thread(_build_resonance_bank, label="runtime")
-            _inject_bank(bank, label="runtime")
+            await asyncio.to_thread(_rebuild_and_inject_bank, label="runtime")
         except Exception as e:
             logger.error("Runtime bank rebuild failed: %s", e)
             return
@@ -336,8 +330,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             while True:
                 await asyncio.sleep(1800)  # 30 minutes
                 try:
-                    pruned = await asyncio.to_thread(geometric_memory.consolidate)
-                    await asyncio.to_thread(memory_store.consolidate)
+                    pruned = geometric_memory.consolidate()
+                    memory_store.consolidate()
                     if pruned > 0:
                         logger.info(
                             "Memory consolidation: pruned %d geometric entries",

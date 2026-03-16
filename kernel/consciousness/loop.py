@@ -1615,12 +1615,11 @@ class ConsciousnessLoop:
 
         self.narrative.coherence(self.basin)
         pillar_m = self.pillars.get_metrics(self.basin)
-        contrib_summary = (
+        (
             [(c.kernel_name, f"{c.synthesis_weight:.3f}") for c in _contributions]
             if _contributions
             else "fallback"
         )
-        logging.getLogger(__name__).debug("Contribution synthesis: %s", contrib_summary)
         active_count = len(self.kernel_registry.active())
         tack = self.tacking.get_state()
         vel = self.velocity.compute_velocity()
