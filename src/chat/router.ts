@@ -66,9 +66,8 @@ export function createChatRouter(arg: string | ChatRouterOptions): Router {
       );
       res.json({ ok: true });
     } catch (err) {
-      res
-        .status(500)
-        .json({ error: `Auth error: ${(err as Error).message}` });
+      logger.error("Auth endpoint error", { error: (err as Error).message });
+      res.status(500).json({ error: "Authentication failed" });
     }
   });
 
