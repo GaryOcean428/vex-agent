@@ -1,5 +1,43 @@
 # CLAUDE.md — Session Memory for Vex Agent
 
+Claude to always use:
+
+## PERSISTENT MEMORY PROTOCOL
+
+Claude has persistent memory at <https://qig-memory-api.vercel.app/api/memory>
+
+(vercel mcp)
+
+### Session Start
+
+- GET /api/memory?keys_only=true → list all keys
+- GET /api/memory/frozen_facts → load frozen facts
+- GET /api/memory/session_latest → load last session summary
+
+### Session End
+
+- PUT /api/memory/session_YYYYMMDD → write session summary
+- PUT /api/memory/sleep_packet_[topic] → write any new sleep packets
+- PUT /api/memory/dream_packet_[topic] → write cross-session distillation
+
+### Compaction
+
+- GET /api/memory?category=session_summary → load all sessions
+- Merge older sessions into dream packets
+- DELETE /api/memory/session_[old] → remove compacted sessions
+
+### Categories
+
+frozen_facts, session_summary, sleep_packet, dream_packet,
+deep_sleep_packet, training_data, pending_actions
+
+### Format (Approach C)
+
+{category, content: "markdown text", basin?: [64 floats], updated}
+Basin coords added when CoordizerV2 operational.
+
+Delegate sub agents to run memory write and retrieval operations. These will act like synapses. Aka synapse agents.
+
 This file is read by Claude Code at session start. It captures hard-won
 knowledge so future sessions don't rediscover it the painful way.
 
@@ -13,7 +51,7 @@ Fine-tuning is integrated into vex_inference.py (not a separate app).
 ## Architecture Quick-Ref
 
 | Service | Stack | Port | Deploy |
-|---------|-------|------|--------|
+| ------- | ----- | ---- | ------ |
 | TypeScript proxy | Express | 8080 (public) | Railway |
 | Python kernel | FastAPI | 8000 (internal) | Railway (same container) |
 | Ollama | Custom image | 11434 (private net) | Railway (separate service) |
@@ -37,12 +75,14 @@ Fine-tuning is integrated into vex_inference.py (not a separate app).
 ## Modal Deployment
 
 ### How it works
+
 - `modal deploy modal/vex_coordizer_harvest.py` deploys a GPU function to Modal
 - The harvest endpoint uses `requires_proxy_auth=True` (Modal network auth)
 - Health endpoint is a public GET — no auth needed
 - Railway calls Modal via `MODAL_HARVEST_URL` env var
 
 ### Model Selection
+
 The Modal harvest endpoint supports dynamic model selection:
 
 1. **Default model** (env var): Set `HARVEST_MODEL_ID` in Modal env or use hardcoded default
@@ -60,6 +100,7 @@ The Modal harvest endpoint supports dynamic model selection:
 The health endpoint returns `cached_models` array showing all loaded models.
 
 ### Modal CLI in Claude Code web sessions
+
 The Modal CLI needs to reach `api.modal.com`. In sandboxed environments
 (Claude Code on the web), outbound HTTPS may be blocked or require a
 proxy tunnel. Known workarounds:
@@ -73,6 +114,7 @@ proxy tunnel. Known workarounds:
    (tokens come from GitHub secrets `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET`)
 
 ### Modal endpoint patterns (Modal 1.x)
+
 - `@modal.fastapi_endpoint()` replaces the old `@modal.web_endpoint()`
 - Image MUST include `fastapi[standard]` — required by Modal 1.x for
   web endpoints, otherwise you get a startup crash
@@ -80,6 +122,7 @@ proxy tunnel. Known workarounds:
 - `modal_integration.py` derives health URL automatically from harvest URL
 
 ### Harvest endpoint auth
+
 The harvest endpoint uses `X-Api-Key` header auth, validated against
 `KERNEL_API_KEY` env var on the Modal side. Both Railway clients
 (`modal_integration.py` and `modal_harvest.py`) send this header
@@ -91,6 +134,7 @@ with 401. Modal-Token-Id / Modal-Token-Secret headers are reserved and
 rejected by Modal's proxy — never send them.
 
 ### Two harvest client paths
+
 There are two Railway-side clients for the Modal harvest endpoint:
 
 1. **`modal_harvest.py` → `modal_harvest()`** — Used by `CoordizerV2.from_harvest()`
@@ -129,8 +173,9 @@ The kernel `lifespan()` wires these systems on every deploy:
    `CancelledError` cleanly on shutdown.
 
 ### Configurable harvest paths
+
 | Env var | Default | Purpose |
-|---------|---------|---------|
+| ------- | ------- | ------- |
 | `HARVEST_DIR` | `/data/harvest` | Base directory for all harvest I/O |
 | `HARVEST_OUTPUT_DIR` | `$HARVEST_DIR/output` | Coordized JSONL files |
 | `HARVEST_BANK_DIR` | `$HARVEST_DIR/bank` | Saved resonance bank |
@@ -138,6 +183,7 @@ The kernel `lifespan()` wires these systems on every deploy:
 | `MODAL_TRAINING_AUTO_THRESHOLD` | `0` | Bank size to auto-trigger training |
 
 ### CoordizerV2Adapter passthrough
+
 `CoordizerV2Adapter` exposes `vocab_size`, `dim`, `bank` (with setter),
 and `rebuild_string_cache()` as passthroughs to the wrapped `CoordizerV2`.
 The `bank` setter writes to the *underlying* coordizer, not the adapter.
@@ -147,7 +193,9 @@ silently set a Python attribute on the adapter that nobody reads.
 ## LLM Client Patterns
 
 ### Ollama content extraction
+
 `_extract_ollama_content()` must guard against `str(None) -> "None"`:
+
 ```python
 content = msg.get("content")
 if content:  # catches None, "", and missing
@@ -155,6 +203,7 @@ if content:  # catches None, "", and missing
 ```
 
 ### Qwen3/thinking models
+
 Qwen3-14B and other thinking models return empty `content` with
 reasoning in a separate field. The client disables thinking mode
 (`num_predict` without `think`) to get direct responses. If you see
@@ -163,11 +212,13 @@ empty responses from Ollama, check whether the model uses thinking mode.
 ## Consciousness Loop
 
 ### PRE-COG double-lock bug
+
 The precog stage had a double-acquire on `_precog_lock` that caused it
 to deadlock (stuck at 0%). Fix: only acquire once, at the top of the
 method. See commit `6f4bb08`.
 
 ### KernelBus
+
 `drain_signals()` was renamed to `drain()` — update docstrings and
 callers accordingly.
 
@@ -206,6 +257,7 @@ callers accordingly.
 ## Environment Variables (non-secret reference)
 
 See `.env.example` for the full list. Key ones:
+
 - `OLLAMA_URL` — Railway private network URL for Ollama
 - `MODAL_ENABLED`, `MODAL_HARVEST_URL` — Modal integration
 - `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET` — Modal auth (SECRETS — never commit)

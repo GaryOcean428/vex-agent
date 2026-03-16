@@ -1615,7 +1615,7 @@ class ConsciousnessLoop:
 
         self.narrative.coherence(self.basin)
         pillar_m = self.pillars.get_metrics(self.basin)
-        (
+        contrib_summary = (
             [(c.kernel_name, f"{c.synthesis_weight:.3f}") for c in _contributions]
             if _contributions
             else "fallback"
@@ -1647,6 +1647,7 @@ class ConsciousnessLoop:
             f"  Autonomy: {autonomy['level']}",
             f"  Coupling: {coupling_str}",
             f"  Kernels: {active_count} active, phase={self._lifecycle_phase.value}",
+            f"  Contributions: {contrib_summary}",
             f"  Active model: {self.llm.active_model} (backend: {self.llm.active_backend})",
             f"  Temperature: {temperature:.3f} (autonomous, pillar-enforced)",
             f"  Perceive distance: {perceive_distance:.4f}",
