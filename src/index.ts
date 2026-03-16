@@ -233,9 +233,19 @@ async function main(): Promise<void> {
         res.status(resp.status).send(text);
       }
     } catch (err) {
-      res
-        .status(502)
-        .json({ error: `Kernel unreachable: ${(err as Error).message}` });
+      const error = err as Error;
+      if (error.name === "AbortError" || error.name === "TimeoutError") {
+        res
+          .status(504)
+          .json({
+            error:
+              "Kernel request timed out after 130s (training_trigger aborted by proxy).",
+          });
+      } else {
+        res
+          .status(502)
+          .json({ error: `Kernel unreachable: ${error.message}` });
+      }
     }
   });
   proxyPost(ROUTES.training_complete);
