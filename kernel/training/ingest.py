@@ -163,7 +163,7 @@ class IngestionResult:
     errors: list[str] = field(default_factory=list)
 
 
-class FeedbackRequest(BaseModel):
+class FeedbackRequest(BaseModel):  # type: ignore[misc]
     conversation_id: str
     rating: int
     comment: str = ""

@@ -278,7 +278,8 @@ class PlayEngine:
         else:
             weights = [0.4, 0.2, 0.2, 0.2]  # prefer explore alone
         activities = list(PlayActivity)
-        return activities[rng.choice(len(activities), p=weights)]
+        idx: int = int(rng.choice(len(activities), p=weights))
+        return activities[idx]
 
     def get_state(self) -> dict[str, object]:
         """Serialisable snapshot for telemetry."""

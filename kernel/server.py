@@ -415,7 +415,7 @@ set_sovereignty_loop(consciousness)
 # ═══════════════════════════════════════════════════════════════
 
 
-class ChatRequest(BaseModel):
+class ChatRequest(BaseModel):  # type: ignore[misc]
     """P14 Variable Category: BOUNDARY — all fields are external input, sanitized by Pydantic."""
 
     message: str = Field(..., max_length=100_000)
@@ -424,21 +424,21 @@ class ChatRequest(BaseModel):
     max_tokens: int = Field(default=2048, ge=1, le=32768)
 
 
-class EnqueueRequest(BaseModel):
+class EnqueueRequest(BaseModel):  # type: ignore[misc]
     input: str = Field(..., max_length=100_000)
     source: str = "api"
 
 
-class MemoryContextRequest(BaseModel):
+class MemoryContextRequest(BaseModel):  # type: ignore[misc]
     query: str = Field(..., max_length=10_000)
     k: int = Field(default=5, ge=1, le=100)
 
 
-class CoordizeRequest(BaseModel):
+class CoordizeRequest(BaseModel):  # type: ignore[misc]
     text: str = Field(..., max_length=100_000)
 
 
-class HarvestRequest(BaseModel):
+class HarvestRequest(BaseModel):  # type: ignore[misc]
     model_id: str = Field(default_factory=lambda: settings.modal.harvest_model)
     target_tokens: int = Field(default=2000, ge=100, le=100_000)
     use_modal: bool | None = None
@@ -1078,10 +1078,10 @@ async def coordizer_stats() -> dict[str, Any]:
     """
     coordizer = consciousness._coordizer_v2
     return {
-        "vocab_size": coordizer.vocab_size,  # type: ignore[union-attr]
-        "bank_size": len(coordizer.bank),  # type: ignore[union-attr]
-        "dim": coordizer.dim,  # type: ignore[union-attr]
-        "tier_distribution": coordizer.bank.tier_distribution(),  # type: ignore[union-attr]
+        "vocab_size": coordizer.vocab_size,
+        "bank_size": len(coordizer.bank),
+        "dim": coordizer.dim,
+        "tier_distribution": coordizer.bank.tier_distribution(),
     }
 
 
@@ -1243,7 +1243,7 @@ async def coordizer_bank() -> dict[str, Any]:
     Returns tier distribution, vocab size, and bank health.
     """
     coordizer = consciousness._coordizer_v2
-    bank = coordizer.bank  # type: ignore[union-attr]
+    bank = coordizer.bank
     return {
         "vocab_size": len(bank),
         "dim": bank.dim,
@@ -1436,15 +1436,15 @@ async def admin_fresh_start() -> dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════
 
 
-class KillSwitchRequest(BaseModel):
+class KillSwitchRequest(BaseModel):  # type: ignore[misc]
     enabled: bool
 
 
-class BudgetUpdateRequest(BaseModel):
+class BudgetUpdateRequest(BaseModel):  # type: ignore[misc]
     ceiling: float
 
 
-class AutonomousSearchRequest(BaseModel):
+class AutonomousSearchRequest(BaseModel):  # type: ignore[misc]
     enabled: bool
 
 

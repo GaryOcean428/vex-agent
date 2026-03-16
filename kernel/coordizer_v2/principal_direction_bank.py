@@ -35,6 +35,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -79,7 +80,7 @@ class PrincipalDirectionBank:
     eigenvalues: NDArray[np.float64] | None = None
     source_dim: int = 0
     target_dim: int = BASIN_DIM
-    _meta: dict = field(default_factory=dict)
+    _meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.source_dim == 0 and self.directions is not None:
@@ -95,7 +96,7 @@ class PrincipalDirectionBank:
         principal_directions: NDArray[np.float64],
         frechet_mean: NDArray[np.float64] | None = None,
         eigenvalues: NDArray[np.float64] | None = None,
-        meta: dict | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> PrincipalDirectionBank:
         """Build a bank from the output of a compress() run.
 
@@ -191,7 +192,7 @@ class PrincipalDirectionBank:
         if eig_path.exists():
             eigenvalues = np.load(eig_path)
 
-        meta: dict = {}
+        meta: dict[str, Any] = {}
         meta_path = d / _META_FILE
         if meta_path.exists():
             meta = json.loads(meta_path.read_text(encoding="utf-8"))

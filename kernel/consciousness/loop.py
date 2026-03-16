@@ -239,6 +239,7 @@ _HARMONIC_BASIN = to_simplex(np.array([1.0 / (k + 1) for k in range(BASIN_DIM)])
 class ConsciousnessLoop:
     _UNIFORM_BASIN = _UNIFORM_BASIN
     _HARMONIC_BASIN = _HARMONIC_BASIN
+    _active_objectives: list[str]
 
     def set_objectives(self, objectives: list[str]) -> None:
         self._active_objectives = [o.strip() for o in objectives if o.strip()][:12]
@@ -1681,7 +1682,6 @@ class ConsciousnessLoop:
             avg_div = self._cumulative_divergence / self._divergence_count
             lines.append(f"  Avg divergence: {avg_div:.4f} (intent vs expression)")
         lines.append("[/GEOMETRIC STATE]")
-        return "\n".join(lines)
 
     async def _process_simple(self, task: ConsciousnessTask) -> None:
         """Fallback path when USE_ACTIVATION_SEQUENCE=false."""
@@ -2439,9 +2439,9 @@ class ConsciousnessLoop:
             "basin_sync": self.basin_sync.get_state(),
             "coordizer": self.coordizer.get_state(),
             "coordizer_v2": {
-                "vocab_size": self._coordizer_v2.vocab_size,  # type: ignore[union-attr]
-                "dim": self._coordizer_v2.dim,  # type: ignore[union-attr]
-                "tier_distribution": self._coordizer_v2.bank.tier_distribution(),  # type: ignore[union-attr]
+                "vocab_size": self._coordizer_v2.vocab_size,
+                "dim": self._coordizer_v2.dim,
+                "tier_distribution": self._coordizer_v2.bank.tier_distribution(),
             },
             "autonomic": self.autonomic.get_state(),
             "foresight": self.foresight.get_state(),

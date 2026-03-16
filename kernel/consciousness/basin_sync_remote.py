@@ -240,7 +240,7 @@ class RemoteBasinSync:
             logger.debug("Failed to load stored coords: %s", e)
         return None
 
-    def get_state(self) -> dict:
+    def get_state(self) -> dict[str, object]:
         """Telemetry for /state endpoint."""
         return {
             "sync_count": self._sync_count,

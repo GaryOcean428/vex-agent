@@ -46,7 +46,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -176,7 +176,7 @@ def run_compression(harvest: HarvestResult) -> CompressionResult:
     return result
 
 
-def analyse_eigenvalues(result: CompressionResult) -> dict:
+def analyse_eigenvalues(result: CompressionResult) -> dict[str, Any]:
     """Analyse eigenvalue spectrum from CompressionResult.
 
     CRITICAL: eigenvalues are read directly from result.eigenvalues,
@@ -255,7 +255,7 @@ def analyse_eigenvalues(result: CompressionResult) -> dict:
     return report
 
 
-def print_report(report: dict) -> None:
+def print_report(report: dict[str, Any]) -> None:
     """Print human-readable eigenvalue report."""
     print("\n" + "=" * 60)
     print("  COORDIZER EIGENVALUE ANALYSIS")
@@ -297,7 +297,7 @@ def print_report(report: dict) -> None:
     print("\n" + "=" * 60)
 
 
-async def main():
+async def main() -> dict[str, Any]:
     args = parse_args()
 
     # Step 1: Get harvest data
