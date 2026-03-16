@@ -11,7 +11,7 @@ geometric structure survives. The key tests:
    consonant frequency ratios?
 4. Semantic Correlation: Does Fisher-Rao distance correlate
    with human-judged semantic distance?
-5. E8 Eigenvalue Test: Do top 8 PGA directions capture ~87.7%?
+5. E8 Eigenvalue Test: Report top-8 PGA direction variance (empirical: 0.452 with real data)
 
 These correspond to the FROZEN FACTS validation criteria.
 If validation fails, the harvest/compression pipeline has
@@ -98,15 +98,18 @@ def validate_resonance_bank(
     # Test 5: Tier Distribution
     result.tier_distribution = bank.tier_distribution()
 
-    # Test 6: E8 Eigenvalue Test
+    # Test 6: E8 Eigenvalue Test (informational — E8 hypothesis NOT supported empirically)
+    # Empirical result (GLM-4.7-Flash, 277 tokens): score = 0.452, expected ~0.877.
+    # Variance is broadly distributed across all 64 dims; n=32 is the correct lens dim.
     if eigenvalues is not None and len(eigenvalues) >= E8_RANK:
         total = np.sum(eigenvalues)
         if total > _EPS:
             e8_var = float(np.sum(eigenvalues[:E8_RANK]) / total)
             if verbose:
                 logger.info(f"\nE8 eigenvalue test: top-8 variance = {e8_var:.3f}")
-                logger.info("  Expected if E8 real: ~0.877")
-                logger.info(f"  {'PASS' if 0.80 < e8_var < 0.95 else 'NOTE'}")
+                logger.info("  Empirical baseline (277 real tokens): ~0.452")
+                logger.info("  E8 hypothesis NOT supported — n=32 recommended for lens dim")
+                logger.info(f"  NOTE: score={e8_var:.3f}")
 
     # Overall Pass/Fail
     kappa_ok = abs(result.kappa_measured - KAPPA_STAR) < COORDIZER_KAPPA_TOLERANCE_FACTOR * max(

@@ -269,7 +269,8 @@ def print_report(report: dict[str, Any]) -> None:
         print("\n  WARNING: SYNTHETIC DATA -- pipeline test only, NOT hypothesis test")
 
     print(f"\n  E8 Hypothesis Score (top-8 variance):  {report['e8_hypothesis_score']:.4f}")
-    print("  Expected if E8 holds:                  ~0.877")
+    print("  Empirical baseline (real data):        ~0.452")
+    print("  Expected if E8 holds (speculative):    ~0.877  [NOT SUPPORTED]")
     print(f"\n  -> {report['recommendation']}")
     print(f"  -> Recommended intermediate dim n = {report['recommended_n']}")
 
