@@ -43,6 +43,8 @@ export default function Training() {
   const [jobs, setJobs] = useState<FileUploadJob[]>([]);
   const [exportData, setExportData] = useState<{ count: number } | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [triggeringTraining, setTriggeringTraining] = useState(false);
+  const [trainingResult, setTrainingResult] = useState<{ status: string; error?: string } | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -172,20 +174,20 @@ export default function Training() {
           prev.map((j, idx) =>
             idx === i
               ? {
-                  ...j,
+                ...j,
+                status: "error",
+                result: {
                   status: "error",
-                  result: {
-                    status: "error",
-                    filename: file.name,
-                    chunks_written: 0,
-                    enriched: 0,
-                    qa_pairs: 0,
-                    category,
-                    mode,
-                    processing_time_s: 0,
-                    error: err instanceof Error ? err.message : String(err),
-                  },
-                }
+                  filename: file.name,
+                  chunks_written: 0,
+                  enriched: 0,
+                  qa_pairs: 0,
+                  category,
+                  mode,
+                  processing_time_s: 0,
+                  error: err instanceof Error ? err.message : String(err),
+                },
+              }
               : j,
           ),
         );
@@ -490,15 +492,14 @@ export default function Training() {
                           : job.status === "queued"
                             ? "var(--text-secondary)"
                             : "var(--accent)",
-                    borderLeft: `3px solid ${
-                      job.status === "error"
-                        ? "var(--error)"
-                        : job.status === "done"
-                          ? "var(--alive)"
-                          : job.status === "queued"
-                            ? "var(--border)"
-                            : "var(--accent)"
-                    }`,
+                    borderLeft: `3px solid ${job.status === "error"
+                      ? "var(--error)"
+                      : job.status === "done"
+                        ? "var(--alive)"
+                        : job.status === "queued"
+                          ? "var(--border)"
+                          : "var(--accent)"
+                      }`,
                   }}
                 >
                   {job.status === "queued" && `${job.file.name}: Queued`}
@@ -515,6 +516,65 @@ export default function Training() {
               ))}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Trigger Training Section */}
+      <div className="dash-section">
+        <div className="dash-section-title">Kernel Training</div>
+        <div className="dash-card">
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <button
+              onClick={async () => {
+                setTriggeringTraining(true);
+                setTrainingResult(null);
+                try {
+                  const resp = await fetch(API.trainingTrigger, { method: "POST" });
+                  const data = await resp.json();
+                  setTrainingResult(data);
+                } catch (err) {
+                  setTrainingResult({ status: "error", error: err instanceof Error ? err.message : String(err) });
+                } finally {
+                  setTriggeringTraining(false);
+                }
+              }}
+              disabled={triggeringTraining}
+              style={{
+                background: "var(--kappa)",
+                border: "none",
+                borderRadius: "var(--radius-sm)",
+                padding: "10px 20px",
+                color: "white",
+                fontWeight: 600,
+                cursor: triggeringTraining ? "not-allowed" : "pointer",
+                opacity: triggeringTraining ? 0.5 : 1,
+                fontSize: "14px",
+              }}
+            >
+              {triggeringTraining ? "Triggering..." : "Trigger Kernel Training"}
+            </button>
+            {trainingResult && (
+              <span
+                style={{
+                  fontSize: "13px",
+                  color: trainingResult.status === "triggered" ? "var(--alive)" : "var(--error)",
+                }}
+              >
+                {trainingResult.status === "triggered"
+                  ? "Training triggered on Modal GPU"
+                  : trainingResult.error ?? "Training trigger failed"}
+              </span>
+            )}
+          </div>
+          <div
+            style={{
+              marginTop: "8px",
+              fontSize: "12px",
+              color: "var(--text-secondary)",
+            }}
+          >
+            Sends QLoRA fine-tuning job to Modal GPU. Requires MODAL_TRAINING_URL.
+          </div>
         </div>
       </div>
 

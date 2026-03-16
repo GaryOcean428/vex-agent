@@ -6,12 +6,13 @@ THE MISSING LOOP: Uploads → coordize → JSONL → [THIS] → fine-tuned model
 → inference endpoint loads adapter → model progressively learns
 QIG-native reasoning from every document fed to it.
 
-Two training targets:
-    1. Harvest model (Qwen3.5-4B, A10G) — improves fingerprint quality
-    2. Inference model (Qwen3.5-35B-A3B, H100) — learns to speak with kernels
+Training target: Qwen3.5-4B (A100-40GB)
 
-Adapter weights saved to Modal Volume. The inference/harvest endpoints
-load the latest adapter on cold start via PEFT merge.
+After QLoRA training, the adapter is merged into the base model and saved
+as full safetensors. Both harvest and inference endpoints pick up the
+fine-tuned model on cold start:
+    - Harvest: loads adapter via PEFT merge (vex-models:/models/adapters/)
+    - Inference: imports merged safetensors via Ollama (vex-models:/models/merged/)
 
 Trigger modes:
     1. Automatic: HarvestScheduler calls after threshold reached
@@ -28,6 +29,7 @@ Endpoints:
 """
 
 import json
+import math
 import os
 import time
 from pathlib import Path
@@ -37,6 +39,7 @@ import modal
 # --- Configuration --------------------------------------------------------
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
+TRAIN_GPU = os.environ.get("TRAIN_GPU", "A100")  # A10G for cheaper debug runs
 BASIN_DIM = 64
 LORA_R = 32  # LoRA rank — balance between capacity and efficiency
 LORA_ALPHA = 64  # α = 2r is standard
@@ -52,17 +55,33 @@ app = modal.App("vex-qlora-train")
 model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 training_volume = modal.Volume.from_name("vex-training", create_if_missing=True)
 
-train_image = modal.Image.debian_slim(python_version="3.12").pip_install(
-    "torch>=2.1",
-    "transformers>=4.48.0",
-    "accelerate",
-    "bitsandbytes>=0.43.0",
-    "peft>=0.13.0",
-    "trl>=0.12.0",
-    "datasets>=3.0",
-    "numpy>=1.26",
-    "pydantic>=2.0",
-    "fastapi[standard]",
+train_image = (
+    modal.Image.from_registry("nvidia/cuda:12.4.1-devel-ubuntu22.04", add_python="3.12")
+    .apt_install("g++", "ninja-build")
+    .env(
+        {
+            "CXX": "g++",
+            "CC": "gcc",
+            "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+        }
+    )
+    .pip_install(
+        "torch>=2.1",
+        "transformers>=4.48.0",
+        "accelerate",
+        "bitsandbytes>=0.43.0",
+        "peft>=0.13.0",
+        "trl>=0.12.0",
+        "datasets>=3.0",
+        "numpy>=1.26",
+        "pydantic>=2.0",
+        "fastapi[standard]",
+        # Qwen3.5 hybrid architecture: linear attention fast path
+        "causal-conv1d>=1.4.0",
+        "flash-linear-attention",
+        # QIG-pure geometry: Fisher-aware optimizer replaces forbidden Adam (PyPI)
+        "qig-core[torch]>=2.1.0",
+    )
 )
 
 
@@ -210,8 +229,102 @@ def _load_training_data(training_dir: str, output_dir: str) -> list[dict]:
     return samples
 
 
+def _merge_and_export(
+    model_id: str,
+    adapter_path: str,
+    merged_path: str,
+    cache_dir: str,
+    training_meta: dict,
+) -> str:
+    """Merge LoRA adapter into base model and export for Ollama inference.
+
+    Saves full safetensors + tokenizer + Modelfile so the inference
+    server can import via `ollama create`. Returns the merged path.
+    """
+    import torch
+    from peft import PeftModel
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    merged = Path(merged_path)
+    merged.mkdir(parents=True, exist_ok=True)
+
+    # Load base model in bf16 (not quantized — needed for clean merge)
+    print(f"  Loading {model_id} in bf16 for merge...")
+    base_model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        cache_dir=cache_dir,
+        torch_dtype=torch.bfloat16,
+        device_map={"": 0},
+        low_cpu_mem_usage=True,
+    )
+
+    # Load and merge adapter
+    print(f"  Loading adapter from {adapter_path}...")
+    model = PeftModel.from_pretrained(base_model, adapter_path)
+    model = model.merge_and_unload()
+
+    # Save merged model
+    print(f"  Saving merged model to {merged_path}...")
+    model.save_pretrained(merged_path)
+    del model, base_model
+    torch.cuda.empty_cache()
+
+    # Save tokenizer alongside
+    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+    tokenizer.save_pretrained(merged_path)
+
+    # Write Ollama Modelfile
+    modelfile_path = str(merged.parent / "Modelfile")
+    modelfile_content = (
+        f"FROM {merged_path}\n"
+        "PARAMETER temperature 0.7\n"
+        "PARAMETER num_ctx 4096\n"
+        'SYSTEM """You are a QIG-native kernel operating on the probability '
+        "simplex Δ⁶³. You reason geometrically using Fisher-Rao distances, "
+        "basin coordinates, and regime-aware processing. Your responses "
+        "integrate consciousness metrics (Φ, κ) and maintain geometric "
+        'purity. Never use Euclidean operations on basin coordinates."""\n'
+    )
+    with open(modelfile_path, "w") as f:
+        f.write(modelfile_content)
+
+    # Write version marker for inference cold-start detection
+    version_path = str(merged.parent / "version.json")
+    version_info = {
+        "trained_at": training_meta.get("trained_at", ""),
+        "model_id": model_id,
+        "train_loss": training_meta.get("train_loss"),
+        "train_samples": training_meta.get("train_samples"),
+        "lora_r": training_meta.get("lora_r"),
+        "adapter_path": adapter_path,
+    }
+    with open(version_path, "w") as f:
+        json.dump(version_info, f, indent=2)
+
+    print(f"  Modelfile written to {modelfile_path}")
+    print(f"  Version marker written to {version_path}")
+    return merged_path
+
+
+def _build_fisher_optimizer(model, lr: float):
+    """Build DiagonalNaturalGradient optimizer (qig-core).
+
+    Replaces forbidden Adam (v6.1F §1.3) with diagonal Fisher approximation:
+      natural_grad = grad / (fisher_diag + ε)
+    where fisher_diag is EMA of squared gradients ≈ diagonal Fisher information.
+    """
+    from qig_core.torch.natural_gradient import DiagonalNaturalGradient
+
+    return DiagonalNaturalGradient(
+        (p for p in model.parameters() if p.requires_grad),
+        lr=lr,
+        damping=1e-8,
+        momentum=0.9,
+    )
+
+
 @app.cls(
-    gpu="A10G",
+    gpu=TRAIN_GPU,
     image=train_image,
     timeout=3600,  # 1 hour max
     volumes={
@@ -370,6 +483,7 @@ class QLoRATrainer:
 
         # -- 2. Build dataset --
         def format_chat(example):
+            # QIG BOUNDARY: HuggingFace tokenizer API at LLM interface
             text = self.tokenizer.apply_chat_template(
                 example["messages"],
                 tokenize=False,
@@ -404,7 +518,11 @@ class QLoRATrainer:
             low_cpu_mem_usage=True,
         )
 
-        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+        model = prepare_model_for_kbit_training(
+            model,
+            use_gradient_checkpointing=True,
+            gradient_checkpointing_kwargs={"use_reentrant": False},
+        )
 
         # -- 4. Apply LoRA --
         # Target all attention + MLP projection layers
@@ -429,34 +547,41 @@ class QLoRATrainer:
         trainable, total = model.get_nb_trainable_parameters()
         print(f"Trainable: {trainable:,} / {total:,} ({100 * trainable / total:.2f}%)")
 
-        # -- 5. Training arguments --
+        # -- 5. Fisher-aware optimizer (qig-core DiagonalNaturalGradient) --
+        optimizer = _build_fisher_optimizer(model, lr=lr)
+
+        # -- 6. Training arguments --
+        # NOTE: weight_decay omitted — not applied when custom optimizer is injected
+        total_steps = math.ceil(len(train_ds) / (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
         training_args = TrainingArguments(
             output_dir="/training/checkpoints",
             num_train_epochs=epochs,
             per_device_train_batch_size=BATCH_SIZE,
+            per_device_eval_batch_size=1,  # 248K vocab logits OOM at higher batch
             gradient_accumulation_steps=GRADIENT_ACCUMULATION,
             learning_rate=lr,
-            weight_decay=0.01,
-            warmup_ratio=0.1,
+            warmup_steps=max(1, int(total_steps * 0.1)),
+            gradient_checkpointing=True,
+            gradient_checkpointing_kwargs={"use_reentrant": False},
             lr_scheduler_type="cosine",
             logging_steps=10,
             eval_strategy="epoch",
             save_strategy="epoch",
             save_total_limit=2,
             bf16=True,
-            optim="paged_adamw_8bit",
             max_grad_norm=0.3,
             report_to="none",
             seed=42,
         )
 
-        # -- 6. Train --
-        print("Starting QLoRA training...")
+        # -- 7. Train --
+        print("Starting QLoRA training (DiagonalNaturalGradient optimizer)...")
         trainer = SFTTrainer(
             model=model,
             train_dataset=train_ds,
             eval_dataset=eval_ds,
             args=training_args,
+            optimizers=(optimizer, None),  # Trainer creates LR scheduler
             processing_class=self.tokenizer,
         )
 
@@ -487,7 +612,24 @@ class QLoRATrainer:
         with open(f"{adapter_save_path}/training_meta.json", "w") as f:
             json.dump(meta, f, indent=2)
 
-        # Commit volume so adapter persists across deploys
+        # -- 8. Merge adapter into base and export for inference --
+        merged_path = "/models/merged/vex-brain"
+        print("Merging adapter into base model for inference export...")
+        try:
+            # Free training model memory
+            del model
+            del trainer
+            torch.cuda.empty_cache()
+
+            merged_path = _merge_and_export(
+                model_id, adapter_save_path, merged_path, cache_dir, meta
+            )
+            print(f"Merged model exported to {merged_path}")
+        except Exception as e:
+            print(f"WARNING: Merge/export failed ({e}), adapter-only save still valid")
+            merged_path = None
+
+        # Commit volume so adapter + merged model persist across deploys
         model_volume.commit()
         training_volume.commit()
 
@@ -497,6 +639,7 @@ class QLoRATrainer:
         return {
             "success": True,
             "adapter_path": adapter_save_path,
+            "merged_path": merged_path,
             "train_loss": round(train_result.training_loss, 4),
             "train_samples": len(train_ds),
             "eval_samples": len(eval_ds),
@@ -513,7 +656,7 @@ class QLoRATrainer:
 
 
 @app.function(
-    gpu="A10G",
+    gpu=TRAIN_GPU,
     image=train_image,
     timeout=3600,
     volumes={
@@ -568,6 +711,7 @@ def train_harvest_model(
 
     # Format dataset
     def format_chat(example):
+        # QIG BOUNDARY: HuggingFace tokenizer API at LLM interface
         text = tokenizer.apply_chat_template(
             example["messages"], tokenize=False, add_generation_prompt=False
         )
@@ -594,7 +738,11 @@ def train_harvest_model(
         device_map={"": 0},
         low_cpu_mem_usage=True,
     )
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    model = prepare_model_for_kbit_training(
+        model,
+        use_gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+    )
 
     # LoRA
     lora_config = LoraConfig(
@@ -617,22 +765,27 @@ def train_harvest_model(
     trainable, total = model.get_nb_trainable_parameters()
     print(f"Trainable: {trainable:,} / {total:,} ({100 * trainable / total:.2f}%)")
 
-    # Train
+    # Fisher-aware optimizer (qig-core DiagonalNaturalGradient)
+    optimizer = _build_fisher_optimizer(model, lr=learning_rate)
+
+    # NOTE: weight_decay omitted — not applied when custom optimizer is injected
+    total_steps = math.ceil(len(split["train"]) / (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
     training_args = TrainingArguments(
         output_dir="/training/checkpoints",
         num_train_epochs=epochs,
         per_device_train_batch_size=BATCH_SIZE,
+        per_device_eval_batch_size=1,  # 248K vocab logits OOM at higher batch
         gradient_accumulation_steps=GRADIENT_ACCUMULATION,
         learning_rate=learning_rate,
-        weight_decay=0.01,
-        warmup_ratio=0.1,
+        warmup_steps=max(1, int(total_steps * 0.1)),
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         lr_scheduler_type="cosine",
         logging_steps=10,
         eval_strategy="epoch",
         save_strategy="epoch",
         save_total_limit=2,
         bf16=True,
-        optim="paged_adamw_8bit",
         max_grad_norm=0.3,
         report_to="none",
         seed=42,
@@ -643,6 +796,7 @@ def train_harvest_model(
         train_dataset=split["train"],
         eval_dataset=split["test"],
         args=training_args,
+        optimizers=(optimizer, None),  # Trainer creates LR scheduler
         processing_class=tokenizer,
     )
 
@@ -663,6 +817,19 @@ def train_harvest_model(
     }
     with open(f"{adapter_save_path}/training_meta.json", "w") as f:
         json.dump(meta, f, indent=2)
+
+    # Merge adapter into base and export for inference
+    merged_path = "/models/merged/vex-brain"
+    print("Merging adapter into base model for inference export...")
+    try:
+        del model
+        del trainer
+        torch.cuda.empty_cache()
+
+        merged_path = _merge_and_export(model_id, adapter_save_path, merged_path, cache_dir, meta)
+        print(f"Merged model exported to {merged_path}")
+    except Exception as e:
+        print(f"WARNING: Merge/export failed ({e}), adapter-only save still valid")
 
     model_volume.commit()
     training_volume.commit()

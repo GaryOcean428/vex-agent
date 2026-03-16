@@ -212,15 +212,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     _bank_output_dir = os.getenv("HARVEST_OUTPUT_DIR", str(Path(harvest_base) / "output"))
     _bank_save_dir = os.getenv("HARVEST_BANK_DIR", str(Path(harvest_base) / "bank"))
 
-    def _build_resonance_bank(*, label: str = "startup"):
-        """Rebuild resonance bank from coordized output (pure builder, no mutation)."""
+    def _rebuild_and_inject_bank(*, label: str = "startup") -> None:
+        """Rebuild resonance bank from coordized output and inject into coordizer.
+
+        Scans both:
+          - HARVEST_OUTPUT_DIR  (/data/harvest/output) — Modal GPU harvest pipeline
+          - training/curriculum (/data/training/curriculum) — upload/ingest pipeline
+        Accepts basin_coordinates (harvest) and basin_coords (curriculum) field names.
+        """
         from .coordizer_v2.bank_builder import rebuild_bank_from_output
 
-        bank = rebuild_bank_from_output(_bank_output_dir, _bank_save_dir)
-        return bank
-
-    def _inject_bank(bank, *, label: str) -> None:
-        """Inject a pre-built resonance bank into the coordizer on the event loop thread."""
+        _curriculum_dir = str(Path(settings.training_dir) / "curriculum")
+        bank = rebuild_bank_from_output(
+            _bank_output_dir,
+            _bank_save_dir,
+            extra_dirs=[_curriculum_dir],
+        )
         if bank and len(bank) > 0:
             if consciousness._coordizer_v2 is not None:
                 consciousness._coordizer_v2.bank = bank
@@ -243,8 +250,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # ── AUTO-BUILD RESONANCE BANK AT STARTUP ─────────────────────
     try:
-        bank = await asyncio.to_thread(_build_resonance_bank, label="startup")
-        _inject_bank(bank, label="startup")
+        await asyncio.to_thread(_rebuild_and_inject_bank, label="startup")
     except Exception as e:
         logger.error("Failed to auto-build resonance bank: %s", e)
 
@@ -256,8 +262,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     ) -> None:
         nonlocal _training_triggered
         try:
-            bank = await asyncio.to_thread(_build_resonance_bank, label="runtime")
-            _inject_bank(bank, label="runtime")
+            await asyncio.to_thread(_rebuild_and_inject_bank, label="runtime")
         except Exception as e:
             logger.error("Runtime bank rebuild failed: %s", e)
             return
@@ -336,8 +341,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             while True:
                 await asyncio.sleep(1800)  # 30 minutes
                 try:
-                    pruned = await asyncio.to_thread(geometric_memory.consolidate)
-                    await asyncio.to_thread(memory_store.consolidate)
+                    pruned = geometric_memory.consolidate()
+                    memory_store.consolidate()
                     if pruned > 0:
                         logger.info(
                             "Memory consolidation: pruned %d geometric entries",
@@ -421,7 +426,7 @@ set_sovereignty_loop(consciousness)
 # ═══════════════════════════════════════════════════════════════
 
 
-class ChatRequest(BaseModel):  # type: ignore[misc]
+class ChatRequest(BaseModel):
     """P14 Variable Category: BOUNDARY — all fields are external input, sanitized by Pydantic."""
 
     message: str = Field(..., max_length=100_000)
@@ -430,21 +435,21 @@ class ChatRequest(BaseModel):  # type: ignore[misc]
     max_tokens: int = Field(default=2048, ge=1, le=32768)
 
 
-class EnqueueRequest(BaseModel):  # type: ignore[misc]
+class EnqueueRequest(BaseModel):
     input: str = Field(..., max_length=100_000)
     source: str = "api"
 
 
-class MemoryContextRequest(BaseModel):  # type: ignore[misc]
+class MemoryContextRequest(BaseModel):
     query: str = Field(..., max_length=10_000)
     k: int = Field(default=5, ge=1, le=100)
 
 
-class CoordizeRequest(BaseModel):  # type: ignore[misc]
+class CoordizeRequest(BaseModel):
     text: str = Field(..., max_length=100_000)
 
 
-class HarvestRequest(BaseModel):  # type: ignore[misc]
+class HarvestRequest(BaseModel):
     model_id: str = Field(default_factory=lambda: settings.modal.harvest_model)
     target_tokens: int = Field(default=2000, ge=100, le=100_000)
     use_modal: bool | None = None
@@ -1442,15 +1447,15 @@ async def admin_fresh_start() -> dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════
 
 
-class KillSwitchRequest(BaseModel):  # type: ignore[misc]
+class KillSwitchRequest(BaseModel):
     enabled: bool
 
 
-class BudgetUpdateRequest(BaseModel):  # type: ignore[misc]
+class BudgetUpdateRequest(BaseModel):
     ceiling: float
 
 
-class AutonomousSearchRequest(BaseModel):  # type: ignore[misc]
+class AutonomousSearchRequest(BaseModel):
     enabled: bool
 
 

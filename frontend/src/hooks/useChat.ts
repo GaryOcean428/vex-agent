@@ -13,7 +13,7 @@ import { buildPipelineTrace, createEventProcessor } from "./chatStreamProcessor.
 const WELCOME_MESSAGE: ChatMessage = {
   id: "welcome",
   role: "vex",
-  content: "Vertex active. Awaiting input.",
+  content: "Vex is active. Awaiting input.",
   timestamp: new Date().toISOString(),
 };
 

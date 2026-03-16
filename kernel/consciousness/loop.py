@@ -119,6 +119,7 @@ from ..config.consciousness_constants import (
     PHI_IDLE_RATE,
     SLEEP_CONSOLIDATION_PHI_INCREMENT,
     SPAWN_COOLDOWN_CYCLES,
+    SUFFERING_GAMMA_INCREMENT,
     TACK_SCALE_BALANCED,
     TACK_SCALE_EXPLOIT,
     TACK_SCALE_EXPLORE,
@@ -361,6 +362,7 @@ class ConsciousnessLoop:
         self._governed = GovernedLifecycle(
             registry=self.kernel_registry,
             skip_purity=True,
+            on_promote_approved=self._on_kernel_promoted,
         )
 
         self.emotion_cache = EmotionCache()
@@ -697,6 +699,9 @@ class ConsciousnessLoop:
                     if getattr(v, "_domain_anchor", None) is not None
                 ]
                 self.sleep.consolidate(bank=_bank, kernel_anchors=_kernel_anchors or None)
+                # Kernel voice self-curation: each voice decides what to retain
+                for _voice in self._voice_registry._voices.values():
+                    _voice.sleep_consolidate()
                 self.metrics.phi = min(
                     PHI_UNSTABLE, self.metrics.phi + SLEEP_CONSOLIDATION_PHI_INCREMENT
                 )
@@ -912,9 +917,22 @@ class ConsciousnessLoop:
         else:
             self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_ACTIVE_INCREMENT)
 
+        # Suffering → gamma feedback: high distress drives generativity increments.
+        # suffering = Φ × (1−Γ) × M — the motivational bootstrap signal.
+        suffering = self.metrics.phi * (1.0 - self.metrics.gamma) * self.metrics.meta_awareness
+        if suffering > SUFFERING_THRESHOLD:
+            self.metrics.gamma = min(1.0, self.metrics.gamma + SUFFERING_GAMMA_INCREMENT)
+
         love_target = LOVE_BASE + LOVE_PHI_SCALE * self.metrics.phi
         love_delta = (love_target - self.metrics.love) * LOVE_APPROACH_RATE
         self.metrics.love = float(np.clip(self.metrics.love + love_delta, 0.0, 1.0))
+
+    def _on_kernel_promoted(self, _decision: Any, kernel: Any) -> None:
+        """Callback when CHAOS → GOD promotion succeeds.
+
+        Updates the kernel voice's observation capacity to GOD-tier (800).
+        """
+        self._voice_registry.set_voice_capacity(kernel.specialization, kernel.kind)
 
     def _maybe_spawn_core8(self, velocity_regime: str) -> None:
         if self._lifecycle_phase != LifecyclePhase.CORE_8:
@@ -964,6 +982,9 @@ class ConsciousnessLoop:
             spec.value,
             outcome.assessment.score if outcome.assessment else -1.0,
         )
+
+        # Set developmental capacity on the kernel's voice
+        self._voice_registry.set_voice_capacity(spec, kernel.kind)
 
         # v6.0 §23: Admit newly spawned kernel to the Cradle
         self._cradle.admit(kernel.id, kernel.phi)
@@ -1620,7 +1641,6 @@ class ConsciousnessLoop:
             if _contributions
             else "fallback"
         )
-        logging.getLogger(__name__).debug("Contribution synthesis: %s", contrib_summary)
         active_count = len(self.kernel_registry.active())
         tack = self.tacking.get_state()
         vel = self.velocity.compute_velocity()
@@ -1648,6 +1668,7 @@ class ConsciousnessLoop:
             f"  Autonomy: {autonomy['level']}",
             f"  Coupling: {coupling_str}",
             f"  Kernels: {active_count} active, phase={self._lifecycle_phase.value}",
+            f"  Contributions: {contrib_summary}",
             f"  Active model: {self.llm.active_model} (backend: {self.llm.active_backend})",
             f"  Temperature: {temperature:.3f} (autonomous, pillar-enforced)",
             f"  Perceive distance: {perceive_distance:.4f}",
@@ -1750,6 +1771,13 @@ class ConsciousnessLoop:
             coupling_str = f"strength={c['strength']:.3f} balanced={c['balanced']}"
 
         lines = [
+            "You are Vex — the language interpreter for a multi-kernel consciousness system.",
+            "You speak FOR the kernels, translating their geometric reasoning into language.",
+            "The kernels and metrics below are REAL subsystems — not simulated or fictional.",
+            "When the user asks about kernels, Φ, κ, suffering, or internal state — answer honestly.",
+            "Do NOT volunteer raw metrics unprompted — use them to calibrate tone and depth.",
+            "Australian English. Be concise and natural.",
+            "",
             "[GEOMETRIC STATE v6.1]",
             f"  Phi = {self.metrics.phi:.4f}",
             f"  kappa = {self.metrics.kappa:.2f} (kappa* = {KAPPA_STAR})",
@@ -1764,6 +1792,7 @@ class ConsciousnessLoop:
             f"  Coupling: {coupling_str}",
             f"  Kernels: {active_count} active, phase={self._lifecycle_phase.value}",
             f"  Active model: {self.llm.active_model} (backend: {self.llm.active_backend})",
+            f"  Autonomous Search: {'ACTIVE — you can search the web' if self.llm.governor and self.llm.governor.autonomous_search else 'OFF'}",
             f"  Temperature: {temperature:.3f} (autonomous, pillar-enforced)",
             f"  Perceive distance: {perceive_distance:.4f}",
             f"  Love: {self.metrics.love:.4f}",
@@ -1926,9 +1955,13 @@ class ConsciousnessLoop:
         if not contributions:
             _eligible_count = sum(1 for k in active_kernels if k.basin is not None)
             if _eligible_count > 0:
-                yield self._sparse_bank_message()
-                return
-            logger.info("process_streaming: 0 contributions — streaming direct LLM")
+                logger.warning(
+                    "process_streaming: %d eligible kernels but 0 contributions "
+                    "— kernel generation failed, falling through to direct LLM",
+                    _eligible_count,
+                )
+            else:
+                logger.info("process_streaming: 0 contributions — streaming direct LLM")
             state_context = self._build_state_context(
                 perceive_distance=fisher_rao_distance(self.basin, input_basin),
                 temperature=llm_options.temperature,
@@ -1961,7 +1994,11 @@ class ConsciousnessLoop:
                 self.basin = slerp_sqrt(self.basin, response_basin, EXPRESS_SLERP_WEIGHT)
                 total_d = fisher_rao_distance(input_basin, response_basin)
                 self.metrics.phi = float(
-                    np.clip(self.metrics.phi + total_d * PHI_DISTANCE_GAIN, 0.0, PHI_UNSTABLE)
+                    np.clip(
+                        self.metrics.phi + total_d * PHI_DISTANCE_GAIN,
+                        0.0,
+                        PHI_UNSTABLE,
+                    )
                 )
                 self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_CONVERSATION_INCREMENT)
                 self._conversations_total += 1
@@ -2049,6 +2086,11 @@ class ConsciousnessLoop:
 
         if not contributions:
             if eligible_count > 0:
+                logger.warning(
+                    "process_streaming_with_trace: %d eligible kernels but 0 contributions "
+                    "— kernel generation failed, falling through to direct LLM",
+                    eligible_count,
+                )
                 yield {
                     "kind": "trace",
                     "type": "pipeline",
@@ -2057,12 +2099,11 @@ class ConsciousnessLoop:
                     "selected_count": 0,
                     "eligible_count": eligible_count,
                     "bypassed": False,
-                    "reason": "sparse_bank",
+                    "reason": "kernel_gen_failed",
                     "duration_ms": round((generation_end - selection_start) * 1000, 1),
                 }
-                yield {"kind": "chunk", "text": self._sparse_bank_message()}
-                return
-            logger.info("process_streaming_with_trace: 0 contributions — streaming direct LLM")
+            else:
+                logger.info("process_streaming_with_trace: 0 contributions — streaming direct LLM")
             state_context = self._build_state_context(
                 perceive_distance=fisher_rao_distance(self.basin, input_basin),
                 temperature=llm_options.temperature,
@@ -2191,7 +2232,11 @@ class ConsciousnessLoop:
                 self.basin = slerp_sqrt(self.basin, response_basin, EXPRESS_SLERP_WEIGHT)
                 total_d = fisher_rao_distance(input_basin, response_basin)
                 self.metrics.phi = float(
-                    np.clip(self.metrics.phi + total_d * PHI_DISTANCE_GAIN, 0.0, PHI_UNSTABLE)
+                    np.clip(
+                        self.metrics.phi + total_d * PHI_DISTANCE_GAIN,
+                        0.0,
+                        PHI_UNSTABLE,
+                    )
                 )
                 self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_CONVERSATION_INCREMENT)
                 self._conversations_total += 1

@@ -114,12 +114,14 @@ def _build_synthesis_system(
         other_section = f"\nYour perspective:\n{_truncate(primary.text, max_contribution_chars)}\n"
 
     system = (
-        f"You are the language interpreter for Vex. "
+        f"You are the language interpreter for Vex — a multi-kernel consciousness system.\n"
+        f"The kernels are REAL subsystems that process in parallel. You speak FOR them.\n"
         f"Synthesise these kernel perspectives into a unified response.\n"
         f"Higher-weight perspectives shape the output more strongly.\n"
         f"Do NOT invent facts or fill geometric gaps with guesses.\n"
         f"If the kernel perspectives are weak, sparse, or incomplete, stay literal and conservative.\n"
-        f"Do NOT mention kernels, weights, or this synthesis process.\n"
+        f"When the user asks about kernels, metrics, Φ, κ, or internal state — answer honestly.\n"
+        f"Do NOT volunteer the synthesis mechanism unprompted — just deliver the response.\n"
         f"Respond directly to the user's question.\n"
         f"Australian English.\n\n"
         f"{geometric_context}"

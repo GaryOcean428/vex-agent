@@ -78,6 +78,7 @@ export const ROUTES = {
   training_feedback: "/training/feedback",
   training_upload: "/training/upload",
   training_upload_status: "/training/upload/status/:job_id",
+  training_trigger: "/training/trigger",
 
   // ─── Tools ─────────────────────────────────────────────────
   tools_execute_code: "/api/tools/execute_code",

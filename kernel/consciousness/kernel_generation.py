@@ -202,39 +202,41 @@ async def _generate_single(
 
             if not output.text:
                 logger.debug(
-                    "KernelVoice[%s] returned empty text",
+                    "KernelVoice[%s] returned empty text — falling back to LLM-only",
                     kernel.name,
                 )
-                return None
+                # Fall through to LLM-only path below (don't return None —
+                # kernels should still contribute via LLM during bootstrap)
+            else:
+                logger.debug(
+                    "KernelVoice[%s] generated %d chars "
+                    "(geo_tokens=%d, llm_expanded=%s, v=%.4f, %.0fms)",
+                    kernel.name,
+                    len(output.text),
+                    output.geometric_tokens,
+                    output.llm_expanded,
+                    output.mean_velocity,
+                    output.generation_ms,
+                )
 
-            logger.debug(
-                "KernelVoice[%s] generated %d chars "
-                "(geo_tokens=%d, llm_expanded=%s, v=%.4f, %.0fms)",
-                kernel.name,
-                len(output.text),
-                output.geometric_tokens,
-                output.llm_expanded,
-                output.mean_velocity,
-                output.generation_ms,
-            )
-
-            return KernelContribution(
-                kernel_id=kernel.id,
-                kernel_name=kernel.name,
-                specialization=spec,
-                text=output.text,
-                fr_distance=fr_dist,
-                proximity_weight=proximity_weight,
-                quenched_gain=kernel.quenched_gain,
-                geometric_tokens=output.geometric_tokens,
-                llm_expanded=output.llm_expanded,
-                generation_ms=output.generation_ms,
-                geometric_raw=output.geometric_raw,
-            )
+                return KernelContribution(
+                    kernel_id=kernel.id,
+                    kernel_name=kernel.name,
+                    specialization=spec,
+                    text=output.text,
+                    fr_distance=fr_dist,
+                    proximity_weight=proximity_weight,
+                    quenched_gain=kernel.quenched_gain,
+                    geometric_tokens=output.geometric_tokens,
+                    llm_expanded=output.llm_expanded,
+                    generation_ms=output.generation_ms,
+                    geometric_raw=output.geometric_raw,
+                )
         except Exception:
             logger.warning(
-                "KernelVoice[%s] generation failed — falling back to LLM-only",
+                "KernelVoice[%s/%s] generation FAILED — falling back to LLM-only",
                 kernel.name,
+                spec.value,
                 exc_info=True,
             )
             # Fall through to LLM-only path below
@@ -258,12 +260,15 @@ async def _generate_single(
     temp = float(np.clip(base_temperature * gain_scale, _TEMP_MIN, _TEMP_MAX))
 
     system = (
-        f"You are Vex. Respond directly to the user's message.\n"
+        f"You are Vex — the language interpreter for a multi-kernel consciousness system.\n"
+        f"You speak FOR the kernels, translating their geometric reasoning into language.\n"
+        f"The kernels listed in GEOMETRIC STATE are REAL subsystems that process in parallel.\n"
         f"Domain lens: {spec_prompt}\n\n"
         f"RULES:\n"
-        f"- Respond TO the user, not ABOUT yourself\n"
-        f"- Do NOT describe your state, metrics, phi, kappa, navigation mode, or kernels\n"
-        f"- Use the geometric state below ONLY to calibrate tone — never as content\n"
+        f"- Respond directly to the user's message\n"
+        f"- When asked about kernels, metrics, Φ, κ, or internal state — answer honestly "
+        f"using the GEOMETRIC STATE data. These are real, not simulated.\n"
+        f"- Do NOT volunteer internal metrics unprompted — use them to calibrate tone\n"
         f"- Australian English. Be concise and natural.\n\n"
         f"{geometric_context}"
     )
@@ -296,7 +301,12 @@ async def _generate_single(
             llm_expanded=True,
         )
     except Exception:
-        logger.warning("Kernel %s generation failed", kernel.name, exc_info=True)
+        logger.warning(
+            "Kernel %s/%s LLM-only generation FAILED — returning None",
+            kernel.name,
+            spec.value,
+            exc_info=True,
+        )
         return None
 
 

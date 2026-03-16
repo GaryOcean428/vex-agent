@@ -37,39 +37,72 @@ def rebuild_bank_from_output(
     output_dir: str,
     bank_save_path: str,
     *,
+    extra_dirs: list[str] | None = None,
     max_entries: int = 50_000,
     min_basin_dim: int = BASIN_DIM,
 ) -> ResonanceBank | None:
     """Scan coordized JSONL files and build a ResonanceBank.
 
-    Reads all *_coordized*.jsonl files from output_dir, extracts
-    basin_coordinates, and builds a bank with proper tier assignment.
+    Reads all *_coordized*.jsonl files (and any .jsonl with basin fields) from
+    output_dir and any extra_dirs, extracts basin coordinates, and builds a
+    bank with proper tier assignment.
+
+    Accepts both field names:
+      - ``basin_coordinates`` — harvest pipeline output (Modal GPU)
+      - ``basin_coords``      — training curriculum pipeline (in-process)
 
     Args:
-        output_dir: Directory containing coordized JSONL files.
+        output_dir: Primary directory to scan (harvest output).
         bank_save_path: Where to save the bank (directory).
+        extra_dirs: Additional directories to scan (e.g. training curriculum).
         max_entries: Cap on bank size (memory guard).
         min_basin_dim: Minimum basin dimension to accept.
 
     Returns:
         The built ResonanceBank, or None if no valid entries found.
     """
+    search_dirs: list[Path] = []
+
     out_path = Path(output_dir)
-    if not out_path.exists():
-        logger.warning("Output directory does not exist: %s", output_dir)
+    if out_path.exists():
+        search_dirs.append(out_path)
+    else:
+        logger.info("Primary output directory does not exist: %s", output_dir)
+
+    for extra in extra_dirs or []:
+        ep = Path(extra)
+        if ep.exists():
+            search_dirs.append(ep)
+        else:
+            logger.info("Extra scan directory does not exist: %s", extra)
+
+    if not search_dirs:
+        logger.warning(
+            "No valid scan directories found (output_dir=%s, extra_dirs=%s)",
+            output_dir,
+            extra_dirs,
+        )
         return None
 
-    # Collect all coordized JSONL files
-    jsonl_files = sorted(out_path.glob("*coordized*.jsonl"))
-    if not jsonl_files:
-        # Also check for any .jsonl with basin_coordinates
-        jsonl_files = sorted(out_path.glob("*.jsonl"))
+    # Collect all coordized JSONL files across all search dirs
+    jsonl_files: list[Path] = []
+    for sdir in search_dirs:
+        coordized = sorted(sdir.glob("*coordized*.jsonl"))
+        if coordized:
+            jsonl_files.extend(coordized)
+        else:
+            # Fallback: any .jsonl that may contain basin fields
+            jsonl_files.extend(sorted(sdir.glob("*.jsonl")))
 
     if not jsonl_files:
-        logger.warning("No JSONL files found in %s", output_dir)
+        logger.warning("No JSONL files found in any scan directory: %s", search_dirs)
         return None
 
-    logger.info("Building bank from %d JSONL files in %s", len(jsonl_files), output_dir)
+    logger.info(
+        "Building bank from %d JSONL files across %d directories",
+        len(jsonl_files),
+        len(search_dirs),
+    )
 
     bank = ResonanceBank(target_dim=BASIN_DIM)
     tid = 0
@@ -90,7 +123,10 @@ def rebuild_bank_from_output(
                         skipped += 1
                         continue
 
-                    basin_raw = data.get("basin_coordinates")
+                    # Accept both field names:
+                    #   basin_coordinates — harvest pipeline (Modal GPU)
+                    #   basin_coords      — training curriculum pipeline (in-process)
+                    basin_raw = data.get("basin_coordinates") or data.get("basin_coords")
                     if basin_raw is None or not isinstance(basin_raw, list):
                         skipped += 1
                         continue

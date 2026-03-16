@@ -41,15 +41,23 @@ app = modal.App("vex-coordizer-harvest")
 
 model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 
-ml_image = modal.Image.debian_slim(python_version="3.12").pip_install(
-    "torch>=2.1",
-    "transformers>=4.48.0",
-    "accelerate",
-    "bitsandbytes>=0.43.0",
-    "peft>=0.13.0",
-    "numpy>=1.26",
-    "pydantic>=2.0",
-    "fastapi[standard]",
+ml_image = (
+    modal.Image.from_registry("nvidia/cuda:12.4.1-devel-ubuntu22.04", add_python="3.12")
+    .apt_install("g++", "ninja-build")
+    .env({"CXX": "g++", "CC": "gcc"})
+    .pip_install(
+        "torch>=2.1",
+        "transformers>=4.48.0",
+        "accelerate",
+        "bitsandbytes>=0.43.0",
+        "peft>=0.13.0",
+        "numpy>=1.26",
+        "pydantic>=2.0",
+        "fastapi[standard]",
+        # Qwen3.5 hybrid architecture: linear attention fast path
+        "causal-conv1d>=1.4.0",
+        "flash-linear-attention",
+    )
 )
 
 
@@ -193,12 +201,15 @@ class CoordizerHarvester:
                 if target_tokens > 0 and total_tokens >= target_tokens:
                     break
 
-        # Average fingerprints per token (Frechet mean on simplex via arithmetic mean)
+        # Fréchet mean on simplex via sqrt-coordinate averaging
         averaged = {}
         for tid, fp_list in token_fingerprints.items():
             if len(fp_list) < min_contexts:
                 continue
-            mean_fp = np.mean(fp_list, axis=0)
+            # Average in sqrt-space (Bhattacharyya embedding), then back-project
+            sqrt_fps = [np.sqrt(np.maximum(fp, 1e-12)) for fp in fp_list]
+            mean_sqrt = np.mean(sqrt_fps, axis=0)
+            mean_fp = mean_sqrt * mean_sqrt
             mean_fp = mean_fp / mean_fp.sum()
             averaged[tid] = mean_fp
 
