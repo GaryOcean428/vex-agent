@@ -41,20 +41,22 @@ app = modal.App("vex-coordizer-harvest")
 
 model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 
-ml_image = modal.Image.from_registry(
-    "nvidia/cuda:12.4.1-devel-ubuntu22.04", add_python="3.12"
-).pip_install(
-    "torch>=2.1",
-    "transformers>=4.48.0",
-    "accelerate",
-    "bitsandbytes>=0.43.0",
-    "peft>=0.13.0",
-    "numpy>=1.26",
-    "pydantic>=2.0",
-    "fastapi[standard]",
-    # Qwen3.5 hybrid architecture: linear attention fast path
-    "causal-conv1d>=1.4.0",
-    "flash-linear-attention",
+ml_image = (
+    modal.Image.from_registry("nvidia/cuda:12.4.1-devel-ubuntu22.04", add_python="3.12")
+    .apt_install("g++")
+    .pip_install(
+        "torch>=2.1",
+        "transformers>=4.48.0",
+        "accelerate",
+        "bitsandbytes>=0.43.0",
+        "peft>=0.13.0",
+        "numpy>=1.26",
+        "pydantic>=2.0",
+        "fastapi[standard]",
+        # Qwen3.5 hybrid architecture: linear attention fast path
+        "causal-conv1d>=1.4.0",
+        "flash-linear-attention",
+    )
 )
 
 
