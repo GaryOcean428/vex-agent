@@ -188,8 +188,20 @@ class CoordizerHarvester:
                     logits = outputs.logits[0]
                     # Linear projection to simplex (no exponential warping — QIG purity)
                     clamped = torch.clamp(logits.float(), min=0.0)
-                    row_sums = clamped.sum(dim=-1, keepdim=True).clamp(min=1e-12)
+                    raw_row_sums = clamped.sum(dim=-1, keepdim=True)
+                    row_sums = raw_row_sums.clamp(min=1e-12)
                     probs = clamped / row_sums
+                    # Fallback: if a row is all zeros after clamping, use uniform distribution
+                    zero_rows = raw_row_sums == 0
+                    if zero_rows.any():
+                        vocab_dim = probs.size(-1)
+                        uniform_row = torch.full(
+                            (vocab_dim,),
+                            1.0 / float(vocab_dim),
+                            device=probs.device,
+                            dtype=probs.dtype,
+                        )
+                        probs[zero_rows.expand_as(probs)] = uniform_row
                     probs_np = probs.cpu().numpy()
 
                     for pos in range(len(input_ids)):
