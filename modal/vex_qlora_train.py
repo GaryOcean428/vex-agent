@@ -56,7 +56,7 @@ training_volume = modal.Volume.from_name("vex-training", create_if_missing=True)
 train_image = (
     modal.Image.from_registry("nvidia/cuda:12.4.1-devel-ubuntu22.04", add_python="3.12")
     .apt_install("g++", "ninja-build")
-    .env(CXX="g++", CC="gcc")
+    .env({"CXX": "g++", "CC": "gcc"})
     .pip_install(
         "torch>=2.1",
         "transformers>=4.48.0",
