@@ -34,7 +34,7 @@ PUBLIC_PATHS = {
 }
 
 
-class KernelAuthMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
+class KernelAuthMiddleware(BaseHTTPMiddleware):
     """Simple API key middleware for kernel endpoints.
 
     Behaviour:

@@ -270,7 +270,7 @@ class Harvester:
         Less accurate than Transformers — we only get top-k logprobs,
         not the full distribution.
         """
-        import requests  # type: ignore[import-untyped]
+        import requests
 
         from ..config.settings import settings
 

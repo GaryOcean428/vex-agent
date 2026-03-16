@@ -29,12 +29,12 @@ Endpoints:
 """
 
 import json
+import math
 import os
 import time
 from pathlib import Path
 
 import modal
-import math
 
 # --- Configuration --------------------------------------------------------
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
@@ -561,6 +561,7 @@ class QLoRATrainer:
             gradient_accumulation_steps=GRADIENT_ACCUMULATION,
             learning_rate=lr,
             warmup_steps=max(1, int(total_steps * 0.1)),
+            gradient_checkpointing=True,
             gradient_checkpointing_kwargs={"use_reentrant": False},
             lr_scheduler_type="cosine",
             logging_steps=10,
@@ -768,6 +769,7 @@ def train_harvest_model(
     optimizer = _build_fisher_optimizer(model, lr=learning_rate)
 
     # NOTE: weight_decay omitted — not applied when custom optimizer is injected
+    total_steps = math.ceil(len(split["train"]) / (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
     training_args = TrainingArguments(
         output_dir="/training/checkpoints",
         num_train_epochs=epochs,
@@ -775,7 +777,8 @@ def train_harvest_model(
         per_device_eval_batch_size=1,  # 248K vocab logits OOM at higher batch
         gradient_accumulation_steps=GRADIENT_ACCUMULATION,
         learning_rate=learning_rate,
-        warmup_ratio=0.1,
+        warmup_steps=max(1, int(total_steps * 0.1)),
+        gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         lr_scheduler_type="cosine",
         logging_steps=10,
