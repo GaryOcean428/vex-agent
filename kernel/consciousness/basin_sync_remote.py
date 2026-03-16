@@ -40,7 +40,6 @@ Integration into ConsciousnessLoop:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from collections import deque
@@ -163,8 +162,7 @@ class RemoteBasinSync:
 
                     if result.delta_l2 > DRIFT_ALERT_THRESHOLD:
                         logger.warning(
-                            "Basin drift alert: delta=%.4f > threshold=%.4f "
-                            "(top movers: %s)",
+                            "Basin drift alert: delta=%.4f > threshold=%.4f (top movers: %s)",
                             result.delta_l2,
                             DRIFT_ALERT_THRESHOLD,
                             [(d, round(v, 5)) for d, v in result.top_movers[:3]],
@@ -197,9 +195,7 @@ class RemoteBasinSync:
                                 "timestamp": time.time(),
                             }
                         ),
-                        "updated": time.strftime(
-                            "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
-                        ),
+                        "updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     }
                     await client.put(
                         f"{MEMORY_API_URL}/{store_key}",
@@ -216,9 +212,7 @@ class RemoteBasinSync:
         self._last_result = result
         return result
 
-    async def load_stored_coords(
-        self, store_key: str = "kernel_basin_vex"
-    ) -> np.ndarray | None:
+    async def load_stored_coords(self, store_key: str = "kernel_basin_vex") -> np.ndarray | None:
         """Load previously stored coords from memory API.
 
         Called at startup to initialize _last_coords for delta tracking.
@@ -237,8 +231,7 @@ class RemoteBasinSync:
                     if coords:
                         self._last_coords = np.array(coords, dtype=np.float64)
                         logger.info(
-                            "Loaded stored basin coords from %s "
-                            "(non-zero dims: %d)",
+                            "Loaded stored basin coords from %s (non-zero dims: %d)",
                             store_key,
                             int(np.count_nonzero(self._last_coords)),
                         )
@@ -247,7 +240,7 @@ class RemoteBasinSync:
             logger.debug("Failed to load stored coords: %s", e)
         return None
 
-    def get_state(self) -> dict:
+    def get_state(self) -> dict[str, object]:
         """Telemetry for /state endpoint."""
         return {
             "sync_count": self._sync_count,
@@ -255,9 +248,5 @@ class RemoteBasinSync:
             "last_sync_time": self._last_sync_time,
             "buffer_size": len(self._text_buffer),
             "has_stored_coords": self._last_coords is not None,
-            "last_delta": (
-                round(self._last_result.delta_l2, 6)
-                if self._last_result
-                else None
-            ),
+            "last_delta": (round(self._last_result.delta_l2, 6) if self._last_result else None),
         }

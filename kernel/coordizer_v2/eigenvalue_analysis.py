@@ -46,8 +46,13 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from kernel.coordizer_v2.compress import CompressionResult
+    from kernel.coordizer_v2.harvest import HarvestResult
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("eigenvalue_analysis")
@@ -103,7 +108,7 @@ async def run_modal_harvest(
     corpus_texts: list[str] | None = None,
     target_tokens: int = 5000,
     min_contexts: int = 2,
-) -> "HarvestResult":
+) -> HarvestResult:
     """Run real harvest via Modal GPU endpoint."""
     from kernel.coordizer_v2.modal_harvest import modal_harvest
 
@@ -126,7 +131,7 @@ async def run_modal_harvest(
     return result
 
 
-def run_synthetic_harvest() -> "HarvestResult":
+def run_synthetic_harvest() -> HarvestResult:
     """Generate synthetic harvest (pipeline test only).
 
     Uses vocab_size=32000 to exercise the real compression path
@@ -151,7 +156,7 @@ def load_corpus(path: str) -> list[str]:
     return texts
 
 
-def run_compression(harvest: "HarvestResult") -> "CompressionResult":
+def run_compression(harvest: HarvestResult) -> CompressionResult:
     """Run Fisher-Rao PGA compression and return full result.
 
     The eigenvalues are computed INSIDE compress() via np.linalg.eigh
@@ -171,7 +176,7 @@ def run_compression(harvest: "HarvestResult") -> "CompressionResult":
     return result
 
 
-def analyse_eigenvalues(result: "CompressionResult") -> dict:
+def analyse_eigenvalues(result: CompressionResult) -> dict[str, Any]:
     """Analyse eigenvalue spectrum from CompressionResult.
 
     CRITICAL: eigenvalues are read directly from result.eigenvalues,
@@ -179,7 +184,6 @@ def analyse_eigenvalues(result: "CompressionResult") -> dict:
     symmetric tangent-space Gram matrix. They are guaranteed real
     and non-negative. Do NOT compute eigenvalues of any other matrix.
     """
-    from kernel.coordizer_v2.geometry import E8_RANK
 
     eigenvalues = result.eigenvalues
     if eigenvalues is None or len(eigenvalues) == 0:
@@ -251,7 +255,7 @@ def analyse_eigenvalues(result: "CompressionResult") -> dict:
     return report
 
 
-def print_report(report: dict) -> None:
+def print_report(report: dict[str, Any]) -> None:
     """Print human-readable eigenvalue report."""
     print("\n" + "=" * 60)
     print("  COORDIZER EIGENVALUE ANALYSIS")
@@ -265,11 +269,11 @@ def print_report(report: dict) -> None:
         print("\n  WARNING: SYNTHETIC DATA -- pipeline test only, NOT hypothesis test")
 
     print(f"\n  E8 Hypothesis Score (top-8 variance):  {report['e8_hypothesis_score']:.4f}")
-    print(f"  Expected if E8 holds:                  ~0.877")
+    print("  Expected if E8 holds:                  ~0.877")
     print(f"\n  -> {report['recommendation']}")
     print(f"  -> Recommended intermediate dim n = {report['recommended_n']}")
 
-    print(f"\n  Effective dimensionality:")
+    print("\n  Effective dimensionality:")
     print(f"    90% variance captured at dim:  {report['effective_dim_90pct']}")
     print(f"    95% variance captured at dim:  {report['effective_dim_95pct']}")
     print(f"    99% variance captured at dim:  {report['effective_dim_99pct']}")
@@ -281,17 +285,19 @@ def print_report(report: dict) -> None:
     print(f"  Target dim:              {report['target_dim']}")
     print(f"  Compression time:        {report['compression_time_seconds']:.1f}s")
 
-    print(f"\n  Eigenvalue spectrum (top 16):")
+    print("\n  Eigenvalue spectrum (top 16):")
     for i, (ev, cv) in enumerate(
-        zip(report["eigenvalue_spectrum_top_16"], report["cumulative_variance_top_16"])
+        zip(
+            report["eigenvalue_spectrum_top_16"], report["cumulative_variance_top_16"], strict=False
+        )
     ):
         marker = " <-- E8 rank" if i == 7 else ""
-        print(f"    L_{i+1:2d} = {ev:.6f}  (cumulative: {cv:.4f}){marker}")
+        print(f"    L_{i + 1:2d} = {ev:.6f}  (cumulative: {cv:.4f}){marker}")
 
     print("\n" + "=" * 60)
 
 
-async def main():
+async def main() -> dict[str, Any]:
     args = parse_args()
 
     # Step 1: Get harvest data

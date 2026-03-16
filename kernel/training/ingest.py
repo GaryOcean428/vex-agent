@@ -44,9 +44,12 @@ from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
+
+if TYPE_CHECKING:
+    from ..coordizer_v2.types import HarmonicTier
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -160,7 +163,7 @@ class IngestionResult:
     errors: list[str] = field(default_factory=list)
 
 
-class FeedbackRequest(BaseModel):
+class FeedbackRequest(BaseModel):  # type: ignore[misc]
     conversation_id: str
     rating: int
     comment: str = ""

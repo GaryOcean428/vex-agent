@@ -293,7 +293,8 @@ export const runCommandTool: VexTool = {
       return {
         success: false,
         output: "",
-        error: "ComputeSDK not configured — set COMPUTESDK_API_KEY to enable sandbox tools",
+        error:
+          "ComputeSDK not configured — set COMPUTESDK_API_KEY to enable sandbox tools",
       };
     }
 

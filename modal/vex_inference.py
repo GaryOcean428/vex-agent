@@ -21,10 +21,8 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import subprocess
-import urllib.request
 
 import modal
 
@@ -77,7 +75,9 @@ class VexOllamaServer:
     async def start_ollama(self):
         """Start Ollama server and pull model if needed."""
         version_result = subprocess.run(
-            ["ollama", "--version"], capture_output=True, text=True,
+            ["ollama", "--version"],
+            capture_output=True,
+            text=True,
         )
         ollama_version = version_result.stdout.strip() or "unknown"
 
@@ -91,7 +91,10 @@ class VexOllamaServer:
         for _ in range(30):
             try:
                 result = subprocess.run(
-                    ["ollama", "list"], capture_output=True, text=True, timeout=5,
+                    ["ollama", "list"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 if result.returncode == 0:
                     break
@@ -102,7 +105,9 @@ class VexOllamaServer:
         print(f"Pulling model: {MODEL_NAME}")
         pull_result = subprocess.run(
             [
-                "ollama", "pull", MODEL_NAME,
+                "ollama",
+                "pull",
+                MODEL_NAME,
             ],
             capture_output=True,
             text=True,

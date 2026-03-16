@@ -103,6 +103,47 @@ Both must match the Modal endpoint's response format: `{tokens: {id: {fingerprin
 The endpoint does Fréchet mean aggregation server-side (in sqrt-space). Both clients
 send `X-Api-Key` headers derived from `settings.kernel_api_key` for auth.
 
+## Startup Wiring (kernel/server.py lifespan)
+
+The kernel `lifespan()` wires these systems on every deploy:
+
+1. **Resonance bank auto-rebuild**: Scans `HARVEST_OUTPUT_DIR` (default
+   `/data/harvest/output/`) for coordized JSONL, builds a `ResonanceBank`,
+   injects into `consciousness._coordizer_v2.bank`, and rebuilds the
+   string cache. Runs via `asyncio.to_thread` to avoid blocking.
+
+2. **Runtime bank hot-swap**: `HarvestScheduler.on_harvest_complete`
+   callback re-runs the bank rebuild after each successful harvest batch.
+   No restart needed — the running consciousness loop sees the new bank
+   immediately.
+
+3. **Auto-training trigger**: If `MODAL_TRAINING_URL` and
+   `MODAL_TRAINING_AUTO_THRESHOLD` are set, the post-harvest callback
+   POSTs to the Modal training endpoint once the bank exceeds the
+   threshold. One-shot per deploy (resets on restart). Set threshold to
+   `0` (default) to disable.
+
+4. **Periodic memory consolidation**: Background task every 30 minutes
+   prunes `GeometricMemoryStore` (keeps top 500 by access frequency) and
+   `MemoryStore` (trims `short-term.md` to 200 lines). Handles
+   `CancelledError` cleanly on shutdown.
+
+### Configurable harvest paths
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `HARVEST_DIR` | `/data/harvest` | Base directory for all harvest I/O |
+| `HARVEST_OUTPUT_DIR` | `$HARVEST_DIR/output` | Coordized JSONL files |
+| `HARVEST_BANK_DIR` | `$HARVEST_DIR/bank` | Saved resonance bank |
+| `MODAL_TRAINING_URL` | (empty) | Modal QLoRA training endpoint |
+| `MODAL_TRAINING_AUTO_THRESHOLD` | `0` | Bank size to auto-trigger training |
+
+### CoordizerV2Adapter passthrough
+`CoordizerV2Adapter` exposes `vocab_size`, `dim`, `bank` (with setter),
+and `rebuild_string_cache()` as passthroughs to the wrapped `CoordizerV2`.
+The `bank` setter writes to the *underlying* coordizer, not the adapter.
+This is critical — without it, bank injection from `server.py` would
+silently set a Python attribute on the adapter that nobody reads.
+
 ## LLM Client Patterns
 
 ### Ollama content extraction

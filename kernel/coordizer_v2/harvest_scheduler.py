@@ -36,6 +36,7 @@ import logging
 import os
 import shutil
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -216,9 +217,11 @@ class HarvestScheduler:
         self,
         config: HarvestSchedulerConfig | None = None,
         ingestor: Any = None,  # JSONLIngestor instance
+        on_harvest_complete: Callable[[list[dict[str, Any]]], Awaitable[None]] | None = None,
     ):
         self.config = config or HarvestSchedulerConfig()
         self.ingestor = ingestor
+        self.on_harvest_complete = on_harvest_complete
         self.budget = HarvestBudget(
             daily_limit=self.config.daily_harvest_budget,
         )
@@ -472,6 +475,12 @@ class HarvestScheduler:
                         f"Scan complete: {len(results)} files processed "
                         f"({successes} OK, {failures} failed)"
                     )
+                    # Fire post-harvest callback (e.g. rebuild resonance bank)
+                    if successes > 0 and self.on_harvest_complete is not None:
+                        try:
+                            await self.on_harvest_complete(results)
+                        except Exception as cb_err:
+                            logger.error("on_harvest_complete callback failed: %s", cb_err)
             except Exception as e:
                 logger.error(f"Scheduler error: {e}", exc_info=True)
 

@@ -136,6 +136,12 @@ class ModalConfig:
         "zai-org/GLM-4.7-Flash",
     )
 
+    # --- Training (QLoRA fine-tuning on Modal GPU) ---
+    training_url: str = os.environ.get("MODAL_TRAINING_URL", "")
+    # Auto-trigger: minimum coordized entries before requesting a training run.
+    # Set to 0 to disable auto-trigger (manual POST /train only).
+    training_auto_threshold: int = int(os.environ.get("MODAL_TRAINING_AUTO_THRESHOLD", "0"))
+
 
 @dataclass(frozen=True)
 class CoordizerV2Config:
