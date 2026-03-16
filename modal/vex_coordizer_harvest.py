@@ -201,12 +201,15 @@ class CoordizerHarvester:
                 if target_tokens > 0 and total_tokens >= target_tokens:
                     break
 
-        # Average fingerprints per token (Frechet mean on simplex via arithmetic mean)
+        # Fréchet mean on simplex via sqrt-coordinate averaging
         averaged = {}
         for tid, fp_list in token_fingerprints.items():
             if len(fp_list) < min_contexts:
                 continue
-            mean_fp = np.mean(fp_list, axis=0)
+            # Average in sqrt-space (Bhattacharyya embedding), then back-project
+            sqrt_fps = [np.sqrt(np.maximum(fp, 1e-12)) for fp in fp_list]
+            mean_sqrt = np.mean(sqrt_fps, axis=0)
+            mean_fp = mean_sqrt * mean_sqrt
             mean_fp = mean_fp / mean_fp.sum()
             averaged[tid] = mean_fp
 

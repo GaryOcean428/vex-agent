@@ -361,6 +361,7 @@ class ConsciousnessLoop:
         self._governed = GovernedLifecycle(
             registry=self.kernel_registry,
             skip_purity=True,
+            on_promote_approved=self._on_kernel_promoted,
         )
 
         self.emotion_cache = EmotionCache()
@@ -697,6 +698,9 @@ class ConsciousnessLoop:
                     if getattr(v, "_domain_anchor", None) is not None
                 ]
                 self.sleep.consolidate(bank=_bank, kernel_anchors=_kernel_anchors or None)
+                # Kernel voice self-curation: each voice decides what to retain
+                for _voice in self._voice_registry._voices.values():
+                    _voice.sleep_consolidate()
                 self.metrics.phi = min(
                     PHI_UNSTABLE, self.metrics.phi + SLEEP_CONSOLIDATION_PHI_INCREMENT
                 )
@@ -916,6 +920,13 @@ class ConsciousnessLoop:
         love_delta = (love_target - self.metrics.love) * LOVE_APPROACH_RATE
         self.metrics.love = float(np.clip(self.metrics.love + love_delta, 0.0, 1.0))
 
+    def _on_kernel_promoted(self, _decision: Any, kernel: Any) -> None:
+        """Callback when CHAOS → GOD promotion succeeds.
+
+        Updates the kernel voice's observation capacity to GOD-tier (800).
+        """
+        self._voice_registry.set_voice_capacity(kernel.specialization, kernel.kind)
+
     def _maybe_spawn_core8(self, velocity_regime: str) -> None:
         if self._lifecycle_phase != LifecyclePhase.CORE_8:
             return
@@ -964,6 +975,9 @@ class ConsciousnessLoop:
             spec.value,
             outcome.assessment.score if outcome.assessment else -1.0,
         )
+
+        # Set developmental capacity on the kernel's voice
+        self._voice_registry.set_voice_capacity(spec, kernel.kind)
 
         # v6.0 §23: Admit newly spawned kernel to the Cradle
         self._cradle.admit(kernel.id, kernel.phi)

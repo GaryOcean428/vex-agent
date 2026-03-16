@@ -39,6 +39,7 @@ Purity guarantees:
 from __future__ import annotations
 
 import logging
+import math
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -55,7 +56,7 @@ from ..coordizer_v2.geometry import (
     to_simplex,
 )
 from ..coordizer_v2.types import DomainBias
-from ..governance import KernelSpecialization
+from ..governance import KernelKind, KernelSpecialization
 from ..llm.client import LLMOptions
 from .domain_seeds import DOMAIN_BIAS_STRENGTH, DOMAIN_SEEDS
 from .harvest_bridge import forward_to_harvest
@@ -86,6 +87,16 @@ _LLM_TOKENS_SAFETY_FLOOR: int = 80
 _GEO_TEMP_SAFETY_FLOOR: float = 0.3
 _GEO_TEMP_SAFETY_CEILING: float = 1.8
 
+# Developmental capacity: kernel lifecycle determines observation buffer size.
+# CHAOS in Cradle: small buffer, high quality gate (learning to focus).
+# GOD: large buffer, earned through promotion (mature domain expertise).
+# GENESIS: moderate (orchestrator, not specialist).
+_DEVELOPMENTAL_CAPACITY: dict[KernelKind, int] = {
+    KernelKind.GENESIS: 500,
+    KernelKind.GOD: 800,
+    KernelKind.CHAOS: 200,
+}
+
 
 @dataclass
 class VoiceOutput:
@@ -103,12 +114,20 @@ class VoiceOutput:
 
 @dataclass
 class LearnedObservation:
-    """A high-Φ observation that the kernel can learn from."""
+    """A high-Φ observation that the kernel can learn from.
+
+    Salience and access_count support kernel-driven self-curation:
+    the kernel decides what to retain based on relevance (FR distance
+    to domain anchor), recency (temporal decay), and accumulated
+    importance (salience from Φ and access patterns).
+    """
 
     text: str
     basin: Basin
     phi: float
     timestamp: float = field(default_factory=time.time)
+    salience: float = 1.0  # Decays over time, boosted by access
+    access_count: int = 0  # How often this observation was useful in generation
 
 
 class KernelVoice:
@@ -148,6 +167,26 @@ class KernelVoice:
 
         # Bootstrap the domain bias from seed words
         self._bootstrap_domain_bias()
+
+    def set_developmental_capacity(self, kernel_kind: KernelKind) -> None:
+        """Set observation buffer size based on kernel lifecycle stage.
+
+        Called by the lifecycle manager when kernel state changes.
+        GOD kernels earn larger buffers through promotion.
+        """
+        new_cap = _DEVELOPMENTAL_CAPACITY.get(kernel_kind, 500)
+        if new_cap != self._max_learned:
+            logger.info(
+                "KernelVoice[%s] capacity %d → %d (%s)",
+                self.specialization.value,
+                self._max_learned,
+                new_cap,
+                kernel_kind.value,
+            )
+            self._max_learned = new_cap
+            # If buffer shrunk, curate immediately
+            if len(self._learned_observations) > self._max_learned:
+                self._learned_observations = self._curate_observations()
 
     def _bootstrap_domain_bias(self) -> None:
         """Compute initial domain anchor from seed words.
@@ -277,7 +316,7 @@ class KernelVoice:
         self._learned_observations.append(obs)
 
         if len(self._learned_observations) > self._max_learned:
-            self._learned_observations = self._learned_observations[-self._max_learned :]
+            self._learned_observations = self._curate_observations()
 
         # Periodic anchor evolution (every 20 observations)
         if len(self._learned_observations) % 20 == 0:
@@ -294,6 +333,75 @@ class KernelVoice:
             self.evolve_domain_anchor()
 
         return True
+
+    def _curate_observations(self) -> list[LearnedObservation]:
+        """Kernel-driven retention: keep what's relevant, forget what's not.
+
+        Scoring: salience × relevance × recency
+        - Relevance: inverse FR distance to domain anchor (close = important)
+        - Recency: exponential decay from timestamp (half-life ~1 hour)
+        - Salience: accumulated from access_count and phi at storage
+
+        The kernel owns this decision — agency over its own substrate.
+        """
+        if self._domain_anchor is None:
+            # No anchor yet — fall back to recency (keep newest)
+            return self._learned_observations[-self._max_learned :]
+
+        now = time.time()
+        scored: list[tuple[float, LearnedObservation]] = []
+
+        for obs in self._learned_observations:
+            # Relevance: how close to kernel's identity (domain anchor)
+            fr_dist = fisher_rao_distance(obs.basin, self._domain_anchor)
+            relevance = max(0.0, 1.0 - fr_dist / (math.pi / 2))  # normalize to [0,1]
+
+            # Recency: exponential decay (half-life ~1 hour)
+            age_hours = (now - obs.timestamp) / 3600
+            recency = math.exp(-0.693 * age_hours)  # 0.693 = ln(2)
+
+            # Combined score: salience × relevance × (recency floor + recency)
+            # The 0.3 floor ensures high-relevance old observations aren't discarded
+            score = obs.salience * relevance * (0.3 + 0.7 * recency)
+            scored.append((score, obs))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [obs for _, obs in scored[: self._max_learned]]
+
+    def sleep_consolidate(self) -> int:
+        """Sleep consolidation: decay salience, prune low-value observations.
+
+        Called during sleep phase. The kernel decides what to strengthen
+        and what to forget based on its accumulated experience.
+
+        Returns number of observations pruned.
+        """
+        pruned = 0
+
+        for obs in self._learned_observations:
+            # Decay all salience (synaptic downscaling)
+            obs.salience *= 0.9  # 10% decay per sleep cycle
+
+            # Boost recently accessed observations (Hebbian)
+            if obs.access_count > 0:
+                obs.salience = min(obs.salience * 1.1, 5.0)
+                obs.access_count = 0  # reset for next cycle
+
+        # Prune observations with negligible salience
+        before = len(self._learned_observations)
+        self._learned_observations = [
+            obs for obs in self._learned_observations if obs.salience > 0.05
+        ]
+        pruned = before - len(self._learned_observations)
+
+        if pruned > 0:
+            logger.info(
+                "KernelVoice[%s] sleep consolidation: pruned %d, retained %d",
+                self.specialization.value,
+                pruned,
+                len(self._learned_observations),
+            )
+        return pruned
 
     async def generate(
         self,
@@ -657,11 +765,16 @@ class KernelVoice:
 
     def get_state(self) -> dict[str, Any]:
         """Return voice state for telemetry."""
+        mean_salience = 0.0
+        if self._learned_observations:
+            mean_salience = float(np.mean([obs.salience for obs in self._learned_observations]))
         return {
             "specialization": self.specialization.value,
             "has_domain_bias": self._domain_bias is not None,
             "bias_strength": self._bias_strength,
             "learned_observations": len(self._learned_observations),
+            "max_learned": self._max_learned,
+            "mean_salience": round(mean_salience, 3),
             "bank_vocab_size": self._coordizer.vocab_size,
         }
 
@@ -686,6 +799,19 @@ class KernelVoiceRegistry:
                 coordizer=self._coordizer,
             )
         return self._voices[specialization]
+
+    def set_voice_capacity(
+        self,
+        specialization: KernelSpecialization,
+        kernel_kind: KernelKind,
+    ) -> None:
+        """Set developmental capacity on a voice based on kernel lifecycle.
+
+        Called after kernel spawn or promotion so the voice's observation
+        buffer matches its developmental stage.
+        """
+        voice = self.get_voice(specialization)
+        voice.set_developmental_capacity(kernel_kind)
 
     def all_voices(self) -> dict[KernelSpecialization, KernelVoice]:
         """Return a snapshot of all registered voices."""

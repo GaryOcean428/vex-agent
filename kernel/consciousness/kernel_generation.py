@@ -233,8 +233,9 @@ async def _generate_single(
             )
         except Exception:
             logger.warning(
-                "KernelVoice[%s] generation failed — falling back to LLM-only",
+                "KernelVoice[%s/%s] generation FAILED — falling back to LLM-only",
                 kernel.name,
+                spec.value,
                 exc_info=True,
             )
             # Fall through to LLM-only path below
@@ -296,7 +297,12 @@ async def _generate_single(
             llm_expanded=True,
         )
     except Exception:
-        logger.warning("Kernel %s generation failed", kernel.name, exc_info=True)
+        logger.warning(
+            "Kernel %s/%s LLM-only generation FAILED — returning None",
+            kernel.name,
+            spec.value,
+            exc_info=True,
+        )
         return None
 
 

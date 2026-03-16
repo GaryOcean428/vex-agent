@@ -165,16 +165,15 @@ def compress(
     fingerprints = np.maximum(fingerprints, _EPS)
     fingerprints = fingerprints / fingerprints.sum(axis=1, keepdims=True)
 
-    # Step 2: Fréchet mean on Δ^(V-1)
+    # Step 2: Fréchet mean on Δ^(V-1) — proper geodesic centroid
     logger.info("Computing Fréchet mean...")
-    sqrt_fps = np.sqrt(fingerprints)
-    mean_sqrt = sqrt_fps.mean(axis=0)
-    mean_sqrt = mean_sqrt / np.sqrt(np.sum(mean_sqrt * mean_sqrt) + _EPS)
-    mu = mean_sqrt * mean_sqrt
-    mu = mu / mu.sum()
+    from ..geometry.fisher_rao import frechet_mean as _frechet_mean
+
+    mu = _frechet_mean(list(fingerprints))
 
     # Step 3: Log-map all points to tangent space at μ
     logger.info("Log-mapping to tangent space...")
+    sqrt_fps = np.sqrt(np.maximum(fingerprints, _EPS))
     mu_sqrt = np.sqrt(np.maximum(mu, _EPS))
 
     tangent_vectors = np.zeros_like(sqrt_fps)

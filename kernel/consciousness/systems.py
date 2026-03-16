@@ -1338,8 +1338,14 @@ class E8KernelRegistry:
                 count += 1
         return count
 
+    # PROMOTED = graduated CHAOS→GOD. They are the most capable generators.
+    _GENERATION_ELIGIBLE = {
+        LifecycleState.ACTIVE,
+        LifecycleState.PROMOTED,
+    }
+
     def active(self) -> list[KernelInstance]:
-        return [k for k in self._kernels.values() if k.state == LifecycleState.ACTIVE]
+        return [k for k in self._kernels.values() if k.state in self._GENERATION_ELIGIBLE]
 
     def evaluate_promotion(self, kernel_id: str) -> bool:
         """Evaluate CHAOS → GOD promotion."""
