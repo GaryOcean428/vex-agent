@@ -330,8 +330,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             while True:
                 await asyncio.sleep(1800)  # 30 minutes
                 try:
-                    pruned = geometric_memory.consolidate()
-                    memory_store.consolidate()
+                    pruned = await asyncio.to_thread(geometric_memory.consolidate)
+                    await asyncio.to_thread(memory_store.consolidate)
                     if pruned > 0:
                         logger.info(
                             "Memory consolidation: pruned %d geometric entries",
