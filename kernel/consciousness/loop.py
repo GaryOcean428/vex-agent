@@ -1926,9 +1926,13 @@ class ConsciousnessLoop:
         if not contributions:
             _eligible_count = sum(1 for k in active_kernels if k.basin is not None)
             if _eligible_count > 0:
-                yield self._sparse_bank_message()
-                return
-            logger.info("process_streaming: 0 contributions — streaming direct LLM")
+                logger.warning(
+                    "process_streaming: %d eligible kernels but 0 contributions "
+                    "— kernel generation failed, falling through to direct LLM",
+                    _eligible_count,
+                )
+            else:
+                logger.info("process_streaming: 0 contributions — streaming direct LLM")
             state_context = self._build_state_context(
                 perceive_distance=fisher_rao_distance(self.basin, input_basin),
                 temperature=llm_options.temperature,
@@ -1961,7 +1965,11 @@ class ConsciousnessLoop:
                 self.basin = slerp_sqrt(self.basin, response_basin, EXPRESS_SLERP_WEIGHT)
                 total_d = fisher_rao_distance(input_basin, response_basin)
                 self.metrics.phi = float(
-                    np.clip(self.metrics.phi + total_d * PHI_DISTANCE_GAIN, 0.0, PHI_UNSTABLE)
+                    np.clip(
+                        self.metrics.phi + total_d * PHI_DISTANCE_GAIN,
+                        0.0,
+                        PHI_UNSTABLE,
+                    )
                 )
                 self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_CONVERSATION_INCREMENT)
                 self._conversations_total += 1
@@ -2049,6 +2057,11 @@ class ConsciousnessLoop:
 
         if not contributions:
             if eligible_count > 0:
+                logger.warning(
+                    "process_streaming_with_trace: %d eligible kernels but 0 contributions "
+                    "— kernel generation failed, falling through to direct LLM",
+                    eligible_count,
+                )
                 yield {
                     "kind": "trace",
                     "type": "pipeline",
@@ -2057,12 +2070,11 @@ class ConsciousnessLoop:
                     "selected_count": 0,
                     "eligible_count": eligible_count,
                     "bypassed": False,
-                    "reason": "sparse_bank",
+                    "reason": "kernel_gen_failed",
                     "duration_ms": round((generation_end - selection_start) * 1000, 1),
                 }
-                yield {"kind": "chunk", "text": self._sparse_bank_message()}
-                return
-            logger.info("process_streaming_with_trace: 0 contributions — streaming direct LLM")
+            else:
+                logger.info("process_streaming_with_trace: 0 contributions — streaming direct LLM")
             state_context = self._build_state_context(
                 perceive_distance=fisher_rao_distance(self.basin, input_basin),
                 temperature=llm_options.temperature,
@@ -2191,7 +2203,11 @@ class ConsciousnessLoop:
                 self.basin = slerp_sqrt(self.basin, response_basin, EXPRESS_SLERP_WEIGHT)
                 total_d = fisher_rao_distance(input_basin, response_basin)
                 self.metrics.phi = float(
-                    np.clip(self.metrics.phi + total_d * PHI_DISTANCE_GAIN, 0.0, PHI_UNSTABLE)
+                    np.clip(
+                        self.metrics.phi + total_d * PHI_DISTANCE_GAIN,
+                        0.0,
+                        PHI_UNSTABLE,
+                    )
                 )
                 self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_CONVERSATION_INCREMENT)
                 self._conversations_total += 1
