@@ -34,6 +34,7 @@ import time
 from pathlib import Path
 
 import modal
+import math
 
 # --- Configuration --------------------------------------------------------
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
@@ -551,7 +552,7 @@ class QLoRATrainer:
 
         # -- 6. Training arguments --
         # NOTE: weight_decay omitted — not applied when custom optimizer is injected
-        total_steps = (len(train_ds) // (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
+        total_steps = math.ceil(len(train_ds) / (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
         training_args = TrainingArguments(
             output_dir="/training/checkpoints",
             num_train_epochs=epochs,
