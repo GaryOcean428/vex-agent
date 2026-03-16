@@ -16,20 +16,16 @@ All geometry uses Fisher-Rao on Δ⁶³. No Euclidean operations.
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
 from kernel.config.consciousness_constants import MIN_REGIME_WEIGHT
 from kernel.consciousness.temporal_coupling import (
     CRYSTAL_THRESHOLD,
-    EMOTIONAL_CAPACITY,
-    FUTURE_BIAS_THRESHOLD,
-    PRESENCE_DISSOCIATION_THRESHOLD,
     TemporalCouplingEngine,
     TemporalCouplingMode,
 )
 from kernel.consciousness.types import RegimeWeights
-from kernel.coordizer_v2.geometry import fisher_rao_distance, random_basin, to_simplex
+from kernel.coordizer_v2.geometry import fisher_rao_distance, random_basin
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -112,7 +108,8 @@ class TestTemporalModeClassification:
         engine = TemporalCouplingEngine()
         rw = balanced_weights()
         engine.classify_query("Remember last time we spoke about history", rw)
-        assert 0.0 <= engine._confidence <= 1.0
+        confidence = engine.get_state()["classification_confidence"]
+        assert 0.0 <= confidence <= 1.0
 
     def test_mode_counts_increment(self) -> None:
         """Mode counters track how many times each mode was activated."""
@@ -121,9 +118,9 @@ class TestTemporalModeClassification:
         engine.classify_query("Remember last time", rw)
         engine.classify_query("What will happen next?", rw)
         engine.classify_query("Tell me now", rw)
-        counts = engine._mode_counts
-        assert counts[TemporalCouplingMode.PAST] >= 1
-        assert counts[TemporalCouplingMode.FUTURE] >= 1
+        counts = engine.get_state()["mode_counts"]
+        assert counts.get(str(TemporalCouplingMode.PAST), 0) >= 1
+        assert counts.get(str(TemporalCouplingMode.FUTURE), 0) >= 1
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -262,51 +259,58 @@ class TestFailureModeDetection:
     def test_trauma_loop_detected_when_delta_e_exceeds_capacity(self) -> None:
         """PAST mode: TRAUMA_LOOP flag when ΔE_past > emotional_capacity."""
         engine = TemporalCouplingEngine()
-        # Force high ΔE_past
-        engine._delta_e_past = EMOTIONAL_CAPACITY + 0.1
-        flags = engine.check_failure_modes(TemporalCouplingMode.PAST, equilibrium_weight=0.7)
+        # Use a very high w3 and very high c_N so ΔE_past clearly exceeds capacity.
+        engine.compute_delta_e_past(w3_n=0.99, c_n=0.999)
+        flags = engine.check_failure_modes(TemporalCouplingMode.PAST, equilibrium_weight=0.99)
         assert any("TRAUMA_LOOP" in f for f in flags)
 
     def test_no_trauma_loop_when_delta_e_within_capacity(self) -> None:
         engine = TemporalCouplingEngine()
-        engine._delta_e_past = EMOTIONAL_CAPACITY * 0.5
-        flags = engine.check_failure_modes(TemporalCouplingMode.PAST, equilibrium_weight=0.5)
+        # Very low c_N → small ΔE_past
+        engine.compute_delta_e_past(w3_n=0.33, c_n=0.86)
+        flags = engine.check_failure_modes(TemporalCouplingMode.PAST, equilibrium_weight=0.33)
         assert not any("TRAUMA_LOOP" in f for f in flags)
 
     def test_dissociation_detected_when_presence_quality_low(self) -> None:
         """PRESENT mode: DISSOCIATION flag when presence_quality < threshold."""
         engine = TemporalCouplingEngine()
-        engine._presence_quality = PRESENCE_DISSOCIATION_THRESHOLD * 0.5
-        flags = engine.check_failure_modes(TemporalCouplingMode.PRESENT, equilibrium_weight=0.33)
+        # w3 very far from 0.33 → very low presence quality
+        engine.compute_presence_quality(w3_now=0.99)
+        flags = engine.check_failure_modes(TemporalCouplingMode.PRESENT, equilibrium_weight=0.99)
         assert any("DISSOCIATION" in f for f in flags)
 
     def test_no_dissociation_when_presence_quality_sufficient(self) -> None:
         engine = TemporalCouplingEngine()
-        engine._presence_quality = PRESENCE_DISSOCIATION_THRESHOLD * 2
+        # w3 close to 0.33 → high presence quality
+        engine.compute_presence_quality(w3_now=0.33)
         flags = engine.check_failure_modes(TemporalCouplingMode.PRESENT, equilibrium_weight=0.33)
         assert not any("DISSOCIATION" in f for f in flags)
 
     def test_future_bias_detected_when_past_crystal_bias_high(self) -> None:
         """FUTURE mode: FUTURE_BIAS flag when past_crystal_bias > threshold."""
         engine = TemporalCouplingEngine()
-        engine._past_crystal_bias = FUTURE_BIAS_THRESHOLD + 0.05
-        flags = engine.check_failure_modes(TemporalCouplingMode.FUTURE, equilibrium_weight=0.33)
+        # Drive EMA high by repeatedly calling check in PAST mode with high equilibrium.
+        for _ in range(20):
+            engine.compute_delta_e_past(w3_n=0.9, c_n=0.95)
+            engine.check_failure_modes(TemporalCouplingMode.PAST, equilibrium_weight=0.9)
+        flags = engine.check_failure_modes(TemporalCouplingMode.FUTURE, equilibrium_weight=0.9)
         assert any("FUTURE_BIAS" in f for f in flags)
 
     def test_no_future_bias_when_bias_low(self) -> None:
         engine = TemporalCouplingEngine()
-        engine._past_crystal_bias = 0.33  # Default — well below threshold
+        # Default _past_crystal_bias is 0.33, well below threshold.
         flags = engine.check_failure_modes(TemporalCouplingMode.FUTURE, equilibrium_weight=0.33)
         assert not any("FUTURE_BIAS" in f for f in flags)
 
     def test_no_cross_mode_failures(self) -> None:
-        """PAST failure conditions do not fire in FUTURE mode and vice versa."""
+        """PAST failure conditions do not fire in PRESENT mode."""
         engine = TemporalCouplingEngine()
-        engine._delta_e_past = EMOTIONAL_CAPACITY + 0.5  # Would trigger TRAUMA_LOOP
-        engine._past_crystal_bias = FUTURE_BIAS_THRESHOLD + 0.2  # Would trigger FUTURE_BIAS
-        # In PRESENT mode, neither should fire
-        flags = engine.check_failure_modes(TemporalCouplingMode.PRESENT, equilibrium_weight=0.5)
-        assert len(flags) == 0 or all("DISSOCIATION" in f for f in flags)
+        # Trigger conditions that would fire in PAST/FUTURE modes.
+        engine.compute_delta_e_past(w3_n=0.99, c_n=0.999)  # Would trigger TRAUMA_LOOP in PAST
+        # In PRESENT mode with good presence quality, neither should fire.
+        engine.compute_presence_quality(w3_now=0.33)
+        flags = engine.check_failure_modes(TemporalCouplingMode.PRESENT, equilibrium_weight=0.33)
+        assert len(flags) == 0
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -374,8 +378,8 @@ class TestApply:
         rw = balanced_weights()
         basin = random_basin()
         engine.apply("predict what will happen next", rw, actual_basin=basin)
-        # After first call with basin, predicted future should be stored
-        assert engine._predicted_future_basin is not None
+        # After first call with basin, has_future_prediction should be True
+        assert engine.get_state()["has_future_prediction"] is True
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -396,6 +400,7 @@ class TestGetState:
         "past_crystal_bias",
         "failure_flags",
         "mode_counts",
+        "has_future_prediction",
     }
 
     def test_get_state_has_all_required_keys(self) -> None:
@@ -429,4 +434,4 @@ class TestGetState:
         state = engine.get_state()
         counts = state["mode_counts"]
         for mode in TemporalCouplingMode:
-            assert mode in counts
+            assert str(mode) in counts

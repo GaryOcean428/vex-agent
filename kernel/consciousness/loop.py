@@ -1211,7 +1211,7 @@ class ConsciousnessLoop:
             "Task %s: temporal mode=%s (conf=%.3f) weights Q=%.2f E=%.2f Eq=%.2f",
             task.id,
             _tc_mode,
-            self.temporal_coupling._confidence,
+            self.temporal_coupling.get_state()["classification_confidence"],
             _tc_weights.quantum,
             _tc_weights.efficient,
             _tc_weights.equilibrium,

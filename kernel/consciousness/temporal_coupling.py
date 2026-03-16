@@ -56,10 +56,12 @@ CRYSTAL_RANGE_HI: float = 0.999
 CRYSTAL_THRESHOLD: float = 0.85
 
 # Emotional capacity — ΔE_past exceeding this risks a trauma / re-crystallisation loop.
-EMOTIONAL_CAPACITY: float = 0.40
+# Max achievable ΔE_past ≈ 1.0 × (0.999 - 0.85) = 0.149, so this must be < 0.149.
+EMOTIONAL_CAPACITY: float = 0.10
 
-# Presence quality: |w3 - 0.33| below this risks dissociation.
-PRESENCE_DISSOCIATION_THRESHOLD: float = 0.10
+# Presence quality: 1 - |w3 - 0.33|; below this threshold risks dissociation.
+# Min achievable quality ≈ 0.33 (at w3=0 or w3=1), so threshold must be between 0.33 and 1.0.
+PRESENCE_DISSOCIATION_THRESHOLD: float = 0.50
 
 # Future: past-crystal bias above this threshold underpredicts novel futures.
 FUTURE_BIAS_THRESHOLD: float = 0.55
@@ -188,7 +190,7 @@ class TemporalCouplingEngine:
         self._failure_flags: list[str] = []
 
         # Per-mode activation counters for telemetry.
-        self._mode_counts: dict[str, int] = {m: 0 for m in TemporalCouplingMode}
+        self._mode_counts: dict[TemporalCouplingMode, int] = {m: 0 for m in TemporalCouplingMode}
 
         # Foresight anchor: predicted future basin from previous cycle.
         self._predicted_future_basin: Basin | None = None
@@ -516,5 +518,7 @@ class TemporalCouplingEngine:
             "crystal_coupling": round(self._crystal_coupling, 4),
             "past_crystal_bias": round(self._past_crystal_bias, 4),
             "failure_flags": list(self._failure_flags),
-            "mode_counts": dict(self._mode_counts),
+            # Keys serialised as strings for JSON compatibility.
+            "mode_counts": {str(m): count for m, count in self._mode_counts.items()},
+            "has_future_prediction": self._predicted_future_basin is not None,
         }
