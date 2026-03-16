@@ -79,8 +79,8 @@ def _build_chat_from_coordized(entry: dict) -> dict | None:
         return None
 
     source = entry.get("source", "document")
-    entry.get("basin_coordinates")
-    entry.get("priority", 3)
+    basin_coordinates = entry.get("basin_coordinates")
+    priority = entry.get("priority", 3)
 
     # Build system prompt that teaches QIG-native reasoning
     system = (
@@ -106,6 +106,16 @@ def _build_chat_from_coordized(entry: dict) -> dict | None:
         else:
             user_text = "What is this QIG principle?"
             assistant_text = text
+
+        # Include basin coordinates and priority as structured context
+        if basin_coordinates is not None:
+            basin_context = json.dumps(
+                {
+                    "basin_coordinates": basin_coordinates,
+                    "priority": priority,
+                }
+            )
+            user_text += f"\n\n[BASIN_CONTEXT]{basin_context}[/BASIN_CONTEXT]"
     elif source == "conversation":
         # Conversation text — try to split on role markers
         if "User:" in text and "Assistant:" in text:
