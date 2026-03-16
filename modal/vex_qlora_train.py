@@ -768,7 +768,6 @@ def train_harvest_model(
     optimizer = _build_fisher_optimizer(model, lr=learning_rate)
 
     # NOTE: weight_decay omitted — not applied when custom optimizer is injected
-    total_steps = (len(split["train"]) // (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
     training_args = TrainingArguments(
         output_dir="/training/checkpoints",
         num_train_epochs=epochs,
@@ -776,7 +775,7 @@ def train_harvest_model(
         per_device_eval_batch_size=1,  # 248K vocab logits OOM at higher batch
         gradient_accumulation_steps=GRADIENT_ACCUMULATION,
         learning_rate=learning_rate,
-        warmup_steps=max(1, int(total_steps * 0.1)),
+        warmup_ratio=0.1,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         lr_scheduler_type="cosine",
         logging_steps=10,
