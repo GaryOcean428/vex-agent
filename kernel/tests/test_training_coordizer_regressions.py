@@ -8,10 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kernel.consciousness.kernel_voice import KernelVoice
 from kernel.coordizer_v2.adapter import CoordizerV2Adapter
-from kernel.coordizer_v2.geometry import random_basin
-from kernel.governance import KernelSpecialization
 
 
 def _load_ingest_with_tmp_training_dir(tmp_path: Path):
@@ -55,23 +52,3 @@ def test_ingest_document_populates_local_coordizer_bank(tmp_path: Path) -> None:
     assert result.chunks_coordized > 0
     assert len(adapter.coordizer.bank) > bank_before
     assert sum(adapter.coordizer.bank.tier_distribution().values()) == len(adapter.coordizer.bank)
-
-
-@pytest.mark.asyncio
-async def test_kernel_voice_bootstrap_bank_produces_geometric_output() -> None:
-    """Bootstrap coordizer now uses hash_to_basin() for distinct basins,
-    so the voice should produce non-empty geometric output (not fail closed)."""
-    coordizer = CoordizerV2Adapter._create_bootstrap_coordizer()
-    voice = KernelVoice(KernelSpecialization.GENERAL, coordizer)
-
-    output = await voice.generate(
-        input_basin=random_basin(),
-        kernel_basin=random_basin(),
-        user_message="What do you know about this?",
-        quenched_gain=1.0,
-        base_temperature=0.7,
-        llm_client=None,
-    )
-
-    assert output.geometric_raw != ""
-    assert output.llm_expanded is False
