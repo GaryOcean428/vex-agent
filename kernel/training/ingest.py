@@ -1383,7 +1383,7 @@ async def training_trigger_endpoint() -> dict[str, Any]:
     try:
         import httpx
 
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
                 training_url,
                 json={"_api_key": settings.kernel_api_key},
