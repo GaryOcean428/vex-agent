@@ -36,6 +36,7 @@ import logging
 import os
 import shutil
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -212,14 +213,11 @@ class HarvestScheduler:
     loop NEVER triggers this — only explicit API calls or scheduled runs.
     """
 
-    # Type alias for the post-harvest callback
-    OnHarvestComplete = Any  # Callable[[list[dict]], Awaitable[None]] | None
-
     def __init__(
         self,
         config: HarvestSchedulerConfig | None = None,
         ingestor: Any = None,  # JSONLIngestor instance
-        on_harvest_complete: Any = None,  # async callback(results) after successful run
+        on_harvest_complete: Callable[[list[dict[str, Any]]], Awaitable[None]] | None = None,
     ):
         self.config = config or HarvestSchedulerConfig()
         self.ingestor = ingestor

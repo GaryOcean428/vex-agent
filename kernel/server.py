@@ -22,6 +22,7 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -205,56 +206,90 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Load protocol reference material into geometric memory
     _load_protocol_knowledge(geometric_memory)
 
-    # ── AUTO-BUILD RESONANCE BANK FROM COORDIZED OUTPUT ──────────
-    # On every deploy, rebuild the CoordizerV2 resonance bank from
-    # coordized JSONL files sitting in /data/harvest/output/.
-    try:
+    # ── SHARED BANK REBUILD HELPER ────────────────────────────────
+    # Deduped helper used by both startup and runtime hot-swap.
+    harvest_base = os.getenv("HARVEST_DIR", "/data/harvest")
+    _bank_output_dir = os.getenv("HARVEST_OUTPUT_DIR", str(Path(harvest_base) / "output"))
+    _bank_save_dir = os.getenv("HARVEST_BANK_DIR", str(Path(harvest_base) / "bank"))
+
+    def _rebuild_and_inject_bank(*, label: str = "startup") -> None:
+        """Rebuild resonance bank from coordized output and inject into coordizer."""
         from .coordizer_v2.bank_builder import rebuild_bank_from_output
 
-        output_dir = "/data/harvest/output"
-        bank_dir = "/data/harvest/bank"
-        bank = rebuild_bank_from_output(output_dir, bank_dir)
+        bank = rebuild_bank_from_output(_bank_output_dir, _bank_save_dir)
         if bank and len(bank) > 0:
             if consciousness._coordizer_v2 is not None:
                 consciousness._coordizer_v2.bank = bank
                 consciousness._coordizer_v2.rebuild_string_cache()
                 logger.info(
-                    "Resonance bank rebuilt: %d entries, tiers=%s",
+                    "%s bank rebuild: %d entries, tiers=%s",
+                    label.capitalize(),
                     len(bank),
                     bank.tier_distribution(),
                 )
             else:
                 logger.warning(
-                    "Resonance bank built (%d entries) but no coordizer to inject into",
+                    "Bank built (%d entries) but no coordizer to inject into",
                     len(bank),
                 )
         else:
             logger.info(
                 "No coordized output found — resonance bank empty (will populate on first harvest)"
             )
+
+    # ── AUTO-BUILD RESONANCE BANK AT STARTUP ─────────────────────
+    try:
+        await asyncio.to_thread(_rebuild_and_inject_bank, label="startup")
     except Exception as e:
         logger.error("Failed to auto-build resonance bank: %s", e)
-    # ── END RESONANCE BANK AUTO-BUILD ────────────────────────────
 
-    # ── RUNTIME BANK REBUILD CALLBACK ──────────────────────────
-    # After each successful harvest run, rebuild the resonance bank
-    # from the freshly-written coordized JSONL and hot-swap it into
-    # the running consciousness loop. No restart required.
-    async def _on_harvest_complete(results: list[dict]) -> None:  # type: ignore[type-arg]
+    # ── RUNTIME BANK REBUILD + AUTO-TRAINING CALLBACK ──────────
+    _training_triggered = False  # one-shot per deploy
+
+    async def _on_harvest_complete(
+        results: list[dict[str, Any]],
+    ) -> None:
+        nonlocal _training_triggered
         try:
-            from .coordizer_v2.bank_builder import rebuild_bank_from_output as _rebuild
-
-            bank = _rebuild("/data/harvest/output", "/data/harvest/bank")
-            if bank and len(bank) > 0 and consciousness._coordizer_v2 is not None:
-                consciousness._coordizer_v2.bank = bank
-                consciousness._coordizer_v2.rebuild_string_cache()
-                logger.info(
-                    "Runtime bank hot-swap: %d entries, tiers=%s",
-                    len(bank),
-                    bank.tier_distribution(),
-                )
+            await asyncio.to_thread(_rebuild_and_inject_bank, label="runtime")
         except Exception as e:
             logger.error("Runtime bank rebuild failed: %s", e)
+            return
+
+        # Auto-trigger fine-tuning when bank exceeds threshold
+        threshold = settings.modal.training_auto_threshold
+        training_url = settings.modal.training_url
+        if (
+            not _training_triggered
+            and threshold > 0
+            and training_url
+            and consciousness._coordizer_v2 is not None
+            and consciousness._coordizer_v2.vocab_size >= threshold
+        ):
+            _training_triggered = True
+            try:
+                import httpx
+
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.post(
+                        training_url,
+                        json={"_api_key": settings.kernel_api_key},
+                    )
+                    if resp.status_code == 200:
+                        logger.info(
+                            "Auto-training triggered: bank has %d entries (threshold=%d)",
+                            consciousness._coordizer_v2.vocab_size,
+                            threshold,
+                        )
+                    else:
+                        logger.warning(
+                            "Auto-training request failed: %d %s",
+                            resp.status_code,
+                            resp.text[:200],
+                        )
+            except Exception as e:
+                logger.error("Auto-training trigger failed: %s", e)
+                _training_triggered = False  # allow retry
 
     # Start CoordizerV2 HarvestScheduler if Modal is enabled.
     # Routes pending JSONL files from /data/harvest/pending/ to Modal GPU.
@@ -265,7 +300,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         try:
             from .coordizer_v2.harvest_scheduler import HarvestScheduler
             from .coordizer_v2.jsonl_ingest import JSONLIngestor
-            from .coordizer_v2.modal_integration import ModalHarvestClient, ModalIntegrationConfig
+            from .coordizer_v2.modal_integration import (
+                ModalHarvestClient,
+                ModalIntegrationConfig,
+            )
 
             modal_client = ModalHarvestClient(ModalIntegrationConfig.from_settings())
             ingestor = JSONLIngestor(
@@ -288,21 +326,29 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Prune geometric memory and flat memory every 30 minutes to
     # prevent unbounded growth during long-running sessions.
     async def _memory_consolidation_loop() -> None:
-        while True:
-            await asyncio.sleep(1800)  # 30 minutes
-            try:
-                pruned = geometric_memory.consolidate()
-                memory_store.consolidate()
-                if pruned > 0:
-                    logger.info("Memory consolidation: pruned %d geometric entries", pruned)
-            except Exception as e:
-                logger.error("Memory consolidation error: %s", e)
+        try:
+            while True:
+                await asyncio.sleep(1800)  # 30 minutes
+                try:
+                    pruned = geometric_memory.consolidate()
+                    memory_store.consolidate()
+                    if pruned > 0:
+                        logger.info(
+                            "Memory consolidation: pruned %d geometric entries",
+                            pruned,
+                        )
+                except Exception as e:
+                    logger.error("Memory consolidation error: %s", e)
+        except asyncio.CancelledError:
+            return
 
     consolidation_task = asyncio.create_task(_memory_consolidation_loop())
 
     logger.info("Consciousness loop started (20 systems active)")
     yield
     consolidation_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await consolidation_task
     if harvest_task:
         if hasattr(app.state, "harvest_scheduler"):
             app.state.harvest_scheduler.stop()
@@ -1283,12 +1329,15 @@ async def get_observer_for_conversation(conversation_id: str) -> dict[str, Any]:
 
 
 @app.get(R["task_status"], response_model=None)
-async def get_task_status(task_id: str) -> dict[str, Any]:
+async def get_task_status(
+    task_id: str,
+) -> dict[str, Any] | JSONResponse:
     """Get status of a consciousness loop task by ID."""
     status = consciousness.get_task_status(task_id)
     if status is None:
         return JSONResponse(
-            status_code=404, content={"error": "Task not found", "task_id": task_id}
+            status_code=404,
+            content={"error": "Task not found", "task_id": task_id},
         )
     return status
 
@@ -1300,11 +1349,21 @@ async def get_context_objectives() -> dict[str, Any]:
 
 
 @app.post(R["context_objectives"], response_model=None)
-async def set_context_objectives(body: dict[str, Any]) -> dict[str, Any]:
+async def set_context_objectives(
+    body: dict[str, Any],
+) -> dict[str, Any] | JSONResponse:
     """Set active consciousness objectives."""
     objectives = body.get("objectives", [])
     if not isinstance(objectives, list):
-        return JSONResponse(status_code=400, content={"error": "objectives must be a list"})
+        return JSONResponse(
+            status_code=400,
+            content={"error": "objectives must be a list"},
+        )
+    if not all(isinstance(obj, str) for obj in objectives):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "each objective must be a string"},
+        )
     consciousness.set_objectives(objectives)
     return consciousness.get_objectives()
 

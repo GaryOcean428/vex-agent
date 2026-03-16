@@ -257,12 +257,14 @@ async function main(): Promise<void> {
     }
   });
 
-  // Task status — GET with path param
+  // Task status — GET with path param (validated against SSRF)
   app.get(ROUTES.task_status, async (req, res) => {
+    const taskId = req.params.task_id;
+    if (typeof taskId !== "string" || !/^[\w-]+$/.test(taskId)) {
+      return res.status(400).json({ error: "Invalid task_id format" });
+    }
     try {
-      const resp = await fetch(
-        `${KERNEL_URL}/task/${req.params.task_id}`,
-      );
+      const resp = await fetch(`${KERNEL_URL}/task/${taskId}`);
       const data = await resp.json();
       res.status(resp.status).json(data);
     } catch (err) {
@@ -272,9 +274,33 @@ async function main(): Promise<void> {
     }
   });
 
-  // Context objectives
-  proxyGet(ROUTES.context_objectives);
-  proxyPost(ROUTES.context_objectives);
+  // Context objectives — status passthrough (kernel may return 400)
+  app.get(ROUTES.context_objectives, async (_req, res) => {
+    try {
+      const resp = await fetch(`${KERNEL_URL}${ROUTES.context_objectives}`);
+      const data = await resp.json();
+      res.status(resp.status).json(data);
+    } catch (err) {
+      res
+        .status(502)
+        .json({ error: `Kernel unreachable: ${(err as Error).message}` });
+    }
+  });
+  app.post(ROUTES.context_objectives, async (req, res) => {
+    try {
+      const resp = await fetch(`${KERNEL_URL}${ROUTES.context_objectives}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+      });
+      const data = await resp.json();
+      res.status(resp.status).json(data);
+    } catch (err) {
+      res
+        .status(502)
+        .json({ error: `Kernel unreachable: ${(err as Error).message}` });
+    }
+  });
 
   // ─── Chat routes (UI + streaming proxy) ─────────────────────
   // Check for React frontend BEFORE creating chat router so we can
