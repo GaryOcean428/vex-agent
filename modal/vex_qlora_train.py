@@ -63,6 +63,9 @@ train_image = modal.Image.debian_slim(python_version="3.12").pip_install(
     "numpy>=1.26",
     "pydantic>=2.0",
     "fastapi[standard]",
+    # Qwen3.5 hybrid architecture: linear attention fast path
+    "causal-conv1d>=1.4.0",
+    "flash-linear-attention",
 )
 
 
