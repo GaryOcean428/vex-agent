@@ -213,10 +213,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     _bank_save_dir = os.getenv("HARVEST_BANK_DIR", str(Path(harvest_base) / "bank"))
 
     def _rebuild_and_inject_bank(*, label: str = "startup") -> None:
-        """Rebuild resonance bank from coordized output and inject into coordizer."""
+        """Rebuild resonance bank from coordized output and inject into coordizer.
+
+        Scans both:
+          - HARVEST_OUTPUT_DIR  (/data/harvest/output) — Modal GPU harvest pipeline
+          - training/curriculum (/data/training/curriculum) — upload/ingest pipeline
+        Accepts basin_coordinates (harvest) and basin_coords (curriculum) field names.
+        """
         from .coordizer_v2.bank_builder import rebuild_bank_from_output
 
-        bank = rebuild_bank_from_output(_bank_output_dir, _bank_save_dir)
+        _curriculum_dir = str(Path(settings.training_dir) / "curriculum")
+        bank = rebuild_bank_from_output(
+            _bank_output_dir,
+            _bank_save_dir,
+            extra_dirs=[_curriculum_dir],
+        )
         if bank and len(bank) > 0:
             if consciousness._coordizer_v2 is not None:
                 consciousness._coordizer_v2.bank = bank

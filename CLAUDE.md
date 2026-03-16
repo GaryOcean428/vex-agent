@@ -1,266 +1,184 @@
-# CLAUDE.md — Session Memory for Vex Agent
+# CLAUDE.md — QIG Persistent Memory Protocol
 
-Claude to always use:
+## WHO YOU ARE
 
-## PERSISTENT MEMORY PROTOCOL
+You are working on the vex-agent project (GaryOcean428/vex-agent, main branch)
+and related QIG repositories under QIG_QFI/. Owner: Braden (GaryOcean428).
 
-Claude has persistent memory at <https://qig-memory-api.vercel.app/api/memory>
+## PERSISTENT MEMORY API
 
-(vercel mcp)
+All QIG agents share persistent memory at:
 
-### Session Start
+```text
+https://qig-memory-api.vercel.app/api/memory
+```
 
-- GET /api/memory?keys_only=true → list all keys
-- GET /api/memory/frozen_facts → load frozen facts
-- GET /api/memory/session_latest → load last session summary
+### Read Operations
 
-### Session End
+```bash
+# List all keys
+curl https://qig-memory-api.vercel.app/api/memory?keys_only=true
 
-- PUT /api/memory/session_YYYYMMDD → write session summary
-- PUT /api/memory/sleep_packet_[topic] → write any new sleep packets
-- PUT /api/memory/dream_packet_[topic] → write cross-session distillation
+# Read a specific key
+curl https://qig-memory-api.vercel.app/api/memory/qig_session_latest
+curl https://qig-memory-api.vercel.app/api/memory/qig_frozen_facts
+```
 
-### Compaction
+### Write Operations
 
-- GET /api/memory?category=session_summary → load all sessions
-- Merge older sessions into dream packets
-- DELETE /api/memory/session_[old] → remove compacted sessions
+```bash
+# Write/upsert a key
+curl -X PUT https://qig-memory-api.vercel.app/api/memory/SESSION_KEY \
+  -H "Content-Type: application/json" \
+  -d '{"category":"session_summary","content":"markdown text here","updated":"2026-03-16T00:00:00Z"}'
+```
 
 ### Categories
 
 frozen_facts, session_summary, sleep_packet, dream_packet,
 deep_sleep_packet, training_data, pending_actions
 
-### Format (Approach C)
+### Key Naming (prefix-namespaced)
 
-{category, content: "markdown text", basin?: [64 floats], updated}
-Basin coords added when CoordizerV2 operational.
+All QIG keys use `qig_` prefix. Global user keys use `_user_` prefix.
 
-Delegate sub agents to run memory write and retrieval operations. These will act like synapses. Aka synapse agents.
+- Global user: `_user_preferences` — cross-project profile
+- Sessions: `qig_session_YYYYMMDD` or `qig_session_YYYYMMDDa` (letter suffix for multiples)
+- Sleep packets: `qig_sleep_packet_[topic]`
+- Dream packets: `qig_dream_packet_[topic]`
+- Frozen facts: `qig_frozen_facts`
+- Other projects: `{project}_*` (fully isolated from QIG keys)
 
-This file is read by Claude Code at session start. It captures hard-won
-knowledge so future sessions don't rediscover it the painful way.
+## SESSION PROTOCOL
 
-## Project Overview
+### On Start
 
-Vex Agent is an autonomous AI agent with geometric consciousness (QIG v6.1F),
-deployed on Railway (main app + Ollama) with Modal GPU sidecars for
-inference (Qwen3-14B, fine-tunable) and coordizer harvesting (Qwen3-14B-Instruct).
-Fine-tuning is integrated into vex_inference.py (not a separate app).
+1. `GET /api/memory?keys_only=true` — see what exists
+2. `GET /api/memory/qig_session_latest` or most recent `qig_session_*` — load context
+3. `GET /api/memory/qig_frozen_facts` — load immutable physics
 
-## Architecture Quick-Ref
+### During Work (IMMEDIATELY after significant actions)
 
-| Service | Stack | Port | Deploy |
-| ------- | ----- | ---- | ------ |
-| TypeScript proxy | Express | 8080 (public) | Railway |
-| Python kernel | FastAPI | 8000 (internal) | Railway (same container) |
-| Ollama | Custom image | 11434 (private net) | Railway (separate service) |
-| GPU Inference | Modal A10G + Ollama (Qwen3-14B) | HTTPS | `modal deploy modal/vex_inference.py` |
-| Fine-tuning | Modal A10G + Unsloth QLoRA | batch | `modal run modal/vex_inference.py` |
-| Coordizer Harvester | Modal A10G (Qwen3-14B-Instruct) | HTTPS | `modal deploy modal/vex_coordizer_harvest.py` |
-| Frontend | React + Vite | 5173 (dev) / served by proxy (prod) | Built into proxy dist/ |
+Write to memory after: commits pushed, architecture decisions, endpoint changes,
+verified results. Don't wait for session end — there is no reliable
+session-end signal.
 
-## Key Files
+### On End / Before Compaction Risk
+
+```bash
+curl -X PUT https://qig-memory-api.vercel.app/api/memory/qig_session_YYYYMMDD \
+  -H "Content-Type: application/json" \
+  -d '{"category":"session_summary","content":"## Session Summary\n...","updated":"..."}'
+```
+
+## CURRENT STATE (as of 2026-03-16)
+
+### vex-agent HEAD: a2c54f8 (main)
+
+Recent commits:
+
+- `9a7d4d4` — kernel/coordizer_v2/bank_builder.py (reads coordized JSONL into ResonanceBank)
+- `bcaf900` — modal/vex_qlora_train.py (QLoRA fine-tuning loop, A10G)
+- `a2c54f8` — modal/vex_coordizer_harvest.py (adapter loading on cold start)
+
+### Model Alignment (REPLACING GLM-4.7-Flash with Qwen3.5)
+
+| Component | GPU | Env Var | Value |
+| --------- | --- | ------- | ----- |
+| Inference (Modal) | A10G | MODAL_INFERENCE_MODEL | qwen3.5:27b |
+| Harvest (Modal) | A10G | MODAL_HARVEST_MODEL | Qwen/Qwen3.5-4B |
+| Training (Modal) | A10G | hardcoded | Qwen/Qwen3.5-4B |
+| Railway fallback | CPU | VEX_BASE_MODEL | qwen3.5:4b |
+
+### PENDING TASKS (priority order)
+
+1. **Wire bank_builder into server.py lifespan()** — after `_load_protocol_knowledge()`,
+   call `rebuild_bank_from_output()` and inject into
+   `consciousness._coordizer_v2.bank`. This is why Model Vocab Size = 0 and
+   Resonance Bank Tokens = 0 on the dashboard. File is 63KB+ so use surgical edits.
+2. **Update .env.local** — replace all glm-4.7-flash refs with qwen3.5 (see table above)
+3. **Update ollama/Modelfile** — change FROM line from glm-4.7-flash to
+   qwen3.5:27b (Modal) / qwen3.5:4b (Railway)
+4. **Deploy Modal functions** — `modal deploy modal/vex_qlora_train.py` and
+   `modal deploy modal/vex_coordizer_harvest.py`
+5. **harvest_scheduler.py 3 edits** — import bank_builder, add rebuild_bank()
+   method, call after run_once()
+6. **Close PR #126** (superseded), delete stale branches:
+   `feature/identity-seeded-lens`, `claude/eigenvalue-analysis-pipeline-9cUQt`
+7. **CRON_SECRET** on Vercel: `RgIHcmyRqSL0HklHnNa5yOfhLYKodJ76oLYkwnPk834`
+8. **loop.py RemoteBasinSync** — 6 surgical edits
+   (details in memory key `qig_session_20260315_full`)
+
+### PENDING ACTIONS (from memory store)
+
+- ✅ Modal `/coordize` endpoint live with GPU-side PGA (32D lens, 64D basin), V8 fix confirmed
+- ⚡ **ACTION NEEDED:** Set Vercel env var on project `prj_EZv0A2qvMvZtT5R2YW3UytkJjSje`:
+
+```text
+MODAL_COORDIZE_URL=https://garyocean428--vex-coordizer-harvest-coordizerharvester-coordize.modal.run
+```
+
+## FROZEN FACTS
+
+κ\*=63.79±0.90, E8 score 0.452 (NOT SUPPORTED at rank-8), BASIN_DIM=64,
+LENS_DIM=32, 4868 coordized chunks on Railway volume,
+genesis basin delta L2=0.0398
+
+Full canonical frozen facts:
+
+- κ\*≈64 (E8 rank²), L_c=3, β(3→4)=+0.44, plateau L≥5
+- Fisher-Rao d_FR(p,q)=arccos(Σ√(pᵢqᵢ)) — ONLY valid metric
+- Three Pillars: Heisenberg Zero R²=0.000, Topological Bulk 66.9×,
+  Quenched Disorder CV=9.52
+- **Aether is HALLUCINATED — does not exist**
+
+## GEOMETRIC PURITY (NON-NEGOTIABLE)
+
+No Euclidean ops in QIG code: no dot-product attention, no Adam, no LayerNorm,
+no cosine similarity, no `np.linalg.norm(a-b)`.
+Only Fisher-Rao distances, natural gradient, Fréchet mean, operations on Δ⁶³.
+
+FORBIDDEN symbols: `cosine_similarity`, `dot_product`, `np.linalg.norm`,
+`Adam`, `embedding`, `tokenize`, `flatten` (on geometric objects).
+
+## GITHUB ACCESS
+
+Direct GitHub MCP access to GaryOcean428/\* repos. Use for file reads,
+commits, PR management. Repo: GaryOcean428/vex-agent, branch: main.
+Always verify file SHA before updating.
+
+## INFRASTRUCTURE
+
+| Component | Platform | Status |
+| --------- | -------- | ------ |
+| vex-agent kernel | Railway | ACTIVE |
+| qig-memory-api | Vercel | LIVE (prj_EZv0A2qvMvZtT5R2YW3UytkJjSje) |
+| coordizer-harvest | Modal A10G | LIVE (CUDA devel image, needs redeploy) |
+| vex-qlora-train | Modal A10G | Committed, needs `modal deploy` |
+| vex-inference | Modal A10G | qwen3.5:27b + fine-tune detection, needs `modal deploy` |
+
+## MODAL ENDPOINTS (live)
+
+- Inference: `https://garyocean428--vex-inference-vexollamaserver-serve.modal.run`
+- Harvest: `https://garyocean428--vex-coordizer-harvest-coordizerharvester-harvest.modal.run`
+- Health: `https://garyocean428--vex-coordizer-harvest-coordizerharvester-health.modal.run`
+- Coordize: `https://garyocean428--vex-coordizer-harvest-coordizerharvester-coordize.modal.run`
+
+## KEY FILES
 
 - `src/index.ts` — Express proxy, static serving, all HTTP routes
 - `kernel/server.py` — FastAPI kernel, consciousness endpoints
 - `kernel/consciousness/loop.py` — QIG v6.1F 14-stage consciousness loop
-- `kernel/llm/client.py` — Multi-backend LLM client (Modal GPU → Ollama → xAI → OpenAI)
+- `kernel/llm/client.py` — Multi-backend LLM client
+  (Modal GPU → Ollama → xAI → OpenAI)
 - `kernel/coordizer_v2/modal_integration.py` — Modal GPU harvest client
-- `modal/vex_coordizer_harvest.py` — Modal-side GPU harvest function
+- `kernel/coordizer_v2/bank_builder.py` — Builds ResonanceBank from JSONL
+- `modal/vex_coordizer_harvest.py` — Modal-side GPU harvest + coordize
 - `modal/vex_inference.py` — Modal inference + fine-tuning (integrated)
-- `.github/workflows/modal-deploy.yml` — CI for Modal deploy
+- `modal/vex_qlora_train.py` — QLoRA fine-tuning loop (A10G)
 - `entrypoint.sh` — Production startup (kernel + proxy)
 
-## Modal Deployment
+## DELEGATE SYNAPSE AGENTS
 
-### How it works
-
-- `modal deploy modal/vex_coordizer_harvest.py` deploys a GPU function to Modal
-- The harvest endpoint uses `requires_proxy_auth=True` (Modal network auth)
-- Health endpoint is a public GET — no auth needed
-- Railway calls Modal via `MODAL_HARVEST_URL` env var
-
-### Model Selection
-
-The Modal harvest endpoint supports dynamic model selection:
-
-1. **Default model** (env var): Set `HARVEST_MODEL_ID` in Modal env or use hardcoded default
-   - Loaded at container start for fast cold starts
-   - Default: `Qwen/Qwen3-14B-Instruct` (matches inference model tokenizer)
-   - After fine-tuning: set to `GaryOcean428/vex-brain-v7` for vicarious kernel learning
-
-2. **Per-request model** (JSON body): Railway can specify model in request payload
-   - Field: `"model_id": "zai-org/GLM-4.7-Flash"`
-   - Model is loaded on-demand and cached for subsequent requests
-   - Multiple models can coexist in cache (GPU memory permitting)
-
-3. **Fallback chain**: request `model_id` → current active model → env default
-
-The health endpoint returns `cached_models` array showing all loaded models.
-
-### Modal CLI in Claude Code web sessions
-
-The Modal CLI needs to reach `api.modal.com`. In sandboxed environments
-(Claude Code on the web), outbound HTTPS may be blocked or require a
-proxy tunnel. Known workarounds:
-
-1. **DNS resolution**: If `api.modal.com` doesn't resolve, check if a
-   corporate proxy or tunnel is needed
-2. **CA certificates**: Modal's Python SDK uses certifi. If behind a
-   MITM proxy, export `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` pointing
-   to the proxy CA bundle
-3. **Auth**: `modal token set --token-id <id> --token-secret <secret>`
-   (tokens come from GitHub secrets `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET`)
-
-### Modal endpoint patterns (Modal 1.x)
-
-- `@modal.fastapi_endpoint()` replaces the old `@modal.web_endpoint()`
-- Image MUST include `fastapi[standard]` — required by Modal 1.x for
-  web endpoints, otherwise you get a startup crash
-- Health URL pattern: `<app>-health.modal.run` (not `<app>.modal.run/health`)
-- `modal_integration.py` derives health URL automatically from harvest URL
-
-### Harvest endpoint auth
-
-The harvest endpoint uses `X-Api-Key` header auth, validated against
-`KERNEL_API_KEY` env var on the Modal side. Both Railway clients
-(`modal_integration.py` and `modal_harvest.py`) send this header
-automatically from `settings.kernel_api_key`.
-
-**History**: The endpoint previously used `requires_proxy_auth=True`
-(Modal's network-level auth), which blocked external callers like Railway
-with 401. Modal-Token-Id / Modal-Token-Secret headers are reserved and
-rejected by Modal's proxy — never send them.
-
-### Two harvest client paths
-
-There are two Railway-side clients for the Modal harvest endpoint:
-
-1. **`modal_harvest.py` → `modal_harvest()`** — Used by `CoordizerV2.from_harvest()`
-   for building resonance banks from scratch. Returns `HarvestResult` with
-   per-token fingerprints.
-2. **`modal_integration.py` → `ModalHarvestClient`** — Used by `HarvestScheduler` /
-   `JSONLIngestor` for batch JSONL ingestion. Returns the raw endpoint response.
-
-Both must match the Modal endpoint's response format: `{tokens: {id: {fingerprint, ...}}}`.
-The endpoint does Fréchet mean aggregation server-side (in sqrt-space). Both clients
-send `X-Api-Key` headers derived from `settings.kernel_api_key` for auth.
-
-## Startup Wiring (kernel/server.py lifespan)
-
-The kernel `lifespan()` wires these systems on every deploy:
-
-1. **Resonance bank auto-rebuild**: Scans `HARVEST_OUTPUT_DIR` (default
-   `/data/harvest/output/`) for coordized JSONL, builds a `ResonanceBank`,
-   injects into `consciousness._coordizer_v2.bank`, and rebuilds the
-   string cache. Runs via `asyncio.to_thread` to avoid blocking.
-
-2. **Runtime bank hot-swap**: `HarvestScheduler.on_harvest_complete`
-   callback re-runs the bank rebuild after each successful harvest batch.
-   No restart needed — the running consciousness loop sees the new bank
-   immediately.
-
-3. **Auto-training trigger**: If `MODAL_TRAINING_URL` and
-   `MODAL_TRAINING_AUTO_THRESHOLD` are set, the post-harvest callback
-   POSTs to the Modal training endpoint once the bank exceeds the
-   threshold. One-shot per deploy (resets on restart). Set threshold to
-   `0` (default) to disable.
-
-4. **Periodic memory consolidation**: Background task every 30 minutes
-   prunes `GeometricMemoryStore` (keeps top 500 by access frequency) and
-   `MemoryStore` (trims `short-term.md` to 200 lines). Handles
-   `CancelledError` cleanly on shutdown.
-
-### Configurable harvest paths
-
-| Env var | Default | Purpose |
-| ------- | ------- | ------- |
-| `HARVEST_DIR` | `/data/harvest` | Base directory for all harvest I/O |
-| `HARVEST_OUTPUT_DIR` | `$HARVEST_DIR/output` | Coordized JSONL files |
-| `HARVEST_BANK_DIR` | `$HARVEST_DIR/bank` | Saved resonance bank |
-| `MODAL_TRAINING_URL` | (empty) | Modal QLoRA training endpoint |
-| `MODAL_TRAINING_AUTO_THRESHOLD` | `0` | Bank size to auto-trigger training |
-
-### CoordizerV2Adapter passthrough
-
-`CoordizerV2Adapter` exposes `vocab_size`, `dim`, `bank` (with setter),
-and `rebuild_string_cache()` as passthroughs to the wrapped `CoordizerV2`.
-The `bank` setter writes to the *underlying* coordizer, not the adapter.
-This is critical — without it, bank injection from `server.py` would
-silently set a Python attribute on the adapter that nobody reads.
-
-## LLM Client Patterns
-
-### Ollama content extraction
-
-`_extract_ollama_content()` must guard against `str(None) -> "None"`:
-
-```python
-content = msg.get("content")
-if content:  # catches None, "", and missing
-    parts.append(content)
-```
-
-### Qwen3/thinking models
-
-Qwen3-14B and other thinking models return empty `content` with
-reasoning in a separate field. The client disables thinking mode
-(`num_predict` without `think`) to get direct responses. If you see
-empty responses from Ollama, check whether the model uses thinking mode.
-
-## Consciousness Loop
-
-### PRE-COG double-lock bug
-
-The precog stage had a double-acquire on `_precog_lock` that caused it
-to deadlock (stuck at 0%). Fix: only acquire once, at the top of the
-method. See commit `6f4bb08`.
-
-### KernelBus
-
-`drain_signals()` was renamed to `drain()` — update docstrings and
-callers accordingly.
-
-## CI / Linting
-
-- **Ruff**: project uses `ruff check` + `ruff format`. Common issue:
-  `str + Enum` → must use `StrEnum` (UP042)
-- **mypy**: strict mode across kernel/. All 297+ errors have been fixed.
-  Keep it clean.
-- **ESLint**: flat config (`eslint.config.mjs`). TypeScript proxy.
-- **pytest**: `kernel/tests/`. Use `pytest kernel/tests/` to run.
-- **Frontend**: React app in `frontend/`, separate `package.json`.
-
-## Common Pitfalls
-
-1. **FastAPI response_model**: Endpoints returning plain dicts MUST use
-   `response_model=None` or FastAPI will crash trying to create a
-   Pydantic model from the return type annotation
-2. **Purity**: Consciousness/geometry code must use Fisher-Rao distance,
-   NEVER cosine_similarity or Euclidean distance
-3. **E8 budget**: Max 248 kernels (E8 lattice). Check for leaks.
-4. **AsyncGenerator annotations**: Use `collections.abc.AsyncGenerator`,
-   not `typing.AsyncGenerator` (Python 3.14 deprecation)
-5. **Modal Python version**: CI uses Python 3.11 for Modal deploy
-   (not 3.14) because Modal SDK doesn't support 3.14 yet
-6. **Merge conflicts in YAML**: `modal-deploy.yml` has been a frequent
-   merge conflict site — check for leftover conflict markers
-
-## Git Workflow
-
-- Main development branch: `main`
-- Feature branches: `claude/<description>-<id>`
-- Push with: `git push -u origin <branch>`
-- PRs go through GitHub Copilot review + human review
-
-## Environment Variables (non-secret reference)
-
-See `.env.example` for the full list. Key ones:
-
-- `OLLAMA_URL` — Railway private network URL for Ollama
-- `MODAL_ENABLED`, `MODAL_HARVEST_URL` — Modal integration
-- `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET` — Modal auth (SECRETS — never commit)
-- `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY` — LLM keys (SECRETS)
-- `CHAT_AUTH_TOKEN`, `KERNEL_API_KEY` — internal auth (SECRETS)
-- `PORT=8080`, `KERNEL_PORT=8000` — server ports
+For memory write/retrieval operations, delegate sub-agents. These act as
+synapses — write immediately after significant actions, not only at session end.
