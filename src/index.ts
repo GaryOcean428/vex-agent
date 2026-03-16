@@ -11,7 +11,7 @@
  * the Python kernel. This server does NOT run any of that.
  */
 
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -46,7 +46,7 @@ async function main(): Promise<void> {
 
   const app = express();
   // Conditional JSON parsing — skip for multipart requests (training upload)
-  app.use((req, res, next) => {
+  app.use((req: Request, res: Response, next: NextFunction) => {
     if ((req.headers["content-type"] || "").startsWith("multipart/")) {
       next();
     } else {
@@ -60,7 +60,7 @@ async function main(): Promise<void> {
   // ─── Auth check (no 401 — returns JSON status) ──────────────
   // Used by AuthContext.tsx to check session without triggering
   // a 401 console error. Always returns 200.
-  app.get(ROUTES.auth_check, (req, res) => {
+  app.get(ROUTES.auth_check, (req: Request, res: Response) => {
     if (!config.chatAuthToken) {
       res.json({ authenticated: true });
       return;
@@ -71,7 +71,7 @@ async function main(): Promise<void> {
 
   // ─── Health check (probes kernel health too) ─────────────────
 
-  app.get(ROUTES.health, async (_req, res) => {
+  app.get(ROUTES.health, async (_req: Request, res: Response) => {
     try {
       // 5s timeout prevents the health check from hanging when the kernel
       // is still starting or temporarily unresponsive. Without this,
@@ -109,7 +109,7 @@ async function main(): Promise<void> {
   // These proxy directly to the Python kernel
 
   const proxyGet = (path: string) => {
-    app.get(path, async (_req, res) => {
+    app.get(path, async (_req: Request, res: Response) => {
       try {
         const resp = await fetch(`${KERNEL_URL}${path}`);
         const data = await resp.json();
@@ -123,7 +123,7 @@ async function main(): Promise<void> {
   };
 
   const proxyPost = (path: string) => {
-    app.post(path, async (req, res) => {
+    app.post(path, async (req: Request, res: Response) => {
       try {
         const resp = await fetch(`${KERNEL_URL}${path}`, {
           method: "POST",
@@ -174,7 +174,7 @@ async function main(): Promise<void> {
   // Conversation management
   proxyGet(ROUTES.conversations_list);
 
-  app.get(ROUTES.conversations_get, async (req, res) => {
+  app.get(ROUTES.conversations_get, async (req: Request, res: Response) => {
     try {
       const resp = await fetch(
         `${KERNEL_URL}/conversations/${req.params.conversation_id}`,
@@ -188,7 +188,7 @@ async function main(): Promise<void> {
     }
   });
 
-  app.delete(ROUTES.conversations_delete, async (req, res) => {
+  app.delete(ROUTES.conversations_delete, async (req: Request, res: Response) => {
     try {
       const resp = await fetch(
         `${KERNEL_URL}/conversations/${req.params.conversation_id}`,
@@ -215,11 +215,43 @@ async function main(): Promise<void> {
   proxyGet(ROUTES.training_stats);
   proxyGet(ROUTES.training_export);
   proxyPost(ROUTES.training_feedback);
-  proxyPost(ROUTES.training_trigger);
+  // Training trigger needs a longer timeout — kernel waits up to 120s for Modal cold start
+  app.post(ROUTES.training_trigger, async (req: Request, res: Response) => {
+    try {
+      const resp = await fetch(`${KERNEL_URL}${ROUTES.training_trigger}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+        signal: AbortSignal.timeout(130_000),
+      });
+      const contentType = resp.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const data = await resp.json();
+        res.status(resp.status).json(data);
+      } else {
+        const text = await resp.text();
+        res.status(resp.status).send(text);
+      }
+    } catch (err) {
+      const error = err as Error;
+      if (error.name === "AbortError" || error.name === "TimeoutError") {
+        res
+          .status(504)
+          .json({
+            error:
+              "Kernel request timed out after 130s (training_trigger aborted by proxy).",
+          });
+      } else {
+        res
+          .status(502)
+          .json({ error: `Kernel unreachable: ${error.message}` });
+      }
+    }
+  });
   proxyPost(ROUTES.training_complete);
 
   // Training upload status — poll for background job completion
-  app.get(ROUTES.training_upload_status, async (req, res) => {
+  app.get(ROUTES.training_upload_status, async (req: Request, res: Response) => {
     try {
       const resp = await fetch(
         `${KERNEL_URL}/training/upload/status/${req.params.job_id}`,
@@ -234,7 +266,7 @@ async function main(): Promise<void> {
   });
 
   // Training upload — buffer multipart body then forward to kernel
-  app.post(ROUTES.training_upload, async (req, res) => {
+  app.post(ROUTES.training_upload, async (req: Request, res: Response) => {
     try {
       const chunks: Buffer[] = [];
       for await (const chunk of req) {
@@ -260,7 +292,7 @@ async function main(): Promise<void> {
   });
 
   // Task status — GET with path param (validated against SSRF)
-  app.get(ROUTES.task_status, async (req, res) => {
+  app.get(ROUTES.task_status, async (req: Request, res: Response) => {
     const taskId = req.params.task_id;
     if (typeof taskId !== "string" || !/^[\w-]+$/.test(taskId)) {
       return res.status(400).json({ error: "Invalid task_id format" });
@@ -277,7 +309,7 @@ async function main(): Promise<void> {
   });
 
   // Context objectives — status passthrough (kernel may return 400)
-  app.get(ROUTES.context_objectives, async (_req, res) => {
+  app.get(ROUTES.context_objectives, async (_req: Request, res: Response) => {
     try {
       const resp = await fetch(`${KERNEL_URL}${ROUTES.context_objectives}`);
       const data = await resp.json();
@@ -288,7 +320,7 @@ async function main(): Promise<void> {
         .json({ error: `Kernel unreachable: ${(err as Error).message}` });
     }
   });
-  app.post(ROUTES.context_objectives, async (req, res) => {
+  app.post(ROUTES.context_objectives, async (req: Request, res: Response) => {
     try {
       const resp = await fetch(`${KERNEL_URL}${ROUTES.context_objectives}`, {
         method: "POST",
@@ -320,7 +352,7 @@ async function main(): Promise<void> {
   // ─── ComputeSDK proxy endpoints ─────────────────────────────
   // The Python kernel calls these to execute code in ComputeSDK sandboxes
 
-  app.post(ROUTES.tools_execute_code, async (req, res) => {
+  app.post(ROUTES.tools_execute_code, async (req: Request, res: Response) => {
     const { code, language } = req.body as { code: string; language?: string };
     try {
       const tool = getComputeTools().find((t) => t.name === "execute_code");
@@ -339,7 +371,7 @@ async function main(): Promise<void> {
     }
   });
 
-  app.post(ROUTES.tools_run_command, async (req, res) => {
+  app.post(ROUTES.tools_run_command, async (req: Request, res: Response) => {
     const { command, cwd, timeout } = req.body as {
       command: string;
       cwd?: string;
@@ -379,7 +411,7 @@ async function main(): Promise<void> {
     );
 
     // SPA fallback — serve index.html for all non-API routes
-    app.get("*", (req, res, next) => {
+    app.get("*", (req: Request, res: Response, next: NextFunction) => {
       // Skip API-like paths (already handled above)
       if (
         req.path.startsWith("/api/") ||
@@ -411,7 +443,7 @@ async function main(): Promise<void> {
     });
   } else {
     logger.info("No React frontend build found — using inline chat HTML");
-    app.get("/", (_req, res) => {
+    app.get("/", (_req: Request, res: Response) => {
       res.redirect("/chat");
     });
   }

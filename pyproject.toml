@@ -68,9 +68,10 @@ python_version = "3.14"
 strict = true
 ignore_missing_imports = true
 disallow_untyped_decorators = false
+disallow_subclassing_any = false
 exclude = ["kernel/tests/", "modal/"]
 
 [[tool.mypy.overrides]]
 # Third-party stubs not always available
-module = ["fastapi.*", "uvicorn.*", "numpy.*", "pydantic.*", "modal.*", "pymupdf.*"]
+module = ["fastapi.*", "uvicorn.*", "numpy.*", "pydantic.*", "modal.*", "pymupdf.*", "requests.*"]
 ignore_missing_imports = true

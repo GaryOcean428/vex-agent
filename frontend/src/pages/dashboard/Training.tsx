@@ -530,6 +530,11 @@ export default function Training() {
                 setTrainingResult(null);
                 try {
                   const resp = await fetch(API.trainingTrigger, { method: "POST" });
+                  if (!resp.ok) {
+                    const text = await resp.text();
+                    setTrainingResult({ status: "error", error: `Server error ${resp.status}: ${text.slice(0, 200)}` });
+                    return;
+                  }
                   const data = await resp.json();
                   setTrainingResult(data);
                 } catch (err) {
