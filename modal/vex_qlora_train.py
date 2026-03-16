@@ -39,6 +39,7 @@ import modal
 # --- Configuration --------------------------------------------------------
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
+KERNEL_CALLBACK_URL = os.environ.get("KERNEL_CALLBACK_URL", "")  # Railway kernel URL
 TRAIN_GPU = os.environ.get("TRAIN_GPU", "A100")  # A10G for cheaper debug runs
 BASIN_DIM = 64
 LORA_R = 32  # LoRA rank — balance between capacity and efficiency
@@ -321,6 +322,40 @@ def _build_fisher_optimizer(model, lr: float):
         damping=1e-8,
         momentum=0.9,
     )
+
+
+def _notify_kernel(training_meta: dict) -> None:
+    """POST training results back to the Railway kernel.
+
+    Closes the feedback loop: Modal training → kernel → bank rebuild → basin update.
+    The kernel's /training/complete endpoint rebuilds the resonance bank and
+    triggers a re-harvest cycle so the updated model produces fresh coordizations.
+    """
+    if not KERNEL_CALLBACK_URL:
+        print("KERNEL_CALLBACK_URL not set — skipping kernel notification")
+        return
+
+    import urllib.request
+
+    url = f"{KERNEL_CALLBACK_URL.rstrip('/')}/training/complete"
+    payload = json.dumps(
+        {
+            "_api_key": KERNEL_API_KEY,
+            "train_loss": training_meta.get("train_loss"),
+            "train_samples": training_meta.get("train_samples"),
+            "trained_at": training_meta.get("trained_at", ""),
+            "model_id": training_meta.get("model_id", HARVEST_MODEL_ID),
+        }
+    ).encode()
+
+    req = urllib.request.Request(
+        url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            print(f"Kernel notified ({resp.status}): {resp.read().decode()[:200]}")
+    except Exception as e:
+        print(f"WARNING: Kernel notification failed ({e}) — basins will update on next harvest")
 
 
 @app.cls(
@@ -636,6 +671,9 @@ class QLoRATrainer:
         elapsed = round(time.time() - start, 2)
         print(f"Training complete in {elapsed}s. Loss: {train_result.training_loss:.4f}")
 
+        # Notify kernel so it rebuilds bank and triggers re-harvest
+        _notify_kernel(meta)
+
         return {
             "success": True,
             "adapter_path": adapter_save_path,
@@ -833,6 +871,9 @@ def train_harvest_model(
 
     model_volume.commit()
     training_volume.commit()
+
+    # Notify kernel so it rebuilds bank and triggers re-harvest
+    _notify_kernel(meta)
 
     elapsed = round(time.time() - start, 2)
     print(f"Done in {elapsed}s. Loss: {result.training_loss:.4f}")

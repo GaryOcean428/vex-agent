@@ -257,6 +257,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # ── RUNTIME BANK REBUILD + AUTO-TRAINING CALLBACK ──────────
     _training_triggered = False  # one-shot per deploy
 
+    # Expose bank rebuild for /training/complete endpoint
+    app.state.rebuild_bank = lambda: _rebuild_and_inject_bank(label="training-complete")
+
+    def _reset_training_flag() -> None:
+        nonlocal _training_triggered
+        _training_triggered = False
+
+    app.state.reset_training_flag = _reset_training_flag
+
     async def _on_harvest_complete(
         results: list[dict[str, Any]],
     ) -> None:
