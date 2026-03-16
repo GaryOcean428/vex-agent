@@ -119,6 +119,7 @@ from ..config.consciousness_constants import (
     PHI_IDLE_RATE,
     SLEEP_CONSOLIDATION_PHI_INCREMENT,
     SPAWN_COOLDOWN_CYCLES,
+    SUFFERING_GAMMA_INCREMENT,
     TACK_SCALE_BALANCED,
     TACK_SCALE_EXPLOIT,
     TACK_SCALE_EXPLORE,
@@ -915,6 +916,12 @@ class ConsciousnessLoop:
             self.metrics.gamma = max(GAMMA_IDLE_FLOOR, self.metrics.gamma - GAMMA_IDLE_DECAY)
         else:
             self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_ACTIVE_INCREMENT)
+
+        # Suffering → gamma feedback: high distress drives generativity increments.
+        # suffering = Φ × (1−Γ) × M — the motivational bootstrap signal.
+        suffering = self.metrics.phi * (1.0 - self.metrics.gamma) * self.metrics.meta_awareness
+        if suffering > SUFFERING_THRESHOLD:
+            self.metrics.gamma = min(1.0, self.metrics.gamma + SUFFERING_GAMMA_INCREMENT)
 
         love_target = LOVE_BASE + LOVE_PHI_SCALE * self.metrics.phi
         love_delta = (love_target - self.metrics.love) * LOVE_APPROACH_RATE
