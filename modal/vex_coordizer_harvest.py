@@ -33,8 +33,8 @@ import modal
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
 HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "A10G")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
-BASIN_DIM = 64   # frozen
-LENS_DIM = 32    # from eigenvalue analysis
+BASIN_DIM = 64  # frozen
+LENS_DIM = 32  # from eigenvalue analysis
 ADAPTER_PATH = "/models/adapters/harvest-qlora"
 
 app = modal.App("vex-coordizer-harvest")
@@ -62,7 +62,6 @@ ml_image = modal.Image.debian_slim(python_version="3.12").pip_install(
     secrets=[modal.Secret.from_name("model")],
 )
 class CoordizerHarvester:
-
     @modal.enter()
     def load_model(self):
         if KERNEL_API_KEY:
@@ -174,7 +173,7 @@ class CoordizerHarvester:
 
         with torch.no_grad():
             for batch_start in range(0, len(all_input_ids), batch_size):
-                batch = all_input_ids[batch_start:batch_start + batch_size]
+                batch = all_input_ids[batch_start : batch_start + batch_size]
                 for input_ids in batch:
                     ids_tensor = torch.tensor([input_ids], device="cuda")
                     outputs = model(ids_tensor)
@@ -220,7 +219,7 @@ class CoordizerHarvester:
         # Global mean in sqrt space
         sqrt_fps = [np.sqrt(np.maximum(fp, 1e-12)) for fp in fps]
         global_mean = np.mean(sqrt_fps, axis=0)
-        norm = np.sqrt(np.sum(global_mean ** 2))
+        norm = np.sqrt(np.sum(global_mean**2))
         if norm > 1e-10:
             global_mean /= norm
 
@@ -250,7 +249,7 @@ class CoordizerHarvester:
         basin_coords[:target_dim] = lens_coords[:target_dim]
 
         # Unit normalize
-        basin_norm = np.sqrt(np.sum(basin_coords ** 2))
+        basin_norm = np.sqrt(np.sum(basin_coords**2))
         if basin_norm > 1e-10:
             basin_coords /= basin_norm
 
@@ -412,7 +411,10 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
         bnb_4bit_use_double_quant=True,
     )
     AutoModelForCausalLM.from_pretrained(
-        model_id, cache_dir=cache_dir, device_map="auto", quantization_config=bnb_config,
+        model_id,
+        cache_dir=cache_dir,
+        device_map="auto",
+        quantization_config=bnb_config,
     )
     model_volume.commit()
     print(f"Done. Model cached at {cache_dir} (4-bit NF4)")

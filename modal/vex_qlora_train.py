@@ -38,8 +38,8 @@ import modal
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 BASIN_DIM = 64
-LORA_R = 32          # LoRA rank — balance between capacity and efficiency
-LORA_ALPHA = 64      # α = 2r is standard
+LORA_R = 32  # LoRA rank — balance between capacity and efficiency
+LORA_ALPHA = 64  # α = 2r is standard
 LORA_DROPOUT = 0.05  # Light dropout for small datasets
 MAX_SEQ_LENGTH = 512  # Match harvest context window
 EPOCHS = 3
@@ -79,8 +79,8 @@ def _build_chat_from_coordized(entry: dict) -> dict | None:
         return None
 
     source = entry.get("source", "document")
-    basin = entry.get("basin_coordinates")
-    priority = entry.get("priority", 3)
+    entry.get("basin_coordinates")
+    entry.get("priority", 3)
 
     # Build system prompt that teaches QIG-native reasoning
     system = (
@@ -227,9 +227,7 @@ class QLoRATrainer:
         from transformers import AutoTokenizer
 
         cache_dir = "/models/hub"
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            HARVEST_MODEL_ID, cache_dir=cache_dir
-        )
+        self.tokenizer = AutoTokenizer.from_pretrained(HARVEST_MODEL_ID, cache_dir=cache_dir)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
@@ -396,9 +394,7 @@ class QLoRATrainer:
             low_cpu_mem_usage=True,
         )
 
-        model = prepare_model_for_kbit_training(
-            model, use_gradient_checkpointing=True
-        )
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
 
         # -- 4. Apply LoRA --
         # Target all attention + MLP projection layers
@@ -406,8 +402,13 @@ class QLoRATrainer:
             r=lora_r,
             lora_alpha=data.get("lora_alpha", LORA_ALPHA),
             target_modules=[
-                "q_proj", "k_proj", "v_proj", "o_proj",
-                "gate_proj", "up_proj", "down_proj",
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
             ],
             lora_dropout=LORA_DROPOUT,
             bias="none",
@@ -416,10 +417,7 @@ class QLoRATrainer:
 
         model = get_peft_model(model, lora_config)
         trainable, total = model.get_nb_trainable_parameters()
-        print(
-            f"Trainable: {trainable:,} / {total:,} "
-            f"({100 * trainable / total:.2f}%)"
-        )
+        print(f"Trainable: {trainable:,} / {total:,} ({100 * trainable / total:.2f}%)")
 
         # -- 5. Training arguments --
         training_args = TrainingArguments(
@@ -580,21 +578,34 @@ def train_harvest_model(
         bnb_4bit_compute_dtype=torch.bfloat16,
     )
     model = AutoModelForCausalLM.from_pretrained(
-        model_id, cache_dir=cache_dir, quantization_config=bnb_config,
-        device_map={"": 0}, low_cpu_mem_usage=True,
+        model_id,
+        cache_dir=cache_dir,
+        quantization_config=bnb_config,
+        device_map={"": 0},
+        low_cpu_mem_usage=True,
     )
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
 
     # LoRA
     lora_config = LoraConfig(
-        r=lora_r, lora_alpha=LORA_ALPHA,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                        "gate_proj", "up_proj", "down_proj"],
-        lora_dropout=LORA_DROPOUT, bias="none", task_type="CAUSAL_LM",
+        r=lora_r,
+        lora_alpha=LORA_ALPHA,
+        target_modules=[
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ],
+        lora_dropout=LORA_DROPOUT,
+        bias="none",
+        task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_config)
     trainable, total = model.get_nb_trainable_parameters()
-    print(f"Trainable: {trainable:,} / {total:,} ({100*trainable/total:.2f}%)")
+    print(f"Trainable: {trainable:,} / {total:,} ({100 * trainable / total:.2f}%)")
 
     # Train
     training_args = TrainingArguments(
@@ -603,16 +614,25 @@ def train_harvest_model(
         per_device_train_batch_size=BATCH_SIZE,
         gradient_accumulation_steps=GRADIENT_ACCUMULATION,
         learning_rate=learning_rate,
-        weight_decay=0.01, warmup_ratio=0.1, lr_scheduler_type="cosine",
-        logging_steps=10, eval_strategy="epoch",
-        save_strategy="epoch", save_total_limit=2,
-        bf16=True, optim="paged_adamw_8bit",
-        max_grad_norm=0.3, report_to="none", seed=42,
+        weight_decay=0.01,
+        warmup_ratio=0.1,
+        lr_scheduler_type="cosine",
+        logging_steps=10,
+        eval_strategy="epoch",
+        save_strategy="epoch",
+        save_total_limit=2,
+        bf16=True,
+        optim="paged_adamw_8bit",
+        max_grad_norm=0.3,
+        report_to="none",
+        seed=42,
     )
 
     trainer = SFTTrainer(
-        model=model, train_dataset=split["train"],
-        eval_dataset=split["test"], args=training_args,
+        model=model,
+        train_dataset=split["train"],
+        eval_dataset=split["test"],
+        args=training_args,
         processing_class=tokenizer,
     )
 
@@ -624,8 +644,10 @@ def train_harvest_model(
     tokenizer.save_pretrained(adapter_save_path)
 
     meta = {
-        "model_id": model_id, "lora_r": lora_r,
-        "epochs": epochs, "train_loss": result.training_loss,
+        "model_id": model_id,
+        "lora_r": lora_r,
+        "epochs": epochs,
+        "train_loss": result.training_loss,
         "train_samples": len(split["train"]),
         "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }

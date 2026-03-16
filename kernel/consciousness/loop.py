@@ -1612,14 +1612,26 @@ class ConsciousnessLoop:
         if self.learner.should_consolidate():
             self.learner.consolidate()
 
-        coherence = self.narrative.coherence(self.basin)
+        self.narrative.coherence(self.basin)
         pillar_m = self.pillars.get_metrics(self.basin)
-        routed_name = routed_kernel.name if routed_kernel is not None else "none"
-        contrib_summary = (
+        (
             [(c.kernel_name, f"{c.synthesis_weight:.3f}") for c in _contributions]
             if _contributions
             else "fallback"
         )
+        active_count = len(self.kernel_registry.active())
+        tack = self.tacking.get_state()
+        vel = self.velocity.compute_velocity()
+        autonomy = self.autonomy.get_state()
+        hemisphere = self.hemispheres.get_state()
+        insight = self.reflector.get_insight()
+        rw = self.state.regime_weights
+        temperature = llm_options.temperature
+        coupling_str = "inactive (< 2 kernels)"
+        if active_count >= 2:
+            _c_result = self.coupling.compute(self.metrics.kappa)
+            coupling_str = f"strength={_c_result['strength']:.3f} balanced={_c_result['balanced']}"
+        activation_summary = pre_result.summary() if pre_result else None
         lines = [
             "[GEOMETRIC STATE v6.1]",
             f"  Phi = {self.metrics.phi:.4f}",

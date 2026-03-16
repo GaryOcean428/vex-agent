@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -80,7 +79,7 @@ def rebuild_bank_from_output(
     for jsonl_path in jsonl_files:
         try:
             with open(jsonl_path, encoding="utf-8") as f:
-                for line_num, line in enumerate(f, 1):
+                for _line_num, line in enumerate(f, 1):
                     line = line.strip()
                     if not line:
                         continue
@@ -129,9 +128,7 @@ def rebuild_bank_from_output(
                     tid += 1
 
                     if tid >= max_entries:
-                        logger.warning(
-                            "Bank builder hit max_entries=%d, stopping", max_entries
-                        )
+                        logger.warning("Bank builder hit max_entries=%d, stopping", max_entries)
                         break
 
         except Exception as e:
@@ -155,8 +152,7 @@ def rebuild_bank_from_output(
 
     tier_dist = bank.tier_distribution()
     logger.info(
-        "Bank built: %d entries from %d files "
-        "(skipped %d, sources=%s, tiers=%s). Saved to %s",
+        "Bank built: %d entries from %d files (skipped %d, sources=%s, tiers=%s). Saved to %s",
         tid,
         len(jsonl_files),
         skipped,
