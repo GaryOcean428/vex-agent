@@ -399,7 +399,7 @@ async def _global_exception_handler(request: Request, exc: Exception) -> JSONRes
     )
     return JSONResponse(
         status_code=500,
-        content={"error": "Internal server error", "detail": str(exc)[:200]},
+        content={"error": "Internal server error"},
     )
 
 # Auth middleware — protects endpoints when KERNEL_API_KEY is set
@@ -498,6 +498,7 @@ async def health() -> dict[str, Any]:
             "backend": llm_client.get_status()["active_backend"],
         }
     except Exception:
+        logger.warning("Health check degraded", exc_info=True)
         return {
             "status": "degraded",
             "service": "vex-kernel",
