@@ -252,7 +252,7 @@ def _merge_and_export(
     base_model = AutoModelForCausalLM.from_pretrained(
         model_id,
         cache_dir=cache_dir,
-        dtype=torch.bfloat16,
+        torch_dtype=torch.bfloat16,
         device_map={"": 0},
         low_cpu_mem_usage=True,
     )
