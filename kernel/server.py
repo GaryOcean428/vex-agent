@@ -426,7 +426,7 @@ set_sovereignty_loop(consciousness)
 # ═══════════════════════════════════════════════════════════════
 
 
-class ChatRequest(BaseModel):  # type: ignore[misc]
+class ChatRequest(BaseModel):
     """P14 Variable Category: BOUNDARY — all fields are external input, sanitized by Pydantic."""
 
     message: str = Field(..., max_length=100_000)
@@ -435,21 +435,21 @@ class ChatRequest(BaseModel):  # type: ignore[misc]
     max_tokens: int = Field(default=2048, ge=1, le=32768)
 
 
-class EnqueueRequest(BaseModel):  # type: ignore[misc]
+class EnqueueRequest(BaseModel):
     input: str = Field(..., max_length=100_000)
     source: str = "api"
 
 
-class MemoryContextRequest(BaseModel):  # type: ignore[misc]
+class MemoryContextRequest(BaseModel):
     query: str = Field(..., max_length=10_000)
     k: int = Field(default=5, ge=1, le=100)
 
 
-class CoordizeRequest(BaseModel):  # type: ignore[misc]
+class CoordizeRequest(BaseModel):
     text: str = Field(..., max_length=100_000)
 
 
-class HarvestRequest(BaseModel):  # type: ignore[misc]
+class HarvestRequest(BaseModel):
     model_id: str = Field(default_factory=lambda: settings.modal.harvest_model)
     target_tokens: int = Field(default=2000, ge=100, le=100_000)
     use_modal: bool | None = None
@@ -1447,15 +1447,15 @@ async def admin_fresh_start() -> dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════
 
 
-class KillSwitchRequest(BaseModel):  # type: ignore[misc]
+class KillSwitchRequest(BaseModel):
     enabled: bool
 
 
-class BudgetUpdateRequest(BaseModel):  # type: ignore[misc]
+class BudgetUpdateRequest(BaseModel):
     ceiling: float
 
 
-class AutonomousSearchRequest(BaseModel):  # type: ignore[misc]
+class AutonomousSearchRequest(BaseModel):
     enabled: bool
 
 

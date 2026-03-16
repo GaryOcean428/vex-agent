@@ -28,6 +28,13 @@ from .coordizer import CoordizerV2
 from .geometry import BASIN_DIM, frechet_mean, to_simplex
 from .types import CoordizationResult
 
+# hash_to_basin produces deterministic, non-uniform basins from text —
+# far superior to uniform 1/N fallbacks during bootstrap.
+try:
+    from ..geometry.hash_to_basin import hash_to_basin as _hash_to_basin
+except ImportError:
+    _hash_to_basin = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 
@@ -100,7 +107,12 @@ class CoordizerV2Adapter:
 
         coordinates = []
         for i in range(256):
-            basin = to_simplex(np.ones(BASIN_DIM))
+            # Hash-based basins give distinct coordinates per slot even at bootstrap
+            seed_text = f"<bootstrap_coord_{i}>"
+            if _hash_to_basin is not None:
+                basin = _hash_to_basin(seed_text)
+            else:
+                basin = to_simplex(np.ones(BASIN_DIM))
             coord = BasinCoordinate(
                 coord_id=i,
                 vector=basin,
@@ -169,8 +181,10 @@ class CoordizerV2Adapter:
             return to_simplex(self._coordizer.frozen_identity)
 
         if not result.coordinates:
-            # Fallback: uniform basin
+            # Fallback: hash-based basin (deterministic, text-dependent, non-uniform)
             logger.warning("No coordinates for text: %s...", text[:50])
+            if _hash_to_basin is not None:
+                return _hash_to_basin(text)
             return to_simplex(np.ones(BASIN_DIM))
 
         # Compute Fréchet mean of all coordinate basins

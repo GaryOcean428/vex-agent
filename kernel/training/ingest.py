@@ -163,7 +163,7 @@ class IngestionResult:
     errors: list[str] = field(default_factory=list)
 
 
-class FeedbackRequest(BaseModel):  # type: ignore[misc]
+class FeedbackRequest(BaseModel):
     conversation_id: str
     rating: int
     comment: str = ""
@@ -294,7 +294,9 @@ def forward_raw_jsonl_to_harvest(content: bytes, filename: str) -> tuple[str, in
         dest.write_bytes(content)
         lines = [ln for ln in content.decode("utf-8", errors="replace").splitlines() if ln.strip()]
         logger.info(
-            "Forwarded raw JSONL upload to harvest pending: %s (%d lines)", dest, len(lines)
+            "Forwarded raw JSONL upload to harvest pending: %s (%d lines)",
+            dest,
+            len(lines),
         )
         return str(dest), len(lines)
     except Exception as e:
@@ -521,7 +523,9 @@ async def _enrich_chunk_xai(
             data = resp.json()
             if resp.status_code != 200:
                 logger.warning(
-                    "xAI enrichment API error %d: %s", resp.status_code, json.dumps(data)[:200]
+                    "xAI enrichment API error %d: %s",
+                    resp.status_code,
+                    json.dumps(data)[:200],
                 )
                 return {}
 
@@ -627,7 +631,9 @@ def _inject_records_into_local_bank(records: list[ChunkRecord], source_filename:
         except Exception as exc:
             logger.warning("Failed to persist updated resonance bank: %s", exc)
         logger.info(
-            "Training pipeline: injected %d local bank entries from %s", added, source_filename
+            "Training pipeline: injected %d local bank entries from %s",
+            added,
+            source_filename,
         )
 
     return added
@@ -917,8 +923,14 @@ def export_openai_format() -> dict[str, Any]:
                     lines.append(
                         {
                             "messages": [
-                                {"role": "user", "content": entry.get("user_message", "")},
-                                {"role": "assistant", "content": entry.get("response", "")},
+                                {
+                                    "role": "user",
+                                    "content": entry.get("user_message", ""),
+                                },
+                                {
+                                    "role": "assistant",
+                                    "content": entry.get("response", ""),
+                                },
                             ]
                         }
                     )
@@ -1353,3 +1365,37 @@ async def training_feedback_endpoint(req: FeedbackRequest) -> dict[str, str]:
     """Submit feedback on a response."""
     await _log_feedback(req.conversation_id, req.rating, req.comment)
     return {"status": "recorded"}
+
+
+@training_router.post("/training/trigger", response_model=None)
+async def training_trigger_endpoint() -> dict[str, Any]:
+    """Manually trigger kernel training (QLoRA fine-tuning on Modal GPU).
+
+    Sends a POST to the configured MODAL_TRAINING_URL to start a training run.
+    Requires MODAL_TRAINING_URL to be set in environment.
+    """
+    from ..config.settings import settings
+
+    training_url = settings.modal.training_url
+    if not training_url:
+        return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                training_url,
+                json={"_api_key": settings.kernel_api_key},
+            )
+            if resp.status_code == 200:
+                logger.info("Manual training triggered via /training/trigger")
+                return {"status": "triggered", "response": resp.json()}
+            else:
+                return {
+                    "status": "error",
+                    "error": f"Modal returned {resp.status_code}: {resp.text[:200]}",
+                }
+    except Exception as e:
+        logger.error("Manual training trigger failed: %s", e)
+        return {"status": "error", "error": "Training trigger failed. Check server logs."}

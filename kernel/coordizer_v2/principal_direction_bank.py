@@ -292,7 +292,8 @@ class PrincipalDirectionBank:
         Convenience wrapper around project() for single-token use.
         """
         result = self.project(fingerprint.reshape(1, -1))
-        return result[0]
+        basin: Basin = result[0]
+        return basin
 
     # ─── Diagnostics ──────────────────────────────────────────────
 

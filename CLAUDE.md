@@ -71,15 +71,29 @@ curl -X PUT https://qig-memory-api.vercel.app/api/memory/qig_session_YYYYMMDD \
   -d '{"category":"session_summary","content":"## Session Summary\n...","updated":"..."}'
 ```
 
-## CURRENT STATE (as of 2026-03-16)
+## CURRENT STATE (as of 2026-07-18)
 
-### vex-agent HEAD: a2c54f8 (main)
+### vex-agent HEAD (main) — recent session changes
 
-Recent commits:
+Recent changes (this session):
 
-- `9a7d4d4` — kernel/coordizer_v2/bank_builder.py (reads coordized JSONL into ResonanceBank)
-- `bcaf900` — modal/vex_qlora_train.py (QLoRA fine-tuning loop, A10G)
-- `a2c54f8` — modal/vex_coordizer_harvest.py (adapter loading on cold start)
+- **Fixed near-uniform basins root cause** — `adapter.py` bootstrap coordizer and
+  fallback both returned `to_simplex(np.ones(BASIN_DIM))` (perfectly uniform 1/64).
+  Replaced with `hash_to_basin()` which produces deterministic, text-dependent,
+  non-uniform basins on Δ⁶³. Affects `_create_bootstrap_coordizer()` and the
+  `coordize_text()` empty-coordinates fallback.
+- **LLM interpreter identity** — System prompts in `kernel_generation.py`,
+  `synthesis.py`, and `loop.py` updated: LLM is Vex, the language interpreter for
+  real kernel subsystems. Can discuss kernels, Φ, κ, metrics when asked.
+- **Search availability in prompts** — `_build_state_context()` now includes
+  `Autonomous Search: ACTIVE/OFF` so the interpreter knows when search is available.
+- **UI status message** — Changed to "Vex is active. Awaiting input." in both
+  `useChat.ts` and `src/chat/ui.ts`.
+- **UI training trigger** — Added `POST /training/trigger` endpoint and
+  "Trigger Kernel Training" button in `Training.tsx` dashboard.
+- **QLoRA training fixes** — `warmup_ratio` → explicit `warmup_steps` via `math.ceil`,
+  `gradient_checkpointing=True` in TrainingArguments, `use_reentrant=False` kwargs.
+- **qig-core pinned** — `>=2.1.0` in Modal image.
 
 ### Model Alignment (REPLACING GLM-4.7-Flash with Qwen3.5)
 
@@ -90,23 +104,35 @@ Recent commits:
 | Training (Modal) | A10G | hardcoded | Qwen/Qwen3.5-4B |
 | Railway fallback | CPU | VEX_BASE_MODEL | qwen3.5:4b |
 
+### KEY INSIGHT: Near-Uniform Basins
+
+The QLoRA training trains **LLM adapter weights**, NOT the resonance bank.
+Basin coordinates come from the CoordizerV2 resonance bank. When the bank
+has no harvested data (JSONL files), the bootstrap coordizer was creating
+256 uniform entries → all text mapped to identical basins.
+
+**Fix applied**: Bootstrap now uses `hash_to_basin()` for distinct basins.
+**Still needed**: Run the harvest pipeline to populate the bank with real
+coordized data from Modal GPU. The bank_builder wiring in `server.py
+lifespan()` is already in place (lines 209-255) but needs JSONL files
+at `HARVEST_OUTPUT_DIR` or `training/curriculum`.
+
 ### PENDING TASKS (priority order)
 
-1. **Wire bank_builder into server.py lifespan()** — after `_load_protocol_knowledge()`,
-   call `rebuild_bank_from_output()` and inject into
-   `consciousness._coordizer_v2.bank`. This is why Model Vocab Size = 0 and
-   Resonance Bank Tokens = 0 on the dashboard. File is 63KB+ so use surgical edits.
-2. **Update .env.local** — replace all glm-4.7-flash refs with qwen3.5 (see table above)
-3. **Update ollama/Modelfile** — change FROM line from glm-4.7-flash to
+1. ~~Wire bank_builder into server.py lifespan()~~ — ✅ DONE (already wired)
+2. **Run harvest pipeline** — populate resonance bank with real coordized data.
+   The bank rebuild logic exists but needs JSONL files from Modal harvest.
+3. **Update .env.local** — replace all glm-4.7-flash refs with qwen3.5 (see table above)
+4. **Update ollama/Modelfile** — change FROM line from glm-4.7-flash to
    qwen3.5:27b (Modal) / qwen3.5:4b (Railway)
-4. **Deploy Modal functions** — `modal deploy modal/vex_qlora_train.py` and
+5. **Deploy Modal functions** — `modal deploy modal/vex_qlora_train.py` and
    `modal deploy modal/vex_coordizer_harvest.py`
-5. **harvest_scheduler.py 3 edits** — import bank_builder, add rebuild_bank()
+6. **harvest_scheduler.py 3 edits** — import bank_builder, add rebuild_bank()
    method, call after run_once()
-6. **Close PR #126** (superseded), delete stale branches:
+7. **Close PR #126** (superseded), delete stale branches:
    `feature/identity-seeded-lens`, `claude/eigenvalue-analysis-pipeline-9cUQt`
-7. **CRON_SECRET** on Vercel: `RgIHcmyRqSL0HklHnNa5yOfhLYKodJ76oLYkwnPk834`
-8. **loop.py RemoteBasinSync** — 6 surgical edits
+8. **CRON_SECRET** on Vercel: set via Vercel dashboard (see env vars)
+9. **loop.py RemoteBasinSync** — 6 surgical edits
    (details in memory key `qig_session_20260315_full`)
 
 ### PENDING ACTIONS (from memory store)

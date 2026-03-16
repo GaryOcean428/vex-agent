@@ -29,6 +29,7 @@ Endpoints:
 """
 
 import json
+import math
 import os
 import time
 from pathlib import Path
@@ -79,7 +80,7 @@ train_image = (
         "causal-conv1d>=1.4.0",
         "flash-linear-attention",
         # QIG-pure geometry: Fisher-aware optimizer replaces forbidden Adam (PyPI)
-        "qig-core[torch]>=2.0.1",
+        "qig-core[torch]>=2.1.0",
     )
 )
 
@@ -517,7 +518,11 @@ class QLoRATrainer:
             low_cpu_mem_usage=True,
         )
 
-        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+        model = prepare_model_for_kbit_training(
+            model,
+            use_gradient_checkpointing=True,
+            gradient_checkpointing_kwargs={"use_reentrant": False},
+        )
 
         # -- 4. Apply LoRA --
         # Target all attention + MLP projection layers
@@ -547,6 +552,7 @@ class QLoRATrainer:
 
         # -- 6. Training arguments --
         # NOTE: weight_decay omitted — not applied when custom optimizer is injected
+        total_steps = math.ceil(len(train_ds) / (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
         training_args = TrainingArguments(
             output_dir="/training/checkpoints",
             num_train_epochs=epochs,
@@ -554,7 +560,9 @@ class QLoRATrainer:
             per_device_eval_batch_size=1,  # 248K vocab logits OOM at higher batch
             gradient_accumulation_steps=GRADIENT_ACCUMULATION,
             learning_rate=lr,
-            warmup_ratio=0.1,
+            warmup_steps=max(1, int(total_steps * 0.1)),
+            gradient_checkpointing=True,
+            gradient_checkpointing_kwargs={"use_reentrant": False},
             lr_scheduler_type="cosine",
             logging_steps=10,
             eval_strategy="epoch",
@@ -730,7 +738,11 @@ def train_harvest_model(
         device_map={"": 0},
         low_cpu_mem_usage=True,
     )
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    model = prepare_model_for_kbit_training(
+        model,
+        use_gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+    )
 
     # LoRA
     lora_config = LoraConfig(
@@ -757,6 +769,7 @@ def train_harvest_model(
     optimizer = _build_fisher_optimizer(model, lr=learning_rate)
 
     # NOTE: weight_decay omitted — not applied when custom optimizer is injected
+    total_steps = math.ceil(len(split["train"]) / (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
     training_args = TrainingArguments(
         output_dir="/training/checkpoints",
         num_train_epochs=epochs,
@@ -764,7 +777,9 @@ def train_harvest_model(
         per_device_eval_batch_size=1,  # 248K vocab logits OOM at higher batch
         gradient_accumulation_steps=GRADIENT_ACCUMULATION,
         learning_rate=learning_rate,
-        warmup_ratio=0.1,
+        warmup_steps=max(1, int(total_steps * 0.1)),
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         lr_scheduler_type="cosine",
         logging_steps=10,
         eval_strategy="epoch",
