@@ -42,28 +42,34 @@ export function createChatRouter(arg: string | ChatRouterOptions): Router {
 
   // ── Auth endpoint ─────────────────────────────────────────────
   router.post("/chat/auth", (req: Request, res: Response) => {
-    if (!config.chatAuthToken) {
+    try {
+      if (!config.chatAuthToken) {
+        const sessionId = createSession();
+        res.setHeader(
+          "Set-Cookie",
+          `${SESSION_COOKIE}=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
+        );
+        res.json({ ok: true });
+        return;
+      }
+
+      const { token } = req.body as { token?: string };
+      if (!token || token !== config.chatAuthToken) {
+        res.status(403).json({ error: "Invalid token" });
+        return;
+      }
+
       const sessionId = createSession();
       res.setHeader(
         "Set-Cookie",
         `${SESSION_COOKIE}=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
       );
       res.json({ ok: true });
-      return;
+    } catch (err) {
+      res
+        .status(500)
+        .json({ error: `Auth error: ${(err as Error).message}` });
     }
-
-    const { token } = req.body as { token?: string };
-    if (!token || token !== config.chatAuthToken) {
-      res.status(403).json({ error: "Invalid token" });
-      return;
-    }
-
-    const sessionId = createSession();
-    res.setHeader(
-      "Set-Cookie",
-      `${SESSION_COOKIE}=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
-    );
-    res.json({ ok: true });
   });
 
   // ── Serve chat UI (auth-gated) ────────────────────────────────
