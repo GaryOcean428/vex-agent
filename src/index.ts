@@ -215,7 +215,23 @@ async function main(): Promise<void> {
   proxyGet(ROUTES.training_stats);
   proxyGet(ROUTES.training_export);
   proxyPost(ROUTES.training_feedback);
-  proxyPost(ROUTES.training_trigger);
+  // Training trigger needs a longer timeout — kernel waits up to 120s for Modal cold start
+  app.post(ROUTES.training_trigger, async (req, res) => {
+    try {
+      const resp = await fetch(`${KERNEL_URL}${ROUTES.training_trigger}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+        signal: AbortSignal.timeout(130_000),
+      });
+      const data = await resp.json();
+      res.json(data);
+    } catch (err) {
+      res
+        .status(502)
+        .json({ error: `Kernel unreachable: ${(err as Error).message}` });
+    }
+  });
   proxyPost(ROUTES.training_complete);
 
   // Training upload status — poll for background job completion
