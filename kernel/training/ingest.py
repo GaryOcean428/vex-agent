@@ -1398,4 +1398,4 @@ async def training_trigger_endpoint() -> dict[str, Any]:
                 }
     except Exception as e:
         logger.error("Manual training trigger failed: %s", e)
-        return {"status": "error", "error": str(e)}
+        return {"status": "error", "error": "Training trigger failed. Check server logs."}

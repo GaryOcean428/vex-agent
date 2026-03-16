@@ -215,6 +215,7 @@ async function main(): Promise<void> {
   proxyGet(ROUTES.training_stats);
   proxyGet(ROUTES.training_export);
   proxyPost(ROUTES.training_feedback);
+  proxyPost(ROUTES.training_trigger);
 
   // Training upload status — poll for background job completion
   app.get(ROUTES.training_upload_status, async (req, res) => {

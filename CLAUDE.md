@@ -91,8 +91,8 @@ Recent changes (this session):
   `useChat.ts` and `src/chat/ui.ts`.
 - **UI training trigger** — Added `POST /training/trigger` endpoint and
   "Trigger Kernel Training" button in `Training.tsx` dashboard.
-- **QLoRA deprecations fixed** — `warmup_ratio` → `warmup_steps`,
-  `torch_dtype` → `dtype`, `use_reentrant=False` in gradient checkpointing.
+- **QLoRA training fixes** — `warmup_ratio` → explicit `warmup_steps` via `math.ceil`,
+  `gradient_checkpointing=True` in TrainingArguments, `use_reentrant=False` kwargs.
 - **qig-core pinned** — `>=2.1.0` in Modal image.
 
 ### Model Alignment (REPLACING GLM-4.7-Flash with Qwen3.5)
@@ -131,7 +131,7 @@ at `HARVEST_OUTPUT_DIR` or `training/curriculum`.
    method, call after run_once()
 7. **Close PR #126** (superseded), delete stale branches:
    `feature/identity-seeded-lens`, `claude/eigenvalue-analysis-pipeline-9cUQt`
-8. **CRON_SECRET** on Vercel: `RgIHcmyRqSL0HklHnNa5yOfhLYKodJ76oLYkwnPk834`
+8. **CRON_SECRET** on Vercel: set via Vercel dashboard (see env vars)
 9. **loop.py RemoteBasinSync** — 6 surgical edits
    (details in memory key `qig_session_20260315_full`)
 

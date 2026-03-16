@@ -58,7 +58,9 @@ def test_ingest_document_populates_local_coordizer_bank(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_kernel_voice_sparse_bank_fails_closed() -> None:
+async def test_kernel_voice_bootstrap_bank_produces_geometric_output() -> None:
+    """Bootstrap coordizer now uses hash_to_basin() for distinct basins,
+    so the voice should produce non-empty geometric output (not fail closed)."""
     coordizer = CoordizerV2Adapter._create_bootstrap_coordizer()
     voice = KernelVoice(KernelSpecialization.GENERAL, coordizer)
 
@@ -71,6 +73,5 @@ async def test_kernel_voice_sparse_bank_fails_closed() -> None:
         llm_client=None,
     )
 
-    assert output.text == ""
     assert output.geometric_raw != ""
     assert output.llm_expanded is False
