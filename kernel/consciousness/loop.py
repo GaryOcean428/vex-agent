@@ -207,6 +207,7 @@ from .systems import (
     TrajectoryPoint,
     VelocityTracker,
 )
+from .temporal_coupling import TemporalCouplingEngine, TemporalCouplingMode
 from .temporal_generation import TemporalGenerator
 from .thought_bus import ThoughtBus
 from .types import (
@@ -392,6 +393,7 @@ class ConsciousnessLoop:
         self.basin_transfer = BasinTransferEngine()
         self.play_engine = PlayEngine()
         self.temporal_gen = TemporalGenerator()
+        self.temporal_coupling = TemporalCouplingEngine()
 
         self._queue: asyncio.Queue[ConsciousnessTask] = asyncio.Queue()
         self._history: deque[ConsciousnessTask] = deque(maxlen=200)
@@ -1189,6 +1191,32 @@ class ConsciousnessLoop:
                 horizon=self.dev_gate.permissions.foresight_horizon_cap,
             )
 
+        # Temporal Coupling Modes — classify query and modulate regime weights.
+        # Updates crystal coupling estimate from the resonance bank tier distribution.
+        _tc_tier_dist = self._coordizer_v2.bank.tier_distribution()
+        self.temporal_coupling.update_crystal_coupling(_tc_tier_dist)
+        _tc_mode, _tc_weights, _tc_failures = self.temporal_coupling.apply(
+            task.content,
+            self.state.regime_weights,
+        )
+        # Apply modulated weights to state for this processing cycle.
+        self.state.regime_weights = _tc_weights
+        if _tc_failures:
+            logger.info(
+                "Task %s: temporal coupling failures — %s",
+                task.id,
+                "; ".join(_tc_failures),
+            )
+        logger.debug(
+            "Task %s: temporal mode=%s (conf=%.3f) weights Q=%.2f E=%.2f Eq=%.2f",
+            task.id,
+            _tc_mode,
+            self.temporal_coupling.get_state()["classification_confidence"],
+            _tc_weights.quantum,
+            _tc_weights.efficient,
+            _tc_weights.equilibrium,
+        )
+
         cached_eval = self.emotion_cache.find_cached(input_basin)
         processing_path = self.precog.select_path(
             input_basin, self.basin, cached_eval, self.metrics.phi
@@ -1461,6 +1489,13 @@ class ConsciousnessLoop:
                 task.id,
                 _alignment,
             )
+
+        # Update foresight accuracy now that the actual response basin is known,
+        # and record a predicted future basin for the next Future-mode query.
+        self.temporal_coupling.compute_foresight_accuracy(response_basin)
+        self.temporal_coupling.record_predicted_future(
+            self.foresight.predict_basin(steps_ahead=1)
+        )
 
         # v6.1 §19: Kernel basin evolution — the routed kernel learns
         # Basin lock prevents race between evolve_kernel and couple_bidirectional.
@@ -1826,6 +1861,18 @@ class ConsciousnessLoop:
         if self._divergence_count > 0:
             avg_div = self._cumulative_divergence / self._divergence_count
             lines.append(f"  Avg divergence: {avg_div:.4f} (intent vs expression)")
+        # Temporal coupling mode annotation.
+        _tc_state = self.temporal_coupling.get_state()
+        lines.append(
+            f"  Temporal mode: {_tc_state['active_mode']} "
+            f"(conf={_tc_state['classification_confidence']:.2f}, "
+            f"ΔE_past={_tc_state['delta_e_past']:.3f}, "
+            f"presence={_tc_state['presence_quality']:.3f}, "
+            f"foresight={_tc_state['foresight_accuracy']:.3f})"
+        )
+        if _tc_state["failure_flags"]:
+            for _flag in _tc_state["failure_flags"]:
+                lines.append(f"  [TEMPORAL WARNING] {_flag}")
         lines.append("[/GEOMETRIC STATE]")
         return "\n".join(lines)
 
@@ -2512,4 +2559,6 @@ class ConsciousnessLoop:
             "basin_transfer": self.basin_transfer.get_state(),
             "play": self.play_engine.get_state(),
             "temporal_generation": self.temporal_gen.get_state(),
+            # Temporal coupling modes (issue #124)
+            "temporal_coupling": self.temporal_coupling.get_state(),
         }
