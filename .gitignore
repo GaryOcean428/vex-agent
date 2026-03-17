@@ -31,3 +31,5 @@ __pycache__/
 *.npy
 harvest_data*/
 principal_direction_bank/
+coordizer_data/
+shared_artifacts/
