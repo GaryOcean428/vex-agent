@@ -153,16 +153,36 @@ Promotion is governance-gated, not automatic. Correct per §18.5.
 
 ## 5. E8 Eigenvalue Test in validate.py
 
-### 5.1 Implementation — CORRECT ✅
+### 5.1 Implementation — UPDATED ✅
 
 ```python
 if eigenvalues is not None and len(eigenvalues) >= E8_RANK:
     e8_var = float(np.sum(eigenvalues[:E8_RANK]) / total)
-    # Expected if E8 real: ~0.877
-    # PASS if 0.80 < e8_var < 0.95
+    # Empirical baseline (GLM-4.7-Flash, 277 tokens): ~0.452
+    # E8 hypothesis NOT supported — n=32 recommended for lens dim
+    logger.info(f"  NOTE: score={e8_var:.3f}")
 ```
 
-This tests the E8 prediction: top 8 PGA directions should capture ~87.7% of total geodesic variance (8/248 × 248/8 = 1, but weighted by eigenvalue decay). The 0.80-0.95 range is appropriately loose for empirical data.
+This test now reports the measured E8 variance ratio as an informational metric.
+The original pass range of `0.80 < e8_var < 0.95` has been removed because the
+empirical measurement (score=0.452) demonstrates the E8 hypothesis is not
+supported by real LLM data.
+
+**Empirical result** (2026-03-16, GLM-4.7-Flash, 277 tokens):
+
+| Metric | Value |
+|--------|-------|
+| E8 score (top-8 variance) | **0.452** |
+| E8 expected (speculative) | ~0.877 |
+| Effective dim (90%) | 50 |
+| Spectral gap λ₁/λ₈ | 4.29 |
+| Recommended lens dim | **n=32** |
+
+The spectral gap of 4.29 shows that geometric structure exists (not flat like
+synthetic Dirichlet data at 0.161), but the variance is broadly distributed
+across all 64 dims rather than concentrated in 8.
+
+See `docs/coordizer/DESIGN_coordizer_lens_32d.md` for full details.
 
 ### 5.2 E8 Rank Checkpoint During Merges — NOT IMPLEMENTED ⚠️
 
@@ -229,7 +249,7 @@ This scales raw κ measurements to force the median to equal κ* = 64. This is c
 | PurityGate | ⚠️ GAP | SVD and tokenizer not in forbidden patterns |
 | Budget Enforcement | ✅ PASS | Fail-closed, fail-loud |
 | CHAOS→GOD Promotion | ✅ PASS | Governance-gated |
-| E8 Eigenvalue Test | ✅ PASS | 0.80-0.95 range for top-8 variance |
+| E8 Eigenvalue Test | ✅ UPDATED | score=0.452 (measured); E8 hypothesis NOT supported; n=32 recommended |
 | Three-Phase Scoring | ⚠️ N/A | Replaced by harvest→compress→validate |
 | κ Measurement | 🔴 ISSUE | Artificial scaling — needs redesign |
 
