@@ -387,6 +387,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 # Global exception handler — catches unhandled errors in all endpoints
 @app.exception_handler(Exception)
 async def _global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -401,6 +402,7 @@ async def _global_exception_handler(request: Request, exc: Exception) -> JSONRes
         status_code=500,
         content={"error": "Internal server error"},
     )
+
 
 # Auth middleware — protects endpoints when KERNEL_API_KEY is set
 # Must be added before CORS (middleware stack is LIFO)

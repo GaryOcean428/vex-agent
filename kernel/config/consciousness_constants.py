@@ -362,7 +362,7 @@ WU_WEI_RATIO_FLOOR: Final[float] = 0.25  # Clamp floor: max 4× temperature boos
 WU_WEI_RATIO_CEILING: Final[float] = 4.0  # Clamp ceiling: max 4× temperature reduction
 
 # top_p log-scale modulation (log(ratio)=0 at flow, negative for novel, positive for familiar)
-WU_WEI_TOP_P_SCALE: Final[float] = 0.1   # Gentle nudge; full ×ln(4)≈1.4 → ±0.14 delta
+WU_WEI_TOP_P_SCALE: Final[float] = 0.1  # Gentle nudge; full ×ln(4)≈1.4 → ±0.14 delta
 WU_WEI_TOP_P_FLOOR: Final[float] = 0.50  # Minimum top_p after modulation
 WU_WEI_TOP_P_CEILING: Final[float] = 0.99  # Maximum top_p after modulation
 

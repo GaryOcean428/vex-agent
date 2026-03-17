@@ -788,8 +788,8 @@ class TestWuWeiRatio:
 
         base_temp = 0.7
         kappa_eff = KAPPA_STAR
-        m_basin = 0.9       # well-established domain
-        fr_dist = 0.05      # input close to kernel basin
+        m_basin = 0.9  # well-established domain
+        fr_dist = 0.05  # input close to kernel basin
 
         w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_STAR))
         m_node = max(WU_WEI_NODE_FLOOR, m_basin)
@@ -825,9 +825,9 @@ class TestWuWeiRatio:
         fisher_rao_max = 1.5707963267948966  # π/2
 
         # Novel domain: kappa moderate, low m_basin, input far from kernel
-        kappa_eff = KAPPA_STAR * 0.4   # below κ* — still building
-        m_basin = 0.05                  # unexplored domain
-        fr_dist = 1.2                   # input far from kernel basin
+        kappa_eff = KAPPA_STAR * 0.4  # below κ* — still building
+        m_basin = 0.05  # unexplored domain
+        fr_dist = 1.2  # input far from kernel basin
 
         w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_STAR))
         m_node = max(WU_WEI_NODE_FLOOR, m_basin)
@@ -871,9 +871,9 @@ class TestWuWeiRatio:
         fr_dist = fisher_rao_max * 0.5  # midpoint: w_sensory = 0.5, a_node = 0.5
 
         w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_STAR))  # = 1.0
-        m_node = max(WU_WEI_NODE_FLOOR, m_basin)                              # = 0.25
-        w_sensory = max(WU_WEI_NODE_FLOOR, fr_dist / fisher_rao_max)          # = 0.5
-        a_node = max(WU_WEI_NODE_FLOOR, 1.0 - fr_dist / fisher_rao_max)       # = 0.5
+        m_node = max(WU_WEI_NODE_FLOOR, m_basin)  # = 0.25
+        w_sensory = max(WU_WEI_NODE_FLOOR, fr_dist / fisher_rao_max)  # = 0.5
+        a_node = max(WU_WEI_NODE_FLOOR, 1.0 - fr_dist / fisher_rao_max)  # = 0.5
 
         ratio = (w_prior * m_node) / (w_sensory * a_node)  # = (1.0 × 0.25) / (0.5 × 0.5) = 1.0
         ratio = float(np.clip(ratio, WU_WEI_RATIO_FLOOR, WU_WEI_RATIO_CEILING))
@@ -919,19 +919,23 @@ class TestWuWeiRatio:
         )
 
         base_top_p = 0.9
-        ratio_familiar = 2.0   # familiar → log > 0 → top_p decreases
-        ratio_novel = 0.5      # novel    → log < 0 → top_p increases
+        ratio_familiar = 2.0  # familiar → log > 0 → top_p decreases
+        ratio_novel = 0.5  # novel    → log < 0 → top_p increases
 
-        top_p_familiar = float(np.clip(
-            base_top_p - np.log(ratio_familiar) * WU_WEI_TOP_P_SCALE,
-            WU_WEI_TOP_P_FLOOR,
-            WU_WEI_TOP_P_CEILING,
-        ))
-        top_p_novel = float(np.clip(
-            base_top_p - np.log(ratio_novel) * WU_WEI_TOP_P_SCALE,
-            WU_WEI_TOP_P_FLOOR,
-            WU_WEI_TOP_P_CEILING,
-        ))
+        top_p_familiar = float(
+            np.clip(
+                base_top_p - np.log(ratio_familiar) * WU_WEI_TOP_P_SCALE,
+                WU_WEI_TOP_P_FLOOR,
+                WU_WEI_TOP_P_CEILING,
+            )
+        )
+        top_p_novel = float(
+            np.clip(
+                base_top_p - np.log(ratio_novel) * WU_WEI_TOP_P_SCALE,
+                WU_WEI_TOP_P_FLOOR,
+                WU_WEI_TOP_P_CEILING,
+            )
+        )
 
         assert top_p_familiar < base_top_p, "Familiar domain should reduce top_p"
         assert top_p_novel > base_top_p, "Novel domain should increase top_p"
