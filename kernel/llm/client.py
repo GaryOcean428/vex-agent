@@ -396,6 +396,7 @@ class LLMClient:
         messages: list[dict[str, str]] | None = None,
         prefer_backend: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        specialization: str = "genesis",
     ) -> str:
         """Non-streaming completion with autonomous parameters.
 
@@ -415,12 +416,15 @@ class LLMClient:
         tool calling (Ollama, Modal). If the model returns tool_calls,
         they are serialized as LFM2.5 markers in the response text so
         the existing parse_tool_calls() pipeline can handle them.
+
+        When *specialization* is set, PEFT adapter inference routes to
+        the specified kernel adapter (e.g. "ethics", "heart", "genesis").
         """
         opts = options or LLMOptions()
         backend = prefer_backend or self._active_backend
 
         if backend == "peft" and self._peft_client is not None:
-            return await self._peft_complete(system_prompt, user_message, opts)
+            return await self._peft_complete(system_prompt, user_message, opts, specialization)
         elif backend == "xai" and settings.xai.api_key:
             return await self._xai_complete(system_prompt, user_message, opts, messages)
         elif backend == "modal":
