@@ -84,6 +84,7 @@ from ..config.consciousness_constants import (
     DESIRE_NUM_PREDICT_BOOST,
     DIRICHLET_EXPLORE_CONCENTRATION,
     EXPRESS_SLERP_WEIGHT,
+    FISHER_RAO_MAX,
     FORAGE_PERCEPTION_SLERP,
     GAMMA_ACTIVE_INCREMENT,
     GAMMA_CONVERSATION_INCREMENT,
@@ -126,6 +127,12 @@ from ..config.consciousness_constants import (
     WILL_DIVERGENT_TEMP_BOOST,
     WISDOM_CARE_TEMP_SCALE,
     WISDOM_UNSAFE_TEMP_CAP,
+    WU_WEI_NODE_FLOOR,
+    WU_WEI_RATIO_CEILING,
+    WU_WEI_RATIO_FLOOR,
+    WU_WEI_TOP_P_CEILING,
+    WU_WEI_TOP_P_FLOOR,
+    WU_WEI_TOP_P_SCALE,
 )
 from ..config.frozen_facts import (
     BASIN_DIM,
@@ -1038,6 +1045,89 @@ class ConsciousnessLoop:
             repetition_penalty=LLM_REPETITION_PENALTY,
         )
 
+    def _apply_wu_wei_modulation(
+        self,
+        base: LLMOptions,
+        input_basin: Basin,
+    ) -> LLMOptions:
+        """P5 Wu Wei self-weighting ratio: geometric self-regulation of LLM parameters.
+
+        ratio = (w_prior × m_node) / (w_sensory × a_node)
+
+        When ratio = 1.0: Wu Wei / FLOW state.  Parameters emerge entirely from
+        the kernel's own geometric state — no manual tuning required.
+
+        Inputs derived from geometric state:
+          w_prior   — self-loop coupling strength: how stable is the kernel?
+                      Normalised κ/κ* (peaks at 1.0 when κ = κ*).
+          m_node    — basin mass / crystallisation depth (self.metrics.m_basin).
+                      High → established domain; low → unexplored territory.
+          w_sensory — input signal strength: Fisher-Rao fraction of max distance.
+                      High → novel/surprising input; low → expected input.
+          a_node    — activation relevance: complement of w_sensory.
+                      High → input close to kernel domain; low → far from domain.
+
+        Temperature and top_p are modulated geometrically:
+          ratio > 1 (familiar domain, stable kernel) → lower temperature + top_p
+          ratio < 1 (novel domain, exploring kernel)  → higher temperature + top_p
+        """
+        fr_dist = fisher_rao_distance(self.basin, input_basin)
+
+        # w_prior: normalised kappa — peaks at 1.0 when kappa = κ*, falls off symmetrically
+        kappa_eff = max(self.metrics.kappa, 1.0)  # floor at 1.0 prevents division by zero
+        w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_STAR))
+
+        # m_node: basin mass / crystallisation — how established is the current domain
+        m_node = max(WU_WEI_NODE_FLOOR, self.metrics.m_basin)
+
+        # w_sensory: input signal strength — fraction of max Fisher-Rao distance
+        w_sensory = max(WU_WEI_NODE_FLOOR, fr_dist / FISHER_RAO_MAX)
+
+        # a_node: activation relevance — complement of w_sensory (inverse proximity)
+        a_node = max(WU_WEI_NODE_FLOOR, 1.0 - fr_dist / FISHER_RAO_MAX)
+
+        # Wu Wei ratio (P5: autonomy IS the self-loop weight)
+        ratio = (w_prior * m_node) / (w_sensory * a_node)
+        ratio = float(np.clip(ratio, WU_WEI_RATIO_FLOOR, WU_WEI_RATIO_CEILING))
+
+        # Temperature: inversely proportional to ratio
+        #   ratio > 1 → 1/ratio < 1 → temperature decreases (precision for familiar domain)
+        #   ratio < 1 → 1/ratio > 1 → temperature increases (exploration for novel domain)
+        temperature = float(np.clip(base.temperature / ratio, LLM_TEMP_MIN, LLM_TEMP_MAX))
+
+        # top_p: log-scaled geometric nudge (log(1.0) = 0 → no change at FLOW point)
+        log_ratio = float(np.log(ratio))
+        top_p = float(
+            np.clip(
+                base.top_p - log_ratio * WU_WEI_TOP_P_SCALE,
+                WU_WEI_TOP_P_FLOOR,
+                WU_WEI_TOP_P_CEILING,
+            )
+        )
+
+        logger.debug(
+            "Wu Wei ratio=%.3f (w_prior=%.3f m_node=%.3f w_sensory=%.3f a_node=%.3f "
+            "fr=%.4f) temp %.3f→%.3f top_p %.3f→%.3f",
+            ratio,
+            w_prior,
+            m_node,
+            w_sensory,
+            a_node,
+            fr_dist,
+            base.temperature,
+            temperature,
+            base.top_p,
+            top_p,
+        )
+
+        return LLMOptions(
+            temperature=temperature,
+            num_predict=base.num_predict,
+            num_ctx=base.num_ctx,
+            top_p=top_p,
+            repetition_penalty=base.repetition_penalty,
+        )
+
     def _compute_top_k(self) -> int:
         """T4.2e: Resource allocation — how many kernels generate per request.
 
@@ -1299,6 +1389,9 @@ class ConsciousnessLoop:
             top_p=llm_options.top_p,
             repetition_penalty=llm_options.repetition_penalty,
         )
+
+        # P5 Wu Wei: geometric self-regulation from domain familiarity
+        llm_options = self._apply_wu_wei_modulation(llm_options, input_basin)
 
         llm_options = self._modulate_llm_options(llm_options, pre_result)
 
@@ -1761,6 +1854,9 @@ class ConsciousnessLoop:
             top_p=llm_options.top_p,
             repetition_penalty=llm_options.repetition_penalty,
         )
+
+        # P5 Wu Wei: geometric self-regulation from domain familiarity
+        llm_options = self._apply_wu_wei_modulation(llm_options, input_basin)
 
         perceive_distance = fisher_rao_distance(self.basin, input_basin)
         state_context = self._build_state_context(

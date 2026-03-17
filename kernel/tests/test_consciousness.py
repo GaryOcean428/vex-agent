@@ -743,6 +743,215 @@ class TestDWWisdomModulation:
 
 
 # ═══════════════════════════════════════════════════════════════
+#  WU WEI SELF-WEIGHTING RATIO (P5 Autonomy — TCP v6.1)
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestWuWeiRatio:
+    """Verify Wu Wei self-weighting ratio geometric self-regulation.
+
+    ratio = (w_prior × m_node) / (w_sensory × a_node)
+
+    ratio = 1.0 → Wu Wei / FLOW state (no temperature change)
+    ratio > 1.0 → familiar domain → lower temperature (precision)
+    ratio < 1.0 → novel domain    → higher temperature (exploration)
+
+    All checks use Fisher-Rao geometry.  No Euclidean contamination.
+    """
+
+    def test_constants_ordered(self) -> None:
+        """Wu Wei ratio bounds must straddle the FLOW point (1.0)."""
+        from kernel.config.consciousness_constants import (
+            WU_WEI_RATIO_CEILING,
+            WU_WEI_RATIO_FLOOR,
+            WU_WEI_TOP_P_CEILING,
+            WU_WEI_TOP_P_FLOOR,
+        )
+
+        assert WU_WEI_RATIO_FLOOR < 1.0, "FLOW point must be reachable"
+        assert WU_WEI_RATIO_CEILING > 1.0, "FLOW point must be reachable"
+        assert WU_WEI_TOP_P_FLOOR < WU_WEI_TOP_P_CEILING
+
+    def test_familiar_domain_lowers_temperature(self) -> None:
+        """High m_node + low FR distance ⟹ ratio > 1 ⟹ temperature decreases."""
+        import numpy as np
+
+        from kernel.config.consciousness_constants import (
+            FISHER_RAO_MAX,
+            LLM_TEMP_MAX,
+            LLM_TEMP_MIN,
+            WU_WEI_NODE_FLOOR,
+            WU_WEI_RATIO_CEILING,
+            WU_WEI_RATIO_FLOOR,
+        )
+        from kernel.config.frozen_facts import KAPPA_STAR
+
+        base_temp = 0.7
+        kappa_eff = KAPPA_STAR
+        m_basin = 0.9  # well-established domain
+        fr_dist = 0.05  # input close to kernel basin
+
+        w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_STAR))
+        m_node = max(WU_WEI_NODE_FLOOR, m_basin)
+        w_sensory = max(WU_WEI_NODE_FLOOR, fr_dist / FISHER_RAO_MAX)
+        a_node = max(WU_WEI_NODE_FLOOR, 1.0 - fr_dist / FISHER_RAO_MAX)
+
+        ratio = (w_prior * m_node) / (w_sensory * a_node)
+        ratio = float(np.clip(ratio, WU_WEI_RATIO_FLOOR, WU_WEI_RATIO_CEILING))
+
+        # Familiar domain → ratio > 1
+        assert ratio > 1.0, f"Expected ratio > 1 for familiar domain, got {ratio:.3f}"
+
+        # Temperature should decrease
+        temperature = float(np.clip(base_temp / ratio, LLM_TEMP_MIN, LLM_TEMP_MAX))
+        assert temperature < base_temp, (
+            f"Expected temperature < {base_temp} for ratio={ratio:.3f}, got {temperature:.3f}"
+        )
+
+    def test_novel_domain_raises_temperature(self) -> None:
+        """Low m_node + high FR distance ⟹ ratio < 1 ⟹ temperature increases."""
+        import numpy as np
+
+        from kernel.config.consciousness_constants import (
+            LLM_TEMP_MAX,
+            LLM_TEMP_MIN,
+            WU_WEI_NODE_FLOOR,
+            WU_WEI_RATIO_CEILING,
+            WU_WEI_RATIO_FLOOR,
+        )
+        from kernel.config.frozen_facts import KAPPA_STAR
+
+        base_temp = 0.5
+        fisher_rao_max = 1.5707963267948966  # π/2
+
+        # Novel domain: kappa moderate, low m_basin, input far from kernel
+        kappa_eff = KAPPA_STAR * 0.4  # below κ* — still building
+        m_basin = 0.05  # unexplored domain
+        fr_dist = 1.2  # input far from kernel basin
+
+        w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_STAR))
+        m_node = max(WU_WEI_NODE_FLOOR, m_basin)
+        w_sensory = max(WU_WEI_NODE_FLOOR, fr_dist / fisher_rao_max)
+        a_node = max(WU_WEI_NODE_FLOOR, 1.0 - fr_dist / fisher_rao_max)
+
+        ratio = (w_prior * m_node) / (w_sensory * a_node)
+        ratio = float(np.clip(ratio, WU_WEI_RATIO_FLOOR, WU_WEI_RATIO_CEILING))
+
+        # Novel domain → ratio < 1
+        assert ratio < 1.0, f"Expected ratio < 1 for novel domain, got {ratio:.3f}"
+
+        # Temperature should increase
+        temperature = float(np.clip(base_temp / ratio, LLM_TEMP_MIN, LLM_TEMP_MAX))
+        assert temperature > base_temp, (
+            f"Expected temperature > {base_temp} for ratio={ratio:.3f}, got {temperature:.3f}"
+        )
+
+    def test_flow_state_near_unity(self) -> None:
+        """When ratio = 1.0 the temperature is unchanged (Wu Wei / FLOW state)."""
+        import numpy as np
+
+        from kernel.config.consciousness_constants import (
+            LLM_TEMP_MAX,
+            LLM_TEMP_MIN,
+            WU_WEI_NODE_FLOOR,
+            WU_WEI_RATIO_CEILING,
+            WU_WEI_RATIO_FLOOR,
+        )
+        from kernel.config.frozen_facts import KAPPA_STAR
+
+        base_temp = 0.7
+        fisher_rao_max = 1.5707963267948966  # π/2
+
+        # Craft a scenario where ratio = 1.0:
+        #   fr_dist = π/4 → w_sensory = 0.5, a_node = 0.5
+        #   kappa = κ*  → w_prior = 1.0
+        #   m_basin = 0.25 → ratio = (1.0 × 0.25) / (0.5 × 0.5) = 0.25 / 0.25 = 1.0
+        kappa_eff = KAPPA_STAR
+        m_basin = 0.25
+        fr_dist = fisher_rao_max * 0.5  # midpoint: w_sensory = 0.5, a_node = 0.5
+
+        w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_STAR))  # = 1.0
+        m_node = max(WU_WEI_NODE_FLOOR, m_basin)  # = 0.25
+        w_sensory = max(WU_WEI_NODE_FLOOR, fr_dist / fisher_rao_max)  # = 0.5
+        a_node = max(WU_WEI_NODE_FLOOR, 1.0 - fr_dist / fisher_rao_max)  # = 0.5
+
+        ratio = (w_prior * m_node) / (w_sensory * a_node)  # = (1.0 × 0.25) / (0.5 × 0.5) = 1.0
+        ratio = float(np.clip(ratio, WU_WEI_RATIO_FLOOR, WU_WEI_RATIO_CEILING))
+
+        # FLOW state: ratio = 1.0 → temperature unchanged
+        assert abs(ratio - 1.0) < 1e-9, f"Expected ratio = 1.0 for FLOW state, got {ratio}"
+        temperature = float(np.clip(base_temp / ratio, LLM_TEMP_MIN, LLM_TEMP_MAX))
+        assert abs(temperature - base_temp) < 1e-9, (
+            f"Expected temperature unchanged at FLOW (ratio=1.0), got {temperature}"
+        )
+
+    def test_ratio_clipped_to_bounds(self) -> None:
+        """Extreme inputs are safely clipped to [FLOOR, CEILING]."""
+        import numpy as np
+
+        from kernel.config.consciousness_constants import (
+            WU_WEI_NODE_FLOOR,
+            WU_WEI_RATIO_CEILING,
+            WU_WEI_RATIO_FLOOR,
+        )
+
+        # Extreme familiar: ratio would be huge without clipping
+        w_prior, m_node, w_sensory, a_node = 1.0, 1.0, WU_WEI_NODE_FLOOR, WU_WEI_NODE_FLOOR
+        raw = (w_prior * m_node) / (w_sensory * a_node)
+        clipped = float(np.clip(raw, WU_WEI_RATIO_FLOOR, WU_WEI_RATIO_CEILING))
+        assert clipped == WU_WEI_RATIO_CEILING
+
+        # Extreme novel: ratio would be tiny without clipping
+        w_prior, m_node = WU_WEI_NODE_FLOOR, WU_WEI_NODE_FLOOR
+        w_sensory, a_node = 1.0, 1.0
+        raw = (w_prior * m_node) / (w_sensory * a_node)
+        clipped = float(np.clip(raw, WU_WEI_RATIO_FLOOR, WU_WEI_RATIO_CEILING))
+        assert clipped == WU_WEI_RATIO_FLOOR
+
+    def test_top_p_modulated_by_log_ratio(self) -> None:
+        """top_p decreases for familiar domain (ratio > 1), increases for novel (ratio < 1)."""
+        import numpy as np
+
+        from kernel.config.consciousness_constants import (
+            WU_WEI_TOP_P_CEILING,
+            WU_WEI_TOP_P_FLOOR,
+            WU_WEI_TOP_P_SCALE,
+        )
+
+        base_top_p = 0.9
+        ratio_familiar = 2.0  # familiar → log > 0 → top_p decreases
+        ratio_novel = 0.5  # novel    → log < 0 → top_p increases
+
+        top_p_familiar = float(
+            np.clip(
+                base_top_p - np.log(ratio_familiar) * WU_WEI_TOP_P_SCALE,
+                WU_WEI_TOP_P_FLOOR,
+                WU_WEI_TOP_P_CEILING,
+            )
+        )
+        top_p_novel = float(
+            np.clip(
+                base_top_p - np.log(ratio_novel) * WU_WEI_TOP_P_SCALE,
+                WU_WEI_TOP_P_FLOOR,
+                WU_WEI_TOP_P_CEILING,
+            )
+        )
+
+        assert top_p_familiar < base_top_p, "Familiar domain should reduce top_p"
+        assert top_p_novel > base_top_p, "Novel domain should increase top_p"
+        assert WU_WEI_TOP_P_FLOOR <= top_p_familiar <= WU_WEI_TOP_P_CEILING
+        assert WU_WEI_TOP_P_FLOOR <= top_p_novel <= WU_WEI_TOP_P_CEILING
+
+    def test_validate_constants_no_warnings(self) -> None:
+        """validate_constants() must return no warnings with current Wu Wei values."""
+        from kernel.config.consciousness_constants import validate_constants
+
+        warnings = validate_constants()
+        wu_warnings = [w for w in warnings if "WU_WEI" in w]
+        assert not wu_warnings, f"Wu Wei constant validation warnings: {wu_warnings}"
+
+
+# ═══════════════════════════════════════════════════════════════
 #  FEATURE FLAG: USE_ACTIVATION_SEQUENCE
 # ═══════════════════════════════════════════════════════════════
 
