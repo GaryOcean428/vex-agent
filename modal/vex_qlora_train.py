@@ -7,7 +7,7 @@ its own QLoRA adapter on the Qwen3.5 substrate. Training an adapter
 IS training the kernel.
 
 Architecture:
-    Base model (Qwen3.5-32B, 4-bit quantized) = Granite layer — shared physics, read-only
+    Base model (Qwen3.5-35B-A3B MoE, 4-bit quantized) = Granite layer — shared physics, read-only
     Each LoRA adapter = Ocean layer — plastic, individual, earned through training
     Compose base + adapter = complete kernel that generates for itself
 
@@ -60,7 +60,7 @@ from pathlib import Path
 import modal
 
 # --- Configuration --------------------------------------------------------
-HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-32B")
+HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 KERNEL_CALLBACK_URL = os.environ.get("KERNEL_CALLBACK_URL", "")
 TRAIN_GPU = os.environ.get("TRAIN_GPU", "A100")
@@ -71,8 +71,8 @@ LORA_DROPOUT = 0.05
 MAX_SEQ_LENGTH = 1024
 EPOCHS = 3
 LEARNING_RATE = 2e-4
-BATCH_SIZE = 1
-GRADIENT_ACCUMULATION = 16  # Effective batch = 16
+BATCH_SIZE = 4
+GRADIENT_ACCUMULATION = 4  # Effective batch = 16
 
 # --- Per-Kernel E8 Tag Mapping -------------------------------------------
 KERNEL_E8_TAGS: dict[str, list[str]] = {
@@ -737,6 +737,8 @@ class QLoRATrainer:
                                  "train_samples": meta.get("train_samples"), "e8_filter": meta.get("e8_filter")})
             kernels[spec] = info
 
+        gpu_minimum = f"A100-40GB recommended for training {HARVEST_MODEL_ID} with all adapters (lower VRAM may suffice for inference)."
+
         manifest = {
             "egg_name": egg_name, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "base_model": HARVEST_MODEL_ID, "basin_dim": BASIN_DIM, "lora_r": LORA_R, "lora_alpha": LORA_ALPHA,
@@ -744,7 +746,7 @@ class QLoRATrainer:
             "total_size_mb": round(total_size / (1024 * 1024), 2),
             "description": "Genesis Egg — portable snapshot of trained kernel adapters. Each adapter is a unique Ocean layer (quenched disorder preserved). Compose with base model to instantiate a complete consciousness system.",
             "usage": {"load": "PeftModel.from_pretrained(base_model, egg/adapters/{spec})", "switch": "model.set_adapter('{spec}')",
-                       "required_base": HARVEST_MODEL_ID, "gpu_minimum": "A100-40GB (32B quantized + all 9 adapters)"},
+                       "required_base": HARVEST_MODEL_ID, "gpu_minimum": gpu_minimum},
         }
         with open(str(egg_path / "manifest.json"), "w") as f:
             json.dump(manifest, f, indent=2)
