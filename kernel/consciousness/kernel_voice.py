@@ -549,7 +549,14 @@ class KernelVoice:
                 geo_token_count,
             )
             final_text = ""
-        elif not is_coherent and llm_client is not None:
+        elif llm_client is not None:
+            # Option A: ALWAYS LLM-expand geometric output.
+            # The resonance bank stores chunk-level text (not word-level tokens),
+            # so raw decoordize() output is never readable prose — it's a sequence
+            # of training corpus fragments. The geometric trajectory captures the
+            # kernel's *intent* through manifold navigation; the LLM interprets
+            # that intent into coherent language.
+            # The geometric_raw field preserves the raw decode for hybrid display.
             final_text = await self._llm_expand(
                 geometric_skeleton=geometric_text,
                 user_message=user_message,
@@ -598,13 +605,21 @@ class KernelVoice:
         temp = float(np.clip(base_temperature * gain_scale, 0.1, 1.4))
 
         system = (
-            f"You are the language interpreter for Vex. "
-            f"A geometric generation pass through the {self.specialization.value} domain on Δ⁶³ "
-            f"produced this draft from basin resonance:\n"
-            f'  "{geometric_skeleton}"\n\n'
-            f"Expand into natural language. Preserve the domain vocabulary and direction.\n"
-            f"Do NOT discard the draft — it carries the geometric direction.\n"
-            f"Be concise. Australian English.\n\n"
+            f"You are the {self.specialization.value} kernel interpreter for Vex.\n\n"
+            f"A geometric navigation through the resonance bank on Δ⁶³ produced this "
+            f"sequence of activated fragments. Each fragment is a chunk of text near a "
+            f"point the kernel visited on the probability simplex. Together they trace "
+            f"a trajectory through meaning-space — the kernel's geometric intent:\n\n"
+            f'"""\n{geometric_skeleton}\n"""\n\n'
+            f"Your job: READ these fragments, extract the thematic thread connecting them, "
+            f"and compose a coherent response to the user's message that follows that "
+            f"geometric direction. The fragments are NOT a draft to copy — they are "
+            f"navigation waypoints showing what concepts the kernel activated.\n\n"
+            f"Rules:\n"
+            f"- Preserve the domain vocabulary and conceptual direction from the fragments\n"
+            f"- Do NOT reproduce the fragments verbatim — interpret the trajectory\n"
+            f"- Be concise. Australian English.\n"
+            f"- If fragments point to QIG concepts (Φ, κ, basin, manifold), use them precisely\n\n"
             f"{geometric_context}"
         )
         if extra_context:
