@@ -140,14 +140,18 @@ class CoordizerHarvester:
                     print("Adapter merged (no training metadata found).")
             except Exception as e:
                 print(f"WARNING: Failed to load adapter: {e}")
-                # Size mismatch = adapter trained on a different model. Delete it
-                # so we don't retry a broken adapter on every cold start.
+                # Size mismatch = adapter trained on a different base model.
+                # DO NOT DELETE — the adapter may be correct for the intended model
+                # (e.g., 35B-A3B adapter when HARVEST_MODEL_ID defaults to 4B).
+                # Fix: set the Modal secret HARVEST_MODEL_ID to match the adapter.
                 if "size mismatch" in str(e):
-                    import shutil
-
-                    print(f"Deleting stale adapter at {ADAPTER_PATH} (model mismatch)")
-                    shutil.rmtree(ADAPTER_PATH, ignore_errors=True)
-                    model_volume.commit()
+                    print(
+                        f"ADAPTER MODEL MISMATCH at {ADAPTER_PATH}. "
+                        f"Current base: {default_model_id}. "
+                        f"Adapter was trained on a different model. "
+                        f"Fix: set Modal secret 'model' key HARVEST_MODEL_ID "
+                        f"to match the adapter's training base."
+                    )
                 print("Continuing with base model only.")
                 self.adapter_loaded = False
         else:
