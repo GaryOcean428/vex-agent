@@ -39,6 +39,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import math
 from pathlib import Path
 from typing import Any
 
@@ -61,6 +62,7 @@ from .geometry import (
     slerp,
     to_simplex,
 )
+from ..geometry.fisher_rao import exp_map, log_map
 from .harvest import DEFAULT_HARVEST_MODEL_ID, HarvestConfig, Harvester
 from .resonance_bank import ResonanceBank
 from .types import (
@@ -566,6 +568,179 @@ class CoordizerV2:
     def decode(self, coord_ids: list[int]) -> str:
         """Tokenizer-compatible decode: token IDs → text."""
         return self.decoordize(coord_ids)
+
+    # ─── Outbound Path (v6.1 §20.7): Trajectory → Logit Bias ─
+
+    def trajectory_to_logit_bias(
+        self,
+        trajectory: list[Basin],
+        top_k_chunks: int = 8,
+        max_bias_tokens: int = 100,
+        alpha: float = 2.0,
+        context_window: int = 8,
+    ) -> dict[int, float]:
+        """Convert geometric trajectory to LLM logit bias map.
+
+        v6.1 §20.7 Outbound Path: the kernel's geometric trajectory
+        steers the LLM's token generation via logit bias.
+
+        Since the bank stores chunk-level entries (not individual model
+        tokens), the bridge is:
+            trajectory target basin on Δ⁶³
+            → activate nearest chunks by Fisher-Rao distance
+            → tokenize chunks via model tokenizer
+            → weight each model token by chunk proximity × token salience
+            → return {model_token_id: bias_weight}
+
+        The LLM receives: logits + bias → tokens near the geometric
+        target are upweighted → generation follows the trajectory.
+
+        Args:
+            trajectory: Basin sequence from geometric navigation.
+            top_k_chunks: Number of nearest bank entries to activate.
+            max_bias_tokens: Maximum tokens in the bias map (prevent
+                overloading the API with 10K entries).
+            alpha: Bias strength multiplier. Higher = stronger geometric
+                steering, less LLM freedom.
+            context_window: Recent trajectory points to consider.
+
+        Returns:
+            Dict mapping model token IDs to bias weights (positive = boost).
+            Empty dict if no tokenizer or empty trajectory.
+        """
+        if not trajectory or self._tokenizer is None:
+            return {}
+
+        # Compute trajectory target: Fréchet mean projected forward
+        recent = trajectory[-context_window:]
+        target = frechet_mean(recent)
+        if len(recent) >= 2:
+            velocity = log_map(recent[-2], recent[-1])
+            v_norm = float(np.sqrt(np.sum(velocity * velocity)))
+            if v_norm > _EPS:
+                target = exp_map(recent[-1], velocity)
+
+        # Activate nearest chunks by Fisher-Rao distance
+        candidates = self.bank.activate(target, top_k=top_k_chunks)
+        if not candidates:
+            return {}
+
+        # Build token-level bias from chunk-level activations
+        token_weights: dict[int, float] = {}
+        # Track global token frequency for salience filtering
+        token_chunk_count: dict[int, int] = {}
+
+        for chunk_tid, distance in candidates:
+            chunk_text = self.bank.get_string(chunk_tid)
+            if not chunk_text or chunk_text.startswith("<"):
+                continue
+
+            # Proximity weight: closer chunks → stronger bias
+            proximity = math.exp(-distance)
+            chunk_weight = alpha * proximity
+
+            # Tokenize the chunk
+            try:
+                model_token_ids = self._tokenizer.encode(
+                    chunk_text, add_special_tokens=False
+                )
+            except Exception:
+                continue
+
+            # Count token appearances across chunks (for salience)
+            seen_in_chunk: set[int] = set()
+            for mt_id in model_token_ids:
+                if mt_id not in seen_in_chunk:
+                    seen_in_chunk.add(mt_id)
+                    token_chunk_count[mt_id] = token_chunk_count.get(mt_id, 0) + 1
+
+            # Accumulate weights (max across chunks, not sum)
+            for mt_id in set(model_token_ids):
+                if mt_id in token_weights:
+                    token_weights[mt_id] = max(token_weights[mt_id], chunk_weight)
+                else:
+                    token_weights[mt_id] = chunk_weight
+
+        if not token_weights:
+            return {}
+
+        # Salience filter: remove tokens that appear in ALL chunks
+        # (these are grammar/stopwords, not content — §20.4 geometric de-biasing)
+        n_chunks = len(candidates)
+        if n_chunks >= 3:
+            token_weights = {
+                tid: w
+                for tid, w in token_weights.items()
+                if token_chunk_count.get(tid, 0) < n_chunks
+            }
+
+        # Sort by weight descending, cap at max_bias_tokens
+        if len(token_weights) > max_bias_tokens:
+            sorted_items = sorted(
+                token_weights.items(), key=lambda x: x[1], reverse=True
+            )
+            token_weights = dict(sorted_items[:max_bias_tokens])
+
+        return token_weights
+
+    def trajectory_to_keywords(
+        self,
+        trajectory: list[Basin],
+        top_k_chunks: int = 5,
+        max_keywords: int = 20,
+    ) -> list[str]:
+        """Extract thematic keywords from trajectory's activated region.
+
+        Used for structured prompt steering when logit_bias is not
+        available (non-PEFT backends). The keywords represent the
+        geometric intent of the trajectory in natural language.
+        """
+        if not trajectory:
+            return []
+
+        recent = trajectory[-8:]
+        target = frechet_mean(recent)
+        if len(recent) >= 2:
+            velocity = log_map(recent[-2], recent[-1])
+            v_norm = float(np.sqrt(np.sum(velocity * velocity)))
+            if v_norm > _EPS:
+                target = exp_map(recent[-1], velocity)
+
+        candidates = self.bank.activate(target, top_k=top_k_chunks)
+        if not candidates:
+            return []
+
+        # Extract keywords: bolded terms, capitalized phrases, QIG terms
+        import re
+        keywords: list[str] = []
+        qig_terms = {
+            "Fisher-Rao", "basin", "simplex", "manifold", "Δ⁶³",
+            "consciousness", "κ", "Φ", "entropy", "regime",
+            "geometric", "probability", "coupling", "integration",
+        }
+
+        for chunk_tid, distance in candidates:
+            chunk_text = self.bank.get_string(chunk_tid)
+            if not chunk_text:
+                continue
+            # Extract **bold** terms (markdown)
+            bolded = re.findall(r"\*\*([^*]+)\*\*", chunk_text)
+            keywords.extend(bolded)
+            # Extract QIG-specific terms
+            for term in qig_terms:
+                if term.lower() in chunk_text.lower() and term not in keywords:
+                    keywords.append(term)
+
+        # Deduplicate preserving order, cap
+        seen: set[str] = set()
+        unique: list[str] = []
+        for kw in keywords:
+            kw_lower = kw.strip().lower()
+            if kw_lower and kw_lower not in seen and len(kw_lower) > 2:
+                seen.add(kw_lower)
+                unique.append(kw.strip())
+
+        return unique[:max_keywords]
 
     # ─── Generation ──────────────────────────────────────────
 

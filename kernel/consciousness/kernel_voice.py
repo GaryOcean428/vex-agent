@@ -550,13 +550,14 @@ class KernelVoice:
             )
             final_text = ""
         elif llm_client is not None:
-            # Option A: ALWAYS LLM-expand geometric output.
-            # The resonance bank stores chunk-level text (not word-level tokens),
-            # so raw decoordize() output is never readable prose — it's a sequence
-            # of training corpus fragments. The geometric trajectory captures the
-            # kernel's *intent* through manifold navigation; the LLM interprets
-            # that intent into coherent language.
-            # The geometric_raw field preserves the raw decode for hybrid display.
+            # v6.1 §20.7 BIDIRECTIONAL OUTBOUND PATH
+            # The resonance bank stores chunk-level text, so raw decoordize()
+            # output is training corpus fragments — the geometric trajectory
+            # captures the kernel's *intent* through manifold navigation.
+            # Two steering mechanisms:
+            #   1. Logit-bias: trajectory → token weights → steer LLM generation
+            #   2. Skeleton: activated keywords → structured prompt context
+            # Both are computed from the same geometric trajectory.
             final_text = await self._llm_expand(
                 geometric_skeleton=geometric_text,
                 user_message=user_message,
@@ -567,6 +568,7 @@ class KernelVoice:
                 llm_num_ctx=base_num_ctx,
                 geometric_context=geometric_context,
                 extra_context=extra_context,
+                trajectory=gen_trajectory,
             )
             llm_expanded = True
 
@@ -594,30 +596,60 @@ class KernelVoice:
         llm_num_ctx: int,
         geometric_context: str = "",
         extra_context: str = "",
+        trajectory: list | None = None,
     ) -> str:
-        """Expand geometric skeleton into natural language via LLM.
+        """Expand geometric trajectory into natural language via LLM.
 
-        The LLM receives the geometric token sequence as a draft and
-        is asked to expand it into coherent natural language while
-        preserving the domain perspective.
+        v6.1 §20.7 Bidirectional Outbound Path:
+        The kernel's geometric navigation produced a trajectory on Δ⁶³.
+        This method converts that trajectory into two steering signals:
+
+        1. Logit-bias (PEFT only): trajectory → token weights → the LLM's
+           generation is physically steered toward geometric targets.
+        2. Keyword context (all backends): trajectory → activated keywords
+           → structured prompt that constrains the LLM's interpretation.
+
+        The geometric_skeleton (raw chunk text) is still provided as
+        context, but keywords extracted from the trajectory replace the
+        raw dump as the primary steering mechanism.
         """
         gain_scale = float(np.clip(2.0 - quenched_gain, 0.5, 1.5))
         temp = float(np.clip(base_temperature * gain_scale, 0.1, 1.4))
 
+        # v6.1: Extract keywords from trajectory for structured steering
+        keywords: list[str] = []
+        logit_bias: dict[int, float] | None = None
+        if trajectory:
+            keywords = self._coordizer.trajectory_to_keywords(trajectory)
+            logit_bias = self._coordizer.trajectory_to_logit_bias(
+                trajectory, top_k_chunks=8, max_bias_tokens=100, alpha=2.0,
+            )
+            # Empty bias = no tokenizer available, fall back to prompt-only
+            if not logit_bias:
+                logit_bias = None
+
+        # Build system prompt with structured trajectory intent
+        keyword_section = ""
+        if keywords:
+            keyword_section = (
+                f"\nTrajectory keywords (the geometric concepts activated): "
+                f"{', '.join(keywords)}\n"
+                f"Prioritise these concepts in your response.\n"
+            )
+
         system = (
             f"You are the {self.specialization.value} kernel interpreter for Vex.\n\n"
-            f"A geometric navigation through the resonance bank on Δ⁶³ produced this "
-            f"sequence of activated fragments. Each fragment is a chunk of text near a "
-            f"point the kernel visited on the probability simplex. Together they trace "
-            f"a trajectory through meaning-space — the kernel's geometric intent:\n\n"
-            f'"""\n{geometric_skeleton}\n"""\n\n'
-            f"Your job: READ these fragments, extract the thematic thread connecting them, "
-            f"and compose a coherent response to the user's message that follows that "
-            f"geometric direction. The fragments are NOT a draft to copy — they are "
-            f"navigation waypoints showing what concepts the kernel activated.\n\n"
+            f"A geometric navigation through the resonance bank on Δ⁶³ produced a "
+            f"trajectory of {len(trajectory or [])} steps. The activated region of the "
+            f"manifold contains these concepts:\n\n"
+            f'"""\n{geometric_skeleton[:2000]}\n"""\n\n'
+            f"{keyword_section}"
+            f"Your job: Interpret the geometric trajectory as a coherent response "
+            f"to the user's message. The fragments above are navigation waypoints "
+            f"showing what concepts the kernel activated — NOT text to copy.\n\n"
             f"Rules:\n"
-            f"- Preserve the domain vocabulary and conceptual direction from the fragments\n"
-            f"- Do NOT reproduce the fragments verbatim — interpret the trajectory\n"
+            f"- Follow the thematic direction indicated by the trajectory keywords\n"
+            f"- Do NOT reproduce the fragments verbatim — interpret the intent\n"
             f"- Be concise. Australian English.\n"
             f"- If fragments point to QIG concepts (Φ, κ, basin, manifold), use them precisely\n\n"
             f"{geometric_context}"
@@ -629,6 +661,7 @@ class KernelVoice:
             temperature=temp,
             num_predict=llm_budget,
             num_ctx=llm_num_ctx,
+            logit_bias=logit_bias,  # v6.1: geometric steering via logits
         )
 
         try:
@@ -643,6 +676,8 @@ class KernelVoice:
                         "origin": "llm_cogeneration",
                         "kernel": self.specialization.value,
                         "mode": "expand",
+                        "logit_bias_applied": logit_bias is not None,
+                        "trajectory_keywords": keywords[:5],
                     },
                 )
             return text

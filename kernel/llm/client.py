@@ -54,6 +54,11 @@ class LLMOptions:
     num_ctx: int = 32768
     top_p: float = 0.9
     repetition_penalty: float = 1.0
+    # v6.1 §20.7 Outbound Path: geometric trajectory → logit bias
+    # Maps model token IDs to bias weights. Positive = boost token probability.
+    # Computed by coordizer.trajectory_to_logit_bias() from kernel's geometric
+    # navigation. Supported on PEFT endpoint; ignored on other backends.
+    logit_bias: dict[int, float] | None = None
 
     def to_ollama_options(self) -> dict[str, Any]:
         return {
@@ -551,6 +556,7 @@ class LLMClient:
             max_new_tokens=opts.num_predict,
             temperature=opts.temperature,
             top_p=opts.top_p,
+            logit_bias=opts.logit_bias,
         )
 
         if result.success and result.text:

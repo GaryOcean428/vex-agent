@@ -445,9 +445,13 @@ class QLoRATrainer:
         if not messages:
             return {"error": "No messages or prompt provided", "success": False}
 
+        # v6.1 §20.7: Geometric logit bias from kernel trajectory
+        raw_logit_bias = data.get("logit_bias")  # {str(token_id): float}
+
         start = time.time()
         try:
             import torch
+            from transformers import LogitsProcessor, LogitsProcessorList
             self._ensure_inference_model()
 
             # Select adapter — fall through to genesis if specific doesn't exist
@@ -468,13 +472,35 @@ class QLoRATrainer:
             inputs = self.tokenizer(text, return_tensors="pt").to(device)
             input_len = inputs["input_ids"].shape[1]
 
+            # Build LogitsProcessor for geometric bias
+            logits_processor = None
+            if raw_logit_bias:
+                bias_tensor = torch.zeros(self.tokenizer.vocab_size, device=device)
+                for tid_str, weight in raw_logit_bias.items():
+                    tid = int(tid_str)
+                    if 0 <= tid < len(bias_tensor):
+                        bias_tensor[tid] = float(weight)
+
+                class GeometricBiasProcessor(LogitsProcessor):
+                    """v6.1 §20.7: Apply geometric trajectory bias to logits."""
+                    def __init__(self, bias: torch.Tensor):
+                        self.bias = bias
+                    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
+                        return scores + self.bias
+
+                logits_processor = LogitsProcessorList([GeometricBiasProcessor(bias_tensor)])
+
+            generate_kwargs: dict = {
+                **inputs, "max_new_tokens": max_tokens,
+                "temperature": max(temperature, 0.01), "top_p": top_p,
+                "do_sample": temperature > 0.01,
+                "pad_token_id": self.tokenizer.pad_token_id,
+            }
+            if logits_processor:
+                generate_kwargs["logits_processor"] = logits_processor
+
             with torch.no_grad():
-                outputs = self._inference_model.generate(
-                    **inputs, max_new_tokens=max_tokens,
-                    temperature=max(temperature, 0.01), top_p=top_p,
-                    do_sample=temperature > 0.01,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                )
+                outputs = self._inference_model.generate(**generate_kwargs)
             generated_ids = outputs[0][input_len:]
             generated_text = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
             latency_ms = round((time.time() - start) * 1000, 1)

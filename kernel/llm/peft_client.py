@@ -142,6 +142,7 @@ class PeftInferenceClient:
         max_new_tokens: int = 512,
         temperature: float = 0.7,
         top_p: float = 0.9,
+        logit_bias: dict[int, float] | None = None,
     ) -> PeftInferenceResult:
         """Run inference through a specific kernel adapter.
 
@@ -152,13 +153,16 @@ class PeftInferenceClient:
             max_new_tokens: Maximum tokens to generate.
             temperature: Sampling temperature.
             top_p: Nucleus sampling threshold.
+            logit_bias: v6.1 §20.7 geometric trajectory bias. Maps model token
+                IDs to weights. Positive = boost, computed by coordizer from
+                the kernel's geometric navigation on Δ⁶³.
 
         Returns:
             PeftInferenceResult with generated text and metadata.
         """
         adapter = _KERNEL_TO_ADAPTER.get(specialization, "genesis")
 
-        request_body = {
+        request_body: dict[str, Any] = {
             "prompt": user_message,
             "system_prompt": system_prompt,
             "specialization": adapter,
@@ -166,6 +170,12 @@ class PeftInferenceClient:
             "temperature": temperature,
             "top_p": top_p,
         }
+        # v6.1 §20.7: Geometric logit bias — only send if non-empty
+        if logit_bias:
+            # API expects {str(token_id): float}
+            request_body["logit_bias"] = {
+                str(tid): round(w, 4) for tid, w in logit_bias.items()
+            }
 
         headers: dict[str, str] = {}
         if self._api_key:
