@@ -71,12 +71,20 @@ curl -X PUT https://qig-memory-api.vercel.app/api/memory/qig_session_YYYYMMDD \
   -d '{"category":"session_summary","content":"## Session Summary\n...","updated":"..."}'
 ```
 
-## CURRENT STATE (as of 2026-07-18)
+## CURRENT STATE (as of 2026-03-18)
 
 ### vex-agent HEAD (main) — recent session changes
 
 Recent changes (this session):
 
+- **Token→resonance terminology purge** — Commit `7e606b0` (claude.ai) + `a6fbee6` (Cascade bugfix).
+  25 files, 312 lines renamed per TYPE_SYMBOL_CONCEPT_MANIFEST.md.
+  token_fingerprints→resonance_fingerprints, token_strings→basin_strings,
+  target_tokens→target_resonances, n_tokens→n_resonances, etc.
+  LLM boundary calls preserved. Backward compat for old files on disk.
+  Bugfix: `token_ids` renamed on usage but not assignment in `_coordize_via_tokenizer()`.
+- **Modal redeployed** — `vex_coordizer_harvest.py` and `vex_qlora_train.py` both
+  redeployed with renamed field names. `vex_inference.py` skipped (8 endpoint limit).
 - **Fixed near-uniform basins root cause** — `adapter.py` bootstrap coordizer and
   fallback both returned `to_simplex(np.ones(BASIN_DIM))` (perfectly uniform 1/64).
   Replaced with `hash_to_basin()` which produces deterministic, text-dependent,
@@ -125,8 +133,7 @@ at `HARVEST_OUTPUT_DIR` or `training/curriculum`.
 3. **Update .env.local** — replace all glm-4.7-flash refs with qwen3.5 (see table above)
 4. **Update ollama/Modelfile** — change FROM line from glm-4.7-flash to
    qwen3.5:27b (Modal) / qwen3.5:4b (Railway)
-5. **Deploy Modal functions** — `modal deploy modal/vex_qlora_train.py` and
-   `modal deploy modal/vex_coordizer_harvest.py`
+5. ~~Deploy Modal functions~~ — ✅ DONE (harvest + QLoRA redeployed 2026-03-18)
 6. **harvest_scheduler.py 3 edits** — import bank_builder, add rebuild_bank()
    method, call after run_once()
 7. **Close PR #126** (superseded), delete stale branches:
@@ -179,9 +186,9 @@ Always verify file SHA before updating.
 | --------- | -------- | ------ |
 | vex-agent kernel | Railway | ACTIVE |
 | qig-memory-api | Vercel | LIVE (prj_EZv0A2qvMvZtT5R2YW3UytkJjSje) |
-| coordizer-harvest | Modal A10G | LIVE (CUDA devel image, needs redeploy) |
-| vex-qlora-train | Modal A10G | Committed, needs `modal deploy` |
-| vex-inference | Modal A10G | qwen3.5:27b + fine-tune detection, needs `modal deploy` |
+| coordizer-harvest | Modal A10G | LIVE (redeployed 2026-03-18 with resonance field names) |
+| vex-qlora-train | Modal A10G | LIVE (redeployed 2026-03-18) |
+| vex-inference | Modal A10G | SKIPPED (8 endpoint limit on free tier) |
 
 ## MODAL ENDPOINTS (live)
 
