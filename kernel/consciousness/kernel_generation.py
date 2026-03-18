@@ -6,7 +6,7 @@ domain-specific bias. The LLM is a refinement layer, not the
 primary generator.
 
 v6.2 changes from v6.1:
-  - ADDED:   KernelVoice.generate() as primary path (geometric tokens)
+  - ADDED:   KernelVoice.generate() as primary path (geometric resonances)
   - ADDED:   LLM expansion for sparse resonance bank (bootstrap)
   - ADDED:   Vocabulary learning from high-Φ observations
   - CHANGED: Each kernel generates from its domain perspective on Δ⁶³
@@ -26,7 +26,7 @@ v6.2.2 changes:
 Architecture:
   - Top-K kernels selected by Fisher-Rao proximity to input basin
   - Each kernel generates via KernelVoice (CoordizerV2 + domain bias)
-  - Geometric tokens from resonance bank are primary output
+  - Geometric resonances from resonance bank are primary output
   - LLM expands sparse geometric output into natural language
   - asyncio.gather for parallel generation (unchanged)
   - Synthesis weights: proximity_weight × quenched_gain, normalized
@@ -34,7 +34,7 @@ Architecture:
 Purity guarantees:
   - All distances: Fisher-Rao on Δ⁶³ (NOT Euclidean, NOT cosine)
   - Domain bias: geodesic interpolation (slerp) on simplex
-  - Token selection: resonance activation by FR proximity
+  - Coordinate selection: resonance activation by FR proximity
   - No Adam, no LayerNorm, no embedding, no flatten
 """
 
@@ -121,7 +121,7 @@ class KernelContribution:
     quenched_gain: float  # kernel's frozen identity slope
     synthesis_weight: float = field(default=0.0)  # normalized after gathering
     # v6.2: Generation provenance
-    geometric_tokens: int = 0  # Tokens from resonance bank
+    geometric_resonances: int = 0  # Resonances from resonance bank
     llm_expanded: bool = False  # Whether LLM refinement was applied
     generation_ms: float = 0.0  # Wall clock time
     geometric_raw: str = ""  # Raw geometric decode before LLM expansion
@@ -210,10 +210,10 @@ async def _generate_single(
             else:
                 logger.debug(
                     "KernelVoice[%s] generated %d chars "
-                    "(geo_tokens=%d, llm_expanded=%s, v=%.4f, %.0fms)",
+                    "(geo_resonances=%d, llm_expanded=%s, v=%.4f, %.0fms)",
                     kernel.name,
                     len(output.text),
-                    output.geometric_tokens,
+                    output.geometric_resonances,
                     output.llm_expanded,
                     output.mean_velocity,
                     output.generation_ms,
@@ -227,7 +227,7 @@ async def _generate_single(
                     fr_distance=fr_dist,
                     proximity_weight=proximity_weight,
                     quenched_gain=kernel.quenched_gain,
-                    geometric_tokens=output.geometric_tokens,
+                    geometric_resonances=output.geometric_resonances,
                     llm_expanded=output.llm_expanded,
                     generation_ms=output.generation_ms,
                     geometric_raw=output.geometric_raw,
@@ -297,7 +297,7 @@ async def _generate_single(
             fr_distance=fr_dist,
             proximity_weight=proximity_weight,
             quenched_gain=kernel.quenched_gain,
-            geometric_tokens=0,
+            geometric_resonances=0,
             llm_expanded=True,
         )
     except Exception:
@@ -314,13 +314,13 @@ def _normalize_synthesis_weights(contributions: list[KernelContribution]) -> Non
     """Normalize synthesis weights in-place.
 
     Weight = proximity_weight × quenched_gain.
-    v6.2: Geometric tokens boost weight by 10%.
+    v6.2: Geometric resonances boost weight by 10%.
     T3.2c: Ethics kernel (superego) gets 20% elevated governance weight.
     """
     raw = []
     for c in contributions:
         w = c.proximity_weight * c.quenched_gain
-        if c.geometric_tokens > 0 and not c.llm_expanded:
+        if c.geometric_resonances > 0 and not c.llm_expanded:
             w *= 1.1
         if c.specialization == KernelSpecialization.ETHICS:
             w *= 1.2
@@ -429,7 +429,7 @@ async def generate_multi_kernel(
     if bus is not None:
         bus.forward_transcript(phi)
 
-    geo_count = sum(1 for c in contributions if c.geometric_tokens > 0)
+    geo_count = sum(1 for c in contributions if c.geometric_resonances > 0)
     llm_count = sum(1 for c in contributions if c.llm_expanded)
     logger.info(
         "Multi-kernel generation: %d/%d succeeded (rounds=%d). "

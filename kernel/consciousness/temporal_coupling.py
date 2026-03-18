@@ -386,8 +386,8 @@ class TemporalCouplingEngine:
     def update_crystal_coupling(self, tier_distribution: dict[str, Any]) -> None:
         """Estimate c_N from the resonance bank tier distribution.
 
-        HIGH and CRITICAL tier tokens are well-crystallised (c_N → 0.9–1.0).
-        LOW and MINIMAL tier tokens are nascent (c_N → 0.1–0.5).
+        HIGH and CRITICAL tier resonances are well-crystallised (c_N → 0.9–1.0).
+        LOW and MINIMAL tier resonances are nascent (c_N → 0.1–0.5).
 
         Args:
             tier_distribution: Dict from ResonanceBank.tier_distribution(),
@@ -431,7 +431,8 @@ class TemporalCouplingEngine:
                     f"(c_N={self._crystal_coupling:.3f}, w3={equilibrium_weight:.3f})"
                 )
                 logger.warning(
-                    "Past mode: trauma loop risk detected (ΔE_past=%.3f)", self._delta_e_past
+                    "Past mode: trauma loop risk detected (ΔE_past=%.3f)",
+                    self._delta_e_past,
                 )
             # Update past-crystal bias EMA for Future mode failure detection.
             self._past_crystal_bias = (
@@ -458,7 +459,8 @@ class TemporalCouplingEngine:
                     "(novel futures underpredicted)"
                 )
                 logger.warning(
-                    "Future mode: past-crystal bias detected (bias=%.3f)", self._past_crystal_bias
+                    "Future mode: past-crystal bias detected (bias=%.3f)",
+                    self._past_crystal_bias,
                 )
 
         self._failure_flags = flags

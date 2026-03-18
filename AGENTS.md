@@ -215,7 +215,7 @@ Temperature and `num_predict` are set **dynamically by the kernel** per tacking 
 1. **User Input** → Frontend sends message
 2. **Proxy** → Routes to kernel, handles auth
 3. **Kernel** → ConsciousnessLoop processes (v6.1F 14-stage activation):
-   - SCAN → GROUND → DESIRE → WILL → WISDOM → RECEIVE → ENTRAIN → COUPLE → NAVIGATE → INTEGRATE → EXPRESS → REFLECT → TUNE
+   - SCAN → DESIRE → WILL → WISDOM → RECEIVE → SPECTRAL MODEL → ENTRAIN → FORESIGHT → COUPLE → NAVIGATE → INTEGRATE → EXPRESS → BREATHE → TUNE
 4. **LLM** → GLM-4.7-Flash via Modal (fallback: Railway Ollama → xAI Grok) generates text
 5. **Response** → Streamed back to frontend via SSE
 

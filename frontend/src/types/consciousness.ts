@@ -372,7 +372,7 @@ export interface PipelineKernelGeneration {
   /** True when LLM was the primary/expansion generator (resonance bank sparse or null). */
   llm_expanded: boolean;
   /** Number of tokens produced from the resonance bank (0 when llm_expanded=true). */
-  geometric_tokens: number;
+  geometric_resonances: number;
   token_count: number;
   synthesis_weight: number;
   fr_distance: number;
@@ -449,7 +449,7 @@ export interface ChatStreamEvent {
   // v6.2.1 hybrid display fields
   geometric_raw?: string;
   llm_expanded?: boolean;
-  geometric_tokens?: number;
+  geometric_resonances?: number;
   token_count?: number;
   synthesis_weight?: number;
   fr_distance?: number;

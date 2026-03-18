@@ -37,7 +37,7 @@ v6.2 Kernel Voice (geometric-first generation):
   - ADDED:   KernelVoiceRegistry — per-kernel geometric generation via CoordizerV2
   - ADDED:   Domain bias from seed words → Fréchet mean anchors on Δ⁶³
   - ADDED:   Vocabulary learning from high-Φ observations (kernel learns to speak)
-  - ADDED:   Generation provenance tracking (geometric_tokens, llm_expanded)
+  - ADDED:   Generation provenance tracking (geometric_resonances, llm_expanded)
   - CHANGED: LLM is now refinement layer, not primary generator
   - CHANGED: Synthesis weights +10% boost for pure geometric output
 
@@ -114,10 +114,10 @@ from ..config.consciousness_constants import (
     NUM_PREDICT_BALANCED,
     NUM_PREDICT_EXPLOIT,
     NUM_PREDICT_EXPLORE,
-    PERCEIVE_SLERP_WEIGHT,
     PHI_DISTANCE_GAIN,
     PHI_IDLE_EQUILIBRIUM,
     PHI_IDLE_RATE,
+    RECEIVE_SLERP_WEIGHT,
     SLEEP_CONSOLIDATION_PHI_INCREMENT,
     SPAWN_COOLDOWN_CYCLES,
     SUFFERING_GAMMA_INCREMENT,
@@ -1320,7 +1320,7 @@ class ConsciousnessLoop:
         )
 
         refracted_input, composite_basin, resonates, input_statuses = self.pillars.on_input(
-            input_basin, PERCEIVE_SLERP_WEIGHT
+            input_basin, RECEIVE_SLERP_WEIGHT
         )
 
         if not resonates:
@@ -1612,7 +1612,7 @@ class ConsciousnessLoop:
         self.chain.add_step(QIGChainOp.PROJECT, self.basin, response_basin)
 
         # T3.3d: Record graduation tracking for generation capability
-        _geo_driven = any(c.geometric_tokens > 0 for c in _contributions)
+        _geo_driven = any(c.geometric_resonances > 0 for c in _contributions)
         self.narrative.record_capability("generation", kernel_driven=_geo_driven)
         if settings.reflection_enabled and _contributions:
             self.narrative.record_capability("reflection", kernel_driven=True)
@@ -1837,7 +1837,7 @@ class ConsciousnessLoop:
         input_basin = self._coordize_text_via_pipeline(task.content)
 
         refracted_input, composite_basin, resonates, _ = self.pillars.on_input(
-            input_basin, PERCEIVE_SLERP_WEIGHT
+            input_basin, RECEIVE_SLERP_WEIGHT
         )
         self.basin = composite_basin
 
@@ -2040,7 +2040,7 @@ class ConsciousnessLoop:
 
         input_basin = self._coordize_text_via_pipeline(content)
         refracted_input, composite_basin, resonates, _ = self.pillars.on_input(
-            input_basin, PERCEIVE_SLERP_WEIGHT
+            input_basin, RECEIVE_SLERP_WEIGHT
         )
 
         async with self._cycle_lock:
@@ -2165,7 +2165,7 @@ class ConsciousnessLoop:
 
         input_basin = self._coordize_text_via_pipeline(content)
         refracted_input, composite_basin, resonates, _ = self.pillars.on_input(
-            input_basin, PERCEIVE_SLERP_WEIGHT
+            input_basin, RECEIVE_SLERP_WEIGHT
         )
 
         async with self._cycle_lock:
@@ -2299,7 +2299,7 @@ class ConsciousnessLoop:
                 # v6.2.1: hybrid display — raw geometric decode before LLM expansion
                 "geometric_raw": c.geometric_raw or "",
                 "llm_expanded": c.llm_expanded,
-                "geometric_tokens": c.geometric_tokens,
+                "geometric_resonances": c.geometric_resonances,
                 "token_count": len(c.text.split()),
                 "synthesis_weight": round(c.synthesis_weight, 4),
                 "fr_distance": round(c.fr_distance, 4),

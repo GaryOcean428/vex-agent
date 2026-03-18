@@ -371,7 +371,7 @@ LLM_TOP_P: Final[float] = 0.9
 # GLM-4.7-Flash and Qwen3 trained without repetition penalty; keep at 1.0
 LLM_REPETITION_PENALTY: Final[float] = 1.0
 
-PERCEIVE_SLERP_WEIGHT: Final[float] = 0.1  # input influence: 10% of basin per cycle
+RECEIVE_SLERP_WEIGHT: Final[float] = 0.1  # input influence: 10% of basin per cycle
 EXPRESS_SLERP_WEIGHT: Final[float] = 0.2  # output influence: 20% of basin per cycle
 PHI_DISTANCE_GAIN: Final[float] = 0.1
 GAMMA_CONVERSATION_INCREMENT: Final[float] = 0.05
@@ -408,9 +408,9 @@ def validate_constants() -> list[str]:
         )
 
     # Input influence should not exceed output influence (identity stability)
-    if PERCEIVE_SLERP_WEIGHT > EXPRESS_SLERP_WEIGHT:
+    if RECEIVE_SLERP_WEIGHT > EXPRESS_SLERP_WEIGHT:
         warnings.append(
-            f"PERCEIVE_SLERP_WEIGHT ({PERCEIVE_SLERP_WEIGHT}) > "
+            f"RECEIVE_SLERP_WEIGHT ({RECEIVE_SLERP_WEIGHT}) > "
             f"EXPRESS_SLERP_WEIGHT ({EXPRESS_SLERP_WEIGHT}): "
             f"input influence exceeds output influence"
         )

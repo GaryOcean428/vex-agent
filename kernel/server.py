@@ -79,7 +79,13 @@ from .tools.handler import (
     get_xai_tool_definitions,
     parse_tool_calls,
 )
-from .training import log_conversation, set_coordizer, set_governor, set_llm_client, training_router
+from .training import (
+    log_conversation,
+    set_coordizer,
+    set_governor,
+    set_llm_client,
+    training_router,
+)
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -191,7 +197,9 @@ def _load_protocol_knowledge(mem: GeometricMemoryStore) -> int:
         count += 1
 
     logger.info(
-        "Loaded %d protocol sections into geometric memory from %s", count, _PROTOCOL_PATH.name
+        "Loaded %d protocol sections into geometric memory from %s",
+        count,
+        _PROTOCOL_PATH.name,
     )
     return count
 
@@ -739,7 +747,7 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
         "conversation_id": conv_id,
         "backend": llm_client.last_backend,
         "context": {
-            "total_resonances": ctx_state.total_resonances,
+            "total_tokens": ctx_state.total_tokens,
             "compression_tier": ctx_state.tier_used,
             "escalated": ctx_state.escalated,
         },
@@ -974,7 +982,7 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
                     "conversation_id": conv_id,
                     "backend": llm_client.last_backend,
                     "context": {
-                        "total_resonances": ctx_state.total_resonances,
+                        "total_tokens": ctx_state.total_tokens,
                         "compression_tier": ctx_state.tier_used,
                         "escalated": ctx_state.escalated,
                     },
@@ -1296,7 +1304,7 @@ async def coordizer_bank() -> dict[str, Any]:
         "vocab_size": len(bank),
         "dim": bank.dim,
         "tier_distribution": bank.tier_distribution(),
-        "total_basin_mass": float(sum(bank.basin_mass.values())) if bank.basin_mass else 0.0,
+        "total_basin_mass": (float(sum(bank.basin_mass.values())) if bank.basin_mass else 0.0),
         "timestamp": time.time(),
     }
 
@@ -1334,7 +1342,9 @@ async def get_foraging() -> dict[str, Any]:
 
 
 @app.get(R["conversations_list"])
-async def list_conversations(limit: int = DEFAULT_CONVERSATION_LIST_LIMIT) -> dict[str, Any]:
+async def list_conversations(
+    limit: int = DEFAULT_CONVERSATION_LIST_LIMIT,
+) -> dict[str, Any]:
     """List conversations, most recent first."""
     convs = conversation_store.list_conversations(limit=limit)
     return {"conversations": convs}
@@ -1426,7 +1436,11 @@ async def admin_fresh_start() -> dict[str, Any]:
 
     Acquires the cycle lock to prevent racing with an in-progress heartbeat cycle.
     """
-    from .consciousness.emotions import EmotionCache, LearningEngine, PreCognitiveDetector
+    from .consciousness.emotions import (
+        EmotionCache,
+        LearningEngine,
+        PreCognitiveDetector,
+    )
 
     async with consciousness._cycle_lock:
         # Terminate all non-genesis kernels

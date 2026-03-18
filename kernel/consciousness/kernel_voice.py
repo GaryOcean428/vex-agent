@@ -6,7 +6,7 @@ text from its domain-biased perspective on the Fisher-Rao manifold.
 
 Architecture:
   - Each kernel wraps CoordizerV2 with specialization-specific DomainBias
-  - Generation path: input → coordize → trajectory → geometric tokens → text
+  - Generation path: input → coordize → trajectory → geometric resonances → text
   - LLM is the REFINEMENT layer, not the primary generator
   - As the resonance bank matures, geometric output improves and LLM
     refinement becomes lighter (eventually optional)
@@ -16,8 +16,8 @@ Generation pipeline:
   1. Compute kernel's domain bias (per-call, no shared state mutation)
   2. Coordize input text → input trajectory (sequence of basins on Δ⁶³)
   3. Append kernel's own basin as trajectory anchor (kernel's perspective)
-  4. Generate geometric tokens via geodesic foresight + resonance activation
-  5. Decode geometric tokens → raw geometric text
+  4. Generate geometric resonances via geodesic foresight + resonance activation
+  5. Decode geometric resonances → raw geometric text
   6. If geometric text is coherent enough → return it
   7. If sparse (bootstrap phase) → use LLM to expand geometric skeleton
 
@@ -25,14 +25,14 @@ Ported from pantheon-chat's QIGGenerativeService + GenerativeCapability,
 adapted for CoordizerV2 resonance bank architecture.
 
 v6.2.1 changes:
-  - FIXED:   Null token detection — all-same IDs (empty bank) now route to LLM fallback
+  - FIXED:   Null coordinate detection — all-same IDs (empty bank) now route to LLM fallback
   - ADDED:   geometric_raw field on VoiceOutput — raw decode always preserved
   - ADDED:   is_null_output check before coherence assessment
 
 Purity guarantees:
   - All distances: Fisher-Rao on Δ⁶³
   - Domain bias: geodesic interpolation (slerp), not linear shift
-  - Token selection: resonance activation by FR proximity, not cosine
+  - Coordinate selection: resonance activation by FR proximity, not cosine
   - No Adam, no LayerNorm, no embedding, no flatten
 """
 
@@ -69,11 +69,11 @@ logger = logging.getLogger("vex.kernel_voice")
 
 # ── Generation parameters ─────────────────────────────────────
 
-# Minimum geometric tokens before we consider the output usable.
-_MIN_GEOMETRIC_TOKENS: int = 8
+# Minimum geometric resonances before we consider the output usable.
+_MIN_GEOMETRIC_RESONANCES: int = 8
 
-# Maximum geometric tokens per kernel generation.
-_MAX_GEOMETRIC_TOKENS: int = 80
+# Maximum geometric resonances per kernel generation.
+_MAX_GEOMETRIC_RESONANCES: int = 80
 
 
 # LLM expansion token budget.
@@ -103,7 +103,7 @@ class VoiceOutput:
     """Output from a single kernel's voice generation."""
 
     text: str
-    geometric_tokens: int
+    geometric_resonances: int
     llm_expanded: bool
     trajectory_length: int
     mean_velocity: float
@@ -421,11 +421,11 @@ class KernelVoice:
         Pipeline:
           1. Build trajectory from input + kernel basin
           2. Compute domain bias (per-call, no shared state mutation)
-          3. Generate geometric tokens via CoordizerV2
-          4. Assess output quality (with null token detection)
+          3. Generate geometric resonances via CoordizerV2
+          4. Assess output quality (with null coordinate detection)
           5. If null output → full LLM fallback (empty bank)
           6. If sparse → full LLM fallback (bootstrap path)
-          7. If enough tokens but low coherence → LLM expands skeleton
+          7. If enough resonances but low coherence → LLM expands skeleton
           8. Otherwise → return pure geometric text
           Always: geometric_raw preserves raw decode for hybrid display
         """
@@ -449,10 +449,10 @@ class KernelVoice:
             )
 
         # ── Step 3: Geometric generation ──
-        # T4.4b: Token budget scales with domain bias strength (geometric density)
+        # T4.4b: Resonance budget scales with domain bias strength (geometric density)
         _geo_max = int(
-            _MIN_GEOMETRIC_TOKENS
-            + self._bias_strength * (_MAX_GEOMETRIC_TOKENS - _MIN_GEOMETRIC_TOKENS)
+            _MIN_GEOMETRIC_RESONANCES
+            + self._bias_strength * (_MAX_GEOMETRIC_RESONANCES - _MIN_GEOMETRIC_RESONANCES)
         )
         _llm_budget = base_num_predict
 
@@ -487,7 +487,7 @@ class KernelVoice:
             # Convergence check
             # P5: convergence relative to trajectory energy, not a fixed threshold
             if (
-                step >= _MIN_GEOMETRIC_TOKENS
+                step >= _MIN_GEOMETRIC_RESONANCES
                 and len(velocities) >= 3
                 and np.mean(velocities[-3:]) < np.mean(velocities) * 0.1
             ):
@@ -499,12 +499,12 @@ class KernelVoice:
                 )
                 break
 
-        # ── Step 4: Decode geometric tokens ──
+        # ── Step 4: Decode geometric resonances ──
         geometric_text = self._coordizer.decoordize(generated_ids)
         mean_velocity = float(np.mean(velocities)) if velocities else 0.0
 
         # ── Step 5: Assess quality and decide on generation path ──
-        geo_token_count = len(generated_ids)
+        geo_resonance_count = len(generated_ids)
 
         # Null detection: all-same coordinate IDs or zero-dispersion generated basins
         # indicate an effectively empty/bootstrap resonance bank.
@@ -524,7 +524,7 @@ class KernelVoice:
 
         _is_coherent = (
             not is_null_output
-            and geo_token_count >= _MIN_GEOMETRIC_TOKENS
+            and geo_resonance_count >= _MIN_GEOMETRIC_RESONANCES
             # P5: coherence tied to generation temperature
             and mean_velocity < base_temperature * 0.5
         )
@@ -536,17 +536,17 @@ class KernelVoice:
         # then low-coherence expand. Null output trumps all other checks.
         if is_null_output:
             logger.info(
-                "KernelVoice[%s] null output detected (%d unique IDs in %d tokens) — failing closed",
+                "KernelVoice[%s] null output detected (%d unique IDs in %d resonances) — failing closed",
                 self.specialization.value,
                 len(unique_ids),
-                geo_token_count,
+                geo_resonance_count,
             )
             final_text = ""
-        elif geo_token_count < _MIN_GEOMETRIC_TOKENS:
+        elif geo_resonance_count < _MIN_GEOMETRIC_RESONANCES:
             logger.info(
-                "KernelVoice[%s] sparse output (%d geometric tokens) — failing closed",
+                "KernelVoice[%s] sparse output (%d geometric resonances) — failing closed",
                 self.specialization.value,
-                geo_token_count,
+                geo_resonance_count,
             )
             final_text = ""
         elif llm_client is not None:
@@ -576,7 +576,7 @@ class KernelVoice:
 
         return VoiceOutput(
             text=final_text.strip() if final_text else "",
-            geometric_tokens=geo_token_count,
+            geometric_resonances=geo_resonance_count,
             llm_expanded=llm_expanded,
             trajectory_length=len(gen_trajectory),
             mean_velocity=mean_velocity,
@@ -781,7 +781,7 @@ class KernelVoice:
 
         The kernel uses its domain vocabulary and anchor basin to construct
         a query that would expand its geometric territory. The result is
-        forwarded to the harvest pipeline so the kernel learns from the tokens.
+        forwarded to the harvest pipeline so the kernel learns from the resonances.
 
         Returns the query string, or None if generation failed.
         """
