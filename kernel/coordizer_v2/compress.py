@@ -158,7 +158,9 @@ def compress(
     n_resonances = len(coord_ids)
     source_dim = harvest.vocab_size
 
-    logger.info(f"Compressing {n_resonances} resonances from Δ^{source_dim - 1} → Δ^{target_dim - 1}")
+    logger.info(
+        f"Compressing {n_resonances} resonances from Δ^{source_dim - 1} → Δ^{target_dim - 1}"
+    )
 
     if n_resonances == 0:
         logger.warning("No resonances to compress")

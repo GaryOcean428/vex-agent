@@ -124,7 +124,9 @@ class ResonanceBank:
         for i, tid in enumerate(ids):
             bank.coordinates[int(tid)] = to_simplex(coords[i])
         # Backward compat: old banks used "token_strings" key
-        bank.basin_strings = {int(k): v for k, v in meta.get("basin_strings", meta.get("token_strings", {})).items()}
+        bank.basin_strings = {
+            int(k): v for k, v in meta.get("basin_strings", meta.get("token_strings", {})).items()
+        }
         bank.tiers = {int(k): HarmonicTier(v) for k, v in meta.get("tiers", {}).items()}
         bank.frequencies = {int(k): float(v) for k, v in meta.get("frequencies", {}).items()}
         bank.basin_mass = {int(k): float(v) for k, v in meta.get("basin_mass", {}).items()}

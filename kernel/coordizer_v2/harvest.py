@@ -119,7 +119,9 @@ class HarvestResult:
             result.resonance_fingerprints[int(tid)] = fingerprint_array[i]
 
         result.context_counts = {int(k): v for k, v in meta["context_counts"].items()}
-        result.basin_strings = {int(k): v for k, v in meta.get("basin_strings", meta.get("token_strings", {})).items()}
+        result.basin_strings = {
+            int(k): v for k, v in meta.get("basin_strings", meta.get("token_strings", {})).items()
+        }
 
         return result
 

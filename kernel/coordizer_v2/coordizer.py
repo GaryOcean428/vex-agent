@@ -327,7 +327,7 @@ class CoordizerV2:
         self, text: str, domain_bias: DomainBias | None = None
     ) -> CoordizationResult:
         """Coordize using the LLM's own tokenizer."""
-        token_ids = self._tokenizer.encode(text, add_special_tokens=False)
+        coord_ids = self._tokenizer.encode(text, add_special_tokens=False)
         coordinates = []
         valid_ids = []
 
@@ -675,9 +675,7 @@ class CoordizerV2:
 
         # Sort by weight descending, cap at max_bias_entries
         if len(coord_weights) > max_bias_entries:
-            sorted_items = sorted(
-                coord_weights.items(), key=lambda x: x[1], reverse=True
-            )
+            sorted_items = sorted(coord_weights.items(), key=lambda x: x[1], reverse=True)
             coord_weights = dict(sorted_items[:max_bias_entries])
 
         return coord_weights

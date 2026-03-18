@@ -622,7 +622,10 @@ class KernelVoice:
         if trajectory:
             keywords = self._coordizer.trajectory_to_keywords(trajectory)
             logit_bias = self._coordizer.trajectory_to_logit_bias(
-                trajectory, top_k_chunks=8, max_bias_entries=100, alpha=2.0,
+                trajectory,
+                top_k_chunks=8,
+                max_bias_entries=100,
+                alpha=2.0,
             )
             # Empty bias = no tokenizer available, fall back to prompt-only
             if not logit_bias:
