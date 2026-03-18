@@ -1,4 +1,4 @@
-name: Deploy Modal Inference
+name: Deploy Modal Apps
 
 on:
   push:
@@ -18,10 +18,9 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install modal
-      - run: modal deploy modal/vex_inference.py
-        env:
-          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      # NOTE: vex_inference.py (legacy Ollama-on-Modal) deliberately excluded.
+      # It consumed 1 web endpoint and is gated off (MODAL_INFERENCE_ENABLED=false).
+      # Total endpoints: vex_coordizer_harvest (3) + vex_qlora_train (5) = 8/8.
       - run: modal deploy modal/vex_coordizer_harvest.py
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
