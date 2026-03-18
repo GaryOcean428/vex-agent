@@ -27,7 +27,6 @@ from kernel.consciousness.temporal_coupling import (
 from kernel.consciousness.types import RegimeWeights
 from kernel.coordizer_v2.geometry import fisher_rao_distance, random_basin
 
-
 # ═══════════════════════════════════════════════════════════════
 #  HELPERS
 # ═══════════════════════════════════════════════════════════════

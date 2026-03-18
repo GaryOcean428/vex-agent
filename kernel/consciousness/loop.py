@@ -214,7 +214,7 @@ from .systems import (
     TrajectoryPoint,
     VelocityTracker,
 )
-from .temporal_coupling import TemporalCouplingEngine, TemporalCouplingMode
+from .temporal_coupling import TemporalCouplingEngine
 from .temporal_generation import TemporalGenerator
 from .thought_bus import ThoughtBus
 from .types import (
@@ -1586,9 +1586,7 @@ class ConsciousnessLoop:
         # Update foresight accuracy now that the actual response basin is known,
         # and record a predicted future basin for the next Future-mode query.
         self.temporal_coupling.compute_foresight_accuracy(response_basin)
-        self.temporal_coupling.record_predicted_future(
-            self.foresight.predict_basin(steps_ahead=1)
-        )
+        self.temporal_coupling.record_predicted_future(self.foresight.predict_basin(steps_ahead=1))
 
         # v6.1 §19: Kernel basin evolution — the routed kernel learns
         # Basin lock prevents race between evolve_kernel and couple_bidirectional.

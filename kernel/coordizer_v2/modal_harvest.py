@@ -43,7 +43,7 @@ class ModalHarvestConfig:
 
     model_id must match the active inference model so resonance bank
     fingerprints use the same vocabulary as the model doing inference.
-    Primary: GLM-4.7-Flash (Modal GPU). Ollama fallback: LFM2.5-1.2B-Thinking.
+    Primary: GLM-4.7-Flash (Modal GPU). Ollama fallback: Qwen/Qwen3.5-4B.
     """
 
     model_id: str = ""
@@ -51,7 +51,7 @@ class ModalHarvestConfig:
     batch_size: int = 32
     max_length: int = 512
     min_contexts: int = 10
-    timeout: float = 600.0
+    timeout: float = 1200.0
 
 
 async def modal_harvest(
@@ -102,7 +102,7 @@ async def modal_harvest(
     # Build request.
     # NOTE: model_id is omitted so Modal uses its default loaded model.
     # MODAL_HARVEST_MODEL env var uses Ollama format ("glm-4.7-flash") but
-    # Modal needs HF format ("zai-org/GLM-4.7-Flash"). The Modal endpoint
+    # Modal needs HF format ("Qwen/Qwen3.5-35B-A3B"). The Modal endpoint
     # already loads the correct model via HARVEST_MODEL_ID env secret.
     payload: dict[str, Any] = {
         "texts": corpus_texts[:200],  # Cap per-request
@@ -112,6 +112,10 @@ async def modal_harvest(
         "min_contexts": config.min_contexts,
         "return_full_distribution": True,  # CRITICAL: not top-k
     }
+
+    # Auth: Modal endpoint checks data.get("_api_key"), not headers
+    if settings.kernel_api_key:
+        payload["_api_key"] = settings.kernel_api_key
 
     # Auth via X-Api-Key header (KERNEL_API_KEY), checked by the Modal handler.
     headers: dict[str, str] = {
@@ -215,8 +219,16 @@ def _parse_modal_response(
     )
 
     tokens = data.get("tokens", {})
-    for tid_str, token_data in tokens.items():
-        tid = int(tid_str)
+    for key, token_data in tokens.items():
+        # Modal harvest keys by token string, with token_id inside the entry
+        tid = token_data.get("token_id")
+        if tid is None:
+            # Fallback: key itself is a numeric ID (legacy format)
+            try:
+                tid = int(key)
+            except (ValueError, TypeError):
+                logger.warning("Skipping token with no ID: key=%s", key)
+                continue
 
         fp = np.array(token_data["fingerprint"], dtype=np.float64)
         # Ensure valid probability distribution
@@ -224,8 +236,8 @@ def _parse_modal_response(
         fp = fp / fp.sum()
 
         result.token_fingerprints[tid] = fp
-        result.context_counts[tid] = token_data.get("context_count", 1)
-        result.token_strings[tid] = token_data.get("string", f"<token_{tid}>")
+        result.context_counts[tid] = token_data.get("context_count", token_data.get("count", 1))
+        result.token_strings[tid] = token_data.get("string", key)
 
     return result
 

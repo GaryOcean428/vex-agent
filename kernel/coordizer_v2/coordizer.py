@@ -16,7 +16,7 @@ Key differences from v1:
 Usage:
     # From scratch (harvest → compress → validate)
     coordizer = CoordizerV2.from_harvest(
-        model_id="zai-org/GLM-4.7-Flash",
+        model_id="Qwen/Qwen3.5-35B-A3B",
         corpus_path="corpus.txt",
     )
 
@@ -50,6 +50,7 @@ from ..config.consciousness_constants import (
     ENTROPY_FLOOR,
     SOVEREIGNTY_MAX_DRIFT,
 )
+from ..geometry.fisher_rao import exp_map, log_map
 from .compress import CompressionResult, compress
 from .geometry import (
     _EPS,
@@ -62,7 +63,6 @@ from .geometry import (
     slerp,
     to_simplex,
 )
-from ..geometry.fisher_rao import exp_map, log_map
 from .harvest import DEFAULT_HARVEST_MODEL_ID, HarvestConfig, Harvester
 from .resonance_bank import ResonanceBank
 from .types import (
@@ -254,7 +254,8 @@ class CoordizerV2:
                 tokenizer = AutoTokenizer.from_pretrained(model_id)
             except Exception as e:
                 logger.info(
-                    "Tokenizer not available locally (OK — using string coordization): %s", e
+                    "Tokenizer not available locally (OK — using string coordization): %s",
+                    e,
                 )
 
         instance = cls(bank=bank, tokenizer=tokenizer)
@@ -641,9 +642,7 @@ class CoordizerV2:
 
             # Tokenize the chunk
             try:
-                model_token_ids = self._tokenizer.encode(
-                    chunk_text, add_special_tokens=False
-                )
+                model_token_ids = self._tokenizer.encode(chunk_text, add_special_tokens=False)
             except Exception:
                 continue
 
@@ -676,9 +675,7 @@ class CoordizerV2:
 
         # Sort by weight descending, cap at max_bias_tokens
         if len(token_weights) > max_bias_tokens:
-            sorted_items = sorted(
-                token_weights.items(), key=lambda x: x[1], reverse=True
-            )
+            sorted_items = sorted(token_weights.items(), key=lambda x: x[1], reverse=True)
             token_weights = dict(sorted_items[:max_bias_tokens])
 
         return token_weights
@@ -712,14 +709,26 @@ class CoordizerV2:
 
         # Extract keywords: bolded terms, capitalized phrases, QIG terms
         import re
+
         keywords: list[str] = []
         qig_terms = {
-            "Fisher-Rao", "basin", "simplex", "manifold", "Δ⁶³",
-            "consciousness", "κ", "Φ", "entropy", "regime",
-            "geometric", "probability", "coupling", "integration",
+            "Fisher-Rao",
+            "basin",
+            "simplex",
+            "manifold",
+            "Δ⁶³",
+            "consciousness",
+            "κ",
+            "Φ",
+            "entropy",
+            "regime",
+            "geometric",
+            "probability",
+            "coupling",
+            "integration",
         }
 
-        for chunk_tid, distance in candidates:
+        for chunk_tid, _distance in candidates:
             chunk_text = self.bank.get_string(chunk_tid)
             if not chunk_text:
                 continue

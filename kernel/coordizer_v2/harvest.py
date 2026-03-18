@@ -40,7 +40,7 @@ from .geometry import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_HARVEST_MODEL_ID: str = "zai-org/GLM-4.7-Flash"
+DEFAULT_HARVEST_MODEL_ID: str = "Qwen/Qwen3.5-35B-A3B"
 
 
 @dataclass

@@ -38,7 +38,7 @@ from typing import Any
 import numpy as np
 
 from ..config.consciousness_constants import MIN_REGIME_WEIGHT
-from ..coordizer_v2.geometry import Basin, fisher_rao_distance, slerp, to_simplex
+from ..coordizer_v2.geometry import Basin, fisher_rao_distance, to_simplex
 from .types import RegimeWeights
 
 logger = logging.getLogger("vex.consciousness.temporal_coupling")
@@ -153,7 +153,9 @@ class TemporalCouplingState:
     crystal_coupling: float = 0.0  # c_N value (0.0–1.0)
     past_crystal_bias: float = 0.0
     failure_flags: list[str] = field(default_factory=list)
-    mode_counts: dict[str, int] = field(default_factory=lambda: {m: 0 for m in TemporalCouplingMode})
+    mode_counts: dict[str, int] = field(
+        default_factory=lambda: {m: 0 for m in TemporalCouplingMode}
+    )
 
 
 class TemporalCouplingEngine:

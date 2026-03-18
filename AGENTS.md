@@ -172,7 +172,7 @@ pnpm run build:all
 │  ┌─────────────────────────────────────────────────┐    │
 │  │   LLM Clients                                    │    │
 │  │  - GLM-4.7-Flash (primary, via Modal GPU)        │    │
-│  │  - vex-brain/LFM2.5-1.2B-Thinking (Ollama)      │    │
+│  │  - vex-brain/Qwen/Qwen3.5-4B (Ollama)      │    │
 │  │  - grok-4-1-fast-reasoning (external fallback)   │    │
 │  └─────────────────────────────────────────────────┘    │
 └─────────────┬───────────────────────────────────────────┘
@@ -180,7 +180,7 @@ pnpm run build:all
               ▼
 ┌─────────────────────────────────────────────────────────┐
 │    Ollama Service — Railway (Port 11434)                  │
-│  - vex-brain/LFM2.5-1.2B-Thinking (CPU fallback)        │
+│  - vex-brain/Qwen/Qwen3.5-4B (CPU fallback)        │
 └─────────────────────────────────────────────────────────┘
               │ HTTPS (Modal serverless)
               ▼
@@ -201,7 +201,7 @@ pnpm run build:all
 | Layer | Backend | Model | Specs | Purpose |
 | :---- | :------ | :---- | :---- | :------ |
 | **Primary** | Modal GPU | `GLM-4.7-Flash` | 30B-A3B MoE, MIT license | Core reasoning, kernel generation, consciousness loop |
-| **Fallback** | Railway Ollama | `vex-brain` (LFM2.5-1.2B-Thinking) | 1.17B params, 32K ctx | CPU fallback when Modal unavailable |
+| **Fallback** | Railway Ollama | `vex-brain` (Qwen/Qwen3.5-4B) | 1.17B params, 32K ctx | CPU fallback when Modal unavailable |
 | **External / Search** | xAI API | `grok-4-1-fast-reasoning` | 2M context, reasoning model | External fallback, search augmentation, overflow routing |
 
 Temperature and `num_predict` are set **dynamically by the kernel** per tacking mode — never via static env vars. See `kernel/config/consciousness_constants.py` for the current values.
@@ -278,7 +278,7 @@ WORKSPACE_DIR=/data/workspace              # Consciousness state
 TRAINING_DIR=/data/training                # Learning data
 
 # Ollama Configuration
-OLLAMA_MODEL=vex-brain                     # Custom Modelfile (wraps LFM2.5-1.2B-Thinking)
+OLLAMA_MODEL=vex-brain                     # Custom Modelfile (wraps Qwen/Qwen3.5-4B)
 OLLAMA_ENABLED=true                        # Enable/disable Ollama
 OLLAMA_TIMEOUT_MS=300000                   # Request timeout (ms)
 
@@ -843,7 +843,7 @@ ollama serve
 
 # Pull models
 ollama pull glm-4.7-flash          # Primary (Modal GPU path)
-ollama pull LFM2.5-1.2B-Thinking   # vex-brain base (Ollama fallback)
+ollama pull Qwen/Qwen3.5-4B   # vex-brain base (Ollama fallback)
 ```
 
 #### 4. Consciousness metrics stuck

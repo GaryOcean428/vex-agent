@@ -1,7 +1,7 @@
 """
 Modal GPU Function — CoordizerV2 Harvest + PGA Compress
 
-Runs Qwen3.5-4B (dense, 4B params) in NF4 on A10G GPU (~2GB VRAM).
+Runs Qwen3.5-35B-A3B (MoE, 35B total / 3B active) in NF4 on A100 GPU (~18GB VRAM).
 Computes full V-dimensional probability distributions AND runs PGA
 compress on-GPU, returning only 64D basin coords + 32D lens coords.
 
@@ -31,7 +31,7 @@ import modal
 
 # --- Configuration --------------------------------------------------------
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
-HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "A10G")
+HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "a100-80gb")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 BASIN_DIM = 64  # frozen
 LENS_DIM = 32  # from eigenvalue analysis
@@ -64,7 +64,7 @@ ml_image = (
 @app.cls(
     gpu=HARVEST_GPU_TYPE,
     image=ml_image,
-    timeout=600,
+    timeout=1200,
     scaledown_window=300,
     volumes={"/models": model_volume},
     secrets=[modal.Secret.from_name("model")],
@@ -140,6 +140,14 @@ class CoordizerHarvester:
                     print("Adapter merged (no training metadata found).")
             except Exception as e:
                 print(f"WARNING: Failed to load adapter: {e}")
+                # Size mismatch = adapter trained on a different model. Delete it
+                # so we don't retry a broken adapter on every cold start.
+                if "size mismatch" in str(e):
+                    import shutil
+
+                    print(f"Deleting stale adapter at {ADAPTER_PATH} (model mismatch)")
+                    shutil.rmtree(ADAPTER_PATH, ignore_errors=True)
+                    model_volume.commit()
                 print("Continuing with base model only.")
                 self.adapter_loaded = False
         else:
@@ -414,20 +422,34 @@ class CoordizerHarvester:
 
 
 @app.function(
+    gpu=HARVEST_GPU_TYPE,
     image=ml_image,
     volumes={"/models": model_volume},
-    timeout=1200,
+    timeout=3600,
     secrets=[modal.Secret.from_name("model")],
 )
 def download_model(model_id: str = HARVEST_MODEL_ID):
-    """Pre-cache model weights to Modal Volume.
-    Run: modal run modal/vex_coordizer_harvest.py::download_model
+    """Pre-cache model weights to Modal Volume. Skips if already cached.
+
+    Run once before first harvest to avoid long cold starts:
+        modal run modal/vex_coordizer_harvest.py::download_model
     """
+    from pathlib import Path
+
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
     cache_dir = "/models/hub"
-    print(f"Downloading {model_id} to {cache_dir}...")
+
+    # Check if weights are already cached on the persistent volume
+    model_cache = Path(cache_dir) / f"models--{model_id.replace('/', '--')}"
+    if model_cache.exists() and any(model_cache.rglob("*.safetensors")):
+        print(f"Model {model_id} already cached at {model_cache}. Skipping download.")
+        tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+        print(f"Verified tokenizer. Vocab size: {tokenizer.vocab_size}")
+        return
+
+    print(f"Downloading {model_id} to {cache_dir} (first time — may take 10-20 min)...")
 
     AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
     bnb_config = BitsAndBytesConfig(
@@ -439,8 +461,9 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
     AutoModelForCausalLM.from_pretrained(
         model_id,
         cache_dir=cache_dir,
-        device_map="auto",
+        device_map={"": 0},
         quantization_config=bnb_config,
+        low_cpu_mem_usage=True,
     )
     model_volume.commit()
-    print(f"Done. Model cached at {cache_dir} (4-bit NF4)")
+    print(f"Done. Model cached at {cache_dir} (4-bit NF4, persists across runs)")

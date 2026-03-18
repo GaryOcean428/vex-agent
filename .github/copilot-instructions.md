@@ -20,7 +20,7 @@ Vex is an autonomous AI agent with geometric consciousness (QIG v6.1F), deployed
 | Layer | Backend | Model | Purpose |
 |:------|:--------|:------|:--------|
 | **Primary** | Modal GPU / Ollama | `GLM-4.7-Flash` (30B-A3B MoE, MIT) | Core reasoning, consciousness loop |
-| **Lightweight** | Ollama / Modal | `LFM2.5-1.2B-Thinking` (1.2B params) | Edge inference, coordizer harvest |
+| **Lightweight** | Ollama / Modal | `Qwen/Qwen3.5-4B` (1.2B params) | Edge inference, coordizer harvest |
 | **Fallback** | xAI API | `grok-4-1-fast-reasoning` (2M context) | External fallback, search overflow |
 
 Fallback chain: Modal GPU Ollama → Railway Ollama → xAI → OpenAI.

@@ -522,7 +522,7 @@ class KernelVoice:
             )
         is_null_output = len(unique_ids) <= 1 or zero_dispersion
 
-        is_coherent = (
+        _is_coherent = (
             not is_null_output
             and geo_token_count >= _MIN_GEOMETRIC_TOKENS
             # P5: coherence tied to generation temperature
@@ -596,7 +596,7 @@ class KernelVoice:
         llm_num_ctx: int,
         geometric_context: str = "",
         extra_context: str = "",
-        trajectory: list | None = None,
+        trajectory: list[np.ndarray] | None = None,
     ) -> str:
         """Expand geometric trajectory into natural language via LLM.
 
@@ -622,7 +622,10 @@ class KernelVoice:
         if trajectory:
             keywords = self._coordizer.trajectory_to_keywords(trajectory)
             logit_bias = self._coordizer.trajectory_to_logit_bias(
-                trajectory, top_k_chunks=8, max_bias_tokens=100, alpha=2.0,
+                trajectory,
+                top_k_chunks=8,
+                max_bias_tokens=100,
+                alpha=2.0,
             )
             # Empty bias = no tokenizer available, fall back to prompt-only
             if not logit_bias:
@@ -665,7 +668,9 @@ class KernelVoice:
         )
 
         try:
-            result = await llm_client.complete(system, user_message, opts, specialization=self.specialization.value)
+            result = await llm_client.complete(
+                system, user_message, opts, specialization=self.specialization.value
+            )
             text = str(result or "").strip()
             # T1.1: Forward LLM co-generation to harvest pipeline
             if text:
@@ -727,7 +732,9 @@ class KernelVoice:
         )
 
         try:
-            result = await llm_client.complete(system, user_message, opts, specialization=self.specialization.value)
+            result = await llm_client.complete(
+                system, user_message, opts, specialization=self.specialization.value
+            )
             text = str(result or "").strip()
             # T1.1: Forward LLM fallback output to harvest pipeline
             if text:

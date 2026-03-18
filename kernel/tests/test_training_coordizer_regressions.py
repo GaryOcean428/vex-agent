@@ -6,8 +6,6 @@ import os
 import sys
 from pathlib import Path
 
-import pytest
-
 from kernel.coordizer_v2.adapter import CoordizerV2Adapter
 
 

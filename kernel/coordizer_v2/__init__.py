@@ -14,7 +14,7 @@ Quick start:
 
     # Build from LLM harvest
     c = CoordizerV2.from_harvest(
-        model_id="zai-org/GLM-4.7-Flash",
+        model_id="Qwen/Qwen3.5-35B-A3B",
         corpus_path="corpus.txt",
     )
 
