@@ -30,6 +30,7 @@ export function buildPipelineTrace(
     synthesis: null,
     reflection: null,
     bypassed: false,
+    fallback_reason: "",
   };
 
   if (event.stage === "selection") {
@@ -39,6 +40,7 @@ export function buildPipelineTrace(
       trace.selection_duration_ms = event.duration_ms ?? 0;
       trace.eligible_count = event.eligible_count ?? 0;
       trace.bypassed = event.bypassed ?? false;
+      trace.fallback_reason = event.fallback_reason ?? "";
     }
   } else if (event.stage === "generation") {
     if (event.status === "kernel_done") {

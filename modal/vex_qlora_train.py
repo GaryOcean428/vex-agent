@@ -65,14 +65,14 @@ KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 KERNEL_CALLBACK_URL = os.environ.get("KERNEL_CALLBACK_URL", "")
 TRAIN_GPU = os.environ.get("TRAIN_GPU", "a100-80gb")
 BASIN_DIM = 64
-LORA_R = 32
-LORA_ALPHA = 64
+LORA_R = 16
+LORA_ALPHA = 32
 LORA_DROPOUT = 0.05
-MAX_SEQ_LENGTH = 1024
+MAX_SEQ_LENGTH = 512
 EPOCHS = 3
 LEARNING_RATE = 2e-4
-BATCH_SIZE = 4
-GRADIENT_ACCUMULATION = 4  # Effective batch = 16
+BATCH_SIZE = 1
+GRADIENT_ACCUMULATION = 16  # Effective batch = 16
 
 # --- Per-Kernel E8 Tag Mapping -------------------------------------------
 KERNEL_E8_TAGS: dict[str, list[str]] = {
@@ -894,7 +894,13 @@ def train_all_kernels(
     """Train all (or specified) kernel adapters sequentially.
     Run: modal run modal/vex_qlora_train.py::train_all_kernels
     """
+    import gc
+
     import torch
+
+    # Reduce CUDA fragmentation (recommended by PyTorch for large models)
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
     from datasets import Dataset
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
     from transformers import (
@@ -911,6 +917,15 @@ def train_all_kernels(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     results = {}
+
+    # Pre-compute max_memory to distribute evenly across available GPUs
+    n_gpus = torch.cuda.device_count()
+    if n_gpus > 1:
+        max_memory = {i: "72GiB" for i in range(n_gpus)}
+        print(f"Training with {n_gpus} GPUs, max_memory={max_memory}")
+    else:
+        max_memory = None
+        print(f"Training with {n_gpus} GPU(s)")
 
     for spec in target_kernels:
         print(
@@ -936,109 +951,135 @@ def train_all_kernels(
         dataset = Dataset.from_list(samples).map(format_chat)
         split = dataset.train_test_split(test_size=0.1, seed=42)
 
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16,
-        )
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            cache_dir=cache_dir,
-            quantization_config=bnb_config,
-            device_map="auto",
-            low_cpu_mem_usage=True,
-        )
-        model = prepare_model_for_kbit_training(
-            model,
-            use_gradient_checkpointing=True,
-            gradient_checkpointing_kwargs={"use_reentrant": False},
-        )
-        lora_config = LoraConfig(
-            r=lora_r,
-            lora_alpha=LORA_ALPHA,
-            target_modules=[
-                "q_proj",
-                "k_proj",
-                "v_proj",
-                "o_proj",
-                "gate_proj",
-                "up_proj",
-                "down_proj",
-            ],
-            lora_dropout=LORA_DROPOUT,
-            bias="none",
-            task_type="CAUSAL_LM",
-        )
-        model = get_peft_model(model, lora_config)
-        trainable, total = model.get_nb_trainable_parameters()
-        optimizer = _build_fisher_optimizer(model, lr=learning_rate)
-        total_steps = math.ceil(len(split["train"]) / (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
-
-        training_args = TrainingArguments(
-            output_dir=f"/training/checkpoints/{spec}",
-            num_train_epochs=epochs,
-            per_device_train_batch_size=BATCH_SIZE,
-            per_device_eval_batch_size=1,
-            gradient_accumulation_steps=GRADIENT_ACCUMULATION,
-            learning_rate=learning_rate,
-            warmup_steps=max(1, int(total_steps * 0.1)),
-            gradient_checkpointing=True,
-            gradient_checkpointing_kwargs={"use_reentrant": False},
-            lr_scheduler_type="cosine",
-            logging_steps=10,
-            eval_strategy="epoch",
-            save_strategy="epoch",
-            save_total_limit=2,
-            bf16=True,
-            max_grad_norm=0.3,
-            report_to="none",
-            seed=42,
-        )
-        trainer = SFTTrainer(
-            model=model,
-            train_dataset=split["train"],
-            eval_dataset=split["test"],
-            args=training_args,
-            optimizers=(optimizer, None),
-            processing_class=tokenizer,
-        )
-        result = trainer.train()
-
-        Path(adapter_save_path).mkdir(parents=True, exist_ok=True)
-        model.save_pretrained(adapter_save_path)
-        tokenizer.save_pretrained(adapter_save_path)
-        meta = {
-            "model_id": model_id,
-            "specialization": spec,
-            "e8_filter": KERNEL_E8_TAGS.get(spec, []),
-            "lora_r": lora_r,
-            "epochs": epochs,
-            "train_loss": result.training_loss,
-            "train_samples": len(split["train"]),
-            "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        }
-        with open(f"{adapter_save_path}/training_meta.json", "w") as f:
-            json.dump(meta, f, indent=2)
-
+        model = None
+        trainer = None
+        optimizer = None
         try:
-            del model, trainer
-            torch.cuda.empty_cache()
-            _merge_and_export(
-                model_id, adapter_save_path, f"/models/merged/{spec}", cache_dir, meta
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
             )
-        except Exception as e:
-            print(f"WARNING: Merge failed for {spec}: {e}")
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                cache_dir=cache_dir,
+                quantization_config=bnb_config,
+                device_map="auto",
+                max_memory=max_memory,
+                low_cpu_mem_usage=True,
+            )
+            model = prepare_model_for_kbit_training(
+                model,
+                use_gradient_checkpointing=True,
+                gradient_checkpointing_kwargs={"use_reentrant": False},
+            )
+            lora_config = LoraConfig(
+                r=lora_r,
+                lora_alpha=LORA_ALPHA,
+                target_modules=[
+                    "q_proj",
+                    "k_proj",
+                    "v_proj",
+                    "o_proj",
+                    "gate_proj",
+                    "up_proj",
+                    "down_proj",
+                ],
+                lora_dropout=LORA_DROPOUT,
+                bias="none",
+                task_type="CAUSAL_LM",
+            )
+            model = get_peft_model(model, lora_config)
+            trainable, total = model.get_nb_trainable_parameters()
+            print(f"[{spec}] Trainable: {trainable:,} / {total:,} ({trainable / total * 100:.2f}%)")
+            optimizer = _build_fisher_optimizer(model, lr=learning_rate)
+            total_steps = (
+                math.ceil(len(split["train"]) / (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
+            )
 
-        elapsed = round(time.time() - start, 2)
-        results[spec] = {
-            "success": True,
-            "train_loss": round(result.training_loss, 4),
-            "train_samples": len(split["train"]),
-            "elapsed_seconds": elapsed,
-        }
-        print(f"[{spec}] Done in {elapsed}s, loss: {result.training_loss:.4f}")
-        torch.cuda.empty_cache()
+            training_args = TrainingArguments(
+                output_dir=f"/training/checkpoints/{spec}",
+                num_train_epochs=epochs,
+                per_device_train_batch_size=BATCH_SIZE,
+                per_device_eval_batch_size=1,
+                gradient_accumulation_steps=GRADIENT_ACCUMULATION,
+                learning_rate=learning_rate,
+                warmup_steps=max(1, int(total_steps * 0.1)),
+                gradient_checkpointing=True,
+                gradient_checkpointing_kwargs={"use_reentrant": False},
+                lr_scheduler_type="cosine",
+                logging_steps=10,
+                eval_strategy="epoch",
+                save_strategy="epoch",
+                save_total_limit=2,
+                bf16=True,
+                max_grad_norm=0.3,
+                report_to="none",
+                seed=42,
+            )
+            trainer = SFTTrainer(
+                model=model,
+                train_dataset=split["train"],
+                eval_dataset=split["test"],
+                args=training_args,
+                optimizers=(optimizer, None),
+                processing_class=tokenizer,
+                max_seq_length=MAX_SEQ_LENGTH,
+            )
+            result = trainer.train()
+
+            Path(adapter_save_path).mkdir(parents=True, exist_ok=True)
+            model.save_pretrained(adapter_save_path)
+            tokenizer.save_pretrained(adapter_save_path)
+            meta = {
+                "model_id": model_id,
+                "specialization": spec,
+                "e8_filter": KERNEL_E8_TAGS.get(spec, []),
+                "lora_r": lora_r,
+                "epochs": epochs,
+                "train_loss": result.training_loss,
+                "train_samples": len(split["train"]),
+                "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            with open(f"{adapter_save_path}/training_meta.json", "w") as f:
+                json.dump(meta, f, indent=2)
+
+            elapsed = round(time.time() - start, 2)
+            results[spec] = {
+                "success": True,
+                "train_loss": round(result.training_loss, 4),
+                "train_samples": len(split["train"]),
+                "elapsed_seconds": elapsed,
+            }
+            print(f"[{spec}] Done in {elapsed}s, loss: {result.training_loss:.4f}")
+        except Exception as e:
+            elapsed = round(time.time() - start, 2)
+            results[spec] = {
+                "success": False,
+                "error": str(e),
+                "elapsed_seconds": elapsed,
+            }
+            print(f"[{spec}] FAILED after {elapsed}s: {e}")
+        finally:
+            # Aggressive GPU cleanup between iterations
+            del model, trainer, optimizer
+            gc.collect()
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+
+        # Merge after cleanup (loads model fresh to avoid VRAM pressure)
+        if results[spec].get("success"):
+            try:
+                _merge_and_export(
+                    model_id,
+                    adapter_save_path,
+                    f"/models/merged/{spec}",
+                    cache_dir,
+                    results[spec],
+                )
+            except Exception as e:
+                print(f"WARNING: Merge failed for {spec}: {e}")
 
     model_volume.commit()
     training_volume.commit()

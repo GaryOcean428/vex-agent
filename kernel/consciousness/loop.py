@@ -2239,12 +2239,23 @@ class ConsciousnessLoop:
                     "status": "complete",
                     "selected_count": 0,
                     "eligible_count": eligible_count,
-                    "bypassed": False,
-                    "reason": "kernel_gen_failed",
+                    "bypassed": True,
+                    "fallback_reason": "kernel_generation_failed",
                     "duration_ms": round((generation_end - selection_start) * 1000, 1),
                 }
             else:
                 logger.info("process_streaming_with_trace: 0 contributions — streaming direct LLM")
+                yield {
+                    "kind": "trace",
+                    "type": "pipeline",
+                    "stage": "selection",
+                    "status": "complete",
+                    "selected_count": 0,
+                    "eligible_count": 0,
+                    "bypassed": True,
+                    "fallback_reason": "no_eligible_kernels",
+                    "duration_ms": round((generation_end - selection_start) * 1000, 1),
+                }
             state_context = self._build_state_context(
                 perceive_distance=fisher_rao_distance(self.basin, input_basin),
                 temperature=llm_options.temperature,

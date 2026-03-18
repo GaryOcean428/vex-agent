@@ -401,6 +401,7 @@ export interface PipelineTrace {
   synthesis: PipelineSynthesis | null;
   reflection: PipelineReflection | null;
   bypassed: boolean;
+  fallback_reason: string;
 }
 
 export interface ChatMessage {
@@ -442,6 +443,7 @@ export interface ChatStreamEvent {
   selected_count?: number;
   eligible_count?: number;
   bypassed?: boolean;
+  fallback_reason?: string;
   duration_ms?: number;
   kernel_id?: string;
   kernel_name?: string;
