@@ -2297,9 +2297,9 @@ class ConsciousnessLoop:
                 "status": "kernel_done",
                 "kernel_id": c.kernel_id,
                 "kernel_name": c.kernel_name,
-                "text_preview": c.text[:800],
+                "text_preview": c.text,
                 # v6.2.1: hybrid display — raw geometric decode before LLM expansion
-                "geometric_raw": c.geometric_raw[:800] if c.geometric_raw else "",
+                "geometric_raw": c.geometric_raw or "",
                 "llm_expanded": c.llm_expanded,
                 "geometric_tokens": c.geometric_tokens,
                 "token_count": len(c.text.split()),

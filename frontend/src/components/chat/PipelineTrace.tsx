@@ -1,5 +1,6 @@
 import { useCallback, useId, useState } from "react";
 import type { PipelineTrace as PipelineTraceType } from "../../types/consciousness.ts";
+import { VexContent } from "./VexContent.tsx";
 
 interface PipelineTraceProps {
   trace: PipelineTraceType;
@@ -142,21 +143,21 @@ export function PipelineTrace({ trace, isStreaming }: PipelineTraceProps) {
                           <div className="pipeline-hybrid-panes">
                             <div className="pipeline-pane pipeline-pane--geo">
                               <span className="pipeline-pane-label">Coordinate sequence</span>
-                              <p className="pipeline-gen-preview pipeline-gen-preview--geo">
-                                {k.geometric_raw || <em className="pipeline-empty">empty bank</em>}
-                              </p>
+                              <div className="pipeline-gen-preview pipeline-gen-preview--geo">
+                                {k.geometric_raw ? <VexContent content={k.geometric_raw} /> : <em className="pipeline-empty">empty bank</em>}
+                              </div>
                             </div>
                             <div className="pipeline-pane pipeline-pane--llm">
                               <span className="pipeline-pane-label">LLM interpretation</span>
-                              <p className="pipeline-gen-preview">
-                                {k.text_preview}
-                              </p>
+                              <div className="pipeline-gen-preview">
+                                <VexContent content={k.text_preview} />
+                              </div>
                             </div>
                           </div>
                         ) : k.text_preview ? (
-                          <p className="pipeline-gen-preview">
-                            {k.text_preview}
-                          </p>
+                          <div className="pipeline-gen-preview">
+                            <VexContent content={k.text_preview} />
+                          </div>
                         ) : null}
                       </div>
                     )}
