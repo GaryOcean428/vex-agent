@@ -117,7 +117,7 @@ class ModalConfig:
     # Modal runs the base model (no custom Modelfile). The kernel
     # injects the system prompt per-request, so vex-brain overlay is
     # unnecessary. Defaults to Qwen3.5-32B (per-kernel QLoRA substrate on A100).
-    inference_model: str = os.environ.get("MODAL_INFERENCE_MODEL", "qwen3.5:32b")
+    inference_model: str = os.environ.get("MODAL_INFERENCE_MODEL", "qwen3.5:4b")
 
     # --- Harvest (CoordizerV2 fingerprinting) ---
     harvest_url: str = os.environ.get("MODAL_HARVEST_URL", "")
