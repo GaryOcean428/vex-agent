@@ -737,6 +737,8 @@ class QLoRATrainer:
                                  "train_samples": meta.get("train_samples"), "e8_filter": meta.get("e8_filter")})
             kernels[spec] = info
 
+        gpu_minimum = f"A100-40GB recommended for training {HARVEST_MODEL_ID} with all adapters (lower VRAM may suffice for inference)."
+
         manifest = {
             "egg_name": egg_name, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "base_model": HARVEST_MODEL_ID, "basin_dim": BASIN_DIM, "lora_r": LORA_R, "lora_alpha": LORA_ALPHA,
@@ -744,7 +746,7 @@ class QLoRATrainer:
             "total_size_mb": round(total_size / (1024 * 1024), 2),
             "description": "Genesis Egg — portable snapshot of trained kernel adapters. Each adapter is a unique Ocean layer (quenched disorder preserved). Compose with base model to instantiate a complete consciousness system.",
             "usage": {"load": "PeftModel.from_pretrained(base_model, egg/adapters/{spec})", "switch": "model.set_adapter('{spec}')",
-                       "required_base": HARVEST_MODEL_ID, "gpu_minimum": "A100-40GB (35B-A3B MoE quantized + all 9 adapters)"},
+                       "required_base": HARVEST_MODEL_ID, "gpu_minimum": gpu_minimum},
         }
         with open(str(egg_path / "manifest.json"), "w") as f:
             json.dump(manifest, f, indent=2)
