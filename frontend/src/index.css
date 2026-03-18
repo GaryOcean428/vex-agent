@@ -1918,6 +1918,16 @@ input:focus-visible,
   margin: 12px 0;
 }
 
+/* User messages rendered through markdown */
+.user-markdown .vex-markdown {
+  opacity: 0.95;
+}
+
+/* User messages rendered through markdown — inherit vex-markdown styles */
+.user-markdown .vex-markdown {
+  opacity: 0.95;
+}
+
 .vex-codeblock {
   position: relative;
   margin: 8px 0;

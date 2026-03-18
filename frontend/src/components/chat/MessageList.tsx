@@ -102,7 +102,7 @@ function MessageBubble({ msg, onRetry }: { msg: ChatMessage; onRetry?: (text: st
         ) : msg.role === "vex" ? (
           <VexContent content={msg.content} />
         ) : (
-          msg.content
+          <div className="user-markdown"><VexContent content={msg.content} /></div>
         )}
       </div>
 
