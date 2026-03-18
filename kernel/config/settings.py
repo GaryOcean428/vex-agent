@@ -116,7 +116,8 @@ class ModalConfig:
     inference_timeout_ms: int = int(os.environ.get("MODAL_INFERENCE_TIMEOUT_MS", "120000"))
     # Modal runs the base model (no custom Modelfile). The kernel
     # injects the system prompt per-request, so vex-brain overlay is
-    # unnecessary. Defaults to Qwen3.5-32B (per-kernel QLoRA substrate on A100).
+    # unnecessary. Defaults to Qwen3.5-4B via Ollama tag "qwen3.5:4b",
+    # aligned with the harvest HF model "Qwen/Qwen3.5-4B" on A10G.
     inference_model: str = os.environ.get("MODAL_INFERENCE_MODEL", "qwen3.5:4b")
 
     # --- Harvest (CoordizerV2 fingerprinting) ---
