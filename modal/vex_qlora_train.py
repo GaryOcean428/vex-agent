@@ -877,7 +877,7 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
 
 
 @app.function(
-    gpu=TRAIN_GPU,
+    gpu=f"{TRAIN_GPU}:2",
     image=train_image,
     timeout=14400,
     volumes={"/models": model_volume, "/training": training_volume},
@@ -946,7 +946,7 @@ def train_all_kernels(
             model_id,
             cache_dir=cache_dir,
             quantization_config=bnb_config,
-            device_map={"": 0},
+            device_map="auto",
             low_cpu_mem_usage=True,
         )
         model = prepare_model_for_kbit_training(
