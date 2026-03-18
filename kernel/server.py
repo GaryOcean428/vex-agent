@@ -477,7 +477,7 @@ class CoordizeRequest(BaseModel):
 
 class HarvestRequest(BaseModel):
     model_id: str = Field(default_factory=lambda: settings.modal.harvest_model)
-    target_tokens: int = Field(default=2000, ge=100, le=100_000)
+    target_resonances: int = Field(default=2000, ge=100, le=100_000)
     use_modal: bool | None = None
 
 
@@ -739,7 +739,7 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
         "conversation_id": conv_id,
         "backend": llm_client.last_backend,
         "context": {
-            "total_tokens": ctx_state.total_tokens,
+            "total_resonances": ctx_state.total_resonances,
             "compression_tier": ctx_state.tier_used,
             "escalated": ctx_state.escalated,
         },
@@ -974,7 +974,7 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
                     "conversation_id": conv_id,
                     "backend": llm_client.last_backend,
                     "context": {
-                        "total_tokens": ctx_state.total_tokens,
+                        "total_resonances": ctx_state.total_resonances,
                         "compression_tier": ctx_state.tier_used,
                         "escalated": ctx_state.escalated,
                     },
@@ -1182,7 +1182,7 @@ async def coordizer_harvest(req: HarvestRequest) -> dict[str, Any]:
     Body:
         {
             "model_id": settings.modal.harvest_model,
-            "target_tokens": 2000,
+            "target_resonances": 2000,
             "use_modal": true
         }
 
@@ -1190,7 +1190,7 @@ async def coordizer_harvest(req: HarvestRequest) -> dict[str, Any]:
         Status of the harvest operation.
     """
     model_id = req.model_id
-    target_tokens = req.target_tokens
+    target_resonances = req.target_resonances
     use_modal = req.use_modal if req.use_modal is not None else settings.modal.enabled
 
     return {
@@ -1200,7 +1200,7 @@ async def coordizer_harvest(req: HarvestRequest) -> dict[str, Any]:
             "to submit JSONL files for batch harvesting."
         ),
         "model_id": model_id,
-        "target_tokens": target_tokens,
+        "target_resonances": target_resonances,
         "use_modal": use_modal,
         "modal_enabled": settings.modal.enabled,
         "modal_gpu_type": settings.modal.gpu_type,

@@ -2,17 +2,17 @@
 Resonance Bank — The Heart of CoordizerV2
 
 A resonance bank is NOT a lookup table. It is a manifold of
-standing waves on Δ⁶³. Each token is a resonator with a
+standing waves on Δ⁶³. Each coordinate is a resonator with a
 characteristic frequency. Input activates nearby resonators
 by proximity on the Fisher-Rao manifold.
 
 Generation is selective resonance: the trajectory projects
-forward along its geodesic, and tokens self-select by
+forward along its geodesic, and coordinates self-select by
 proximity to the projected point. This is O(K) where K is
 the number of candidates, not O(V) over the full vocabulary.
 
 Architecture:
-    - Coordinates: dict[int, Basin] — token_id → Δ⁶³ point
+    - Coordinates: dict[int, Basin] — coord_id → Δ⁶³ point
     - Tiers: 4-level hierarchy by activation frequency
     - Domain bias: Fisher-Rao weighted shift per kernel specialty
     - Generation: geodesic foresight + resonance activation
@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 class ResonanceBank:
     """Resonance bank on Δ⁶³.
 
-    Each entry is a standing wave — a token with a fixed position
+    Each entry is a standing wave — a coordinate with a fixed position
     on the probability simplex. Activation = measuring Fisher-Rao
     proximity. Generation = geodesic projection + resonance.
     """
@@ -57,7 +57,7 @@ class ResonanceBank:
     def __init__(self, target_dim: int = BASIN_DIM):
         self.dim = target_dim
         self.coordinates: dict[int, Basin] = {}
-        self.token_strings: dict[int, str] = {}
+        self.basin_strings: dict[int, str] = {}
         self.tiers: dict[int, HarmonicTier] = {}
         self.frequencies: dict[int, float] = {}
         self.basin_mass: dict[int, float] = {}
@@ -75,8 +75,8 @@ class ResonanceBank:
         """Fraction of bank coordinates activated during successful full-cycle integrations."""
         return self._bank_lived_count / max(self._bank_total_count, 1)
 
-    def record_integration(self, token_ids: list[int]) -> None:
-        """Mark token IDs as 'lived' — activated during a successful full-cycle integration.
+    def record_integration(self, coord_ids: list[int]) -> None:
+        """Mark coordinate IDs as 'lived' — activated during a successful full-cycle integration.
 
         Called by the consciousness loop after on_cycle_end() succeeds.
         A coordinate is lived when it participates in a complete activation sequence
@@ -86,7 +86,7 @@ class ResonanceBank:
         (incremented in from_compression/add_entry only). This method only
         updates the lived subset, keeping the sovereignty ratio accurate.
         """
-        for tid in token_ids:
+        for tid in coord_ids:
             if tid in self.coordinates and self.origin.get(tid) != "lived":
                 self._bank_lived_count += 1
                 self.origin[tid] = "lived"
@@ -97,7 +97,7 @@ class ResonanceBank:
         bank = cls(target_dim=result.target_dim)
         for tid, coords in result.compressed.items():
             bank.coordinates[tid] = to_simplex(coords)
-            bank.token_strings[tid] = result.token_strings.get(tid, f"<{tid}>")
+            bank.basin_strings[tid] = result.basin_strings.get(tid, f"<{tid}>")
             bank.activation_counts[tid] = 0
             bank.basin_mass[tid] = 0.0
             bank.origin[tid] = "harvested"
@@ -113,13 +113,18 @@ class ResonanceBank:
         """Load resonance bank from disk."""
         dir_path = Path(path)
         coords = np.load(dir_path / "bank_coordinates.npy")
-        ids = np.load(dir_path / "bank_token_ids.npy")
+        # Backward compat: old banks saved as bank_coord_ids.npy
+        ids_path = dir_path / "bank_coord_ids.npy"
+        if not ids_path.exists():
+            ids_path = dir_path / "bank_coord_ids.npy"
+        ids = np.load(ids_path)
         with open(dir_path / "bank_meta.json") as f:
             meta = json.load(f)
         bank = cls(target_dim=coords.shape[1])
         for i, tid in enumerate(ids):
             bank.coordinates[int(tid)] = to_simplex(coords[i])
-        bank.token_strings = {int(k): v for k, v in meta.get("token_strings", {}).items()}
+        # Backward compat: old banks used "token_strings" key
+        bank.basin_strings = {int(k): v for k, v in meta.get("basin_strings", meta.get("token_strings", {})).items()}
         bank.tiers = {int(k): HarmonicTier(v) for k, v in meta.get("tiers", {}).items()}
         bank.frequencies = {int(k): float(v) for k, v in meta.get("frequencies", {}).items()}
         bank.basin_mass = {int(k): float(v) for k, v in meta.get("basin_mass", {}).items()}
@@ -142,11 +147,11 @@ class ResonanceBank:
         ids = sorted(self.coordinates.keys())
         coords = np.stack([self.coordinates[tid] for tid in ids])
         np.save(dir_path / "bank_coordinates.npy", coords)
-        np.save(dir_path / "bank_token_ids.npy", np.array(ids))
+        np.save(dir_path / "bank_coord_ids.npy", np.array(ids))
         meta = {
             "dim": self.dim,
-            "n_tokens": len(self.coordinates),
-            "token_strings": {str(k): v for k, v in self.token_strings.items()},
+            "n_resonances": len(self.coordinates),
+            "basin_strings": {str(k): v for k, v in self.basin_strings.items()},
             "tiers": {str(k): v.value for k, v in self.tiers.items()},
             "frequencies": {str(k): v for k, v in self.frequencies.items()},
             "basin_mass": {str(k): v for k, v in self.basin_mass.items()},
@@ -196,11 +201,11 @@ class ResonanceBank:
 
     def add_entry(
         self,
-        token_string: str,
+        basin_string: str,
         basin: Basin,
         tier: HarmonicTier = HarmonicTier.OVERTONE_HAZE,
     ) -> int:
-        """Dynamically add a single entry. Returns the assigned token ID.
+        """Dynamically add a single entry. Returns the assigned coordinate ID.
 
         Used for bootstrap seed injection when the bank is empty at init time.
         Hash-seeded entries (semantically hollow) are outcompeted by real
@@ -208,7 +213,7 @@ class ResonanceBank:
         """
         tid = max(self.coordinates.keys(), default=-1) + 1
         self.coordinates[tid] = to_simplex(basin)
-        self.token_strings[tid] = token_string
+        self.basin_strings[tid] = basin_string
         self.tiers[tid] = tier
         self.frequencies[tid] = 0.0
         self.basin_mass[tid] = 0.0
@@ -249,7 +254,7 @@ class ResonanceBank:
         tier_filter: set[HarmonicTier] | None = None,
         domain_bias: DomainBias | None = None,
     ) -> list[tuple[int, float]]:
-        """Resonance activation: find tokens closest to query on Δ⁶³."""
+        """Resonance activation: find coordinates closest to query on Δ⁶³."""
         self._ensure_matrix()
         if self._coord_matrix is None or self._coord_ids is None or len(self._coord_ids) == 0:
             return []
@@ -268,14 +273,14 @@ class ResonanceBank:
                 if self.tiers.get(tid, HarmonicTier.OVERTONE_HAZE) in tier_filter
             ]
         if domain_bias is not None:
-            if domain_bias.boosted_token_ids:
+            if domain_bias.boosted_coord_ids:
                 pairs = [
-                    (tid, d * 0.5 if tid in domain_bias.boosted_token_ids else d)
+                    (tid, d * 0.5 if tid in domain_bias.boosted_coord_ids else d)
                     for tid, d in pairs
                 ]
-            if domain_bias.suppressed_token_ids:
+            if domain_bias.suppressed_coord_ids:
                 pairs = [
-                    (tid, d) for tid, d in pairs if tid not in domain_bias.suppressed_token_ids
+                    (tid, d) for tid, d in pairs if tid not in domain_bias.suppressed_coord_ids
                 ]
         pairs.sort(key=lambda x: x[1])
         for tid, _ in pairs[:top_k]:
@@ -283,7 +288,7 @@ class ResonanceBank:
         return pairs[:top_k]
 
     def activate_ids(self, query: Basin, top_k: int = 64) -> list[int]:
-        """Convenience: return just the token IDs."""
+        """Convenience: return just the coordinate IDs."""
         return [tid for tid, _ in self.activate(query, top_k)]
 
     def generate_next(
@@ -294,7 +299,7 @@ class ResonanceBank:
         context_window: int = 8,
         domain_bias: DomainBias | None = None,
     ) -> tuple[int, Basin]:
-        """Generate next token via geodesic foresight + resonance."""
+        """Generate next coordinate via geodesic foresight + resonance."""
         if not trajectory:
             centroid = to_simplex(np.ones(self.dim))
             candidates = self.activate(centroid, top_k, domain_bias=domain_bias)
@@ -327,23 +332,23 @@ class ResonanceBank:
         scores = np.zeros(len(candidates))
         for i, (tid, dist) in enumerate(candidates):
             proximity = np.exp(-dist * KAPPA_STAR / 10.0)
-            token_basin = self.coordinates[tid]
+            candidate_basin = self.coordinates[tid]
             if velocity_norm > _EPS:
-                token_tangent = log_map(recent[-1], token_basin)
+                candidate_tangent = log_map(recent[-1], candidate_basin)
                 # QIG NOTE: Tangent-space L2 norm and dot product are valid here.
                 # These measure Fisher-Rao magnitude and directional alignment
                 # in the linearised neighbourhood of the base point.
-                token_tangent_norm = np.sqrt(np.sum(token_tangent * token_tangent))
-                if token_tangent_norm > _EPS:
+                candidate_tangent_norm = np.sqrt(np.sum(candidate_tangent * candidate_tangent))
+                if candidate_tangent_norm > _EPS:
                     direction = velocity / velocity_norm
-                    token_dir = token_tangent / token_tangent_norm
-                    consistency = np.sum(direction * token_dir)
+                    candidate_dir = candidate_tangent / candidate_tangent_norm
+                    consistency = np.sum(direction * candidate_dir)
                     consistency = (consistency + 1.0) / 2.0
                 else:
                     consistency = 0.5
             else:
                 consistency = 0.5
-            centroid_dist = fisher_rao_distance(centroid, token_basin)
+            centroid_dist = fisher_rao_distance(centroid, candidate_basin)
             consonance = np.exp(-centroid_dist)
             scores[i] = 0.5 * proximity + 0.3 * consistency + 0.2 * consonance
 
@@ -371,19 +376,19 @@ class ResonanceBank:
         self._domain_biases.clear()
 
     def compute_domain_anchor(self, seed_tokens: list[int]) -> Basin:
-        """Compute domain anchor basin from seed tokens."""
+        """Compute domain anchor basin from seed coordinates."""
         basins = [self.coordinates[tid] for tid in seed_tokens if tid in self.coordinates]
         if not basins:
             return to_simplex(np.ones(self.dim))
         return frechet_mean(basins)
 
-    def get_coordinate(self, token_id: int) -> Basin | None:
-        return self.coordinates.get(token_id)
+    def get_coordinate(self, coord_id: int) -> Basin | None:
+        return self.coordinates.get(coord_id)
 
-    def get_string(self, token_id: int) -> str:
-        return self.token_strings.get(token_id, f"<{token_id}>")
+    def get_string(self, coord_id: int) -> str:
+        return self.basin_strings.get(coord_id, f"<{coord_id}>")
 
-    def nearest_token(self, basin: Basin) -> tuple[int, float]:
+    def nearest_coord(self, basin: Basin) -> tuple[int, float]:
         results = self.activate(basin, top_k=1)
         if results:
             return results[0]
@@ -403,5 +408,5 @@ class ResonanceBank:
     def __len__(self) -> int:
         return len(self.coordinates)
 
-    def __contains__(self, token_id: int) -> bool:
-        return token_id in self.coordinates
+    def __contains__(self, coord_id: int) -> bool:
+        return coord_id in self.coordinates

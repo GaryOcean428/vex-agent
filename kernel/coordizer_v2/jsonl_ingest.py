@@ -548,7 +548,7 @@ class JSONLIngestor:
     ) -> None:
         """Route batches to Modal GPU for harvesting.
 
-        The Modal endpoint aggregates all texts and returns per-token
+        The Modal endpoint aggregates all texts and returns per-coordinate
         Fréchet-mean fingerprints.  We compute a single aggregate basin
         on Δ⁶³ from those fingerprints and assign it to every entry in
         the batch.  For finer per-entry resolution, use the local
@@ -689,7 +689,7 @@ class JSONLIngestor:
     ) -> NDArray[np.float64] | None:
         """Compute a single Δ⁶³ basin from Modal harvest fingerprints.
 
-        The Modal endpoint returns per-token Fréchet-mean fingerprints
+        The Modal endpoint returns per-coordinate Fréchet-mean fingerprints
         on Δ^(V-1). We compute the Fréchet mean of all fingerprints,
         then project to Δ⁶³ via to_simplex (truncate + renormalise).
 

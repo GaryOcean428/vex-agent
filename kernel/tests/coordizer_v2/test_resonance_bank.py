@@ -38,7 +38,7 @@ def small_bank(rng) -> ResonanceBank:
     for i in range(20):
         basin = rng.dirichlet(np.ones(BASIN_DIM))
         bank.coordinates[i] = to_simplex(basin)
-        bank.token_strings[i] = f"token_{i}"
+        bank.basin_strings[i] = f"token_{i}"
         bank.tiers[i] = HarmonicTier.FUNDAMENTAL if i < 5 else HarmonicTier.FIRST_HARMONIC
         bank.frequencies[i] = 100.0 + i * 50.0
         bank.basin_mass[i] = 1.0

@@ -827,7 +827,7 @@ class SleepCycleManager:
             ]
             for tid in to_prune:
                 bank.coordinates.pop(tid, None)
-                bank.token_strings.pop(tid, None)
+                bank.basin_strings.pop(tid, None)
                 bank.tiers.pop(tid, None)
                 bank.frequencies.pop(tid, None)
                 bank.basin_mass.pop(tid, None)

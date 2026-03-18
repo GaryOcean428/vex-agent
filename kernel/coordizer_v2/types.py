@@ -196,8 +196,8 @@ class DomainBias:
     domain_name: str
     anchor_basin: Basin = field(default_factory=lambda: np.ones(BASIN_DIM) / BASIN_DIM)
     strength: float = 0.1  # 0 = no bias, 1 = full shift
-    boosted_token_ids: set[int] = field(default_factory=set)
-    suppressed_token_ids: set[int] = field(default_factory=set)
+    boosted_coord_ids: set[int] = field(default_factory=set)
+    suppressed_coord_ids: set[int] = field(default_factory=set)
 
 
 # ─── Validation Result ───────────────────────────────────────────

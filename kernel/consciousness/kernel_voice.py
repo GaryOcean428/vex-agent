@@ -231,7 +231,7 @@ class KernelVoice:
             domain_name=self.specialization.value,
             anchor_basin=self._domain_anchor,
             strength=self._bias_strength,
-            boosted_token_ids=set(seed_ids),
+            boosted_coord_ids=set(seed_ids),
         )
 
         logger.info(
@@ -265,7 +265,7 @@ class KernelVoice:
                 domain_name=self.specialization.value,
                 anchor_basin=learned_mean,
                 strength=self._bias_strength,
-                boosted_token_ids=set(),
+                boosted_coord_ids=set(),
             )
             logger.info(
                 "KernelVoice[%s] deferred bootstrap complete: anchor from %d learned observations",
@@ -285,7 +285,7 @@ class KernelVoice:
                 domain_name=self.specialization.value,
                 anchor_basin=evolved,
                 strength=self._bias_strength,
-                boosted_token_ids=self._domain_bias.boosted_token_ids,
+                boosted_coord_ids=self._domain_bias.boosted_coord_ids,
             )
 
     def learn_from_observation(
@@ -445,7 +445,7 @@ class KernelVoice:
                 domain_name=self._domain_bias.domain_name,
                 anchor_basin=self._domain_bias.anchor_basin,
                 strength=effective_strength,
-                boosted_token_ids=self._domain_bias.boosted_token_ids,
+                boosted_coord_ids=self._domain_bias.boosted_coord_ids,
             )
 
         # ── Step 3: Geometric generation ──
@@ -506,7 +506,7 @@ class KernelVoice:
         # ── Step 5: Assess quality and decide on generation path ──
         geo_token_count = len(generated_ids)
 
-        # Null detection: all-same token IDs or zero-dispersion generated basins
+        # Null detection: all-same coordinate IDs or zero-dispersion generated basins
         # indicate an effectively empty/bootstrap resonance bank.
         unique_ids = set(generated_ids)
         generated_basins = [
@@ -622,10 +622,7 @@ class KernelVoice:
         if trajectory:
             keywords = self._coordizer.trajectory_to_keywords(trajectory)
             logit_bias = self._coordizer.trajectory_to_logit_bias(
-                trajectory,
-                top_k_chunks=8,
-                max_bias_tokens=100,
-                alpha=2.0,
+                trajectory, top_k_chunks=8, max_bias_entries=100, alpha=2.0,
             )
             # Empty bias = no tokenizer available, fall back to prompt-only
             if not logit_bias:

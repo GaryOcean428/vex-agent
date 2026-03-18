@@ -604,7 +604,7 @@ def _inject_records_into_local_bank(records: list[ChunkRecord], source_filename:
     if bank is None:
         return 0
 
-    existing_strings = {s.strip().lower() for s in bank.token_strings.values() if s}
+    existing_strings = {s.strip().lower() for s in bank.basin_strings.values() if s}
     added = 0
     for record in records:
         if len(record.basin_coords) != 64:

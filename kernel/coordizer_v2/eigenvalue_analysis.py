@@ -16,8 +16,8 @@ Usage:
     # With custom corpus file (one text per line)
     python -m kernel.coordizer_v2.eigenvalue_analysis --corpus corpus.txt
 
-    # With more tokens (slower, more accurate)
-    python -m kernel.coordizer_v2.eigenvalue_analysis --target-tokens 5000
+    # With more resonances (slower, more accurate)
+    python -m kernel.coordizer_v2.eigenvalue_analysis --target-resonances 5000
 
     # Synthetic fallback (for testing pipeline only — no real semantic structure)
     python -m kernel.coordizer_v2.eigenvalue_analysis --synthetic
@@ -34,8 +34,8 @@ Environment:
     KERNEL_API_KEY=&lt;your-key&gt;
 
 Cost estimate:
-    ~2000 tokens on H100: ~$0.03 (~10 seconds)
-    ~5000 tokens on H100: ~$0.08 (~25 seconds)
+    ~2000 resonances on H100: ~$0.03 (~10 seconds)
+    ~5000 resonances on H100: ~$0.08 (~25 seconds)
 """
 
 from __future__ import annotations
@@ -72,16 +72,16 @@ def parse_args() -> argparse.Namespace:
         help="Path to corpus file (one text per line). Uses default corpus if not provided.",
     )
     parser.add_argument(
-        "--target-tokens",
+        "--target-resonances",
         type=int,
         default=5000,
-        help="Target number of token positions to harvest (default: 5000)",
+        help="Target number of resonance positions to harvest (default: 5000)",
     )
     parser.add_argument(
         "--min-contexts",
         type=int,
         default=2,
-        help="Minimum context count per token to include (default: 2)",
+        help="Minimum context count per coordinate to include (default: 2)",
     )
     parser.add_argument(
         "--save-harvest",
@@ -106,25 +106,25 @@ def parse_args() -> argparse.Namespace:
 
 async def run_modal_harvest(
     corpus_texts: list[str] | None = None,
-    target_tokens: int = 5000,
+    target_resonances: int = 5000,
     min_contexts: int = 2,
 ) -> HarvestResult:
     """Run real harvest via Modal GPU endpoint."""
     from kernel.coordizer_v2.modal_harvest import modal_harvest
 
     logger.info(
-        "Starting Modal GPU harvest (target_tokens=%d, min_contexts=%d)...",
-        target_tokens,
+        "Starting Modal GPU harvest (target_resonances=%d, min_contexts=%d)...",
+        target_resonances,
         min_contexts,
     )
     result = await modal_harvest(
-        target_tokens=target_tokens,
+        target_resonances=target_resonances,
         corpus_texts=corpus_texts,
         min_contexts=min_contexts,
     )
     logger.info(
         "Harvest complete: %d fingerprints, vocab_size=%d, %.1fs",
-        len(result.token_fingerprints),
+        len(result.resonance_fingerprints),
         result.vocab_size,
         result.harvest_time_seconds,
     )
@@ -141,7 +141,7 @@ def run_synthetic_harvest() -> HarvestResult:
     from kernel.coordizer_v2.modal_integration import generate_synthetic_harvest_result
 
     logger.warning("Using SYNTHETIC data -- tests pipeline only, NOT the E8 hypothesis")
-    return generate_synthetic_harvest_result(vocab_size=32000, n_tokens=500)
+    return generate_synthetic_harvest_result(vocab_size=32000, n_resonances=500)
 
 
 def load_corpus(path: str) -> list[str]:
@@ -168,7 +168,7 @@ def run_compression(harvest: HarvestResult) -> CompressionResult:
 
     logger.info(
         "Compressing %d fingerprints: Delta^%d -> Delta^%d",
-        len(harvest.token_fingerprints),
+        len(harvest.resonance_fingerprints),
         harvest.vocab_size - 1,
         BASIN_DIM - 1,
     )
@@ -243,7 +243,7 @@ def analyse_eigenvalues(result: CompressionResult) -> dict[str, Any]:
         "effective_dim_99pct": dim_99,
         "spectral_gap_1_to_8": round(spectral_gap, 2),
         "total_geodesic_variance": round(total, 6),
-        "n_tokens_compressed": result.n_tokens,
+        "n_resonances_compressed": result.n_resonances,
         "source_dim": result.source_dim,
         "target_dim": result.target_dim,
         "compression_time_seconds": round(result.compression_time_seconds, 1),
@@ -281,7 +281,7 @@ def print_report(report: dict[str, Any]) -> None:
 
     print(f"\n  Spectral gap (L1/L8):  {report['spectral_gap_1_to_8']:.2f}")
     print(f"  Total geodesic variance: {report['total_geodesic_variance']:.6f}")
-    print(f"  Tokens compressed:       {report['n_tokens_compressed']}")
+    print(f"  Tokens compressed:       {report['n_resonances_compressed']}")
     print(f"  Source dim (vocab):      {report['source_dim']}")
     print(f"  Target dim:              {report['target_dim']}")
     print(f"  Compression time:        {report['compression_time_seconds']:.1f}s")
@@ -309,7 +309,7 @@ async def main() -> dict[str, Any]:
         harvest = HarvestResult.load(args.load_harvest)
         logger.info(
             "Loaded: %d fingerprints, vocab=%d",
-            len(harvest.token_fingerprints),
+            len(harvest.resonance_fingerprints),
             harvest.vocab_size,
         )
     elif args.synthetic:
@@ -322,7 +322,7 @@ async def main() -> dict[str, Any]:
 
         harvest = await run_modal_harvest(
             corpus_texts=corpus_texts,
-            target_tokens=args.target_tokens,
+            target_resonances=args.target_resonances,
             min_contexts=args.min_contexts,
         )
 

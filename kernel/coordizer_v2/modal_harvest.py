@@ -47,7 +47,7 @@ class ModalHarvestConfig:
     """
 
     model_id: str = ""
-    target_tokens: int = 2000
+    target_resonances: int = 2000
     batch_size: int = 32
     max_length: int = 512
     min_contexts: int = 10
@@ -56,7 +56,7 @@ class ModalHarvestConfig:
 
 async def modal_harvest(
     model_id: str | None = None,
-    target_tokens: int = 2000,
+    target_resonances: int = 2000,
     corpus_texts: list[str] | None = None,
     timeout: float | None = None,
     min_contexts: int | None = None,
@@ -90,7 +90,7 @@ async def modal_harvest(
     )
     config = ModalHarvestConfig(
         model_id=resolved_model,
-        target_tokens=target_tokens,
+        target_resonances=target_resonances,
         timeout=resolved_timeout,
         min_contexts=resolved_min_contexts,
     )
@@ -106,7 +106,7 @@ async def modal_harvest(
     # already loads the correct model via HARVEST_MODEL_ID env secret.
     payload: dict[str, Any] = {
         "texts": corpus_texts[:200],  # Cap per-request
-        "target_tokens": config.target_tokens,
+        "target_resonances": config.target_resonances,
         "batch_size": config.batch_size,
         "max_length": config.max_length,
         "min_contexts": config.min_contexts,
@@ -182,7 +182,7 @@ async def modal_harvest(
 
     logger.info(
         "Received %d token fingerprints from Modal (vocab_size=%d)",
-        len(result.token_fingerprints),
+        len(result.resonance_fingerprints),
         result.vocab_size,
     )
 
@@ -214,7 +214,7 @@ def _parse_modal_response(
     result = HarvestResult(
         model_name=model_id,
         vocab_size=data.get("vocab_size", 0),
-        corpus_size=data.get("total_tokens_processed", 0),
+        corpus_size=data.get("total_resonances_processed", 0),
         harvest_time_seconds=elapsed,
     )
 
@@ -235,9 +235,9 @@ def _parse_modal_response(
         fp = np.maximum(fp, _EPS)
         fp = fp / fp.sum()
 
-        result.token_fingerprints[tid] = fp
+        result.resonance_fingerprints[tid] = fp
         result.context_counts[tid] = token_data.get("context_count", token_data.get("count", 1))
-        result.token_strings[tid] = token_data.get("string", key)
+        result.basin_strings[tid] = token_data.get("string", key)
 
     return result
 
@@ -247,7 +247,7 @@ def _default_harvest_corpus() -> list[str]:
 
     These prompts are chosen to activate different regions of the
     model's vocabulary space — technical, creative, conversational,
-    analytical — so that each token's fingerprint captures its
+    analytical — so that each coordinate's fingerprint captures its
     contextual diversity.
     """
     return [

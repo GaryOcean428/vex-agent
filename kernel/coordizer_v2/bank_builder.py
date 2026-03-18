@@ -9,7 +9,7 @@ ResonanceBank. This module closes that gap.
 Scans coordized JSONL output directory, reads basin coordinates,
 builds a ResonanceBank, and saves it to disk in the format that
 ResonanceBank.from_file() expects (bank_coordinates.npy +
-bank_token_ids.npy + bank_meta.json).
+bank_coord_ids.npy + bank_meta.json).
 
 Called by HarvestScheduler after successful file processing, or
 manually via rebuild_bank_from_output().
@@ -156,7 +156,7 @@ def rebuild_bank_from_output(
                         tier = HarmonicTier.OVERTONE_HAZE
 
                     bank.coordinates[tid] = basin
-                    bank.token_strings[tid] = token_str
+                    bank.basin_strings[tid] = token_str
                     bank.tiers[tid] = tier
                     bank.activation_counts[tid] = 0
                     bank.origin[tid] = "harvested"
@@ -211,12 +211,12 @@ def get_bank_stats(bank_path: str) -> dict[str, Any] | None:
         with open(meta_path) as f:
             meta = json.load(f)
         return {
-            "n_tokens": meta.get("n_tokens", 0),
+            "n_resonances": meta.get("n_resonances", 0),
             "dim": meta.get("dim", 0),
             "bank_lived_count": meta.get("bank_lived_count", 0),
             "bank_total_count": meta.get("bank_total_count", 0),
             "has_coordinates": (bp / "bank_coordinates.npy").exists(),
-            "has_token_ids": (bp / "bank_token_ids.npy").exists(),
+            "has_token_ids": (bp / "bank_coord_ids.npy").exists(),
         }
     except Exception as e:
         logger.error("Error reading bank stats: %s", e)

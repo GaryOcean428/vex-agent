@@ -170,8 +170,8 @@ class CoordizerHarvester:
             return {"error": "Invalid API key", "success": False}
         return None
 
-    def _harvest_fingerprints(self, texts, batch_size, max_length, min_contexts, target_tokens):
-        """Core harvest: text -> per-token probability distributions on GPU."""
+    def _harvest_fingerprints(self, texts, batch_size, max_length, min_contexts, target_resonances):
+        """Core harvest: text -> per-coordinate probability distributions on GPU."""
         import numpy as np
         import torch
 
@@ -184,8 +184,8 @@ class CoordizerHarvester:
                 encoded = encoded[:max_length]
             all_input_ids.append(encoded)
 
-        token_fingerprints = {}
-        total_tokens = 0
+        resonance_fingerprints = {}
+        total_resonances = 0
 
         with torch.no_grad():
             for batch_start in range(0, len(all_input_ids), batch_size):
@@ -214,19 +214,19 @@ class CoordizerHarvester:
 
                     for pos in range(len(input_ids)):
                         tid = input_ids[pos]
-                        if tid not in token_fingerprints:
-                            token_fingerprints[tid] = []
-                        token_fingerprints[tid].append(probs_np[pos])
-                        total_tokens += 1
+                        if tid not in resonance_fingerprints:
+                            resonance_fingerprints[tid] = []
+                        resonance_fingerprints[tid].append(probs_np[pos])
+                        total_resonances += 1
 
-                    if target_tokens > 0 and total_tokens >= target_tokens:
+                    if target_resonances > 0 and total_resonances >= target_resonances:
                         break
-                if target_tokens > 0 and total_tokens >= target_tokens:
+                if target_resonances > 0 and total_resonances >= target_resonances:
                     break
 
         # Fréchet mean on simplex via sqrt-coordinate averaging
         averaged = {}
-        for tid, fp_list in token_fingerprints.items():
+        for tid, fp_list in resonance_fingerprints.items():
             if len(fp_list) < min_contexts:
                 continue
             # Average in sqrt-space (Bhattacharyya embedding), then back-project
@@ -236,7 +236,7 @@ class CoordizerHarvester:
             mean_fp = mean_fp / mean_fp.sum()
             averaged[tid] = mean_fp
 
-        return averaged, total_tokens, vocab_size
+        return averaged, total_resonances, vocab_size
 
     def _pga_compress(self, fingerprints_dict, lens_dim=LENS_DIM, basin_dim=BASIN_DIM):
         """PGA compress: V-dim fingerprints -> basin coords on GPU via numpy.
@@ -310,7 +310,7 @@ class CoordizerHarvester:
 
     @modal.fastapi_endpoint(method="POST")
     def harvest(self, data: dict):
-        """Raw harvest — returns per-token fingerprints.
+        """Raw harvest — returns per-coordinate fingerprints.
         WARNING: Large responses. Use /coordize for production."""
         import time
 
@@ -323,20 +323,20 @@ class CoordizerHarvester:
             return {"error": "No texts provided", "success": False}
 
         start = time.time()
-        averaged, total_tokens, vocab_size = self._harvest_fingerprints(
+        averaged, total_resonances, vocab_size = self._harvest_fingerprints(
             texts,
             data.get("batch_size", 32),
             data.get("max_length", 512),
             data.get("min_contexts", 5),
-            data.get("target_tokens", 0),
+            data.get("target_resonances", 0),
         )
 
         tokenizer = self.tokenizer
-        result_tokens = {}
+        result_coords = {}
         for tid, fp in averaged.items():
             token_str = tokenizer.decode([tid])
-            result_tokens[token_str] = {
-                "token_id": tid,
+            result_coords[token_str] = {
+                "coord_id": tid,
                 "count": 1,
                 "fingerprint": fp.tolist(),
             }
@@ -345,10 +345,10 @@ class CoordizerHarvester:
             "success": True,
             "model_id": self.current_model_id,
             "vocab_size": vocab_size,
-            "total_tokens_processed": total_tokens,
-            "unique_tokens_returned": len(result_tokens),
+            "total_resonances_processed": total_resonances,
+            "unique_coords_returned": len(result_coords),
             "elapsed_seconds": round(time.time() - start, 2),
-            "tokens": result_tokens,
+            "coordinates": result_coords,
         }
 
     @modal.fastapi_endpoint(method="POST")
@@ -361,7 +361,7 @@ class CoordizerHarvester:
         Body: {
             texts: string[],
             min_contexts: int (default 1),
-            target_tokens: int (default 0 = unlimited),
+            target_resonances: int (default 0 = unlimited),
             max_length: int (default 512),
             lens_dim: int (default 32),
             _api_key: string
@@ -380,16 +380,16 @@ class CoordizerHarvester:
         start = time.time()
 
         # Phase 1: Harvest fingerprints on GPU
-        averaged, total_tokens, vocab_size = self._harvest_fingerprints(
+        averaged, total_resonances, vocab_size = self._harvest_fingerprints(
             texts,
             data.get("batch_size", 16),
             data.get("max_length", 512),
             data.get("min_contexts", 1),
-            data.get("target_tokens", 0),
+            data.get("target_resonances", 0),
         )
 
         if len(averaged) == 0:
-            return {"error": "No tokens met min_contexts threshold", "success": False}
+            return {"error": "No coordinates met min_contexts threshold", "success": False}
 
         harvest_time = time.time() - start
 
@@ -410,7 +410,7 @@ class CoordizerHarvester:
             "harvest_meta": {
                 "model_id": self.current_model_id,
                 "vocab_size": vocab_size,
-                "total_tokens_processed": total_tokens,
+                "total_resonances_processed": total_resonances,
                 "unique_tokens": pga_result["N"],
                 "fingerprint_dim": pga_result["V"],
                 "harvest_seconds": round(harvest_time, 2),

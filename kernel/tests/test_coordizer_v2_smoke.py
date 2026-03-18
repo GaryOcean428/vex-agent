@@ -57,7 +57,7 @@ def _is_on_simplex(p: np.ndarray, tol: float = 1e-8) -> bool:
 
 
 def _build_synthetic_bank(
-    n_tokens: int = 200,
+    n_resonances: int = 200,
     seed: int = 42,
 ) -> ResonanceBank:
     """Build a synthetic resonance bank with realistic tier distribution.
@@ -68,13 +68,13 @@ def _build_synthetic_bank(
     rng = np.random.RandomState(seed)
     bank = ResonanceBank(target_dim=BASIN_DIM)
 
-    for i in range(n_tokens):
+    for i in range(n_resonances):
         basin = rng.dirichlet(np.ones(BASIN_DIM))
         bank.coordinates[i] = to_simplex(basin)
-        bank.token_strings[i] = f"tok_{i:04d}"
+        bank.basin_strings[i] = f"tok_{i:04d}"
 
         # Tier assignment
-        frac = i / n_tokens
+        frac = i / n_resonances
         if frac < 0.10:
             bank.tiers[i] = HarmonicTier.FUNDAMENTAL
         elif frac < 0.30:
@@ -103,7 +103,7 @@ def _build_synthetic_bank(
 
 @pytest.fixture(scope="module")
 def bank() -> ResonanceBank:
-    return _build_synthetic_bank(n_tokens=200)
+    return _build_synthetic_bank(n_resonances=200)
 
 
 @pytest.fixture(scope="module")

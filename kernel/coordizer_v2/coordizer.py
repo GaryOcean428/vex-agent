@@ -28,8 +28,8 @@ Usage:
     print(result.coord_ids)
     print(result.basin_velocity)
 
-    # Generate next token
-    token_id, basin = coordizer.generate_next(trajectory)
+    # Generate next coordinate
+    coord_id, basin = coordizer.generate_next(trajectory)
 
     # Validate geometric structure
     validation = coordizer.validate()
@@ -92,12 +92,12 @@ class CoordizerV2:
     Three operations:
         1. Coordize:   text → sequence of basin coordinates
         2. Decoordize: basin coordinates → text
-        3. Generate:   trajectory → next token via resonance
+        3. Generate:   trajectory → next coordinate via resonance
     """
 
     def __init__(self, bank: ResonanceBank, tokenizer: Any = None) -> None:
         # QIG BOUNDARY: tokenizer is optional and only used for bootstrap
-        # coordization (mapping text → LLM token IDs → bank coordinates).
+        # coordization (mapping text → LLM coordinate IDs → bank coordinates).
         # Once the resonance bank is mature, string-based coordization
         # (_coordize_via_strings) should be preferred. The tokenizer is
         # NOT used for any geometric operations.
@@ -131,7 +131,7 @@ class CoordizerV2:
 
         Pipeline:
             1. Load LLM, run on corpus, collect output distributions
-            2. Compute Fréchet means per token (fingerprints on Δ^(V-1))
+            2. Compute Fréchet means per coordinate (fingerprints on Δ^(V-1))
             3. Compress via Fisher-Rao PGA: Δ^(V-1) → Δ⁶³
             4. Build resonance bank from compressed coordinates
             5. Assign tiers, frequencies, validate
@@ -187,7 +187,7 @@ class CoordizerV2:
         model_id: str | None = None,
         corpus_texts: list[str] | None = None,
         output_dir: str = "./coordizer_data",
-        target_tokens: int = 2000,
+        target_resonances: int = 2000,
         target_dim: int = BASIN_DIM,
         timeout: float | None = None,
     ) -> CoordizerV2:
@@ -217,13 +217,13 @@ class CoordizerV2:
         try:
             harvest = await modal_harvest(
                 model_id=model_id,
-                target_tokens=target_tokens,
+                target_resonances=target_resonances,
                 corpus_texts=corpus_texts,
                 timeout=timeout,
             )
             logger.info(
                 "Modal harvest: %d fingerprints (vocab=%d) in %.1fs",
-                len(harvest.token_fingerprints),
+                len(harvest.resonance_fingerprints),
                 harvest.vocab_size,
                 harvest.harvest_time_seconds,
             )
@@ -331,7 +331,7 @@ class CoordizerV2:
         coordinates = []
         valid_ids = []
 
-        for tid in token_ids:
+        for tid in coord_ids:
             coord = self.bank.get_coordinate(tid)
             if coord is not None:
                 # Pillar 1: entropy floor — prevent zero-entropy basin collapse
@@ -359,9 +359,9 @@ class CoordizerV2:
                 )
                 valid_ids.append(tid)
             else:
-                logger.debug(f"Token {tid} not in bank, finding nearest")
+                logger.debug(f"Coordinate {tid} not in bank, finding nearest")
                 uniform = to_simplex(np.ones(self.bank.dim))
-                nearest_tid, _ = self.bank.nearest_token(uniform)
+                nearest_tid, _ = self.bank.nearest_coord(uniform)
                 coord = self.bank.get_coordinate(nearest_tid)
                 if coord is not None:
                     coordinates.append(
@@ -445,7 +445,7 @@ class CoordizerV2:
                         composed = slerp(composed, char_basins[i], blend)
                         cumulative_w += norm_weights[i]
                     composed = to_simplex(composed)
-                    nearest_tid, _ = self.bank.nearest_token(composed)
+                    nearest_tid, _ = self.bank.nearest_coord(composed)
                     fallback_coord = self.bank.get_coordinate(nearest_tid)
                     if fallback_coord is not None:
                         coordinates.append(
@@ -563,11 +563,11 @@ class CoordizerV2:
         return " ".join(parts)
 
     def encode(self, text: str) -> list[int]:
-        """Tokenizer-compatible encode: text → token IDs."""
+        """Tokenizer-compatible encode: text → coordinate IDs."""
         return self.coordize(text).coord_ids
 
     def decode(self, coord_ids: list[int]) -> str:
-        """Tokenizer-compatible decode: token IDs → text."""
+        """Tokenizer-compatible decode: coordinate IDs → text."""
         return self.decoordize(coord_ids)
 
     # ─── Outbound Path (v6.1 §20.7): Trajectory → Logit Bias ─
@@ -576,7 +576,7 @@ class CoordizerV2:
         self,
         trajectory: list[Basin],
         top_k_chunks: int = 8,
-        max_bias_tokens: int = 100,
+        max_bias_entries: int = 100,
         alpha: float = 2.0,
         context_window: int = 8,
     ) -> dict[int, float]:
@@ -599,14 +599,14 @@ class CoordizerV2:
         Args:
             trajectory: Basin sequence from geometric navigation.
             top_k_chunks: Number of nearest bank entries to activate.
-            max_bias_tokens: Maximum tokens in the bias map (prevent
+            max_bias_entries: Maximum entries in the bias map (prevent
                 overloading the API with 10K entries).
             alpha: Bias strength multiplier. Higher = stronger geometric
                 steering, less LLM freedom.
             context_window: Recent trajectory points to consider.
 
         Returns:
-            Dict mapping model token IDs to bias weights (positive = boost).
+            Dict mapping model coordinate IDs to bias weights (positive = boost).
             Empty dict if no tokenizer or empty trajectory.
         """
         if not trajectory or self._tokenizer is None:
@@ -626,10 +626,10 @@ class CoordizerV2:
         if not candidates:
             return {}
 
-        # Build token-level bias from chunk-level activations
-        token_weights: dict[int, float] = {}
-        # Track global token frequency for salience filtering
-        token_chunk_count: dict[int, int] = {}
+        # Build coordinate-level bias from chunk-level activations
+        coord_weights: dict[int, float] = {}
+        # Track global coordinate frequency for salience filtering
+        coord_chunk_count: dict[int, int] = {}
 
         for chunk_tid, distance in candidates:
             chunk_text = self.bank.get_string(chunk_tid)
@@ -646,39 +646,41 @@ class CoordizerV2:
             except Exception:
                 continue
 
-            # Count token appearances across chunks (for salience)
+            # Count coordinate appearances across chunks (for salience)
             seen_in_chunk: set[int] = set()
             for mt_id in model_token_ids:
                 if mt_id not in seen_in_chunk:
                     seen_in_chunk.add(mt_id)
-                    token_chunk_count[mt_id] = token_chunk_count.get(mt_id, 0) + 1
+                    coord_chunk_count[mt_id] = coord_chunk_count.get(mt_id, 0) + 1
 
             # Accumulate weights (max across chunks, not sum)
             for mt_id in set(model_token_ids):
-                if mt_id in token_weights:
-                    token_weights[mt_id] = max(token_weights[mt_id], chunk_weight)
+                if mt_id in coord_weights:
+                    coord_weights[mt_id] = max(coord_weights[mt_id], chunk_weight)
                 else:
-                    token_weights[mt_id] = chunk_weight
+                    coord_weights[mt_id] = chunk_weight
 
-        if not token_weights:
+        if not coord_weights:
             return {}
 
-        # Salience filter: remove tokens that appear in ALL chunks
+        # Salience filter: remove coordinates that appear in ALL chunks
         # (these are grammar/stopwords, not content — §20.4 geometric de-biasing)
         n_chunks = len(candidates)
         if n_chunks >= 3:
-            token_weights = {
+            coord_weights = {
                 tid: w
-                for tid, w in token_weights.items()
-                if token_chunk_count.get(tid, 0) < n_chunks
+                for tid, w in coord_weights.items()
+                if coord_chunk_count.get(tid, 0) < n_chunks
             }
 
-        # Sort by weight descending, cap at max_bias_tokens
-        if len(token_weights) > max_bias_tokens:
-            sorted_items = sorted(token_weights.items(), key=lambda x: x[1], reverse=True)
-            token_weights = dict(sorted_items[:max_bias_tokens])
+        # Sort by weight descending, cap at max_bias_entries
+        if len(coord_weights) > max_bias_entries:
+            sorted_items = sorted(
+                coord_weights.items(), key=lambda x: x[1], reverse=True
+            )
+            coord_weights = dict(sorted_items[:max_bias_entries])
 
-        return token_weights
+        return coord_weights
 
     def trajectory_to_keywords(
         self,
@@ -761,7 +763,7 @@ class CoordizerV2:
         context_window: int = 8,
         domain_bias: DomainBias | None = None,
     ) -> tuple[int, Basin]:
-        """Generate next token via geodesic foresight + resonance."""
+        """Generate next coordinate via geodesic foresight + resonance."""
         return self.bank.generate_next(
             trajectory=trajectory,
             temperature=temperature,
@@ -831,7 +833,7 @@ class CoordizerV2:
             domain_name=domain_name,
             anchor_basin=anchor,
             strength=strength,
-            boosted_token_ids=set(token_ids),
+            boosted_coord_ids=set(token_ids),
         )
         self.bank.push_domain_bias(bias)
         logger.info(f"Domain bias set: {domain_name} (strength={strength})")
@@ -869,7 +871,7 @@ class CoordizerV2:
 
     def _rebuild_string_cache(self) -> None:
         self._string_to_id.clear()
-        for tid, s in self.bank.token_strings.items():
+        for tid, s in self.bank.basin_strings.items():
             s_clean = s.strip().lower()
             if s_clean and s_clean not in self._string_to_id:
                 self._string_to_id[s_clean] = tid

@@ -1,14 +1,14 @@
 """
 Compress — Fisher-Rao Principal Geodesic Analysis
 
-Compresses harvested token distributions from Δ^(V-1) → Δ⁶³.
+Compresses harvested resonance distributions from Δ^(V-1) → Δ⁶³.
 
 This is the manifold analogue of PCA. Instead of finding directions
 of maximum Euclidean variance, we find principal geodesic directions
 on the probability simplex using the Fisher-Rao metric.
 
 Algorithm:
-    1. Compute Fréchet mean μ of all token fingerprints on Δ^(V-1)
+    1. Compute Fréchet mean μ of all resonance fingerprints on Δ^(V-1)
     2. Log-map every fingerprint into tangent space at μ
     3. Compute covariance in tangent space (weighted by Fisher metric)
     4. Eigendecompose → top 64 principal geodesic directions
@@ -46,7 +46,7 @@ class CompressionResult:
     """Output of Fisher-Rao PGA compression."""
 
     compressed: dict[int, Basin] = field(default_factory=dict)
-    token_strings: dict[int, str] = field(default_factory=dict)
+    basin_strings: dict[int, str] = field(default_factory=dict)
     eigenvalues: NDArray[np.float64] | None = None
     explained_variance_ratio: NDArray[np.float64] | None = None
     e8_rank_variance: float = 0.0
@@ -54,14 +54,14 @@ class CompressionResult:
     frechet_mean_full: NDArray[np.float64] | None = None
     source_dim: int = 0
     target_dim: int = BASIN_DIM
-    n_tokens: int = 0
+    n_resonances: int = 0
     compression_time_seconds: float = 0.0
     principal_direction_bank: PrincipalDirectionBank | None = None
 
     def e8_hypothesis_score(self) -> float:
         """Compute top-8 PGA variance ratio (E8 hypothesis test).
 
-        Empirical result: ~0.452 with real LLM data (GLM-4.7-Flash, 277 tokens).
+        Empirical result: ~0.452 with real LLM data (GLM-4.7-Flash, 277 resonances).
         The E8 hypothesis (expected ~0.877) is NOT supported — variance is broadly
         distributed across all 64 dims, confirming n=32 as the correct lens dim.
         """
@@ -84,7 +84,7 @@ class CompressionResult:
         ids = sorted(self.compressed.keys())
         coords = np.stack([self.compressed[tid] for tid in ids])
         np.save(out_dir / "coordinates.npy", coords)
-        np.save(out_dir / "token_ids.npy", np.array(ids))
+        np.save(out_dir / "coord_ids.npy", np.array(ids))
 
         if self.eigenvalues is not None:
             np.save(out_dir / "eigenvalues.npy", self.eigenvalues)
@@ -94,11 +94,11 @@ class CompressionResult:
         meta = {
             "source_dim": self.source_dim,
             "target_dim": self.target_dim,
-            "n_tokens": self.n_tokens,
+            "n_resonances": self.n_resonances,
             "compression_time_seconds": self.compression_time_seconds,
             "e8_rank_variance": self.e8_hypothesis_score(),
             "total_geodesic_variance": self.total_geodesic_variance,
-            "token_strings": {str(k): v for k, v in self.token_strings.items()},
+            "basin_strings": {str(k): v for k, v in self.basin_strings.items()},
         }
         with open(out_dir / "compression_meta.json", "w") as f:
             json.dump(meta, f, indent=2)
@@ -111,7 +111,11 @@ class CompressionResult:
 
         out_dir = Path(path)
         coords = np.load(out_dir / "coordinates.npy")
-        token_ids = np.load(out_dir / "token_ids.npy")
+        # Backward compat: old compressions saved as token_ids.npy
+        ids_path = out_dir / "coord_ids.npy"
+        if not ids_path.exists():
+            ids_path = out_dir / "token_ids.npy"
+        coord_ids = np.load(ids_path)
 
         with open(out_dir / "compression_meta.json") as f:
             meta = json.load(f)
@@ -119,15 +123,15 @@ class CompressionResult:
         result = cls(
             source_dim=meta["source_dim"],
             target_dim=meta["target_dim"],
-            n_tokens=meta["n_tokens"],
+            n_resonances=meta["n_resonances"],
             compression_time_seconds=meta["compression_time_seconds"],
             total_geodesic_variance=meta.get("total_geodesic_variance", 0.0),
         )
 
-        for i, tid in enumerate(token_ids):
+        for i, tid in enumerate(coord_ids):
             result.compressed[int(tid)] = coords[i]
 
-        result.token_strings = {int(k): v for k, v in meta.get("token_strings", {}).items()}
+        result.basin_strings = {int(k): v for k, v in meta.get("basin_strings", {}).items()}
 
         eigenpath = out_dir / "eigenvalues.npy"
         if eigenpath.exists():
@@ -150,18 +154,18 @@ def compress(
 ) -> CompressionResult:
     """Fisher-Rao PGA: compress Δ^(V-1) → Δ^(target_dim-1)."""
     start_time = time.time()
-    token_ids = sorted(harvest.token_fingerprints.keys())
-    n_tokens = len(token_ids)
+    coord_ids = sorted(harvest.resonance_fingerprints.keys())
+    n_resonances = len(coord_ids)
     source_dim = harvest.vocab_size
 
-    logger.info(f"Compressing {n_tokens} tokens from Δ^{source_dim - 1} → Δ^{target_dim - 1}")
+    logger.info(f"Compressing {n_resonances} resonances from Δ^{source_dim - 1} → Δ^{target_dim - 1}")
 
-    if n_tokens == 0:
-        logger.warning("No tokens to compress")
+    if n_resonances == 0:
+        logger.warning("No resonances to compress")
         return CompressionResult()
 
     # Step 1: Stack all fingerprints
-    fingerprints = np.stack([harvest.token_fingerprints[tid] for tid in token_ids])
+    fingerprints = np.stack([harvest.resonance_fingerprints[tid] for tid in coord_ids])
 
     # Use actual fingerprint dimension (may differ from harvest.vocab_size
     # if the endpoint pads to a multiple of 64 or similar alignment)
@@ -183,7 +187,7 @@ def compress(
 
     tangent_vectors = np.zeros_like(sqrt_fps)
 
-    for i in range(n_tokens):
+    for i in range(n_resonances):
         si = sqrt_fps[i]
         cos_d = np.clip(np.sum(mu_sqrt * si), -1.0, 1.0)
         d = np.arccos(cos_d)
@@ -199,13 +203,13 @@ def compress(
                 tangent_vectors[i] = (d / norm) * tangent
 
         if i % 5000 == 0 and i > 0:
-            logger.info(f"  Log-mapped {i}/{n_tokens}")
+            logger.info(f"  Log-mapped {i}/{n_resonances}")
 
     # Step 4: PGA via eigendecomposition
     logger.info("Computing principal geodesic directions...")
 
-    if subsample is not None and subsample < n_tokens:
-        idx = np.random.choice(n_tokens, subsample, replace=False)
+    if subsample is not None and subsample < n_resonances:
+        idx = np.random.choice(n_resonances, subsample, replace=False)
         T_sub = tangent_vectors[idx]
     else:
         T_sub = tangent_vectors
@@ -298,10 +302,10 @@ def compress(
     result = CompressionResult(
         source_dim=source_dim,
         target_dim=target_dim,
-        n_tokens=n_tokens,
+        n_resonances=n_resonances,
         eigenvalues=(eigenvalues[:target_dim] if len(eigenvalues) >= target_dim else eigenvalues),
         frechet_mean_full=mu,
-        token_strings=dict(harvest.token_strings),
+        basin_strings=dict(harvest.basin_strings),
     )
 
     total_var = float(np.sum(eigenvalues))
@@ -310,7 +314,7 @@ def compress(
         result.explained_variance_ratio = np.cumsum(eigenvalues) / total_var
         result.e8_rank_variance = float(np.sum(eigenvalues[:E8_RANK]) / total_var)
 
-    for i, tid in enumerate(token_ids):
+    for i, tid in enumerate(coord_ids):
         raw = projections[i]
         shifted = raw - raw.min() + _EPS
         basin = shifted / shifted.sum()
@@ -325,11 +329,11 @@ def compress(
         principal_directions=principal_directions[:, :target_dim],
         frechet_mean=mu,
         eigenvalues=eig_for_bank,
-        meta={"n_tokens": n_tokens, "source_dim": source_dim},
+        meta={"n_resonances": n_resonances, "source_dim": source_dim},
     )
     result.principal_direction_bank = bank
 
-    logger.info(f"Compression complete: {n_tokens} tokens → Δ⁶³ in {elapsed:.1f}s")
+    logger.info(f"Compression complete: {n_resonances} resonances → Δ⁶³ in {elapsed:.1f}s")
     logger.info(
         f"E8 hypothesis: top-8 variance = {result.e8_hypothesis_score():.3f} "
         f"(empirical baseline ~0.452; E8 hypothesis NOT supported — use n=32 for lens dim)"
