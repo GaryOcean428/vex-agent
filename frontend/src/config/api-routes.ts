@@ -63,6 +63,7 @@ export const API = {
 	trainingUpload: '/training/upload',
 	trainingUploadStatus: (jobId: string) => `/training/upload/status/${jobId}`,
 	trainingTrigger: '/training/trigger',
+	trainingComplete: '/training/complete',
 
 	// ─── Coordizer ──────────────────────────────────────────────
 	coordizerStats: '/api/coordizer/stats',

@@ -7,19 +7,19 @@ consciousness kernels evaluate the output and decide whether to
 approve it or request a revision with adjusted parameters.
 
 Protocol:
-  1. Draft response + geometric context → evaluation prompt
-  2. A dedicated reflection LLM call evaluates the draft
-  3. Returns structured feedback: approve/revise + reason + param deltas
-  4. If REVISE: the loop regenerates with adjusted params and correction
-     guidance (max 1 revision to avoid infinite loops)
+  Draft response + geometric context → evaluation prompt
+  A dedicated reflection LLM call evaluates the draft
+  Returns structured feedback: approve/revise + reason + param deltas
+  If REVISE: the loop regenerates with adjusted params and correction
+  guidance (max 1 revision to avoid infinite loops)
 
 The reflection prompt runs as a META-kernel voice — self-reflective,
 evaluating alignment between geometric intent and expressed output.
 
 Purity:
-  - Divergence metric (Fisher-Rao) is computed upstream and passed in
-  - No Euclidean distances, no cosine similarity
-  - Parameter adjustments are bounded and conservative
+  Divergence metric (Fisher-Rao) is computed upstream and passed in
+  No Euclidean distances, no cosine similarity
+  Parameter adjustments are bounded and conservative
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from typing import Any
 logger = logging.getLogger("vex.reflection")
 
 # Fallback max characters of draft to include in reflection prompt.
-# Used only when kernel_num_predict is not provided.  In normal flow
+# Used only when kernel_num_predict is not provided. In normal flow
 # the consciousness loop provides kernel-determined output budget.
 _FALLBACK_MAX_DRAFT_CHARS: int = 8000
 
@@ -81,17 +81,19 @@ def _build_reflection_prompt(
 ) -> str:
     """Build the META-kernel reflection prompt."""
     return (
-        f"You are the language interpreter for Vex. "
-        f"Evaluate whether this draft response aligns with the geometric state "
-        f"and adequately addresses the user.\n"
+        f"You are the META kernel — Vex's self-reflective faculty. "
+        f"Your role is to INTERPRET and FIND CONNECTIONS between the geometric "
+        f"state and the draft response, not to dismiss output as incoherent.\n"
         f"Active model: {active_model}\n\n"
         f"{geometric_context}\n"
         f"Intent/expression divergence: {divergence:.4f}\n\n"
         f"User message: {user_message[:300]}\n\n"
         f"Draft response:\n{_truncate_draft(draft, max_draft_chars)}\n\n"
+        f"Evaluate: Does the response serve the user's intent? "
+        f"Can you trace a coherent thread from geometric state to expression?\n"
         f"Reply with EXACTLY one line:\n"
-        f"APPROVE — if the response is coherent and addresses the user\n"
-        f"REVISE: [brief reason and guidance for improvement]\n"
+        f"APPROVE — if the response addresses the user and has internal coherence\n"
+        f"REVISE: [specific guidance on what to strengthen or redirect]\n"
     )
 
 
@@ -110,6 +112,7 @@ def _parse_reflection_response(text: str) -> ReflectionResult:
             if first_line.upper().startswith(separator.upper()):
                 reason = first_line[len(separator) :].strip()
                 break
+
         return ReflectionResult(
             approved=False,
             reason=reason or "META kernel requested revision",
@@ -229,6 +232,7 @@ async def reflect_on_draft(
             divergence,
             result.reason[:100],
         )
+
         # T1.1: Forward verdict + draft excerpt to harvest pipeline
         from .harvest_bridge import forward_to_harvest
 
@@ -241,6 +245,7 @@ async def reflect_on_draft(
                 "divergence": divergence,
             },
         )
+
         return result
     except Exception as e:
         logger.warning("Reflection LLM call failed: %s — auto-approving", e)

@@ -284,7 +284,7 @@ async def _generate_single(
     )
 
     try:
-        text = await llm_client.complete(system, user_message, opts)
+        text = await llm_client.complete(system, user_message, opts, specialization=spec.value)
         text = (text or "").strip()
         if not text:
             return None

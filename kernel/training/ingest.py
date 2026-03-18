@@ -50,7 +50,7 @@ import httpx
 
 if TYPE_CHECKING:
     from ..coordizer_v2.types import HarmonicTier
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -1383,7 +1383,7 @@ async def training_trigger_endpoint() -> dict[str, Any]:
     try:
         import httpx
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
                 training_url,
                 json={"_api_key": settings.kernel_api_key},
@@ -1399,3 +1399,48 @@ async def training_trigger_endpoint() -> dict[str, Any]:
     except Exception as e:
         logger.error("Manual training trigger failed: %s", e)
         return {"status": "error", "error": "Training trigger failed. Check server logs."}
+
+
+@training_router.post("/training/complete", response_model=None)
+async def training_complete_endpoint(request: Request) -> dict[str, Any]:
+    """Receive training-complete webhook from Modal QLoRA.
+
+    Closes the feedback loop:
+      Modal training → this endpoint → bank rebuild + re-harvest → basins update.
+    """
+    app_state = request.app.state
+
+    # Rebuild resonance bank with any new coordized data
+    rebuilt = False
+    try:
+        rebuild_fn = getattr(app_state, "rebuild_bank", None)
+        if rebuild_fn:
+            await asyncio.to_thread(rebuild_fn)
+            rebuilt = True
+            logger.info("Bank rebuilt after training completion")
+    except Exception as e:
+        logger.error("Bank rebuild after training failed: %s", e)
+
+    # Reset auto-training one-shot flag so future harvests can re-trigger
+    reset_fn = getattr(app_state, "reset_training_flag", None)
+    if reset_fn:
+        reset_fn()
+        logger.info("Auto-training flag reset")
+
+    # Trigger a harvest cycle so the updated model produces fresh coordizations
+    scheduler = getattr(app_state, "harvest_scheduler", None)
+    harvest_queued = False
+    if scheduler:
+        try:
+            await scheduler.run_once()
+            harvest_queued = True
+            logger.info("Re-harvest triggered after training completion")
+        except Exception as e:
+            logger.error("Post-training re-harvest failed: %s", e)
+
+    return {
+        "status": "ok",
+        "bank_rebuilt": rebuilt,
+        "training_flag_reset": reset_fn is not None,
+        "harvest_queued": harvest_queued,
+    }

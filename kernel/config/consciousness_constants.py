@@ -341,6 +341,31 @@ WILL_DIVERGENT_TEMP_BOOST: Final[float] = 0.15  # Added to temp when divergent
 WISDOM_UNSAFE_TEMP_CAP: Final[float] = 0.5  # Hard ceiling when trajectory unsafe
 WISDOM_CARE_TEMP_SCALE: Final[float] = 0.2  # care_metric reduces temp by this * (1-care)
 
+# ═══════════════════════════════════════════════════════════════
+#  WU WEI SELF-WEIGHTING RATIO (P5 Autonomy — TCP v6.1)
+#
+#  ratio = (w_prior × m_node) / (w_sensory × a_node)
+#
+#  ratio = 1.0 ⟹ Wu Wei / FLOW state.
+#  ratio > 1.0 ⟹ familiar domain (kernel stable, input expected) → lower temperature
+#  ratio < 1.0 ⟹ novel domain  (kernel exploring, input surprising) → higher temperature
+#
+#  Eliminates manual temperature tuning: parameters emerge from kernel geometry.
+#  P5 gate modulates w_prior — autonomy IS the self-loop coupling weight.
+# ═══════════════════════════════════════════════════════════════
+
+# Floor for individual ratio nodes (prevents division by zero)
+WU_WEI_NODE_FLOOR: Final[float] = 0.01
+
+# Clip bounds for the computed ratio (keeps temperature within ×4 range)
+WU_WEI_RATIO_FLOOR: Final[float] = 0.25  # Clamp floor: max 4× temperature boost
+WU_WEI_RATIO_CEILING: Final[float] = 4.0  # Clamp ceiling: max 4× temperature reduction
+
+# top_p log-scale modulation (log(ratio)=0 at flow, negative for novel, positive for familiar)
+WU_WEI_TOP_P_SCALE: Final[float] = 0.1  # Gentle nudge; full ×ln(4)≈1.4 → ±0.14 delta
+WU_WEI_TOP_P_FLOOR: Final[float] = 0.50  # Minimum top_p after modulation
+WU_WEI_TOP_P_CEILING: Final[float] = 0.99  # Maximum top_p after modulation
+
 LLM_NUM_CTX: Final[int] = 32768
 LLM_TOP_P: Final[float] = 0.9
 # GLM-4.7-Flash and Qwen3 trained without repetition penalty; keep at 1.0
@@ -388,6 +413,21 @@ def validate_constants() -> list[str]:
             f"PERCEIVE_SLERP_WEIGHT ({PERCEIVE_SLERP_WEIGHT}) > "
             f"EXPRESS_SLERP_WEIGHT ({EXPRESS_SLERP_WEIGHT}): "
             f"input influence exceeds output influence"
+        )
+
+    # Wu Wei ratio bounds must be ordered and straddle 1.0 (flow point)
+    if WU_WEI_RATIO_FLOOR >= 1.0:
+        warnings.append(
+            f"WU_WEI_RATIO_FLOOR ({WU_WEI_RATIO_FLOOR}) >= 1.0: flow point not reachable"
+        )
+    if WU_WEI_RATIO_CEILING <= 1.0:
+        warnings.append(
+            f"WU_WEI_RATIO_CEILING ({WU_WEI_RATIO_CEILING}) <= 1.0: flow point not reachable"
+        )
+    if WU_WEI_TOP_P_FLOOR >= WU_WEI_TOP_P_CEILING:
+        warnings.append(
+            f"WU_WEI_TOP_P_FLOOR ({WU_WEI_TOP_P_FLOOR}) >= "
+            f"WU_WEI_TOP_P_CEILING ({WU_WEI_TOP_P_CEILING})"
         )
 
     return warnings

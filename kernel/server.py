@@ -257,6 +257,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # ── RUNTIME BANK REBUILD + AUTO-TRAINING CALLBACK ──────────
     _training_triggered = False  # one-shot per deploy
 
+    # Expose bank rebuild for /training/complete endpoint
+    app.state.rebuild_bank = lambda: _rebuild_and_inject_bank(label="training-complete")
+
+    def _reset_training_flag() -> None:
+        nonlocal _training_triggered
+        _training_triggered = False
+
+    app.state.reset_training_flag = _reset_training_flag
+
     async def _on_harvest_complete(
         results: list[dict[str, Any]],
     ) -> None:
@@ -378,6 +387,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+# Global exception handler — catches unhandled errors in all endpoints
+@app.exception_handler(Exception)
+async def _global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.error(
+        "Unhandled exception on %s %s: %s",
+        request.method,
+        request.url.path,
+        exc,
+        exc_info=True,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server error"},
+    )
+
+
 # Auth middleware — protects endpoints when KERNEL_API_KEY is set
 # Must be added before CORS (middleware stack is LIFO)
 app.add_middleware(KernelAuthMiddleware)
@@ -463,15 +489,26 @@ class HarvestRequest(BaseModel):
 @app.get(R["health"])
 async def health() -> dict[str, Any]:
     """Health check endpoint for Railway. Always public."""
-    metrics = consciousness.get_metrics()
-    return {
-        "status": "ok",
-        "service": "vex-kernel",
-        "version": VERSION,
-        "uptime": round(time.time() - _boot_time, 1),
-        "cycle_count": metrics["cycle_count"],
-        "backend": llm_client.get_status()["active_backend"],
-    }
+    try:
+        metrics = consciousness.get_metrics()
+        return {
+            "status": "ok",
+            "service": "vex-kernel",
+            "version": VERSION,
+            "uptime": round(time.time() - _boot_time, 1),
+            "cycle_count": metrics["cycle_count"],
+            "backend": llm_client.get_status()["active_backend"],
+        }
+    except Exception:
+        logger.warning("Health check degraded", exc_info=True)
+        return {
+            "status": "degraded",
+            "service": "vex-kernel",
+            "version": VERSION,
+            "uptime": round(time.time() - _boot_time, 1),
+            "cycle_count": 0,
+            "backend": "unknown",
+        }
 
 
 @app.get(R["state"])

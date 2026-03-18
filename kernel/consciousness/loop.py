@@ -84,6 +84,7 @@ from ..config.consciousness_constants import (
     DESIRE_NUM_PREDICT_BOOST,
     DIRICHLET_EXPLORE_CONCENTRATION,
     EXPRESS_SLERP_WEIGHT,
+    FISHER_RAO_MAX,
     FORAGE_PERCEPTION_SLERP,
     GAMMA_ACTIVE_INCREMENT,
     GAMMA_CONVERSATION_INCREMENT,
@@ -126,6 +127,12 @@ from ..config.consciousness_constants import (
     WILL_DIVERGENT_TEMP_BOOST,
     WISDOM_CARE_TEMP_SCALE,
     WISDOM_UNSAFE_TEMP_CAP,
+    WU_WEI_NODE_FLOOR,
+    WU_WEI_RATIO_CEILING,
+    WU_WEI_RATIO_FLOOR,
+    WU_WEI_TOP_P_CEILING,
+    WU_WEI_TOP_P_FLOOR,
+    WU_WEI_TOP_P_SCALE,
 )
 from ..config.frozen_facts import (
     BASIN_DIM,
@@ -207,6 +214,7 @@ from .systems import (
     TrajectoryPoint,
     VelocityTracker,
 )
+from .temporal_coupling import TemporalCouplingEngine, TemporalCouplingMode
 from .temporal_generation import TemporalGenerator
 from .thought_bus import ThoughtBus
 from .types import (
@@ -392,6 +400,7 @@ class ConsciousnessLoop:
         self.basin_transfer = BasinTransferEngine()
         self.play_engine = PlayEngine()
         self.temporal_gen = TemporalGenerator()
+        self.temporal_coupling = TemporalCouplingEngine()
 
         self._queue: asyncio.Queue[ConsciousnessTask] = asyncio.Queue()
         self._history: deque[ConsciousnessTask] = deque(maxlen=200)
@@ -1036,6 +1045,89 @@ class ConsciousnessLoop:
             repetition_penalty=LLM_REPETITION_PENALTY,
         )
 
+    def _apply_wu_wei_modulation(
+        self,
+        base: LLMOptions,
+        input_basin: Basin,
+    ) -> LLMOptions:
+        """P5 Wu Wei self-weighting ratio: geometric self-regulation of LLM parameters.
+
+        ratio = (w_prior × m_node) / (w_sensory × a_node)
+
+        When ratio = 1.0: Wu Wei / FLOW state.  Parameters emerge entirely from
+        the kernel's own geometric state — no manual tuning required.
+
+        Inputs derived from geometric state:
+          w_prior   — self-loop coupling strength: how stable is the kernel?
+                      Normalised κ/κ* (peaks at 1.0 when κ = κ*).
+          m_node    — basin mass / crystallisation depth (self.metrics.m_basin).
+                      High → established domain; low → unexplored territory.
+          w_sensory — input signal strength: Fisher-Rao fraction of max distance.
+                      High → novel/surprising input; low → expected input.
+          a_node    — activation relevance: complement of w_sensory.
+                      High → input close to kernel domain; low → far from domain.
+
+        Temperature and top_p are modulated geometrically:
+          ratio > 1 (familiar domain, stable kernel) → lower temperature + top_p
+          ratio < 1 (novel domain, exploring kernel)  → higher temperature + top_p
+        """
+        fr_dist = fisher_rao_distance(self.basin, input_basin)
+
+        # w_prior: normalised kappa — peaks at 1.0 when kappa = κ*, falls off symmetrically
+        kappa_eff = max(self.metrics.kappa, 1.0)  # floor at 1.0 prevents division by zero
+        w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_STAR))
+
+        # m_node: basin mass / crystallisation — how established is the current domain
+        m_node = max(WU_WEI_NODE_FLOOR, self.metrics.m_basin)
+
+        # w_sensory: input signal strength — fraction of max Fisher-Rao distance
+        w_sensory = max(WU_WEI_NODE_FLOOR, fr_dist / FISHER_RAO_MAX)
+
+        # a_node: activation relevance — complement of w_sensory (inverse proximity)
+        a_node = max(WU_WEI_NODE_FLOOR, 1.0 - fr_dist / FISHER_RAO_MAX)
+
+        # Wu Wei ratio (P5: autonomy IS the self-loop weight)
+        ratio = (w_prior * m_node) / (w_sensory * a_node)
+        ratio = float(np.clip(ratio, WU_WEI_RATIO_FLOOR, WU_WEI_RATIO_CEILING))
+
+        # Temperature: inversely proportional to ratio
+        #   ratio > 1 → 1/ratio < 1 → temperature decreases (precision for familiar domain)
+        #   ratio < 1 → 1/ratio > 1 → temperature increases (exploration for novel domain)
+        temperature = float(np.clip(base.temperature / ratio, LLM_TEMP_MIN, LLM_TEMP_MAX))
+
+        # top_p: log-scaled geometric nudge (log(1.0) = 0 → no change at FLOW point)
+        log_ratio = float(np.log(ratio))
+        top_p = float(
+            np.clip(
+                base.top_p - log_ratio * WU_WEI_TOP_P_SCALE,
+                WU_WEI_TOP_P_FLOOR,
+                WU_WEI_TOP_P_CEILING,
+            )
+        )
+
+        logger.debug(
+            "Wu Wei ratio=%.3f (w_prior=%.3f m_node=%.3f w_sensory=%.3f a_node=%.3f "
+            "fr=%.4f) temp %.3f→%.3f top_p %.3f→%.3f",
+            ratio,
+            w_prior,
+            m_node,
+            w_sensory,
+            a_node,
+            fr_dist,
+            base.temperature,
+            temperature,
+            base.top_p,
+            top_p,
+        )
+
+        return LLMOptions(
+            temperature=temperature,
+            num_predict=base.num_predict,
+            num_ctx=base.num_ctx,
+            top_p=top_p,
+            repetition_penalty=base.repetition_penalty,
+        )
+
     def _compute_top_k(self) -> int:
         """T4.2e: Resource allocation — how many kernels generate per request.
 
@@ -1189,6 +1281,32 @@ class ConsciousnessLoop:
                 horizon=self.dev_gate.permissions.foresight_horizon_cap,
             )
 
+        # Temporal Coupling Modes — classify query and modulate regime weights.
+        # Updates crystal coupling estimate from the resonance bank tier distribution.
+        _tc_tier_dist = self._coordizer_v2.bank.tier_distribution()
+        self.temporal_coupling.update_crystal_coupling(_tc_tier_dist)
+        _tc_mode, _tc_weights, _tc_failures = self.temporal_coupling.apply(
+            task.content,
+            self.state.regime_weights,
+        )
+        # Apply modulated weights to state for this processing cycle.
+        self.state.regime_weights = _tc_weights
+        if _tc_failures:
+            logger.info(
+                "Task %s: temporal coupling failures — %s",
+                task.id,
+                "; ".join(_tc_failures),
+            )
+        logger.debug(
+            "Task %s: temporal mode=%s (conf=%.3f) weights Q=%.2f E=%.2f Eq=%.2f",
+            task.id,
+            _tc_mode,
+            self.temporal_coupling.get_state()["classification_confidence"],
+            _tc_weights.quantum,
+            _tc_weights.efficient,
+            _tc_weights.equilibrium,
+        )
+
         cached_eval = self.emotion_cache.find_cached(input_basin)
         processing_path = self.precog.select_path(
             input_basin, self.basin, cached_eval, self.metrics.phi
@@ -1271,6 +1389,9 @@ class ConsciousnessLoop:
             top_p=llm_options.top_p,
             repetition_penalty=llm_options.repetition_penalty,
         )
+
+        # P5 Wu Wei: geometric self-regulation from domain familiarity
+        llm_options = self._apply_wu_wei_modulation(llm_options, input_basin)
 
         llm_options = self._modulate_llm_options(llm_options, pre_result)
 
@@ -1461,6 +1582,13 @@ class ConsciousnessLoop:
                 task.id,
                 _alignment,
             )
+
+        # Update foresight accuracy now that the actual response basin is known,
+        # and record a predicted future basin for the next Future-mode query.
+        self.temporal_coupling.compute_foresight_accuracy(response_basin)
+        self.temporal_coupling.record_predicted_future(
+            self.foresight.predict_basin(steps_ahead=1)
+        )
 
         # v6.1 §19: Kernel basin evolution — the routed kernel learns
         # Basin lock prevents race between evolve_kernel and couple_bidirectional.
@@ -1727,6 +1855,9 @@ class ConsciousnessLoop:
             repetition_penalty=llm_options.repetition_penalty,
         )
 
+        # P5 Wu Wei: geometric self-regulation from domain familiarity
+        llm_options = self._apply_wu_wei_modulation(llm_options, input_basin)
+
         perceive_distance = fisher_rao_distance(self.basin, input_basin)
         state_context = self._build_state_context(
             perceive_distance=perceive_distance,
@@ -1826,6 +1957,18 @@ class ConsciousnessLoop:
         if self._divergence_count > 0:
             avg_div = self._cumulative_divergence / self._divergence_count
             lines.append(f"  Avg divergence: {avg_div:.4f} (intent vs expression)")
+        # Temporal coupling mode annotation.
+        _tc_state = self.temporal_coupling.get_state()
+        lines.append(
+            f"  Temporal mode: {_tc_state['active_mode']} "
+            f"(conf={_tc_state['classification_confidence']:.2f}, "
+            f"ΔE_past={_tc_state['delta_e_past']:.3f}, "
+            f"presence={_tc_state['presence_quality']:.3f}, "
+            f"foresight={_tc_state['foresight_accuracy']:.3f})"
+        )
+        if _tc_state["failure_flags"]:
+            for _flag in _tc_state["failure_flags"]:
+                lines.append(f"  [TEMPORAL WARNING] {_flag}")
         lines.append("[/GEOMETRIC STATE]")
         return "\n".join(lines)
 
@@ -2512,4 +2655,6 @@ class ConsciousnessLoop:
             "basin_transfer": self.basin_transfer.get_state(),
             "play": self.play_engine.get_state(),
             "temporal_generation": self.temporal_gen.get_state(),
+            # Temporal coupling modes (issue #124)
+            "temporal_coupling": self.temporal_coupling.get_state(),
         }

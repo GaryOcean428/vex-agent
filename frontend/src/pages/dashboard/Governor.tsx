@@ -55,13 +55,16 @@ export default function Governor() {
     if (!gov || killSwitchLoading) return;
     setKillSwitchLoading(true);
     try {
-      await fetch(API.governorKillSwitch, {
+      const resp = await fetch(API.governorKillSwitch, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: !gov.kill_switch }),
       });
-    } catch {
-      /* ignore */
+      if (!resp.ok) {
+        setBudgetMsg(`Kill switch error: ${resp.status}`);
+      }
+    } catch (err) {
+      setBudgetMsg(`Kill switch failed: ${err instanceof Error ? err.message : String(err)}`);
     }
     setKillSwitchLoading(false);
   }, [gov, killSwitchLoading]);
@@ -70,13 +73,16 @@ export default function Governor() {
     if (!gov || autoSearchLoading) return;
     setAutoSearchLoading(true);
     try {
-      await fetch(API.governorAutonomousSearch, {
+      const resp = await fetch(API.governorAutonomousSearch, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: !gov.autonomous_search }),
       });
-    } catch {
-      /* ignore */
+      if (!resp.ok) {
+        setBudgetMsg(`Autonomous search error: ${resp.status}`);
+      }
+    } catch (err) {
+      setBudgetMsg(`Autonomous search failed: ${err instanceof Error ? err.message : String(err)}`);
     }
     setAutoSearchLoading(false);
   }, [gov, autoSearchLoading]);

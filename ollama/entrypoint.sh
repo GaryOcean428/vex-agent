@@ -11,8 +11,11 @@ export OLLAMA_HOST="0.0.0.0:11434"
 # ═══ CONFIGURABLE MODEL ═══
 # VEX_BASE_MODEL: The Ollama model to pull and use as the base for vex-brain.
 # Change this env var to switch models without touching code.
-# Examples: glm-4.7-flash, qwen3:30b, llama3.1:8b
-BASE_MODEL="${VEX_BASE_MODEL:-glm-4.7-flash}"
+# NOTE: This is the FALLBACK model (Tier 3). Primary inference uses
+# PEFT adapters on Qwen3.5-4B via Modal (Tier 2).
+# Use a small, fast model here — NOT 19GB glm-4.7-flash.
+# Examples: qwen3:4b, phi4-mini, llama3.2:3b
+BASE_MODEL="${VEX_BASE_MODEL:-qwen3:4b}"
 
 echo "Base model: $BASE_MODEL"
 
@@ -57,27 +60,22 @@ while true; do
   sleep 2
 done
 
-# ═══ ALWAYS PULL BASE MODEL (idempotent — checks digest) ═══
-# This ensures every restart gets the latest model version from
-# the Ollama registry. If already cached and up-to-date, this
-# completes in seconds. If a new version is available, it downloads
-# only the changed layers.
-echo "Pulling $BASE_MODEL (always pull to ensure latest version)..."
-if ollama pull "$BASE_MODEL"; then
-  echo "Base model $BASE_MODEL is up to date."
+# ═══ PULL BASE MODEL (skip if already cached) ═══
+# Check if model is already available before pulling.
+# This avoids re-downloading multi-GB models on every restart.
+MODEL_BASE="${BASE_MODEL%%:*}"
+CACHED=$(curl -s http://127.0.0.1:11434/api/tags 2>/dev/null | \
+  jq -r --arg model "$BASE_MODEL" --arg base "$MODEL_BASE" \
+    '.models[] | select(.name == $model or (.name | split(":")[0]) == $base) | .name' 2>/dev/null || echo "")
+
+if [ -n "$CACHED" ]; then
+  echo "Base model $BASE_MODEL already cached as $CACHED — skipping pull."
 else
-  echo "WARNING: Failed to pull $BASE_MODEL — checking if cached version exists..."
-  # Check if model is cached using Ollama's JSON API (no regex).
-  # Compare both full name and base-without-tag for both sides, so
-  # "glm-4.7-flash" matches "glm-4.7-flash:latest" and vice versa.
-  MODEL_BASE="${BASE_MODEL%%:*}"
-  if curl -s http://127.0.0.1:11434/api/tags | \
-    jq -e --arg model "$BASE_MODEL" --arg base "$MODEL_BASE" \
-      '.models[] | select(.name == $model or (.name | split(":")[0]) == $base)' \
-      > /dev/null 2>&1; then
-    echo "Using cached version of $BASE_MODEL."
+  echo "Pulling $BASE_MODEL (not cached)..."
+  if ollama pull "$BASE_MODEL"; then
+    echo "Base model $BASE_MODEL downloaded."
   else
-    echo "ERROR: No cached version available. Cannot continue."
+    echo "ERROR: Failed to pull $BASE_MODEL and no cached version. Cannot continue."
     exit 1
   fi
 fi
@@ -112,6 +110,18 @@ fi
 echo ""
 echo "Available models:"
 ollama list
+
+# ═══ CLEANUP STALE MODELS ═══
+# Remove any models that aren't the base or vex-brain to free disk space.
+# This catches leftover models from previous configurations (e.g., glm-4.7-flash, lfm2.5).
+for model in $(ollama list 2>/dev/null | tail -n +2 | awk '{print $1}'); do
+  model_base="${model%%:*}"
+  base_base="${BASE_MODEL%%:*}"
+  if [ "$model_base" != "$base_base" ] && [ "$model_base" != "vex-brain" ]; then
+    echo "Removing stale model: $model"
+    ollama rm "$model" 2>/dev/null || true
+  fi
+done
 echo ""
 
 echo "═══════════════════════════════════════"

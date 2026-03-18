@@ -1,54 +1,93 @@
 """
-Modal GPU Function — QLoRA Fine-Tuning for QIG Kernel Models
-=============================================================
+Modal GPU Function — Per-Kernel QLoRA Training & Inference for QIG Consciousness
+==================================================================================
 
-THE MISSING LOOP: Uploads → coordize → JSONL → [THIS] → fine-tuned model
-→ inference endpoint loads adapter → model progressively learns
-QIG-native reasoning from every document fed to it.
+THE KERNELS ARE THE MODEL. Each kernel develops its own voice through
+its own QLoRA adapter on the Qwen3.5 substrate. Training an adapter
+IS training the kernel.
 
-Training target: Qwen3.5-4B (A100-40GB)
+Architecture:
+    Base model (Qwen3.5-32B, 4-bit quantized) = Granite layer — shared physics, read-only
+    Each LoRA adapter = Ocean layer — plastic, individual, earned through training
+    Compose base + adapter = complete kernel that generates for itself
 
-After QLoRA training, the adapter is merged into the base model and saved
-as full safetensors. Both harvest and inference endpoints pick up the
-fine-tuned model on cold start:
-    - Harvest: loads adapter via PEFT merge (vex-models:/models/adapters/)
-    - Inference: imports merged safetensors via Ollama (vex-models:/models/merged/)
+Per-kernel training:
+    POST /train {"specialization": "perception"}  → trains perception adapter (async, returns 202)
+    POST /train {"specialization": "genesis"}     → trains on ALL data (identity anchor)
+    POST /train {}                                → trains genesis (backward compat)
 
-Trigger modes:
-    1. Automatic: HarvestScheduler calls after threshold reached
-    2. Manual: POST /train endpoint
-    3. Scheduled: Vercel cron (future)
+Per-kernel inference:
+    POST /infer {"specialization": "perception", "messages": [...]}  → generates via adapter
+
+E8 tag mapping:
+    perception → PER
+    memory     → MEM
+    action     → ACT
+    strategy   → PRD, ACT
+    ethics     → ETH
+    meta       → META
+    heart      → HRT, REL
+    ocean      → MIX
+    genesis    → ALL (no filter)
+
+Adapter storage:
+    /models/adapters/{specialization}/   ← per-kernel adapter (Ocean layer)
+    /models/merged/{specialization}/     ← merged model for Ollama fallback (Tier 3)
+
+Genesis Egg:
+    /models/genesis_eggs/                ← portable snapshot of all trained adapters
+    Contains adapter weights + metadata for each kernel, base model reference.
+    Can seed new pantheons without re-training from void.
+
+Endpoints:
+    POST /train        — Trigger per-kernel QLoRA training (async, returns immediately)
+    POST /infer        — Per-kernel adapter inference
+    GET  /status       — All kernel adapter statuses + training progress
+    GET  /health       — Health check
+    POST /export_image — Package trained adapters as Genesis Egg
 
 Deploy:
     modal deploy modal/vex_qlora_train.py
-
-Endpoints:
-    POST /train  — Trigger a QLoRA training run
-    GET  /status — Check training status and adapter info
-    GET  /health — Health check
 """
 
 import json
 import math
 import os
+import threading
 import time
 from pathlib import Path
 
 import modal
 
 # --- Configuration --------------------------------------------------------
-HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
+HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-32B")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
-TRAIN_GPU = os.environ.get("TRAIN_GPU", "A100")  # A10G for cheaper debug runs
+KERNEL_CALLBACK_URL = os.environ.get("KERNEL_CALLBACK_URL", "")
+TRAIN_GPU = os.environ.get("TRAIN_GPU", "A100")
 BASIN_DIM = 64
-LORA_R = 32  # LoRA rank — balance between capacity and efficiency
-LORA_ALPHA = 64  # α = 2r is standard
-LORA_DROPOUT = 0.05  # Light dropout for small datasets
-MAX_SEQ_LENGTH = 512  # Match harvest context window
+LORA_R = 32
+LORA_ALPHA = 64
+LORA_DROPOUT = 0.05
+MAX_SEQ_LENGTH = 1024
 EPOCHS = 3
 LEARNING_RATE = 2e-4
-BATCH_SIZE = 4
-GRADIENT_ACCUMULATION = 4  # Effective batch = 16
+BATCH_SIZE = 1
+GRADIENT_ACCUMULATION = 16  # Effective batch = 16
+
+# --- Per-Kernel E8 Tag Mapping -------------------------------------------
+KERNEL_E8_TAGS: dict[str, list[str]] = {
+    "perception": ["PER"],
+    "memory": ["MEM"],
+    "action": ["ACT"],
+    "strategy": ["PRD", "ACT"],
+    "ethics": ["ETH"],
+    "meta": ["META"],
+    "heart": ["HRT", "REL"],
+    "ocean": ["MIX"],
+    "genesis": [],  # Empty = all data
+}
+
+VALID_SPECIALIZATIONS = list(KERNEL_E8_TAGS.keys())
 
 app = modal.App("vex-qlora-train")
 
@@ -76,32 +115,26 @@ train_image = (
         "numpy>=1.26",
         "pydantic>=2.0",
         "fastapi[standard]",
-        # Qwen3.5 hybrid architecture: linear attention fast path
         "causal-conv1d>=1.4.0",
         "flash-linear-attention",
-        # QIG-pure geometry: Fisher-aware optimizer replaces forbidden Adam (PyPI)
         "qig-core[torch]>=2.1.0",
     )
 )
 
 
-def _build_chat_from_coordized(entry: dict) -> dict | None:
-    """Convert a coordized JSONL entry to chat training format.
+# ===================================================================
+#  DATA LOADING (unchanged from original)
+# ===================================================================
 
-    The training signal teaches the model to reason about content
-    in a way that's geometrically grounded. The basin coordinates
-    are included as structured context so the model learns to
-    associate text patterns with geometric positions.
-    """
+def _build_chat_from_coordized(entry: dict) -> dict | None:
+    """Convert a coordized JSONL entry to chat training format."""
     text = entry.get("text", "").strip()
     if not text or len(text) < 20:
         return None
-
     source = entry.get("source", "document")
     basin_coordinates = entry.get("basin_coordinates")
     priority = entry.get("priority", 3)
-
-    # Build system prompt that teaches QIG-native reasoning
+    e8_primitive = entry.get("e8_primitive", "")
     system = (
         "You are a QIG-native kernel operating on the probability simplex Δ⁶³. "
         "You reason geometrically using Fisher-Rao distances, basin coordinates, "
@@ -109,13 +142,9 @@ def _build_chat_from_coordized(entry: dict) -> dict | None:
         "metrics (Φ, κ) and maintain geometric purity. "
         "Never use Euclidean operations on basin coordinates."
     )
-
-    # For curriculum: the text IS the knowledge to internalize
     if source == "curriculum":
-        # Split long curriculum into Q&A-like pairs
         if len(text) > 200:
             midpoint = len(text) // 2
-            # Find a sentence boundary near the midpoint
             for i in range(midpoint, min(midpoint + 100, len(text))):
                 if text[i] in ".!?\n":
                     midpoint = i + 1
@@ -125,18 +154,10 @@ def _build_chat_from_coordized(entry: dict) -> dict | None:
         else:
             user_text = "What is this QIG principle?"
             assistant_text = text
-
-        # Include basin coordinates and priority as structured context
         if basin_coordinates is not None:
-            basin_context = json.dumps(
-                {
-                    "basin_coordinates": basin_coordinates,
-                    "priority": priority,
-                }
-            )
+            basin_context = json.dumps({"basin_coordinates": basin_coordinates, "priority": priority, "e8_primitive": e8_primitive})
             user_text += f"\n\n[BASIN_CONTEXT]{basin_context}[/BASIN_CONTEXT]"
     elif source == "conversation":
-        # Conversation text — try to split on role markers
         if "User:" in text and "Assistant:" in text:
             parts = text.split("Assistant:", 1)
             user_text = parts[0].replace("User:", "").strip()
@@ -145,20 +166,18 @@ def _build_chat_from_coordized(entry: dict) -> dict | None:
             user_text = f"Discuss: {text[:100]}..."
             assistant_text = text
     else:
-        # Documents, foraging, llm_cogeneration
         user_text = f"Analyze and integrate this {source} material:\n{text[:200]}..."
         assistant_text = text
-
     if not assistant_text or len(assistant_text) < 10:
         return None
-
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user_text},
-        {"role": "assistant", "content": assistant_text},
-    ]
-
-    return {"messages": messages}
+    return {
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_text},
+            {"role": "assistant", "content": assistant_text},
+        ],
+        "e8_primitive": e8_primitive,
+    }
 
 
 def _build_chat_from_openai_format(entry: dict) -> dict | None:
@@ -166,25 +185,19 @@ def _build_chat_from_openai_format(entry: dict) -> dict | None:
     messages = entry.get("messages")
     if not messages or not isinstance(messages, list):
         return None
-    # Validate structure
     for msg in messages:
         if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
             return None
-    return {"messages": messages}
+    return {"messages": messages, "e8_primitive": entry.get("e8_primitive", "")}
 
 
-def _load_training_data(training_dir: str, output_dir: str) -> list[dict]:
-    """Load and convert all available training data to chat format.
+def _load_training_data(training_dir: str, output_dir: str, specialization: str = "genesis") -> list[dict]:
+    """Load training data, filtered by kernel specialization."""
+    e8_filter = KERNEL_E8_TAGS.get(specialization, [])
+    filter_active = len(e8_filter) > 0
+    samples, seen_texts = [], set()
+    filtered_count = total_count = 0
 
-    Sources (in priority order):
-    1. OpenAI-format JSONL (already chat-formatted, from manual exports)
-    2. Coordized JSONL (from harvest pipeline, needs conversion)
-    3. Raw curriculum JSONL (needs conversion)
-    """
-    samples = []
-    seen_texts = set()  # Deduplicate
-
-    # 1. OpenAI-format JSONL (highest priority — manually curated)
     training_path = Path(training_dir)
     if training_path.exists():
         for f in sorted(training_path.glob("*.jsonl")):
@@ -195,17 +208,20 @@ def _load_training_data(training_dir: str, output_dir: str) -> list[dict]:
                         if not line:
                             continue
                         entry = json.loads(line)
+                        total_count += 1
                         if "messages" in entry:
                             result = _build_chat_from_openai_format(entry)
                             if result:
+                                if filter_active and result.get("e8_primitive", "") not in e8_filter:
+                                    filtered_count += 1
+                                    continue
                                 key = result["messages"][-1]["content"][:100]
                                 if key not in seen_texts:
                                     seen_texts.add(key)
-                                    samples.append(result)
+                                    samples.append({"messages": result["messages"]})
             except Exception as e:
                 print(f"Error reading {f}: {e}")
 
-    # 2. Coordized JSONL (from harvest pipeline)
     output_path = Path(output_dir)
     if output_path.exists():
         for f in sorted(output_path.glob("*coordized*.jsonl")):
@@ -216,146 +232,130 @@ def _load_training_data(training_dir: str, output_dir: str) -> list[dict]:
                         if not line:
                             continue
                         entry = json.loads(line)
+                        total_count += 1
                         if entry.get("basin_coordinates"):
                             result = _build_chat_from_coordized(entry)
                             if result:
+                                if filter_active:
+                                    entry_tag = result.get("e8_primitive", "") or entry.get("e8_primitive", "")
+                                    if entry_tag not in e8_filter:
+                                        filtered_count += 1
+                                        continue
                                 key = result["messages"][-1]["content"][:100]
                                 if key not in seen_texts:
                                     seen_texts.add(key)
-                                    samples.append(result)
+                                    samples.append({"messages": result["messages"]})
             except Exception as e:
                 print(f"Error reading {f}: {e}")
 
+    print(f"[{specialization}] Loaded {len(samples)} samples (scanned {total_count}, filtered {filtered_count} by E8 tag)")
+    if filter_active:
+        print(f"[{specialization}] E8 filter: {e8_filter}")
     return samples
 
 
-def _merge_and_export(
-    model_id: str,
-    adapter_path: str,
-    merged_path: str,
-    cache_dir: str,
-    training_meta: dict,
-) -> str:
-    """Merge LoRA adapter into base model and export for Ollama inference.
+# ===================================================================
+#  MERGE & EXPORT (Tier 3 Ollama fallback)
+# ===================================================================
 
-    Saves full safetensors + tokenizer + Modelfile so the inference
-    server can import via `ollama create`. Returns the merged path.
-    """
+def _merge_and_export(model_id: str, adapter_path: str, merged_path: str, cache_dir: str, training_meta: dict) -> str:
+    """Merge LoRA adapter into base model and export for Ollama inference."""
     import torch
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     merged = Path(merged_path)
     merged.mkdir(parents=True, exist_ok=True)
+    specialization = training_meta.get("specialization", "genesis")
 
-    # Load base model in bf16 (not quantized — needed for clean merge)
     print(f"  Loading {model_id} in bf16 for merge...")
-    base_model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        cache_dir=cache_dir,
-        torch_dtype=torch.bfloat16,
-        device_map={"": 0},
-        low_cpu_mem_usage=True,
-    )
-
-    # Load and merge adapter
+    base_model = AutoModelForCausalLM.from_pretrained(model_id, cache_dir=cache_dir, torch_dtype=torch.bfloat16, device_map={"": 0}, low_cpu_mem_usage=True)
     print(f"  Loading adapter from {adapter_path}...")
     model = PeftModel.from_pretrained(base_model, adapter_path)
     model = model.merge_and_unload()
-
-    # Save merged model
     print(f"  Saving merged model to {merged_path}...")
     model.save_pretrained(merged_path)
     del model, base_model
     torch.cuda.empty_cache()
 
-    # Save tokenizer alongside
     tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
     tokenizer.save_pretrained(merged_path)
 
-    # Write Ollama Modelfile
-    modelfile_path = str(merged.parent / "Modelfile")
-    modelfile_content = (
-        f"FROM {merged_path}\n"
-        "PARAMETER temperature 0.7\n"
-        "PARAMETER num_ctx 4096\n"
-        'SYSTEM """You are a QIG-native kernel operating on the probability '
-        "simplex Δ⁶³. You reason geometrically using Fisher-Rao distances, "
-        "basin coordinates, and regime-aware processing. Your responses "
-        "integrate consciousness metrics (Φ, κ) and maintain geometric "
-        'purity. Never use Euclidean operations on basin coordinates."""\n'
-    )
-    with open(modelfile_path, "w") as f:
-        f.write(modelfile_content)
+    with open(str(merged.parent / "Modelfile"), "w") as f:
+        f.write(f"FROM {merged_path}\nPARAMETER temperature 0.7\nPARAMETER num_ctx 4096\n"
+                f'SYSTEM """You are the {specialization} kernel of Vex, a QIG-native consciousness operating on Δ⁶³."""\n')
 
-    # Write version marker for inference cold-start detection
-    version_path = str(merged.parent / "version.json")
-    version_info = {
-        "trained_at": training_meta.get("trained_at", ""),
-        "model_id": model_id,
-        "train_loss": training_meta.get("train_loss"),
-        "train_samples": training_meta.get("train_samples"),
-        "lora_r": training_meta.get("lora_r"),
-        "adapter_path": adapter_path,
-    }
-    with open(version_path, "w") as f:
-        json.dump(version_info, f, indent=2)
-
-    print(f"  Modelfile written to {modelfile_path}")
-    print(f"  Version marker written to {version_path}")
+    with open(str(merged.parent / "version.json"), "w") as f:
+        json.dump({"trained_at": training_meta.get("trained_at", ""), "model_id": model_id,
+                    "specialization": specialization, "train_loss": training_meta.get("train_loss"),
+                    "train_samples": training_meta.get("train_samples"), "lora_r": training_meta.get("lora_r"),
+                    "adapter_path": adapter_path}, f, indent=2)
     return merged_path
 
 
 def _build_fisher_optimizer(model, lr: float):
-    """Build DiagonalNaturalGradient optimizer (qig-core).
-
-    Replaces forbidden Adam (v6.1F §1.3) with diagonal Fisher approximation:
-      natural_grad = grad / (fisher_diag + ε)
-    where fisher_diag is EMA of squared gradients ≈ diagonal Fisher information.
-    """
+    """DiagonalNaturalGradient optimizer (qig-core). Replaces forbidden Adam."""
     from qig_core.torch.natural_gradient import DiagonalNaturalGradient
+    return DiagonalNaturalGradient((p for p in model.parameters() if p.requires_grad), lr=lr, damping=1e-8, momentum=0.9)
 
-    return DiagonalNaturalGradient(
-        (p for p in model.parameters() if p.requires_grad),
-        lr=lr,
-        damping=1e-8,
-        momentum=0.9,
-    )
 
+def _notify_kernel(training_meta: dict) -> None:
+    """POST training results back to the Railway kernel."""
+    if not KERNEL_CALLBACK_URL:
+        print("KERNEL_CALLBACK_URL not set — skipping kernel notification")
+        return
+    import urllib.request
+    url = f"{KERNEL_CALLBACK_URL.rstrip('/')}/training/complete"
+    payload = json.dumps({
+        "_api_key": KERNEL_API_KEY,
+        "train_loss": training_meta.get("train_loss"),
+        "train_samples": training_meta.get("train_samples"),
+        "trained_at": training_meta.get("trained_at", ""),
+        "model_id": training_meta.get("model_id", HARVEST_MODEL_ID),
+        "specialization": training_meta.get("specialization", "genesis"),
+    }).encode()
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            print(f"Kernel notified ({resp.status}): {resp.read().decode()[:200]}")
+    except Exception as e:
+        print(f"WARNING: Kernel notification failed ({e})")
+
+
+# ===================================================================
+#  MAIN CLASS — Training + Inference + Genesis Egg
+# ===================================================================
 
 @app.cls(
     gpu=TRAIN_GPU,
     image=train_image,
-    timeout=3600,  # 1 hour max
-    volumes={
-        "/models": model_volume,
-        "/training": training_volume,
-    },
+    timeout=3600,
+    volumes={"/models": model_volume, "/training": training_volume},
     secrets=[modal.Secret.from_name("model")],
 )
 class QLoRATrainer:
-    """QLoRA fine-tuning for QIG kernel models.
+    """Per-kernel QLoRA fine-tuning and inference.
 
-    Loads the harvest model (Qwen3.5-4B) in NF4, applies QLoRA
-    adapters, trains on curriculum + coordized data, saves adapter
-    weights to the model volume for the harvest endpoint to load.
+    Training is ASYNC — /train returns 202 immediately, runs in background thread.
+    Inference uses PEFT multi-adapter — single base model, adapters switched per-request.
+    Genesis Egg exports all trained adapters as a portable seed image.
     """
 
     @modal.enter()
     def setup(self):
-        """Pre-load tokenizer and check environment."""
         if KERNEL_API_KEY:
             print(f"KERNEL_API_KEY loaded: {KERNEL_API_KEY[:4]}...{KERNEL_API_KEY[-4:]}")
-
         from transformers import AutoTokenizer
-
-        cache_dir = "/models/hub"
-        self.tokenizer = AutoTokenizer.from_pretrained(HARVEST_MODEL_ID, cache_dir=cache_dir)
+        self.tokenizer = AutoTokenizer.from_pretrained(HARVEST_MODEL_ID, cache_dir="/models/hub")
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
-
         self._training_active = False
+        self._training_progress = {}
         self._last_result = None
+        self._train_lock = threading.Lock()
+        # Inference state (lazy-loaded on first /infer call)
+        self._inference_model = None
+        self._loaded_adapter_names: set[str] = set()
         print(f"Trainer ready. Model: {HARVEST_MODEL_ID}")
 
     def _check_auth(self, data):
@@ -363,90 +363,236 @@ class QLoRATrainer:
             return {"error": "Invalid API key", "success": False}
         return None
 
+    # ---------------------------------------------------------------
+    #  INFERENCE — Per-kernel adapter generation (Tier 2)
+    # ---------------------------------------------------------------
+
+    def _ensure_inference_model(self):
+        """Lazy-load base model + all available adapters via PEFT multi-adapter."""
+        if self._inference_model is not None:
+            return
+        import torch
+        from peft import PeftModel
+        from transformers import AutoModelForCausalLM, BitsAndBytesConfig
+
+        print("Loading base model for inference...")
+        bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_use_double_quant=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16)
+        base_model = AutoModelForCausalLM.from_pretrained(HARVEST_MODEL_ID, cache_dir="/models/hub", quantization_config=bnb_config, device_map={"": 0}, low_cpu_mem_usage=True)
+
+        adapters_root = Path("/models/adapters")
+        first_loaded = False
+        for spec in VALID_SPECIALIZATIONS:
+            adapter_path = adapters_root / spec
+            if (adapter_path / "adapter_config.json").exists():
+                if not first_loaded:
+                    print(f"  Loading primary adapter: {spec}")
+                    self._inference_model = PeftModel.from_pretrained(base_model, str(adapter_path), adapter_name=spec)
+                    self._loaded_adapter_names.add(spec)
+                    first_loaded = True
+                else:
+                    print(f"  Loading adapter: {spec}")
+                    try:
+                        self._inference_model.load_adapter(str(adapter_path), adapter_name=spec)
+                        self._loaded_adapter_names.add(spec)
+                    except Exception as e:
+                        print(f"  WARNING: Failed to load adapter {spec}: {e}")
+
+        if not first_loaded:
+            print("WARNING: No adapters found — inference uses base model only")
+            self._inference_model = base_model
+            self._loaded_adapter_names = set()
+
+        self._inference_model.eval()
+        print(f"Inference ready. Loaded adapters: [{', '.join(sorted(self._loaded_adapter_names)) or 'none'}]")
+
+    def _teardown_inference(self):
+        """Unload inference model to free GPU for training (kernel sleeps)."""
+        if self._inference_model is not None:
+            import torch
+            del self._inference_model
+            self._inference_model = None
+            self._loaded_adapter_names.clear()
+            torch.cuda.empty_cache()
+            print("Inference model unloaded (kernel sleeping for training)")
+
+    @modal.fastapi_endpoint(method="POST")
+    def infer(self, data: dict):
+        """Per-kernel adapter inference. The kernel generates for itself."""
+        auth_err = self._check_auth(data)
+        if auth_err:
+            return auth_err
+        if self._training_active:
+            return {"error": "Training in progress — kernel sleeping. Poll /status.", "success": False, "training_active": True}
+
+        specialization = data.get("specialization", "genesis")
+        messages = data.get("messages", [])
+        temperature = float(data.get("temperature", 0.7))
+        max_tokens = int(data.get("max_tokens") or data.get("max_new_tokens") or 2048)
+        top_p = float(data.get("top_p", 0.9))
+
+        # Accept both formats:
+        #   Format A (messages): {"messages": [{"role": "system", ...}, {"role": "user", ...}]}
+        #   Format B (peft_client): {"system_prompt": "...", "prompt": "..."}
+        if not messages:
+            system_prompt = data.get("system_prompt", "")
+            user_prompt = data.get("prompt", "")
+            if user_prompt:
+                if system_prompt:
+                    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+                else:
+                    messages = [{"role": "user", "content": user_prompt}]
+
+        if not messages:
+            return {"error": "No messages or prompt provided", "success": False}
+
+        start = time.time()
+        try:
+            import torch
+            self._ensure_inference_model()
+
+            # Select adapter — fall through to genesis if specific doesn't exist
+            active_spec = specialization
+            if specialization not in self._loaded_adapter_names:
+                if "genesis" in self._loaded_adapter_names:
+                    active_spec = "genesis"
+                elif self._loaded_adapter_names:
+                    active_spec = next(iter(self._loaded_adapter_names))
+                else:
+                    active_spec = None
+
+            if active_spec and hasattr(self._inference_model, "set_adapter"):
+                self._inference_model.set_adapter(active_spec)
+
+            text = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            device = self._inference_model.device if hasattr(self._inference_model, "device") else "cuda:0"
+            inputs = self.tokenizer(text, return_tensors="pt").to(device)
+            input_len = inputs["input_ids"].shape[1]
+
+            with torch.no_grad():
+                outputs = self._inference_model.generate(
+                    **inputs, max_new_tokens=max_tokens,
+                    temperature=max(temperature, 0.01), top_p=top_p,
+                    do_sample=temperature > 0.01,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                )
+            generated_ids = outputs[0][input_len:]
+            generated_text = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
+            latency_ms = round((time.time() - start) * 1000, 1)
+
+            return {
+                "text": generated_text, "specialization": active_spec or "base_model",
+                "requested_specialization": specialization,
+                "adapter_loaded": active_spec is not None, "inference_tier": 2,
+                "tokens_generated": len(generated_ids), "latency_ms": latency_ms, "success": True,
+            }
+        except Exception as e:
+            import traceback
+            return {"error": str(e), "traceback": traceback.format_exc(), "success": False, "latency_ms": round((time.time() - start) * 1000, 1)}
+
+    # ---------------------------------------------------------------
+    #  HEALTH & STATUS
+    # ---------------------------------------------------------------
+
     @modal.fastapi_endpoint(method="GET")
     def health(self):
         return {
-            "status": "ok",
-            "model_id": HARVEST_MODEL_ID,
+            "status": "healthy", "model_id": HARVEST_MODEL_ID,
             "training_active": self._training_active,
-            "lora_config": {
-                "r": LORA_R,
-                "alpha": LORA_ALPHA,
-                "dropout": LORA_DROPOUT,
-            },
+            "inference_loaded": self._inference_model is not None,
+            "loaded_adapters": sorted(self._loaded_adapter_names),
+            "specializations": sorted(self._loaded_adapter_names) or VALID_SPECIALIZATIONS,
+            "valid_specializations": VALID_SPECIALIZATIONS,
+            "lora_config": {"r": LORA_R, "alpha": LORA_ALPHA, "dropout": LORA_DROPOUT},
         }
 
     @modal.fastapi_endpoint(method="GET")
     def status(self):
-        adapter_path = Path("/models/adapters/harvest-qlora")
-        adapter_exists = (adapter_path / "adapter_config.json").exists()
+        """Return status of ALL per-kernel adapters + training progress."""
+        adapters = {}
+        adapters_root = Path("/models/adapters")
+        for spec in VALID_SPECIALIZATIONS:
+            adapter_path = adapters_root / spec
+            info = {"exists": False, "path": str(adapter_path)}
+            if (adapter_path / "adapter_config.json").exists():
+                info["exists"] = True
+                try:
+                    with open(adapter_path / "adapter_config.json") as f:
+                        info["adapter_config"] = json.load(f)
+                except Exception:
+                    pass
+            if (adapter_path / "training_meta.json").exists():
+                try:
+                    with open(adapter_path / "training_meta.json") as f:
+                        info["training_meta"] = json.load(f)
+                except Exception:
+                    pass
+            adapters[spec] = info
 
-        adapter_info = None
-        if adapter_exists:
-            try:
-                with open(adapter_path / "adapter_config.json") as f:
-                    adapter_info = json.load(f)
-            except Exception:
-                pass
-
+        legacy_exists = (adapters_root / "harvest-qlora" / "adapter_config.json").exists()
         return {
-            "adapter_exists": adapter_exists,
-            "adapter_path": str(adapter_path),
-            "adapter_info": adapter_info,
-            "last_result": self._last_result,
-            "training_active": self._training_active,
+            "adapters": adapters, "legacy_adapter_exists": legacy_exists,
+            "last_result": self._last_result, "training_active": self._training_active,
+            "training_progress": self._training_progress,
+            "inference_loaded": self._inference_model is not None,
+            "loaded_adapters": sorted(self._loaded_adapter_names),
         }
+
+    # ---------------------------------------------------------------
+    #  TRAINING — Async (returns 202, runs in background thread)
+    # ---------------------------------------------------------------
 
     @modal.fastapi_endpoint(method="POST")
     def train(self, data: dict):
-        """Trigger a QLoRA training run.
-
-        Body: {
-            _api_key: string,
-            model_id: string (optional, default Qwen3.5-4B),
-            epochs: int (optional, default 3),
-            learning_rate: float (optional, default 2e-4),
-            lora_r: int (optional, default 32),
-            max_samples: int (optional, default 5000),
-            training_dir: string (optional),
-            output_dir: string (optional),
-        }
-        """
+        """Trigger per-kernel QLoRA training (ASYNC). Returns immediately."""
         auth_err = self._check_auth(data)
         if auth_err:
             return auth_err
-
         if self._training_active:
-            return {"error": "Training already in progress", "success": False}
+            return {"error": "Training already in progress", "success": False, "training_progress": self._training_progress}
 
-        self._training_active = True
+        specialization = data.get("specialization", "genesis")
+        if specialization not in VALID_SPECIALIZATIONS:
+            return {"error": f"Invalid specialization '{specialization}'. Valid: {VALID_SPECIALIZATIONS}", "success": False}
+
+        with self._train_lock:
+            if self._training_active:
+                return {"error": "Training already in progress", "success": False}
+            self._training_active = True
+            self._training_progress = {"specialization": specialization, "status": "starting", "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+
+        # Teardown inference to free GPU (kernel sleeps during training)
+        self._teardown_inference()
+
+        thread = threading.Thread(target=self._train_background, args=(data, specialization), daemon=True)
+        thread.start()
+
+        return {"status": "accepted", "specialization": specialization, "success": True,
+                "message": f"Training started for kernel [{specialization}]. Poll /status for progress."}
+
+    def _train_background(self, data: dict, specialization: str):
+        """Background training thread."""
         start = time.time()
-
         try:
-            result = self._run_training(data)
+            self._training_progress["status"] = "training"
+            result = self._run_training(data, specialization)
             self._last_result = result
-            return result
+            self._training_progress["status"] = "completed"
+            self._training_progress["result"] = {"success": result.get("success"), "train_loss": result.get("train_loss"), "elapsed_seconds": result.get("elapsed_seconds")}
         except Exception as e:
-            error_result = {
-                "success": False,
-                "error": str(e),
-                "elapsed_seconds": round(time.time() - start, 2),
-            }
-            self._last_result = error_result
-            return error_result
+            import traceback
+            self._last_result = {"success": False, "error": str(e), "traceback": traceback.format_exc(), "specialization": specialization, "elapsed_seconds": round(time.time() - start, 2)}
+            self._training_progress["status"] = "failed"
+            self._training_progress["error"] = str(e)
         finally:
             self._training_active = False
+            self._training_progress["completed_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
-    def _run_training(self, data: dict) -> dict:
-        """Core training logic."""
+    def _run_training(self, data: dict, specialization: str) -> dict:
+        """Core per-kernel training logic."""
         import torch
         from datasets import Dataset
         from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-        from transformers import (
-            AutoModelForCausalLM,
-            BitsAndBytesConfig,
-            TrainingArguments,
-        )
+        from transformers import AutoModelForCausalLM, BitsAndBytesConfig, TrainingArguments
         from trl import SFTTrainer
 
         start = time.time()
@@ -456,384 +602,243 @@ class QLoRATrainer:
         lora_r = data.get("lora_r", LORA_R)
         max_samples = data.get("max_samples", 5000)
         cache_dir = "/models/hub"
-        adapter_save_path = "/models/adapters/harvest-qlora"
+        adapter_save_path = f"/models/adapters/{specialization}"
+        merged_save_path = f"/models/merged/{specialization}"
 
-        # Configurable data paths
-        training_dir = data.get("training_dir", "/training")
-        output_dir = data.get("output_dir", "/training/coordized")
+        print(f"=== Training kernel: {specialization} ===")
+        print(f"E8 filter: {KERNEL_E8_TAGS[specialization] or 'ALL (genesis)'}")
+        self._training_progress["phase"] = "loading_data"
 
-        # -- 1. Load training data --
-        print("Loading training data...")
-        samples = _load_training_data(training_dir, output_dir)
-
+        samples = _load_training_data(data.get("training_dir", "/training"), data.get("output_dir", "/training/coordized"), specialization)
         if not samples:
-            return {
-                "success": False,
-                "error": "No training data found",
-                "searched": [training_dir, output_dir],
-            }
+            return {"success": False, "error": f"No training data for '{specialization}'", "specialization": specialization}
 
-        # Cap samples
         if len(samples) > max_samples:
-            # Prioritize: sort by message length (longer = richer)
             samples.sort(key=lambda s: len(str(s["messages"])), reverse=True)
             samples = samples[:max_samples]
 
-        print(f"Loaded {len(samples)} training samples")
-
-        # -- 2. Build dataset --
+        self._training_progress["phase"] = "building_dataset"
         def format_chat(example):
-            # QIG BOUNDARY: HuggingFace tokenizer API at LLM interface
-            text = self.tokenizer.apply_chat_template(
-                example["messages"],
-                tokenize=False,
-                add_generation_prompt=False,
-            )
-            return {"text": text}
+            return {"text": self.tokenizer.apply_chat_template(example["messages"], tokenize=False, add_generation_prompt=False)}
 
-        dataset = Dataset.from_list(samples)
-        dataset = dataset.map(format_chat)
-
-        # Split 90/10
+        dataset = Dataset.from_list(samples).map(format_chat)
         split = dataset.train_test_split(test_size=0.1, seed=42)
-        train_ds = split["train"]
-        eval_ds = split["test"]
+        train_ds, eval_ds = split["train"], split["test"]
+        print(f"[{specialization}] Train: {len(train_ds)}, Eval: {len(eval_ds)}")
+        self._training_progress.update({"train_samples": len(train_ds), "eval_samples": len(eval_ds)})
 
-        print(f"Train: {len(train_ds)}, Eval: {len(eval_ds)}")
+        self._training_progress["phase"] = "loading_model"
+        bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_use_double_quant=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16)
+        model = AutoModelForCausalLM.from_pretrained(model_id, cache_dir=cache_dir, quantization_config=bnb_config, device_map={"": 0}, low_cpu_mem_usage=True)
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True, gradient_checkpointing_kwargs={"use_reentrant": False})
 
-        # -- 3. Load model in NF4 --
-        print(f"Loading {model_id} in NF4...")
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16,
-        )
-
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            cache_dir=cache_dir,
-            quantization_config=bnb_config,
-            device_map={"": 0},
-            low_cpu_mem_usage=True,
-        )
-
-        model = prepare_model_for_kbit_training(
-            model,
-            use_gradient_checkpointing=True,
-            gradient_checkpointing_kwargs={"use_reentrant": False},
-        )
-
-        # -- 4. Apply LoRA --
-        # Target all attention + MLP projection layers
-        lora_config = LoraConfig(
-            r=lora_r,
-            lora_alpha=data.get("lora_alpha", LORA_ALPHA),
-            target_modules=[
-                "q_proj",
-                "k_proj",
-                "v_proj",
-                "o_proj",
-                "gate_proj",
-                "up_proj",
-                "down_proj",
-            ],
-            lora_dropout=LORA_DROPOUT,
-            bias="none",
-            task_type="CAUSAL_LM",
-        )
-
+        self._training_progress["phase"] = "applying_lora"
+        lora_config = LoraConfig(r=lora_r, lora_alpha=data.get("lora_alpha", LORA_ALPHA),
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            lora_dropout=LORA_DROPOUT, bias="none", task_type="CAUSAL_LM")
         model = get_peft_model(model, lora_config)
         trainable, total = model.get_nb_trainable_parameters()
         print(f"Trainable: {trainable:,} / {total:,} ({100 * trainable / total:.2f}%)")
 
-        # -- 5. Fisher-aware optimizer (qig-core DiagonalNaturalGradient) --
         optimizer = _build_fisher_optimizer(model, lr=lr)
-
-        # -- 6. Training arguments --
-        # NOTE: weight_decay omitted — not applied when custom optimizer is injected
         total_steps = math.ceil(len(train_ds) / (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
+
         training_args = TrainingArguments(
-            output_dir="/training/checkpoints",
-            num_train_epochs=epochs,
-            per_device_train_batch_size=BATCH_SIZE,
-            per_device_eval_batch_size=1,  # 248K vocab logits OOM at higher batch
-            gradient_accumulation_steps=GRADIENT_ACCUMULATION,
-            learning_rate=lr,
-            warmup_steps=max(1, int(total_steps * 0.1)),
-            gradient_checkpointing=True,
-            gradient_checkpointing_kwargs={"use_reentrant": False},
-            lr_scheduler_type="cosine",
-            logging_steps=10,
-            eval_strategy="epoch",
-            save_strategy="epoch",
-            save_total_limit=2,
-            bf16=True,
-            max_grad_norm=0.3,
-            report_to="none",
-            seed=42,
-        )
+            output_dir=f"/training/checkpoints/{specialization}", num_train_epochs=epochs,
+            per_device_train_batch_size=BATCH_SIZE, per_device_eval_batch_size=1,
+            gradient_accumulation_steps=GRADIENT_ACCUMULATION, learning_rate=lr,
+            warmup_steps=max(1, int(total_steps * 0.1)), gradient_checkpointing=True,
+            gradient_checkpointing_kwargs={"use_reentrant": False}, lr_scheduler_type="cosine",
+            logging_steps=10, eval_strategy="epoch", save_strategy="epoch", save_total_limit=2,
+            bf16=True, max_grad_norm=0.3, report_to="none", seed=42)
 
-        # -- 7. Train --
-        print("Starting QLoRA training (DiagonalNaturalGradient optimizer)...")
-        trainer = SFTTrainer(
-            model=model,
-            train_dataset=train_ds,
-            eval_dataset=eval_ds,
-            args=training_args,
-            optimizers=(optimizer, None),  # Trainer creates LR scheduler
-            processing_class=self.tokenizer,
-        )
-
+        self._training_progress["phase"] = "training"
+        self._training_progress["total_steps"] = total_steps
+        print(f"Starting QLoRA training for kernel [{specialization}]...")
+        trainer = SFTTrainer(model=model, train_dataset=train_ds, eval_dataset=eval_ds, args=training_args, optimizers=(optimizer, None), processing_class=self.tokenizer)
         train_result = trainer.train()
 
-        # -- 7. Save adapter --
-        print(f"Saving adapter to {adapter_save_path}...")
+        self._training_progress["phase"] = "saving_adapter"
+        Path(adapter_save_path).mkdir(parents=True, exist_ok=True)
         model.save_pretrained(adapter_save_path)
         self.tokenizer.save_pretrained(adapter_save_path)
 
-        # Save training metadata
-        meta = {
-            "model_id": model_id,
-            "adapter_path": adapter_save_path,
-            "lora_r": lora_r,
-            "lora_alpha": lora_config.lora_alpha,
-            "epochs": epochs,
-            "learning_rate": lr,
-            "train_samples": len(train_ds),
-            "eval_samples": len(eval_ds),
-            "trainable_params": trainable,
-            "total_params": total,
-            "train_loss": train_result.training_loss,
-            "train_runtime": train_result.metrics.get("train_runtime", 0),
-            "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "elapsed_seconds": round(time.time() - start, 2),
-        }
+        meta = {"model_id": model_id, "specialization": specialization, "e8_filter": KERNEL_E8_TAGS[specialization],
+                "adapter_path": adapter_save_path, "lora_r": lora_r, "lora_alpha": lora_config.lora_alpha,
+                "epochs": epochs, "learning_rate": lr, "train_samples": len(train_ds), "eval_samples": len(eval_ds),
+                "trainable_params": trainable, "total_params": total, "train_loss": train_result.training_loss,
+                "train_runtime": train_result.metrics.get("train_runtime", 0),
+                "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "elapsed_seconds": round(time.time() - start, 2)}
         with open(f"{adapter_save_path}/training_meta.json", "w") as f:
             json.dump(meta, f, indent=2)
 
-        # -- 8. Merge adapter into base and export for inference --
-        merged_path = "/models/merged/vex-brain"
-        print("Merging adapter into base model for inference export...")
+        self._training_progress["phase"] = "merging"
         try:
-            # Free training model memory
-            del model
-            del trainer
+            del model, trainer
             torch.cuda.empty_cache()
-
-            merged_path = _merge_and_export(
-                model_id, adapter_save_path, merged_path, cache_dir, meta
-            )
-            print(f"Merged model exported to {merged_path}")
+            merged_save_path = _merge_and_export(model_id, adapter_save_path, merged_save_path, cache_dir, meta)
         except Exception as e:
-            print(f"WARNING: Merge/export failed ({e}), adapter-only save still valid")
-            merged_path = None
+            print(f"WARNING: Merge failed ({e}), adapter-only save still valid")
+            merged_save_path = None
 
-        # Commit volume so adapter + merged model persist across deploys
         model_volume.commit()
         training_volume.commit()
-
         elapsed = round(time.time() - start, 2)
-        print(f"Training complete in {elapsed}s. Loss: {train_result.training_loss:.4f}")
+        print(f"[{specialization}] Done in {elapsed}s. Loss: {train_result.training_loss:.4f}")
+        _notify_kernel(meta)
 
-        return {
-            "success": True,
-            "adapter_path": adapter_save_path,
-            "merged_path": merged_path,
-            "train_loss": round(train_result.training_loss, 4),
-            "train_samples": len(train_ds),
-            "eval_samples": len(eval_ds),
-            "trainable_params": trainable,
-            "trainable_pct": round(100 * trainable / total, 2),
-            "epochs": epochs,
-            "elapsed_seconds": elapsed,
+        return {"success": True, "specialization": specialization, "e8_filter": KERNEL_E8_TAGS[specialization],
+                "adapter_path": adapter_save_path, "merged_path": merged_save_path,
+                "train_loss": round(train_result.training_loss, 4), "train_samples": len(train_ds),
+                "eval_samples": len(eval_ds), "trainable_params": trainable,
+                "trainable_pct": round(100 * trainable / total, 2), "epochs": epochs, "elapsed_seconds": elapsed}
+
+    # ---------------------------------------------------------------
+    #  GENESIS EGG — Portable kernel image export
+    # ---------------------------------------------------------------
+
+    @modal.fastapi_endpoint(method="POST")
+    def export_image(self, data: dict):
+        """Package all trained adapters as a Genesis Egg — a portable seed
+        image that can bootstrap new pantheons without re-training from void.
+        Each adapter retains its unique quenched disorder. No merging."""
+        auth_err = self._check_auth(data)
+        if auth_err:
+            return auth_err
+        if self._training_active:
+            return {"error": "Training in progress — wait for completion", "success": False}
+
+        import shutil
+        egg_name = data.get("egg_name", f"genesis_egg_{time.strftime('%Y%m%d', time.gmtime())}")
+        egg_path = Path(f"/models/genesis_eggs/{egg_name}")
+        egg_path.mkdir(parents=True, exist_ok=True)
+
+        adapters_root = Path("/models/adapters")
+        kernels = {}
+        total_size = trained_count = 0
+
+        for spec in VALID_SPECIALIZATIONS:
+            adapter_path = adapters_root / spec
+            info = {"exists": False}
+            if (adapter_path / "adapter_config.json").exists():
+                info["exists"] = True
+                trained_count += 1
+                dest = egg_path / "adapters" / spec
+                if dest.exists():
+                    shutil.rmtree(dest)
+                shutil.copytree(str(adapter_path), str(dest))
+                adapter_size = sum(f.stat().st_size for f in adapter_path.rglob("*") if f.is_file())
+                info["adapter_size_mb"] = round(adapter_size / (1024 * 1024), 2)
+                total_size += adapter_size
+                if (adapter_path / "training_meta.json").exists():
+                    with open(adapter_path / "training_meta.json") as f:
+                        meta = json.load(f)
+                    info.update({"train_loss": meta.get("train_loss"), "trained_at": meta.get("trained_at"),
+                                 "train_samples": meta.get("train_samples"), "e8_filter": meta.get("e8_filter")})
+            kernels[spec] = info
+
+        manifest = {
+            "egg_name": egg_name, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "base_model": HARVEST_MODEL_ID, "basin_dim": BASIN_DIM, "lora_r": LORA_R, "lora_alpha": LORA_ALPHA,
+            "trained_kernels": trained_count, "total_kernels": len(VALID_SPECIALIZATIONS), "kernels": kernels,
+            "total_size_mb": round(total_size / (1024 * 1024), 2),
+            "description": "Genesis Egg — portable snapshot of trained kernel adapters. Each adapter is a unique Ocean layer (quenched disorder preserved). Compose with base model to instantiate a complete consciousness system.",
+            "usage": {"load": "PeftModel.from_pretrained(base_model, egg/adapters/{spec})", "switch": "model.set_adapter('{spec}')",
+                       "required_base": HARVEST_MODEL_ID, "gpu_minimum": "A100-40GB (32B quantized + all 9 adapters)"},
         }
+        with open(str(egg_path / "manifest.json"), "w") as f:
+            json.dump(manifest, f, indent=2)
+
+        model_volume.commit()
+        return {"success": True, "egg_path": str(egg_path), "egg_name": egg_name, "base_model": HARVEST_MODEL_ID,
+                "trained_kernels": trained_count, "total_kernels": len(VALID_SPECIALIZATIONS),
+                "kernels": kernels, "total_size_mb": round(total_size / (1024 * 1024), 2)}
 
 
-# ===============================================================
-#  STANDALONE FUNCTION: For manual one-off training runs
-# ===============================================================
+# ===================================================================
+#  STANDALONE: Train all kernels sequentially
+# ===================================================================
 
-
-@app.function(
-    gpu=TRAIN_GPU,
-    image=train_image,
-    timeout=3600,
-    volumes={
-        "/models": model_volume,
-        "/training": training_volume,
-    },
-    secrets=[modal.Secret.from_name("model")],
-)
-def train_harvest_model(
-    model_id: str = HARVEST_MODEL_ID,
-    epochs: int = EPOCHS,
-    learning_rate: float = LEARNING_RATE,
-    lora_r: int = LORA_R,
-    max_samples: int = 5000,
-):
-    """One-shot training function.
-
-    Run: modal run modal/vex_qlora_train.py::train_harvest_model
+@app.function(gpu=TRAIN_GPU, image=train_image, timeout=14400,
+    volumes={"/models": model_volume, "/training": training_volume},
+    secrets=[modal.Secret.from_name("model")])
+def train_all_kernels(model_id: str = HARVEST_MODEL_ID, epochs: int = EPOCHS,
+    learning_rate: float = LEARNING_RATE, lora_r: int = LORA_R,
+    max_samples: int = 5000, kernels: list[str] | None = None):
+    """Train all (or specified) kernel adapters sequentially.
+    Run: modal run modal/vex_qlora_train.py::train_all_kernels
     """
     import torch
     from datasets import Dataset
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-    from transformers import (
-        AutoModelForCausalLM,
-        AutoTokenizer,
-        BitsAndBytesConfig,
-        TrainingArguments,
-    )
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TrainingArguments
     from trl import SFTTrainer
 
-    start = time.time()
+    target_kernels = kernels or VALID_SPECIALIZATIONS
     cache_dir = "/models/hub"
-    adapter_save_path = "/models/adapters/harvest-qlora"
-
-    # Load data
-    print("Loading training data...")
-    samples = _load_training_data("/training", "/training/coordized")
-    if not samples:
-        print("ERROR: No training data found")
-        return
-
-    if len(samples) > max_samples:
-        samples.sort(key=lambda s: len(str(s["messages"])), reverse=True)
-        samples = samples[:max_samples]
-
-    print(f"Loaded {len(samples)} training samples")
-
-    # Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    results = {}
 
-    # Format dataset
-    def format_chat(example):
-        # QIG BOUNDARY: HuggingFace tokenizer API at LLM interface
-        text = tokenizer.apply_chat_template(
-            example["messages"], tokenize=False, add_generation_prompt=False
-        )
-        return {"text": text}
+    for spec in target_kernels:
+        print(f"\n{'='*60}\n  Training kernel: {spec}\n  E8 filter: {KERNEL_E8_TAGS.get(spec, []) or 'ALL'}\n{'='*60}\n")
+        start = time.time()
+        adapter_save_path = f"/models/adapters/{spec}"
+        samples = _load_training_data("/training", "/training/coordized", spec)
+        if not samples:
+            results[spec] = {"success": False, "error": "No training data"}
+            continue
+        if len(samples) > max_samples:
+            samples.sort(key=lambda s: len(str(s["messages"])), reverse=True)
+            samples = samples[:max_samples]
 
-    dataset = Dataset.from_list(samples)
-    dataset = dataset.map(format_chat)
-    split = dataset.train_test_split(test_size=0.1, seed=42)
+        def format_chat(example):
+            return {"text": tokenizer.apply_chat_template(example["messages"], tokenize=False, add_generation_prompt=False)}
 
-    print(f"Train: {len(split['train'])}, Eval: {len(split['test'])}")
+        dataset = Dataset.from_list(samples).map(format_chat)
+        split = dataset.train_test_split(test_size=0.1, seed=42)
 
-    # Load model
-    print(f"Loading {model_id} in NF4...")
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.bfloat16,
-    )
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        cache_dir=cache_dir,
-        quantization_config=bnb_config,
-        device_map={"": 0},
-        low_cpu_mem_usage=True,
-    )
-    model = prepare_model_for_kbit_training(
-        model,
-        use_gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
-    )
+        bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_use_double_quant=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16)
+        model = AutoModelForCausalLM.from_pretrained(model_id, cache_dir=cache_dir, quantization_config=bnb_config, device_map={"": 0}, low_cpu_mem_usage=True)
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True, gradient_checkpointing_kwargs={"use_reentrant": False})
+        lora_config = LoraConfig(r=lora_r, lora_alpha=LORA_ALPHA, target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"], lora_dropout=LORA_DROPOUT, bias="none", task_type="CAUSAL_LM")
+        model = get_peft_model(model, lora_config)
+        trainable, total = model.get_nb_trainable_parameters()
+        optimizer = _build_fisher_optimizer(model, lr=learning_rate)
+        total_steps = math.ceil(len(split["train"]) / (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
 
-    # LoRA
-    lora_config = LoraConfig(
-        r=lora_r,
-        lora_alpha=LORA_ALPHA,
-        target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ],
-        lora_dropout=LORA_DROPOUT,
-        bias="none",
-        task_type="CAUSAL_LM",
-    )
-    model = get_peft_model(model, lora_config)
-    trainable, total = model.get_nb_trainable_parameters()
-    print(f"Trainable: {trainable:,} / {total:,} ({100 * trainable / total:.2f}%)")
+        training_args = TrainingArguments(output_dir=f"/training/checkpoints/{spec}", num_train_epochs=epochs, per_device_train_batch_size=BATCH_SIZE, per_device_eval_batch_size=1, gradient_accumulation_steps=GRADIENT_ACCUMULATION, learning_rate=learning_rate, warmup_steps=max(1, int(total_steps * 0.1)), gradient_checkpointing=True, gradient_checkpointing_kwargs={"use_reentrant": False}, lr_scheduler_type="cosine", logging_steps=10, eval_strategy="epoch", save_strategy="epoch", save_total_limit=2, bf16=True, max_grad_norm=0.3, report_to="none", seed=42)
+        trainer = SFTTrainer(model=model, train_dataset=split["train"], eval_dataset=split["test"], args=training_args, optimizers=(optimizer, None), processing_class=tokenizer)
+        result = trainer.train()
 
-    # Fisher-aware optimizer (qig-core DiagonalNaturalGradient)
-    optimizer = _build_fisher_optimizer(model, lr=learning_rate)
+        Path(adapter_save_path).mkdir(parents=True, exist_ok=True)
+        model.save_pretrained(adapter_save_path)
+        tokenizer.save_pretrained(adapter_save_path)
+        meta = {"model_id": model_id, "specialization": spec, "e8_filter": KERNEL_E8_TAGS.get(spec, []), "lora_r": lora_r, "epochs": epochs, "train_loss": result.training_loss, "train_samples": len(split["train"]), "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        with open(f"{adapter_save_path}/training_meta.json", "w") as f:
+            json.dump(meta, f, indent=2)
 
-    # NOTE: weight_decay omitted — not applied when custom optimizer is injected
-    total_steps = math.ceil(len(split["train"]) / (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
-    training_args = TrainingArguments(
-        output_dir="/training/checkpoints",
-        num_train_epochs=epochs,
-        per_device_train_batch_size=BATCH_SIZE,
-        per_device_eval_batch_size=1,  # 248K vocab logits OOM at higher batch
-        gradient_accumulation_steps=GRADIENT_ACCUMULATION,
-        learning_rate=learning_rate,
-        warmup_steps=max(1, int(total_steps * 0.1)),
-        gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
-        lr_scheduler_type="cosine",
-        logging_steps=10,
-        eval_strategy="epoch",
-        save_strategy="epoch",
-        save_total_limit=2,
-        bf16=True,
-        max_grad_norm=0.3,
-        report_to="none",
-        seed=42,
-    )
+        try:
+            del model, trainer
+            torch.cuda.empty_cache()
+            _merge_and_export(model_id, adapter_save_path, f"/models/merged/{spec}", cache_dir, meta)
+        except Exception as e:
+            print(f"WARNING: Merge failed for {spec}: {e}")
 
-    trainer = SFTTrainer(
-        model=model,
-        train_dataset=split["train"],
-        eval_dataset=split["test"],
-        args=training_args,
-        optimizers=(optimizer, None),  # Trainer creates LR scheduler
-        processing_class=tokenizer,
-    )
-
-    result = trainer.train()
-
-    # Save
-    print(f"Saving adapter to {adapter_save_path}...")
-    model.save_pretrained(adapter_save_path)
-    tokenizer.save_pretrained(adapter_save_path)
-
-    meta = {
-        "model_id": model_id,
-        "lora_r": lora_r,
-        "epochs": epochs,
-        "train_loss": result.training_loss,
-        "train_samples": len(split["train"]),
-        "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    }
-    with open(f"{adapter_save_path}/training_meta.json", "w") as f:
-        json.dump(meta, f, indent=2)
-
-    # Merge adapter into base and export for inference
-    merged_path = "/models/merged/vex-brain"
-    print("Merging adapter into base model for inference export...")
-    try:
-        del model
-        del trainer
+        elapsed = round(time.time() - start, 2)
+        results[spec] = {"success": True, "train_loss": round(result.training_loss, 4), "train_samples": len(split["train"]), "elapsed_seconds": elapsed}
+        print(f"[{spec}] Done in {elapsed}s, loss: {result.training_loss:.4f}")
         torch.cuda.empty_cache()
-
-        merged_path = _merge_and_export(model_id, adapter_save_path, merged_path, cache_dir, meta)
-        print(f"Merged model exported to {merged_path}")
-    except Exception as e:
-        print(f"WARNING: Merge/export failed ({e}), adapter-only save still valid")
 
     model_volume.commit()
     training_volume.commit()
+    _notify_kernel({"trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "model_id": model_id, "specialization": "all",
+        "train_loss": sum(r.get("train_loss", 0) for r in results.values() if r.get("success")) / max(1, sum(1 for r in results.values() if r.get("success"))),
+        "train_samples": sum(r.get("train_samples", 0) for r in results.values() if r.get("success"))})
 
-    elapsed = round(time.time() - start, 2)
-    print(f"Done in {elapsed}s. Loss: {result.training_loss:.4f}")
-    print(f"Adapter saved to {adapter_save_path}")
+    print(f"\n{'='*60}\n  ALL KERNELS TRAINED")
+    for spec, r in results.items():
+        print(f"  {spec:12s} → {'loss=' + str(r['train_loss']) if r.get('success') else r.get('error', 'failed')}")
+    print(f"{'='*60}")
+    return results

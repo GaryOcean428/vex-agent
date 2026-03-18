@@ -617,7 +617,7 @@ class KernelVoice:
         )
 
         try:
-            result = await llm_client.complete(system, user_message, opts)
+            result = await llm_client.complete(system, user_message, opts, specialization=self.specialization.value)
             text = str(result or "").strip()
             # T1.1: Forward LLM co-generation to harvest pipeline
             if text:
@@ -677,7 +677,7 @@ class KernelVoice:
         )
 
         try:
-            result = await llm_client.complete(system, user_message, opts)
+            result = await llm_client.complete(system, user_message, opts, specialization=self.specialization.value)
             text = str(result or "").strip()
             # T1.1: Forward LLM fallback output to harvest pipeline
             if text:
@@ -745,7 +745,8 @@ class KernelVoice:
             query = await llm_client.complete(
                 system_prompt=system,
                 user_message=(f"What should the {self.specialization.value} kernel explore next?"),
-                opts=LLMOptions(temperature=0.9, num_predict=60),
+                options=LLMOptions(temperature=0.9, num_predict=60),
+                specialization=self.specialization.value,
             )
             query = query.strip()
             if query:

@@ -40,6 +40,7 @@ from ..coordizer_v2 import CoordizerV2, ResonanceBank
 from ..geometry.hash_to_basin import hash_to_basin
 from .cost_guard import CostGuard, CostGuardConfig
 from .governor import GovernorStack
+from .peft_client import PeftInferenceClient
 
 logger = logging.getLogger("vex.llm")
 
@@ -235,12 +236,49 @@ class LLMClient:
         # Per-response attribution — which backend actually served the last call
         self._last_backend: str = "none"
 
+        # PEFT adapter inference client (Tier 2 — per-kernel QLoRA adapters on Modal)
+        # Modal URL pattern: ...-qloratrainer-train.modal.run → ...-qloratrainer-infer.modal.run
+        # The endpoint name is the LAST "-train." in the hostname. Use rsplit to
+        # replace only the last occurrence (the app name also contains "train").
+        _training_url = settings.modal.training_url
+        if _training_url and "-train." in _training_url:
+            parts = _training_url.rsplit("-train.", 1)
+            peft_url = "-infer.".join(parts)
+        else:
+            peft_url = ""
+        self._peft_client: PeftInferenceClient | None = None
+        if peft_url:
+            self._peft_client = PeftInferenceClient(
+                base_url=peft_url,
+                timeout_ms=settings.modal.inference_timeout_ms,
+            )
+            logger.info("PEFT inference client configured: %s", peft_url)
+
     async def init(self) -> None:
         """Initialise the client — check backend availability, set fallback chain.
 
-        Priority: Modal GPU Ollama → Railway CPU Ollama → xAI → OpenAI
+        Priority: PEFT adapters (Modal) → Modal GPU Ollama → Railway CPU Ollama → xAI → OpenAI
         """
-        # Check Modal GPU Ollama first (fastest inference)
+        # Check PEFT adapter inference first (per-kernel QLoRA — Tier 2)
+        if self._peft_client is not None:
+            peft_ok = await self._peft_client.check_health()
+            if peft_ok:
+                self._active_backend = "peft"
+                logger.info(
+                    "LLM backend: PEFT adapter inference (Qwen3.5-4B + QLoRA) at %s",
+                    self._peft_client._base_url,
+                )
+                return  # PEFT is the best path — skip other checks
+            else:
+                logger.info(
+                    "PEFT inference configured but not yet available — "
+                    "will try on first request (adapter may need loading)"
+                )
+                # Still set as primary — _peft_complete will retry and fallback
+                self._active_backend = "peft"
+                # Don't return — let other backends init as fallbacks
+
+        # Check Modal GPU Ollama (fastest Ollama inference)
         if settings.modal.inference_enabled and settings.modal.inference_url:
             self._modal_available = await self.check_modal_ollama()
             if self._modal_available:
@@ -366,6 +404,7 @@ class LLMClient:
         messages: list[dict[str, str]] | None = None,
         prefer_backend: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        specialization: str = "genesis",
     ) -> str:
         """Non-streaming completion with autonomous parameters.
 
@@ -385,11 +424,16 @@ class LLMClient:
         tool calling (Ollama, Modal). If the model returns tool_calls,
         they are serialized as LFM2.5 markers in the response text so
         the existing parse_tool_calls() pipeline can handle them.
+
+        When *specialization* is set, PEFT adapter inference routes to
+        the specified kernel adapter (e.g. "ethics", "heart", "genesis").
         """
         opts = options or LLMOptions()
         backend = prefer_backend or self._active_backend
 
-        if backend == "xai" and settings.xai.api_key:
+        if backend == "peft" and self._peft_client is not None:
+            return await self._peft_complete(system_prompt, user_message, opts, specialization)
+        elif backend == "xai" and settings.xai.api_key:
             return await self._xai_complete(system_prompt, user_message, opts, messages)
         elif backend == "modal":
             return await self._modal_complete(system_prompt, user_message, opts, messages, tools)
@@ -412,7 +456,16 @@ class LLMClient:
         opts = options or LLMOptions()
         backend = prefer_backend or self._active_backend
 
-        if backend == "xai" and settings.xai.api_key:
+        if backend == "peft" and self._peft_client is not None:
+            # PEFT is non-streaming — yield full response as single chunk
+            text = await self._peft_complete(
+                messages[0].get("content", "") if messages else "",
+                messages[-1].get("content", "") if messages else "",
+                opts,
+            )
+            yield text
+            return
+        elif backend == "xai" and settings.xai.api_key:
             async for chunk in self._xai_stream(messages, opts):
                 yield chunk
         elif backend == "modal":
@@ -430,6 +483,8 @@ class LLMClient:
     def get_status(self) -> dict[str, Any]:
         return {
             "active_backend": self._active_backend,
+            "peft_inference": self._peft_client.available if self._peft_client else False,
+            "peft_inference_url": self._peft_client._base_url if self._peft_client else None,
             "modal_inference": self._modal_available,
             "modal_inference_url": (
                 settings.modal.inference_url if settings.modal.inference_enabled else None
@@ -459,6 +514,8 @@ class LLMClient:
     @property
     def active_model(self) -> str:
         """Return the model name for the currently active backend."""
+        if self._active_backend == "peft":
+            return "Qwen3.5-4B+QLoRA"
         if self._active_backend == "modal":
             return settings.modal.inference_model
         if self._active_backend == "ollama":
@@ -468,6 +525,65 @@ class LLMClient:
         if self._active_backend == "external":
             return settings.llm.model
         return "none"
+
+    # --- PEFT Adapter Inference (Tier 2) -------------------------
+
+    async def _peft_complete(
+        self,
+        system_prompt: str,
+        user_message: str,
+        opts: LLMOptions,
+        specialization: str = "genesis",
+    ) -> str:
+        """Complete via PEFT adapter on Modal. Falls back to Modal Ollama → Railway → xAI → OpenAI.
+
+        The specialization parameter determines which QLoRA adapter is loaded.
+        When called from kernel_voice.py, the kernel's specialization is passed through.
+        """
+        if self._peft_client is None:
+            logger.debug("PEFT client not configured — falling through to Modal Ollama")
+            return await self._modal_complete(system_prompt, user_message, opts)
+
+        result = await self._peft_client.complete(
+            system_prompt=system_prompt,
+            user_message=user_message,
+            specialization=specialization,
+            max_new_tokens=opts.num_predict,
+            temperature=opts.temperature,
+            top_p=opts.top_p,
+        )
+
+        if result.success and result.text:
+            self._last_backend = f"peft:{result.adapter_loaded}"
+            logger.info(
+                "PEFT inference: adapter=%s, tokens=%d, latency=%.0fms",
+                result.adapter_loaded,
+                result.tokens_generated,
+                result.latency_ms,
+            )
+            return result.text
+
+        # PEFT failed — fall through to other backends
+        logger.warning(
+            "PEFT inference failed (adapter=%s, error=%s) — falling back",
+            specialization,
+            result.error,
+        )
+
+        # Fallback chain: Modal Ollama → Railway Ollama → xAI → OpenAI
+        if settings.modal.inference_enabled and settings.modal.inference_url:
+            logger.info("Falling back to Modal Ollama from PEFT")
+            return await self._modal_complete(system_prompt, user_message, opts)
+        if settings.ollama.enabled:
+            logger.info("Falling back to Railway Ollama from PEFT")
+            return await self._ollama_complete(system_prompt, user_message, opts)
+        if settings.xai.api_key:
+            logger.info("Falling back to xAI from PEFT")
+            return await self._xai_complete(system_prompt, user_message, opts)
+        if settings.llm.api_key:
+            logger.info("Falling back to OpenAI from PEFT")
+            return await self._external_complete(system_prompt, user_message, opts)
+        return "All LLM backends unavailable"
 
     # --- Modal GPU Ollama --------------------------------------
 

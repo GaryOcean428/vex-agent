@@ -65,16 +65,16 @@ class GPUHarvestConfig:
 
     IMPORTANT: harvest_model MUST match the active inference model so that
     token IDs in the resonance bank fingerprints map to the same vocabulary
-    as the model doing inference. Primary: GLM-4.7-Flash (Modal GPU).
-    Ollama fallback (vex-brain) is based on LFM2.5-1.2B-Thinking.
+    as the model doing inference. Primary: Qwen3.5-4B (Modal GPU, per-kernel QLoRA).
+    Ollama fallback (vex-brain) is based on Qwen3.5-4B merged adapters.
     """
 
     enabled: bool = os.environ.get("GPU_HARVEST_ENABLED", "false").lower() == "true"
     # Harvest model MUST match the active inference model.
-    # Primary: GLM-4.7-Flash (Modal GPU).
-    # Ollama fallback uses LFM2.5-1.2B-Thinking (vex-brain base).
+    # Primary: Qwen3.5-4B (Modal GPU, per-kernel QLoRA adapters).
+    # Ollama fallback uses Qwen3.5-4B merged (vex-brain base).
     # Override GPU_HARVEST_MODEL if deploying with a different backend.
-    model_id: str = os.environ.get("GPU_HARVEST_MODEL", "zai-org/GLM-4.7-Flash")
+    model_id: str = os.environ.get("GPU_HARVEST_MODEL", "Qwen/Qwen3.5-4B")
     batch_size: int = int(os.environ.get("GPU_HARVEST_BATCH_SIZE", "32"))
     vocab_target: int = int(os.environ.get("GPU_HARVEST_VOCAB_TARGET", "32768"))
     artifact_dir: str = os.environ.get("GPU_HARVEST_ARTIFACT_DIR", "/data/resonance-bank")
@@ -89,19 +89,19 @@ class ModalConfig:
     """Modal GPU integration — inference and coordizer harvesting.
 
     Inference:
-        When inference_enabled=true and inference_url is set, the LLM
-        client routes Ollama API calls to Modal's GPU-backed Ollama
-        instance instead of Railway's CPU-only Ollama service.
-        Fallback chain: Modal Ollama → Railway Ollama → xAI → OpenAI.
+      When inference_enabled=true and inference_url is set, the LLM
+      client routes Ollama API calls to Modal's GPU-backed Ollama
+      instance instead of Railway's CPU-only Ollama service.
+      Fallback chain: Modal Ollama → Railway Ollama → xAI → OpenAI.
 
     Harvest:
-        CoordizerV2 vocabulary fingerprinting via Modal GPU.
+      CoordizerV2 vocabulary fingerprinting via Modal GPU.
 
     Harvest model alignment:
-        harvest_model MUST match inference_model when Modal is the active
-        inference backend. If they differ, the resonance bank fingerprints
-        are keyed by token IDs from a different vocabulary — the geometric
-        logit-bias will address wrong token slots during generation.
+      harvest_model MUST match inference_model when Modal is the active
+      inference backend. If they differ, the resonance bank fingerprints
+      are keyed by token IDs from a different vocabulary — the geometric
+      logit-bias will address wrong token slots during generation.
     """
 
     # --- Shared ---
@@ -116,24 +116,23 @@ class ModalConfig:
     inference_timeout_ms: int = int(os.environ.get("MODAL_INFERENCE_TIMEOUT_MS", "120000"))
     # Modal runs the base model (no custom Modelfile). The kernel
     # injects the system prompt per-request, so vex-brain overlay is
-    # unnecessary. Defaults to GLM-4.7-Flash (30B-A3B MoE, 3B active).
-    inference_model: str = os.environ.get("MODAL_INFERENCE_MODEL", "glm-4.7-flash")
+    # unnecessary. Defaults to Qwen3.5-32B (per-kernel QLoRA substrate on A100).
+    inference_model: str = os.environ.get("MODAL_INFERENCE_MODEL", "qwen3.5:32b")
 
     # --- Harvest (CoordizerV2 fingerprinting) ---
     harvest_url: str = os.environ.get("MODAL_HARVEST_URL", "")
     # Optional explicit health URL override. If unset, the client derives it
     # from MODAL_HARVEST_URL using Modal's *-health.modal.run pattern.
     harvest_health_url: str = os.environ.get("MODAL_HARVEST_HEALTH_URL", "")
-
     # Harvest model for Modal-active deployments.
     # MUST match inference_model so resonance bank fingerprints use the same
     # vocabulary/token IDs as the model doing inference.
     # Defaults to MODAL_HARVEST_MODEL env var; if not set, uses HuggingFace format
-    # for the GLM-4.7-Flash model (Modal harvest uses transformers, needs HF model ID).
-    # NOTE: Inference uses Ollama format "glm-4.7-flash", harvest uses HF format "zai-org/GLM-4.7-Flash"
+    # for the Qwen3.5-4B model (Modal harvest uses transformers, needs HF model ID).
+    # NOTE: Inference uses Ollama format "qwen3.5:4b", harvest uses HF format "Qwen/Qwen3.5-4B"
     harvest_model: str = os.environ.get(
         "MODAL_HARVEST_MODEL",
-        "zai-org/GLM-4.7-Flash",
+        "Qwen/Qwen3.5-4B",
     )
 
     # --- Training (QLoRA fine-tuning on Modal GPU) ---
@@ -156,27 +155,20 @@ class CoordizerV2Config:
 
     # Feature flag: Enable CoordizerV2 integration
     enabled: bool = os.environ.get("COORDIZER_V2_ENABLED", "false").lower() == "true"
-
     # Path to saved Resonance Bank
     bank_path: str = os.environ.get("COORDIZER_V2_BANK_PATH", "./coordizer_data/bank")
-
     # Auto-load on startup (vs lazy load on first use)
     autoload: bool = os.environ.get("COORDIZER_V2_AUTOLOAD", "false").lower() == "true"
-
     # Regime modulation: scale temperature by regime weights
     regime_modulation: bool = os.environ.get("COORDIZER_V2_REGIME_MOD", "true").lower() != "false"
-
     # Navigation adaptation: adapt generation params by nav mode
     navigation_adaptation: bool = (
         os.environ.get("COORDIZER_V2_NAV_ADAPT", "true").lower() != "false"
     )
-
     # Tacking bias: tier selection based on tacking mode
     tacking_bias: bool = os.environ.get("COORDIZER_V2_TACKING_BIAS", "true").lower() != "false"
-
     # Domain bias strength for kernel specializations
     domain_bias_strength: float = float(os.environ.get("COORDIZER_V2_DOMAIN_BIAS", "0.3"))
-
     # Metrics integration: feed CoordizerV2 metrics to consciousness
     metrics_integration: bool = os.environ.get("COORDIZER_V2_METRICS", "true").lower() != "false"
 
