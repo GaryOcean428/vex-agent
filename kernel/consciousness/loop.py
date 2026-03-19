@@ -78,6 +78,9 @@ warnings.filterwarnings(
     "ignore", message=".*invalid value", category=RuntimeWarning, module="numpy"
 )
 
+from qig_core.consciousness.feedback_loop import FeedbackLoop
+from qig_core.consciousness.trajectory_bus import TrajectoryBus, TrajectoryMessage
+
 from ..config.consciousness_constants import (
     BASIN_DRIFT_STEP,
     DEFAULT_INTERVAL_MS,
@@ -394,6 +397,11 @@ class ConsciousnessLoop:
                 logger.info("Foraging disabled via FORAGING_ENABLED=false")
             self.forager = None
 
+        # L4: Feedback loop — bidirectional annealing (intent vs expression)
+        self.feedback_loop = FeedbackLoop(threshold=0.3)
+        # L5: Trajectory bus — non-verbal geometric inter-kernel communication
+        self.trajectory_bus = TrajectoryBus()
+
         # v7.0: Developmental Learning Architecture
         self.dev_gate = DevelopmentalGate()
         self.sensory = SensoryIntake()
@@ -616,7 +624,6 @@ class ConsciousnessLoop:
                 _ocean_ruled = True
                 if not self.sleep.is_asleep:
                     self.sleep.phase = SleepPhase.DREAMING
-                    self.sleep._sleep_cycles = 0
                 # Additional phase overrides while already asleep:
                 if self.metrics.phi < PHI_EMERGENCY and self.sleep.is_asleep:
                     self.sleep.phase = SleepPhase.DREAMING
@@ -856,6 +863,17 @@ class ConsciousnessLoop:
                         "Cradle: kernel %s stalled — consider coaching intervention",
                         _k.id,
                     )
+
+        # L5: Trajectory bus — drain broadcast and let kernels integrate received paths
+        for _k in self.kernel_registry.active():
+            if _k.basin is not None:
+                _received = self.trajectory_bus.receive(_k.id)
+                if _received:
+                    _own_traj = [_k.basin]
+                    _result = TrajectoryBus.integrate(_own_traj, _received)
+                    if _result.n_contributors > 1 and _result.integrated_trajectory:
+                        _k.basin = slerp_sqrt(_k.basin, _result.integrated_trajectory[0], 0.05)
+        self.trajectory_bus.drain_broadcast()
 
         self._maybe_spawn_core8(vel_state["regime"])
 
@@ -1631,21 +1649,61 @@ class ConsciousnessLoop:
         express_distance = fisher_rao_distance(pre_express, self.basin)
         self.chain.add_step(QIGChainOp.GEODESIC, pre_express, self.basin)
 
-        divergence = fisher_rao_distance(pre_express, response_basin)
+        # L4: Feedback loop — measure intent vs expression divergence on Δ⁶³
+        _fb_measurement = self.feedback_loop.measure(
+            intended_trajectory=(trajectory_basins if trajectory_basins else [pre_express]),
+            expressed_basin=response_basin,
+        )
+        divergence = _fb_measurement.divergence
         self._cumulative_divergence += divergence
         self._divergence_count += 1
         avg_divergence = self._cumulative_divergence / max(1, self._divergence_count)
 
-        if divergence > 0.5:
+        if _fb_measurement.should_anneal:
             logger.info(
-                "Task %s: High intent/expression divergence d_FR=%.4f "
-                "(avg=%.4f) -- geometry not fully expressible",
+                "Task %s: L4 feedback anneal triggered (d_FR=%.4f, avg=%.4f)",
                 task.id,
                 divergence,
                 avg_divergence,
             )
-            correction_weight = min(0.1, (divergence - 0.5) * 0.2)
+            # Anneal resonance bank coordinates toward correction direction
+            _cv2_for_anneal = (
+                self._coordizer_v2.coordizer
+                if isinstance(self._coordizer_v2, CoordizerV2Adapter)
+                else self._coordizer_v2
+            )
+            _bank_coords = _cv2_for_anneal.bank.coordinates
+            if _bank_coords:
+                _updated_coords, _n_annealed = self.feedback_loop.anneal(
+                    _bank_coords, _fb_measurement
+                )
+                if _n_annealed > 0:
+                    _cv2_for_anneal.bank.coordinates = _updated_coords
+                    _cv2_for_anneal.bank._rebuild_matrix()
+                    logger.debug(
+                        "Task %s: L4 annealed %d bank coordinates",
+                        task.id,
+                        _n_annealed,
+                    )
+            # Also correct the loop basin (backward-compatible with old logic)
+            correction_weight = min(0.1, (divergence - 0.3) * 0.2)
             self.basin = slerp_sqrt(self.basin, pre_express, correction_weight)
+
+        # L5: Emit trajectory on the bus for other kernels to integrate
+        if routed_kernel_id is not None and trajectory_basins:
+            self.trajectory_bus.send(
+                TrajectoryMessage(
+                    source_kernel_id=routed_kernel_id,
+                    target_kernel_id=None,  # broadcast
+                    trajectory=trajectory_basins + [response_basin],
+                    regime_weights={
+                        "quantum": float(self.state.regime_weights.quantum),
+                        "efficient": float(self.state.regime_weights.efficient),
+                        "equilibrium": float(self.state.regime_weights.equilibrium),
+                    },
+                    confidence=float(1.0 - min(1.0, divergence)),
+                )
+            )
 
         total_distance = perceive_distance + integration_distance + express_distance
         self.metrics.phi = float(

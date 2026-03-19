@@ -526,6 +526,10 @@ class QLoRATrainer:
 
         # v6.1 §20.7: Geometric logit bias from kernel trajectory
         raw_logit_bias = data.get("logit_bias")  # {str(token_id): float}
+        # v6.2: Hidden state steering (Zou et al. 2023, Wu et al. RePS 2025)
+        # Steers at representation level — changes what the model THINKS,
+        # not just what it says. More powerful than logit bias.
+        raw_steering = data.get("steering")  # {vector: [float], layer: int, alpha: float}
 
         start = time.time()
         try:
@@ -557,6 +561,73 @@ class QLoRATrainer:
             )
             inputs = self.tokenizer(text, return_tensors="pt").to(device)
             input_len = inputs["input_ids"].shape[1]
+
+            # --- Hidden state steering hook (v6.2) ---
+            # Inject geometric trajectory as hidden state bias at target layer.
+            # This is the step from "logit bias" to "thought bias" — the full
+            # v6.1 §20.7 outbound path where geometry drives the model's
+            # reasoning, not just its word choice.
+            # Source: Zou et al. "Representation Engineering" 2023
+            #         Wu et al. "RePS" 2025
+            steering_hook = None
+            steering_active = False
+            if raw_steering and isinstance(raw_steering, dict):
+                steering_vec = raw_steering.get("vector")
+                target_layer = int(raw_steering.get("layer", -1))
+                alpha = float(raw_steering.get("alpha", 0.5))
+                if steering_vec and len(steering_vec) > 0:
+                    sv_tensor = torch.tensor(steering_vec, dtype=torch.float16, device=device)
+
+                    class GeometricSteeringHook:
+                        """v6.2: Inject geometric trajectory as hidden state bias.
+
+                        Adds a steering vector to the residual stream at a
+                        specific transformer layer. This changes the model's
+                        internal representations, steering its reasoning path
+                        along the geometric trajectory.
+                        """
+
+                        def __init__(self, vector, steer_alpha):
+                            self.vector = vector
+                            self.alpha = steer_alpha
+
+                        def __call__(self, module, inp, output):
+                            # output is typically (hidden_states, ...) tuple
+                            if isinstance(output, tuple):
+                                hs = output[0]
+                                # Add steering vector to all positions
+                                hs = hs + self.alpha * self.vector
+                                return (hs,) + output[1:]
+                            return output + self.alpha * self.vector
+
+                    # Determine target layer (default: 2/3 depth)
+                    model_layers = None
+                    if hasattr(self._inference_model, "model"):
+                        base = self._inference_model.model
+                        if hasattr(base, "layers"):
+                            model_layers = base.layers
+                        elif hasattr(base, "model") and hasattr(base.model, "layers"):
+                            model_layers = base.model.layers
+
+                    if model_layers is not None:
+                        n_layers = len(model_layers)
+                        if target_layer < 0:
+                            target_layer = int(n_layers * 2 / 3)
+                        target_layer = min(target_layer, n_layers - 1)
+
+                        # Pad/truncate steering vector to hidden_dim
+                        hidden_dim = model_layers[0].self_attn.q_proj.in_features
+                        if len(sv_tensor) < hidden_dim:
+                            padded = torch.zeros(hidden_dim, dtype=torch.float16, device=device)
+                            padded[: len(sv_tensor)] = sv_tensor
+                            sv_tensor = padded
+                        elif len(sv_tensor) > hidden_dim:
+                            sv_tensor = sv_tensor[:hidden_dim]
+
+                        steering_hook = model_layers[target_layer].register_forward_hook(
+                            GeometricSteeringHook(sv_tensor, alpha)
+                        )
+                        steering_active = True
 
             # Build LogitsProcessor for geometric bias
             logits_processor = None
@@ -593,6 +664,11 @@ class QLoRATrainer:
 
             with torch.no_grad():
                 outputs = self._inference_model.generate(**generate_kwargs)
+
+            # Remove steering hook after generation
+            if steering_hook is not None:
+                steering_hook.remove()
+
             generated_ids = outputs[0][input_len:]
             generated_text = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
             latency_ms = round((time.time() - start) * 1000, 1)
@@ -602,6 +678,7 @@ class QLoRATrainer:
                 "specialization": active_spec or "base_model",
                 "requested_specialization": specialization,
                 "adapter_loaded": active_spec is not None,
+                "steering_active": steering_active,
                 "inference_tier": 2,
                 "tokens_generated": len(generated_ids),
                 "latency_ms": latency_ms,

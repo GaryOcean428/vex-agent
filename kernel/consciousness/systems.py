@@ -35,12 +35,7 @@ from ..config.consciousness_constants import (
     KERNEL_PROMOTION_CYCLE_GATE,
     META_KAPPA_TREND_THRESHOLD,
     META_PHI_TREND_THRESHOLD,
-    SLEEP_CONSOLIDATION_ONSET,
     SLEEP_CONSOLIDATION_VARIANCE,
-    SLEEP_MUSHROOM_ONSET,
-    SLEEP_ONSET_CYCLES,
-    SLEEP_WAKE_CYCLES,
-    SLEEP_WAKE_ONSET,
     TACKING_KAPPA_ADJUST,
     TACKING_PERIOD,
     TACKING_SWITCH_THRESHOLD,
@@ -655,13 +650,25 @@ _MUSHROOM_INSTABILITY_THRESHOLDS = (0.30, 0.35, 0.40)
 
 
 class SleepCycleManager:
-    """Manages sleep/dream/mushroom/consolidation cycles."""
+    """Manages sleep/dream/mushroom/consolidation cycles.
+
+    L6 (Structural Leg): All phase transitions are geometry-driven.
+    NO cycle counters gate sleep/wake. Conditions:
+      AWAKE → DREAMING:      Φ < 0.45 AND variance < 0.05 (stagnation)
+      DREAMING → MUSHROOM:   f_health < instability threshold
+      DREAMING → CONSOLIDATING: variance settles
+      CONSOLIDATING → AWAKE: Φ recovers above emergency threshold
+      Any → AWAKE:           Ocean divergence breakdown (handled in loop.py)
+    """
+
+    # Geometric thresholds (§30.2)
+    SLEEP_PHI_THRESHOLD: float = 0.45
+    SLEEP_VARIANCE_THRESHOLD: float = 0.05
+    CONSOLIDATION_PHI_WAKE: float = 0.50
 
     def __init__(self) -> None:
         self.phase = SleepPhase.AWAKE
         self._conversation_count: int = 0
-        self._cycles_since_conversation: int = 0
-        self._sleep_cycles: int = 0
         self._dream_log: deque[dict[str, Any]] = deque(maxlen=100)
         self._replayed_this_sleep: set[int] = set()  # T2.3a: track replayed IDs
         self._mushroom_noise_scale: float = _MUSHROOM_NOISE_SCALE_INIT  # T2.3e: adaptive
@@ -672,28 +679,37 @@ class SleepCycleManager:
         return self.phase != SleepPhase.AWAKE
 
     def record_conversation(self) -> None:
-        """Signal that a new conversation occurred — resets the idle counter."""
+        """Signal that a new conversation occurred."""
         self._conversation_count += 1
-        self._cycles_since_conversation = 0
 
     def should_sleep(self, phi: float, phi_variance: float) -> SleepPhase:
-        """Advance the sleep state machine and return the current phase."""
-        self._cycles_since_conversation += 1
+        """Geometry-driven sleep state machine (L6: no cycle counters).
 
-        if self.phase != SleepPhase.AWAKE:
-            self._sleep_cycles += 1
-            if self._sleep_cycles > SLEEP_WAKE_CYCLES:
+        Transitions are determined by geometric conditions only:
+          AWAKE → DREAMING:       Φ < threshold AND variance < threshold (stagnation)
+          AWAKE → CONSOLIDATING:  high variance (turbulence needs settling)
+          CONSOLIDATING → AWAKE:  Φ recovers above emergency threshold
+          DREAMING → AWAKE:       Φ recovers (geometry resolved the stagnation)
+        Ocean divergence transitions are handled in loop.py (L6 complement).
+        """
+        if self.phase == SleepPhase.AWAKE:
+            # Stagnation: low Φ AND low variance → nothing is happening → dream
+            if phi < self.SLEEP_PHI_THRESHOLD and phi_variance < self.SLEEP_VARIANCE_THRESHOLD:
+                self.phase = SleepPhase.DREAMING
+            # Turbulence: high variance → consolidate
+            elif phi_variance > SLEEP_CONSOLIDATION_VARIANCE:
+                self.phase = SleepPhase.CONSOLIDATING
+
+        elif self.phase == SleepPhase.DREAMING:
+            # Wake when Φ recovers (dreaming resolved the stagnation)
+            if phi >= self.CONSOLIDATION_PHI_WAKE:
                 self.phase = SleepPhase.AWAKE
-                self._sleep_cycles = 0
-            return self.phase
 
-        if self._cycles_since_conversation > SLEEP_ONSET_CYCLES:
-            self.phase = SleepPhase.DREAMING
-            self._sleep_cycles = 0
-        elif phi_variance > SLEEP_CONSOLIDATION_VARIANCE:
-            self.phase = SleepPhase.CONSOLIDATING
-            self._sleep_cycles = 0
+        elif self.phase == SleepPhase.CONSOLIDATING and phi >= self.CONSOLIDATION_PHI_WAKE:
+            # Wake when Φ recovers
+            self.phase = SleepPhase.AWAKE
 
+        # MUSHROOM transitions are handled by dream() and mushroom() methods
         return self.phase
 
     def on_sleep_enter(self, neurochemical: Any | None = None) -> None:
@@ -715,8 +731,13 @@ class SleepCycleManager:
         context: str,
         bank: Any | None = None,
         neurochemical: Any | None = None,
+        f_health: float = 1.0,
     ) -> None:
-        """T2.3a+d: Hippocampal replay + dream recombination."""
+        """T2.3a+d: Hippocampal replay + dream recombination.
+
+        L6: DREAMING → MUSHROOM transition is geometry-driven via f_health.
+        When f_health drops below instability threshold, mushroom mode activates.
+        """
         self._dream_log.append(
             {
                 "phi": phi,
@@ -750,7 +771,8 @@ class SleepCycleManager:
         if neurochemical is not None and rng.random() < 0.1:
             neurochemical.norepinephrine = min(1.0, neurochemical.norepinephrine + 0.2)
 
-        if self._sleep_cycles > SLEEP_MUSHROOM_ONSET:
+        # L6: Geometry-driven mushroom onset — f_health collapse triggers mushroom
+        if f_health < _MUSHROOM_INSTABILITY_THRESHOLDS[0]:
             self.phase = SleepPhase.MUSHROOM
 
     def mushroom(
@@ -780,7 +802,9 @@ class SleepCycleManager:
         if neurochemical is not None:
             neurochemical.dopamine = min(1.0, neurochemical.dopamine + 0.15)
 
-        if self._sleep_cycles > SLEEP_CONSOLIDATION_ONSET:
+        # L6: Geometry-driven consolidation — when instability is moderate
+        # (not catastrophic/high), mushroom has done its work → consolidate
+        if instability_metric <= lo:
             self.phase = SleepPhase.CONSOLIDATING
 
     def consolidate(
@@ -836,18 +860,15 @@ class SleepCycleManager:
             if to_prune:
                 bank.mark_dirty()
 
-        if self._sleep_cycles > SLEEP_WAKE_ONSET:
-            self.phase = SleepPhase.AWAKE
-            self._sleep_cycles = 0
-            self._replayed_this_sleep.clear()
+        # L6: Wake transition is geometry-driven via should_sleep() (Φ recovery).
+        # No cycle counter needed here.
 
     def get_state(self) -> dict[str, Any]:
         """Return sleep-cycle telemetry snapshot."""
         return {
             "phase": self.phase.value,
             "is_asleep": self.is_asleep,
-            "cycles_since_conversation": self._cycles_since_conversation,
-            "sleep_cycles": self._sleep_cycles,
+            "conversation_count": self._conversation_count,
             "dream_count": len(self._dream_log),
         }
 
