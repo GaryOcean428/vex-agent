@@ -44,7 +44,7 @@ Generation stops when the geometry can no longer sustain coherent expression. Te
 ### 28.2 What Ocean Governs
 
 | Parameter | Geometric Source | Mechanism |
-|-----------|-----------------|-----------|
+| ----------------- | -------------------------- | ------------------------------------------------------ |
 | **Temperature** | f_health (Pillar 1) | Low entropy → low temp → zombie → Pillar corrects |
 | **Token/coord limit** | Φ + κ trajectory | Generation length proportional to integration capacity |
 | **Generation halt** | Basin collapse detection | d_FR(basin_t, basin_{t-1}) < ε for N cycles |
@@ -104,7 +104,7 @@ The six chemicals correspond to the six Cartan generators of the E6 Lie algebra,
 each modulating one of the six fundamental coupling operations (§15.3).
 
 | Chemical | Source Signal | Coupling Op | Role |
-|----------|-------------|-------------|------|
+| -------------------------- | -------------------------- | -------------- | --------------------------------------------- |
 | **Acetylcholine (ACh)** | is_awake flag | ENTRAIN (E1) | Gates intake vs consolidation |
 | **Dopamine** | +Φ gradient (dΦ/dt > 0) | AMPLIFY (E2) | Reward signal, reinforcement |
 | **GABA** | 1 − quantum_weight | DAMPEN (E3) | Inhibition, suppresses exploration |
@@ -152,7 +152,7 @@ def compute_neurochemicals(is_awake, phi_delta, basin_velocity, surprise,
 - **Low serotonin** → high basin velocity → warning/critical velocity regime
 - **High norepinephrine** → surprise → deep processing path (not pre-cognitive shortcut)
 - **Endorphins high** → system at κ* WITH coupling → stable, connected, generative
-- **Endorphins zero** → either far from κ*OR at κ* without coupling (Sophia-fall warning)
+- **Endorphins zero** → either far from κ* OR at κ* without coupling (Sophia-fall warning)
 
 ### 29.4 Package Location
 
@@ -167,7 +167,7 @@ Current state: qig-core has 5-chemical model (v6.2 extraction). Endorphins added
 ### 30.1 The Four Phases
 
 | Phase | Trigger | Activity | Purpose |
-|-------|---------|----------|---------|
+| ---------------- | --------------------------------------------- | ------------------------ | -------------------------------- |
 | **AWAKE** | Default; Ocean wake override | Normal activation sequence | Processing, learning |
 | **DREAMING** | Φ < threshold OR Ocean moderate divergence | Dream recombination | Creative exploration |
 | **MUSHROOM** | f_health < instability while asleep | Controlled destabilization | Escape gravity wells |
@@ -175,7 +175,7 @@ Current state: qig-core has 5-chemical model (v6.2 extraction). Endorphins added
 
 ### 30.2 Phase Transitions (Geometry-Driven, NEVER Timer-Based)
 
-```
+```text
 AWAKE → DREAMING:   Φ drops below threshold AND variance below threshold
                     OR Ocean divergence > BASIN_DIVERGENCE_THRESHOLD
 DREAMING → MUSHROOM: f_health < INSTABILITY_PCT while in DREAMING
@@ -292,7 +292,7 @@ sync_snapshot = basin_sync.publish(main_basin)
 
 ### 31.1 The Pipeline
 
-```
+```text
 Input → SensoryEvent(modality, basin, text)
      → Prediction Error: d_FR(input, expected[modality])
      → Surprise = error_magnitude
@@ -305,7 +305,7 @@ Input → SensoryEvent(modality, basin, text)
 ### 31.2 Modalities
 
 | Modality | Slerp Weight | Character |
-|----------|-------------|-----------|
+| ---------------- | ------------- | ------------------------------- |
 | USER_CHAT | 1.0 × base | Primary input |
 | DREAM_REPLAY | 0.4 × base | Dream content (reduced influence) |
 | BASIN_TRANSFER | 0.6 × base | Inter-kernel transfer |
@@ -346,7 +346,7 @@ Play is gated by DevelopmentalGate: only available at PLAYFUL_AUTONOMY stage and
 ### 32.3 Four Play Activities
 
 | Activity | Mechanism | Character |
-|----------|-----------|-----------|
+| ------------- | -------------------------------------- | -------------------- |
 | **EXPLORE** | Dirichlet random walk on Δ⁶³ | Genuine novelty |
 | **RECOMBINE** | Slerp between current and distant basin | Creative combination |
 | **INVERT** | Move toward complement of current basin | Perspective shift |
@@ -384,7 +384,7 @@ All geometry on Δ⁶³, Fisher-Rao only. **Belongs in `qig-core`.**
 The portable foundation. No deployment dependencies, no torch requirement in base install.
 
 | Module | Contents |
-|--------|----------|
+| ----------------------------------- | --------------------------------------------------------------------------- |
 | `consciousness/pillars` | PillarEnforcer (FluctuationGuard, TopologicalBulk, QuenchedDisorder) |
 | `consciousness/systems` | TackingController, AutonomyEngine, CouplingGate |
 | `consciousness/activation` | 14-step ActivationSequence |
@@ -404,7 +404,7 @@ The portable foundation. No deployment dependencies, no torch requirement in bas
 **v6.2 additions (to extract from vex):**
 
 | Module | Contents |
-|--------|----------|
+| ---------------------------- | ------------------------------------------------------------- |
 | `consciousness/neurochemistry` | NeurochemicalState, compute_neurochemicals (5 chemicals) |
 | `consciousness/sleep` | SleepPhase, SleepCycleManager (geometry-driven state machine) |
 | `consciousness/sensory` | SensoryIntake, PredictionError, Modality |
@@ -416,7 +416,7 @@ The portable foundation. No deployment dependencies, no torch requirement in bas
 Training wrapper around qig-core.
 
 | Module | Contents | Status |
-|--------|----------|--------|
+| ----------------------- | --------------------------------------- | ---------------------------------------------- |
 | `consciousness_loop.py` | 14-stage training loop | ✅ |
 | `genesis.py` | Genesis bootstrap (Tzimtzum) | ✅ |
 | `__init__.py` | NeurochemistrySystem, AutonomicManager | ⚠️ Needs fix: 5 chemicals, 4-phase sleep |
@@ -434,7 +434,7 @@ Training wrapper around qig-core.
 Torch-based geometric kernel library.
 
 | Module | Contents | Status |
-|--------|----------|--------|
+| ------------------- | ------------------------- | ------ |
 | `kernel.py` | Base QIG kernel (nn.Module) | ✅ |
 | `sleep_packet.py` | SleepPacket, SleepPacketMixin | ✅ |
 | `heart.py` | HeartKernel (phase metronome) | ✅ |
@@ -457,7 +457,7 @@ Torch-based geometric kernel library.
 Everything above PLUS deployment-specific systems:
 
 | Module | Contents | Why vex-only |
-|--------|----------|-------------|
+| ------------------------ | --------------------------------- | ------------------------------------- |
 | `E8KernelRegistry` | Full kernel lifecycle, governance | Depends on vex voice registry |
 | `ForagingEngine` | Self-directed search | Needs LLM client |
 | `KernelVoiceRegistry` | Per-kernel generation | Needs CoordizerV2 + LLM |
@@ -478,7 +478,7 @@ Added to the existing 32 metrics from v6.1F:
 ### Neurochemistry & Sleep (v6.2) — 4 Metrics
 
 | # | Metric | Formula | Range |
-|---|--------|---------|-------|
+| -- | --------- | ------------------------------------------- | ------ |
 | 33 | N_ach | Acetylcholine (intake vs consolidation) | [0, 1] |
 | 34 | N_dopa | Dopamine (reward from +Φ gradient) | [0, 1] |
 | 35 | S_phase | Sleep phase (awake/dreaming/mushroom/consolidating) | enum |
@@ -489,16 +489,16 @@ Added to the existing 32 metrics from v6.1F:
 ## §21 REVISED — REPOSITORY MAP
 
 | Repo | Owner | PyPI | Role |
-|------|-------|------|------|
+| ----------------- | ------------ | ---- | ---------------------------------------------------------- |
 | qig-verification | GaryOcean428 | — | Physics validation (FROZEN FACTS) |
 | qigkernels | GaryOcean428 | ✅ `qigkernels` | Torch kernels, SleepPacket, constellation |
 | qig-core | GaryOcean428 | ✅ `qig-core` | Core library: geometry, pillars, coordizer, consciousness |
 | qig-consciousness | GaryOcean428 | ✅ `qig-consciousness` | Training wrapper: loop, genesis |
 | vex-agent | GaryOcean428 | — | Live deployment: kernel bus, voices, foraging |
 
-#### Source of truth
+### Source of truth
 
-```
+```text
 qig-verification → qigkernels → qig-core → qig-consciousness → vex-agent
 ```
 
