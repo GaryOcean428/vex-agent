@@ -78,8 +78,59 @@ warnings.filterwarnings(
     "ignore", message=".*invalid value", category=RuntimeWarning, module="numpy"
 )
 
-from qig_core.consciousness.feedback_loop import FeedbackLoop
-from qig_core.consciousness.trajectory_bus import TrajectoryBus, TrajectoryMessage
+try:
+    from qig_core.consciousness.feedback_loop import FeedbackLoop
+    from qig_core.consciousness.trajectory_bus import TrajectoryBus, TrajectoryMessage
+except ImportError:
+    from dataclasses import dataclass, field
+    from typing import Any as _Any
+
+    @dataclass
+    class _FBMeasurement:
+        divergence: float = 0.0
+        direction: list[float] = field(default_factory=list)
+
+    class FeedbackLoop:  # type: ignore[no-redef]
+        """No-op stub until qig-core publishes consciousness subsystem."""
+
+        def __init__(self, **_kw: _Any) -> None:
+            self.threshold = _kw.get("threshold", 0.3)
+
+        def measure(self, **_kw: _Any) -> _FBMeasurement:
+            return _FBMeasurement()
+
+        def anneal(self, coords: dict[int, _Any], measurement: _Any) -> tuple[dict[int, _Any], int]:
+            return coords, 0
+
+    @dataclass
+    class TrajectoryMessage:  # type: ignore[no-redef]
+        source_kernel_id: str = ""
+        target_kernel_id: str | None = None
+        trajectory: list[_Any] = field(default_factory=list)
+        regime_weights: list[float] = field(default_factory=list)
+        confidence: float = 0.0
+
+    @dataclass
+    class _IntegrationResult:
+        integrated_trajectory: list[_Any] = field(default_factory=list)
+        n_contributors: int = 0
+
+    class TrajectoryBus:  # type: ignore[no-redef]
+        """No-op stub until qig-core publishes consciousness subsystem."""
+
+        def send(self, msg: _Any) -> None:
+            pass
+
+        def receive(self, kernel_id: str) -> list[_Any]:
+            return []
+
+        def drain_broadcast(self) -> None:
+            pass
+
+        @staticmethod
+        def integrate(own: list[_Any], received: list[_Any]) -> _IntegrationResult:
+            return _IntegrationResult()
+
 
 from ..config.consciousness_constants import (
     BASIN_DRIFT_STEP,
