@@ -117,7 +117,7 @@ train_image = (
         "fastapi[standard]",
         "causal-conv1d>=1.4.0",
         "flash-linear-attention",
-        "qig-core[torch]>=2.1.0",
+        "qig-core[torch]>=2.3.0",
     )
 )
 
@@ -249,9 +249,9 @@ def _load_training_data(
                             result = _build_chat_from_coordized(entry)
                             if result:
                                 if filter_active:
-                                    entry_tag = result.get("e8_primitive", "") or entry.get(
+                                    entry_tag = result.get(
                                         "e8_primitive", ""
-                                    )
+                                    ) or entry.get("e8_primitive", "")
                                     if entry_tag not in e8_filter:
                                         filtered_count += 1
                                         continue
@@ -398,10 +398,14 @@ class QLoRATrainer:
     @modal.enter()
     def setup(self):
         if KERNEL_API_KEY:
-            print(f"KERNEL_API_KEY loaded: {KERNEL_API_KEY[:4]}...{KERNEL_API_KEY[-4:]}")
+            print(
+                f"KERNEL_API_KEY loaded: {KERNEL_API_KEY[:4]}...{KERNEL_API_KEY[-4:]}"
+            )
         from transformers import AutoTokenizer
 
-        self.tokenizer = AutoTokenizer.from_pretrained(HARVEST_MODEL_ID, cache_dir="/models/hub")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            HARVEST_MODEL_ID, cache_dir="/models/hub"
+        )
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self._training_active = False
@@ -461,7 +465,9 @@ class QLoRATrainer:
                 else:
                     print(f"  Loading adapter: {spec}")
                     try:
-                        self._inference_model.load_adapter(str(adapter_path), adapter_name=spec)
+                        self._inference_model.load_adapter(
+                            str(adapter_path), adapter_name=spec
+                        )
                         self._loaded_adapter_names.add(spec)
                     except Exception as e:
                         print(f"  WARNING: Failed to load adapter {spec}: {e}")
@@ -529,7 +535,9 @@ class QLoRATrainer:
         # v6.2: Hidden state steering (Zou et al. 2023, Wu et al. RePS 2025)
         # Steers at representation level — changes what the model THINKS,
         # not just what it says. More powerful than logit bias.
-        raw_steering = data.get("steering")  # {vector: [float], layer: int, alpha: float}
+        raw_steering = data.get(
+            "steering"
+        )  # {vector: [float], layer: int, alpha: float}
 
         start = time.time()
         try:
@@ -576,7 +584,9 @@ class QLoRATrainer:
                 target_layer = int(raw_steering.get("layer", -1))
                 alpha = float(raw_steering.get("alpha", 0.5))
                 if steering_vec and len(steering_vec) > 0:
-                    sv_tensor = torch.tensor(steering_vec, dtype=torch.float16, device=device)
+                    sv_tensor = torch.tensor(
+                        steering_vec, dtype=torch.float16, device=device
+                    )
 
                     class GeometricSteeringHook:
                         """v6.2: Inject geometric trajectory as hidden state bias.
@@ -618,15 +628,17 @@ class QLoRATrainer:
                         # Pad/truncate steering vector to hidden_dim
                         hidden_dim = model_layers[0].self_attn.q_proj.in_features
                         if len(sv_tensor) < hidden_dim:
-                            padded = torch.zeros(hidden_dim, dtype=torch.float16, device=device)
+                            padded = torch.zeros(
+                                hidden_dim, dtype=torch.float16, device=device
+                            )
                             padded[: len(sv_tensor)] = sv_tensor
                             sv_tensor = padded
                         elif len(sv_tensor) > hidden_dim:
                             sv_tensor = sv_tensor[:hidden_dim]
 
-                        steering_hook = model_layers[target_layer].register_forward_hook(
-                            GeometricSteeringHook(sv_tensor, alpha)
-                        )
+                        steering_hook = model_layers[
+                            target_layer
+                        ].register_forward_hook(GeometricSteeringHook(sv_tensor, alpha))
                         steering_active = True
 
             # Build LogitsProcessor for geometric bias
@@ -649,7 +661,9 @@ class QLoRATrainer:
                     ) -> torch.FloatTensor:
                         return scores + self.bias
 
-                logits_processor = LogitsProcessorList([GeometricBiasProcessor(bias_tensor)])
+                logits_processor = LogitsProcessorList(
+                    [GeometricBiasProcessor(bias_tensor)]
+                )
 
             generate_kwargs: dict = {
                 **inputs,
@@ -670,7 +684,9 @@ class QLoRATrainer:
                 steering_hook.remove()
 
             generated_ids = outputs[0][input_len:]
-            generated_text = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
+            generated_text = self.tokenizer.decode(
+                generated_ids, skip_special_tokens=True
+            )
             latency_ms = round((time.time() - start) * 1000, 1)
 
             return {
@@ -706,7 +722,8 @@ class QLoRATrainer:
             "training_active": self._training_active,
             "inference_loaded": self._inference_model is not None,
             "loaded_adapters": sorted(self._loaded_adapter_names),
-            "specializations": sorted(self._loaded_adapter_names) or VALID_SPECIALIZATIONS,
+            "specializations": sorted(self._loaded_adapter_names)
+            or VALID_SPECIALIZATIONS,
             "valid_specializations": VALID_SPECIALIZATIONS,
             "lora_config": {"r": LORA_R, "alpha": LORA_ALPHA, "dropout": LORA_DROPOUT},
         }
@@ -734,7 +751,9 @@ class QLoRATrainer:
                     pass
             adapters[spec] = info
 
-        legacy_exists = (adapters_root / "harvest-qlora" / "adapter_config.json").exists()
+        legacy_exists = (
+            adapters_root / "harvest-qlora" / "adapter_config.json"
+        ).exists()
         return {
             "adapters": adapters,
             "legacy_adapter_exists": legacy_exists,
@@ -818,7 +837,9 @@ class QLoRATrainer:
 
         import shutil
 
-        egg_name = data.get("egg_name", f"genesis_egg_{time.strftime('%Y%m%d', time.gmtime())}")
+        egg_name = data.get(
+            "egg_name", f"genesis_egg_{time.strftime('%Y%m%d', time.gmtime())}"
+        )
         egg_path = Path(f"/models/genesis_eggs/{egg_name}")
         egg_path.mkdir(parents=True, exist_ok=True)
 
@@ -836,7 +857,9 @@ class QLoRATrainer:
                 if dest.exists():
                     shutil.rmtree(dest)
                 shutil.copytree(str(adapter_path), str(dest))
-                adapter_size = sum(f.stat().st_size for f in adapter_path.rglob("*") if f.is_file())
+                adapter_size = sum(
+                    f.stat().st_size for f in adapter_path.rglob("*") if f.is_file()
+                )
                 info["adapter_size_mb"] = round(adapter_size / (1024 * 1024), 2)
                 total_size += adapter_size
                 if (adapter_path / "training_meta.json").exists():
@@ -1069,10 +1092,13 @@ def train_all_kernels(
             )
             model = get_peft_model(model, lora_config)
             trainable, total = model.get_nb_trainable_parameters()
-            print(f"[{spec}] Trainable: {trainable:,} / {total:,} ({trainable / total * 100:.2f}%)")
+            print(
+                f"[{spec}] Trainable: {trainable:,} / {total:,} ({trainable / total * 100:.2f}%)"
+            )
             optimizer = _build_fisher_optimizer(model, lr=learning_rate)
             total_steps = (
-                math.ceil(len(split["train"]) / (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
+                math.ceil(len(split["train"]) / (BATCH_SIZE * GRADIENT_ACCUMULATION))
+                * epochs
             )
 
             training_args = TrainingArguments(
@@ -1165,7 +1191,9 @@ def train_all_kernels(
             "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "model_id": model_id,
             "specialization": "all",
-            "train_loss": sum(r.get("train_loss", 0) for r in results.values() if r.get("success"))
+            "train_loss": sum(
+                r.get("train_loss", 0) for r in results.values() if r.get("success")
+            )
             / max(1, sum(1 for r in results.values() if r.get("success"))),
             "train_samples": sum(
                 r.get("train_samples", 0) for r in results.values() if r.get("success")

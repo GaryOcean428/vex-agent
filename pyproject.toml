@@ -14,7 +14,7 @@ dependencies = [
   "python-multipart>=0.0.20",
   "modal>=0.76.0",
   "pymupdf>=1.25.0",
-  "qig-core>=2.3.0",
+  "qig-core>=2.4.0",
 ]
 
 [project.optional-dependencies]
