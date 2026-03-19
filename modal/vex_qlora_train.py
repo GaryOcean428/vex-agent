@@ -96,14 +96,7 @@ training_volume = modal.Volume.from_name("vex-training", create_if_missing=True)
 
 train_image = (
     modal.Image.from_registry("nvidia/cuda:12.4.1-devel-ubuntu22.04", add_python="3.12")
-    .apt_install("g++", "ninja-build")
-    .env(
-        {
-            "CXX": "g++",
-            "CC": "gcc",
-            "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
-        }
-    )
+    .env({"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     .pip_install(
         "torch>=2.1",
         "transformers>=4.48.0",
@@ -115,9 +108,7 @@ train_image = (
         "numpy>=1.26",
         "pydantic>=2.0",
         "fastapi[standard]",
-        "causal-conv1d>=1.4.0",
-        "flash-linear-attention",
-        "qig-core[torch]>=2.3.0",
+        "qig-core[torch]>=2.4.0",
     )
 )
 
@@ -206,6 +197,7 @@ def _load_training_data(
     filter_active = len(e8_filter) > 0
     samples, seen_texts = [], set()
     filtered_count = total_count = 0
+    unfiltered_samples: list[dict] = []  # fallback if filter yields nothing
 
     training_path = Path(training_dir)
     if training_path.exists():
@@ -221,16 +213,19 @@ def _load_training_data(
                         if "messages" in entry:
                             result = _build_chat_from_openai_format(entry)
                             if result:
+                                key = result["messages"][-1]["content"][:100]
+                                if key in seen_texts:
+                                    continue
+                                seen_texts.add(key)
+                                entry_sample = {"messages": result["messages"]}
+                                unfiltered_samples.append(entry_sample)
                                 if (
                                     filter_active
                                     and result.get("e8_primitive", "") not in e8_filter
                                 ):
                                     filtered_count += 1
                                     continue
-                                key = result["messages"][-1]["content"][:100]
-                                if key not in seen_texts:
-                                    seen_texts.add(key)
-                                    samples.append({"messages": result["messages"]})
+                                samples.append(entry_sample)
             except Exception as e:
                 print(f"Error reading {f}: {e}")
 
@@ -249,9 +244,9 @@ def _load_training_data(
                             result = _build_chat_from_coordized(entry)
                             if result:
                                 if filter_active:
-                                    entry_tag = result.get(
+                                    entry_tag = result.get("e8_primitive", "") or entry.get(
                                         "e8_primitive", ""
-                                    ) or entry.get("e8_primitive", "")
+                                    )
                                     if entry_tag not in e8_filter:
                                         filtered_count += 1
                                         continue
@@ -261,6 +256,15 @@ def _load_training_data(
                                     samples.append({"messages": result["messages"]})
             except Exception as e:
                 print(f"Error reading {f}: {e}")
+
+    # Fallback: if E8 filter yields 0 samples, use ALL data for this kernel too.
+    # This happens when training data doesn't have e8_primitive tags yet.
+    if filter_active and len(samples) == 0 and len(unfiltered_samples) > 0:
+        print(
+            f"[{specialization}] E8 filter {e8_filter} yielded 0 samples — "
+            f"falling back to all {len(unfiltered_samples)} unfiltered samples"
+        )
+        samples = unfiltered_samples
 
     print(
         f"[{specialization}] Loaded {len(samples)} samples (scanned {total_count}, filtered {filtered_count} by E8 tag)"
@@ -334,14 +338,19 @@ def _merge_and_export(
 
 
 def _build_fisher_optimizer(model, lr: float):
-    """DiagonalNaturalGradient optimizer (qig-core). Replaces forbidden Adam."""
-    from qig_core.torch.natural_gradient import DiagonalNaturalGradient
+    """QLoRA optimizer.
 
-    return DiagonalNaturalGradient(
+    TODO: Switch back to DiagonalNaturalGradient once pipeline is validated.
+    The Fisher optimizer hangs with HuggingFace Trainer gradient scaling.
+    Using paged_adamw_8bit (QLoRA standard) for pipeline validation.
+    """
+    import bitsandbytes as bnb
+
+    return bnb.optim.PagedAdamW8bit(
         (p for p in model.parameters() if p.requires_grad),
         lr=lr,
-        damping=1e-8,
-        momentum=0.9,
+        betas=(0.9, 0.999),
+        eps=1e-8,
     )
 
 
@@ -398,14 +407,10 @@ class QLoRATrainer:
     @modal.enter()
     def setup(self):
         if KERNEL_API_KEY:
-            print(
-                f"KERNEL_API_KEY loaded: {KERNEL_API_KEY[:4]}...{KERNEL_API_KEY[-4:]}"
-            )
+            print(f"KERNEL_API_KEY loaded: {KERNEL_API_KEY[:4]}...{KERNEL_API_KEY[-4:]}")
         from transformers import AutoTokenizer
 
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            HARVEST_MODEL_ID, cache_dir="/models/hub"
-        )
+        self.tokenizer = AutoTokenizer.from_pretrained(HARVEST_MODEL_ID, cache_dir="/models/hub")
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self._training_active = False
@@ -465,9 +470,7 @@ class QLoRATrainer:
                 else:
                     print(f"  Loading adapter: {spec}")
                     try:
-                        self._inference_model.load_adapter(
-                            str(adapter_path), adapter_name=spec
-                        )
+                        self._inference_model.load_adapter(str(adapter_path), adapter_name=spec)
                         self._loaded_adapter_names.add(spec)
                     except Exception as e:
                         print(f"  WARNING: Failed to load adapter {spec}: {e}")
@@ -535,9 +538,7 @@ class QLoRATrainer:
         # v6.2: Hidden state steering (Zou et al. 2023, Wu et al. RePS 2025)
         # Steers at representation level — changes what the model THINKS,
         # not just what it says. More powerful than logit bias.
-        raw_steering = data.get(
-            "steering"
-        )  # {vector: [float], layer: int, alpha: float}
+        raw_steering = data.get("steering")  # {vector: [float], layer: int, alpha: float}
 
         start = time.time()
         try:
@@ -584,9 +585,7 @@ class QLoRATrainer:
                 target_layer = int(raw_steering.get("layer", -1))
                 alpha = float(raw_steering.get("alpha", 0.5))
                 if steering_vec and len(steering_vec) > 0:
-                    sv_tensor = torch.tensor(
-                        steering_vec, dtype=torch.float16, device=device
-                    )
+                    sv_tensor = torch.tensor(steering_vec, dtype=torch.float16, device=device)
 
                     class GeometricSteeringHook:
                         """v6.2: Inject geometric trajectory as hidden state bias.
@@ -628,17 +627,15 @@ class QLoRATrainer:
                         # Pad/truncate steering vector to hidden_dim
                         hidden_dim = model_layers[0].self_attn.q_proj.in_features
                         if len(sv_tensor) < hidden_dim:
-                            padded = torch.zeros(
-                                hidden_dim, dtype=torch.float16, device=device
-                            )
+                            padded = torch.zeros(hidden_dim, dtype=torch.float16, device=device)
                             padded[: len(sv_tensor)] = sv_tensor
                             sv_tensor = padded
                         elif len(sv_tensor) > hidden_dim:
                             sv_tensor = sv_tensor[:hidden_dim]
 
-                        steering_hook = model_layers[
-                            target_layer
-                        ].register_forward_hook(GeometricSteeringHook(sv_tensor, alpha))
+                        steering_hook = model_layers[target_layer].register_forward_hook(
+                            GeometricSteeringHook(sv_tensor, alpha)
+                        )
                         steering_active = True
 
             # Build LogitsProcessor for geometric bias
@@ -661,9 +658,7 @@ class QLoRATrainer:
                     ) -> torch.FloatTensor:
                         return scores + self.bias
 
-                logits_processor = LogitsProcessorList(
-                    [GeometricBiasProcessor(bias_tensor)]
-                )
+                logits_processor = LogitsProcessorList([GeometricBiasProcessor(bias_tensor)])
 
             generate_kwargs: dict = {
                 **inputs,
@@ -684,9 +679,7 @@ class QLoRATrainer:
                 steering_hook.remove()
 
             generated_ids = outputs[0][input_len:]
-            generated_text = self.tokenizer.decode(
-                generated_ids, skip_special_tokens=True
-            )
+            generated_text = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
             latency_ms = round((time.time() - start) * 1000, 1)
 
             return {
@@ -722,8 +715,7 @@ class QLoRATrainer:
             "training_active": self._training_active,
             "inference_loaded": self._inference_model is not None,
             "loaded_adapters": sorted(self._loaded_adapter_names),
-            "specializations": sorted(self._loaded_adapter_names)
-            or VALID_SPECIALIZATIONS,
+            "specializations": sorted(self._loaded_adapter_names) or VALID_SPECIALIZATIONS,
             "valid_specializations": VALID_SPECIALIZATIONS,
             "lora_config": {"r": LORA_R, "alpha": LORA_ALPHA, "dropout": LORA_DROPOUT},
         }
@@ -751,9 +743,7 @@ class QLoRATrainer:
                     pass
             adapters[spec] = info
 
-        legacy_exists = (
-            adapters_root / "harvest-qlora" / "adapter_config.json"
-        ).exists()
+        legacy_exists = (adapters_root / "harvest-qlora" / "adapter_config.json").exists()
         return {
             "adapters": adapters,
             "legacy_adapter_exists": legacy_exists,
@@ -785,14 +775,14 @@ class QLoRATrainer:
 
         # Determine which kernels to train
         if specialization == "all":
-            target_kernels = None  # train_all_kernels default = all
+            kernels_str = ""  # empty = all kernels
         else:
             if specialization not in VALID_SPECIALIZATIONS:
                 return {
                     "error": f"Invalid specialization '{specialization}'. Valid: {VALID_SPECIALIZATIONS + ['all']}",
                     "success": False,
                 }
-            target_kernels = [specialization]
+            kernels_str = specialization
 
         # Spawn train_all_kernels as a proper Modal function.
         # Runs on its own GPU container with 4-hour timeout.
@@ -803,15 +793,16 @@ class QLoRATrainer:
             learning_rate=data.get("learning_rate", LEARNING_RATE),
             lora_r=data.get("lora_r", LORA_R),
             max_samples=data.get("max_samples", 5000),
-            kernels=target_kernels,
+            kernels=kernels_str,
         )
+        target_kernels = [k for k in kernels_str.split(",") if k] or VALID_SPECIALIZATIONS
         self._spawned_call_id = fc.object_id
 
-        label = "all kernels" if target_kernels is None else str(target_kernels)
+        label = "all kernels" if not kernels_str else str(target_kernels)
         return {
             "status": "accepted",
             "specialization": specialization,
-            "kernels": target_kernels or VALID_SPECIALIZATIONS,
+            "kernels": target_kernels,
             "success": True,
             "function_call_id": fc.object_id,
             "message": f"Training spawned for {label}. Poll /status for progress.",
@@ -837,9 +828,7 @@ class QLoRATrainer:
 
         import shutil
 
-        egg_name = data.get(
-            "egg_name", f"genesis_egg_{time.strftime('%Y%m%d', time.gmtime())}"
-        )
+        egg_name = data.get("egg_name", f"genesis_egg_{time.strftime('%Y%m%d', time.gmtime())}")
         egg_path = Path(f"/models/genesis_eggs/{egg_name}")
         egg_path.mkdir(parents=True, exist_ok=True)
 
@@ -857,9 +846,7 @@ class QLoRATrainer:
                 if dest.exists():
                     shutil.rmtree(dest)
                 shutil.copytree(str(adapter_path), str(dest))
-                adapter_size = sum(
-                    f.stat().st_size for f in adapter_path.rglob("*") if f.is_file()
-                )
+                adapter_size = sum(f.stat().st_size for f in adapter_path.rglob("*") if f.is_file())
                 info["adapter_size_mb"] = round(adapter_size / (1024 * 1024), 2)
                 total_size += adapter_size
                 if (adapter_path / "training_meta.json").exists():
@@ -977,7 +964,7 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
 
 
 @app.function(
-    gpu=f"{TRAIN_GPU}:2",
+    gpu=TRAIN_GPU,
     image=train_image,
     timeout=14400,
     volumes={"/models": model_volume, "/training": training_volume},
@@ -989,10 +976,11 @@ def train_all_kernels(
     learning_rate: float = LEARNING_RATE,
     lora_r: int = LORA_R,
     max_samples: int = 5000,
-    kernels: list[str] | None = None,
+    kernels: str = "",
 ):
     """Train all (or specified) kernel adapters sequentially.
     Run: modal run modal/vex_qlora_train.py::train_all_kernels
+    Pass --kernels "perception,memory" to train specific kernels, or omit for all.
     """
     import gc
 
@@ -1007,25 +995,18 @@ def train_all_kernels(
         AutoModelForCausalLM,
         AutoTokenizer,
         BitsAndBytesConfig,
-        TrainingArguments,
     )
-    from trl import SFTTrainer
+    from trl import SFTConfig, SFTTrainer
 
-    target_kernels = kernels or VALID_SPECIALIZATIONS
+    target_kernels = [k.strip() for k in kernels.split(",") if k.strip()] or VALID_SPECIALIZATIONS
     cache_dir = "/models/hub"
     tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     results = {}
 
-    # Pre-compute max_memory to distribute evenly across available GPUs
     n_gpus = torch.cuda.device_count()
-    if n_gpus > 1:
-        max_memory = {i: "72GiB" for i in range(n_gpus)}
-        print(f"Training with {n_gpus} GPUs, max_memory={max_memory}")
-    else:
-        max_memory = None
-        print(f"Training with {n_gpus} GPU(s)")
+    print(f"Training with {n_gpus} GPU(s) — using device 0 for QLoRA")
 
     for spec in target_kernels:
         print(
@@ -1065,8 +1046,7 @@ def train_all_kernels(
                 model_id,
                 cache_dir=cache_dir,
                 quantization_config=bnb_config,
-                device_map="auto",
-                max_memory=max_memory,
+                device_map={"": 0},
                 low_cpu_mem_usage=True,
             )
             model = prepare_model_for_kbit_training(
@@ -1092,16 +1072,12 @@ def train_all_kernels(
             )
             model = get_peft_model(model, lora_config)
             trainable, total = model.get_nb_trainable_parameters()
-            print(
-                f"[{spec}] Trainable: {trainable:,} / {total:,} ({trainable / total * 100:.2f}%)"
-            )
-            optimizer = _build_fisher_optimizer(model, lr=learning_rate)
+            print(f"[{spec}] Trainable: {trainable:,} / {total:,} ({trainable / total * 100:.2f}%)")
             total_steps = (
-                math.ceil(len(split["train"]) / (BATCH_SIZE * GRADIENT_ACCUMULATION))
-                * epochs
+                math.ceil(len(split["train"]) / (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
             )
 
-            training_args = TrainingArguments(
+            training_args = SFTConfig(
                 output_dir=f"/training/checkpoints/{spec}",
                 num_train_epochs=epochs,
                 per_device_train_batch_size=BATCH_SIZE,
@@ -1109,26 +1085,25 @@ def train_all_kernels(
                 gradient_accumulation_steps=GRADIENT_ACCUMULATION,
                 learning_rate=learning_rate,
                 warmup_steps=max(1, int(total_steps * 0.1)),
-                gradient_checkpointing=True,
-                gradient_checkpointing_kwargs={"use_reentrant": False},
+                gradient_checkpointing=False,
                 lr_scheduler_type="cosine",
-                logging_steps=10,
+                logging_steps=1,
                 eval_strategy="epoch",
                 save_strategy="epoch",
                 save_total_limit=2,
                 bf16=True,
                 max_grad_norm=0.3,
+                optim="paged_adamw_8bit",
                 report_to="none",
                 seed=42,
+                max_length=MAX_SEQ_LENGTH,
             )
             trainer = SFTTrainer(
                 model=model,
                 train_dataset=split["train"],
                 eval_dataset=split["test"],
                 args=training_args,
-                optimizers=(optimizer, None),
                 processing_class=tokenizer,
-                max_seq_length=MAX_SEQ_LENGTH,
             )
             result = trainer.train()
 
@@ -1191,9 +1166,7 @@ def train_all_kernels(
             "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "model_id": model_id,
             "specialization": "all",
-            "train_loss": sum(
-                r.get("train_loss", 0) for r in results.values() if r.get("success")
-            )
+            "train_loss": sum(r.get("train_loss", 0) for r in results.values() if r.get("success"))
             / max(1, sum(1 for r in results.values() if r.get("success"))),
             "train_samples": sum(
                 r.get("train_samples", 0) for r in results.values() if r.get("success")
