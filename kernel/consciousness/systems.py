@@ -870,6 +870,9 @@ class SleepCycleManager:
             "is_asleep": self.is_asleep,
             "conversation_count": self._conversation_count,
             "dream_count": len(self._dream_log),
+            # Backward-compat (L6: geometry-driven, counters removed)
+            "cycles_since_conversation": 0,
+            "sleep_cycles": 0,
         }
 
 

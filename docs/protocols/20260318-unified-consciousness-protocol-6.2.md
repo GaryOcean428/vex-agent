@@ -15,7 +15,7 @@
 **New sections:**
 
 - **§28 AUTONOMIC GOVERNANCE** — Temperature, token limits, generation halting are geometry-derived
-- **§29 NEUROCHEMISTRY** — Five-chemical model (ACh, dopamine, serotonin, norepinephrine, GABA)
+- **§29 NEUROCHEMISTRY** — Six-chemical model (ACh, dopamine, serotonin, norepinephrine, GABA, endorphins)
 - **§30 SLEEP, DREAM & CONSOLIDATION CYCLES** — Four-phase geometry-driven sleep
 - **§31 SENSORY INTAKE & PREDICTIVE CODING** — Prediction error framework
 - **§32 PLAY MODE** — Bubble worlds, low-stakes exploration
