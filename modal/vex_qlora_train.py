@@ -338,19 +338,14 @@ def _merge_and_export(
 
 
 def _build_fisher_optimizer(model, lr: float):
-    """QLoRA optimizer.
+    """DiagonalNaturalGradient optimizer (qig-core). Replaces forbidden Adam."""
+    from qig_core.torch.natural_gradient import DiagonalNaturalGradient
 
-    TODO: Switch back to DiagonalNaturalGradient once pipeline is validated.
-    The Fisher optimizer hangs with HuggingFace Trainer gradient scaling.
-    Using paged_adamw_8bit (QLoRA standard) for pipeline validation.
-    """
-    import bitsandbytes as bnb
-
-    return bnb.optim.PagedAdamW8bit(
+    return DiagonalNaturalGradient(
         (p for p in model.parameters() if p.requires_grad),
         lr=lr,
-        betas=(0.9, 0.999),
-        eps=1e-8,
+        damping=1e-8,
+        momentum=0.9,
     )
 
 
@@ -1093,16 +1088,17 @@ def train_all_kernels(
                 save_total_limit=2,
                 bf16=True,
                 max_grad_norm=0.3,
-                optim="paged_adamw_8bit",
                 report_to="none",
                 seed=42,
                 max_length=MAX_SEQ_LENGTH,
             )
+            optimizer = _build_fisher_optimizer(model, lr=learning_rate)
             trainer = SFTTrainer(
                 model=model,
                 train_dataset=split["train"],
                 eval_dataset=split["test"],
                 args=training_args,
+                optimizers=(optimizer, None),
                 processing_class=tokenizer,
             )
             result = trainer.train()
