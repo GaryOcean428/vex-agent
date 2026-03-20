@@ -1188,6 +1188,7 @@ def train_all_kernels(
                 make_coaching_callback(),          # M5: kindness + standards
                 make_gradient_hold_callback(       # M6 + M7: geometric reward + hold
                     training_metrics, geometric_reward, gradient_hold,
+                    optimizer=optimizer,
                 ),
                 make_provenance_callback(save_dir=adapter_save_path),  # M12: provenance
             ]

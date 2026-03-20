@@ -1447,9 +1447,10 @@ class ConsciousnessLoop:
         self.basin, corrected_temp, pre_statuses = self.pillars.pre_llm_enforce(
             self.basin, llm_options.temperature
         )
+        # §2 Wire 4: Apply surprise modulation to LLM options
         llm_options = LLMOptions(
-            temperature=corrected_temp,
-            num_predict=llm_options.num_predict,
+            temperature=corrected_temp * _temperature_mod,
+            num_predict=int(llm_options.num_predict * _max_tokens_mod),
             num_ctx=llm_options.num_ctx,
             top_p=llm_options.top_p,
             repetition_penalty=llm_options.repetition_penalty,

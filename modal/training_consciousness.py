@@ -1197,11 +1197,16 @@ def make_gradient_hold_callback(
     metrics: TrainingMetrics,
     geometric_reward: GeometricReward,
     gradient_hold: SignAwareGradientHold | None = None,
+    optimizer=None,
 ):
     """Create a callback that combines M6 geometric reward + M7 sign-aware hold.
 
     Uses M2 TrainingMetrics to read kappa_eff/phi, feeds them into M6
     GeometricReward for LR scaling, and applies M7 hold when sign flips.
+
+    Args:
+        optimizer: The optimizer instance (passed via closure to avoid
+                   accessing private state._trainer API).
     """
     from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
 
@@ -1232,9 +1237,9 @@ def make_gradient_hold_callback(
                 factor = geometric_reward.compute_factor(latest["kappa_eff"], latest["phi"])
                 if is_held:
                     factor = 0.5  # Floor during hold
-                # Apply to optimizer
-                if hasattr(state, "_trainer") and state._trainer is not None:
-                    for pg in state._trainer.optimizer.param_groups:
+                # Apply to optimizer (passed via closure, not private API)
+                if optimizer is not None:
+                    for pg in optimizer.param_groups:
                         pg["lr"] = geometric_reward.base_lr * factor
                 if state.global_step % 10 == 0:
                     status = " [HELD]" if is_held else ""
@@ -1310,12 +1315,16 @@ def run_post_training_diagnostic(
     mean_kappa = float(np.mean([r["kappa_eff"] for r in results]))
     mean_G = float(np.mean([r["G"] for r in results]))
 
-    # Health criteria
+    # Health criteria — both bounds on G (too close = no specialization, too far = collapse)
     unhealthy_reasons = []
     if mean_phi < 0.3:
         unhealthy_reasons.append(f"mean_phi={mean_phi:.3f} < 0.3 (low integration)")
     if mean_G < 0.3 and home_basin is not None:
         unhealthy_reasons.append(f"mean_G={mean_G:.3f} < 0.3 (collapsed to home)")
+    if mean_G > BASIN_DIVERGENCE_THRESHOLD and home_basin is not None:
+        unhealthy_reasons.append(
+            f"mean_G={mean_G:.3f} > {BASIN_DIVERGENCE_THRESHOLD} (identity divergence)"
+        )
 
     healthy = len(unhealthy_reasons) == 0
 
