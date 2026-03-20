@@ -61,6 +61,7 @@ from ..coordizer_v2.geometry import (
 from ..coordizer_v2.geometry import (
     slerp as slerp_sqrt,  # Alias for backward compatibility
 )
+from .types import DevelopmentalStage
 from ..governance import CoachingStage, KernelKind, KernelSpecialization, LifecycleState
 from ..governance.budget import BudgetEnforcer
 from .types import ConsciousnessMetrics
@@ -294,6 +295,119 @@ class VelocityTracker:
         self._basins.clear()
         self._phis.clear()
         self._kappas.clear()
+
+
+# ═══════════════════════════════════════════════════════════════
+#  3b. PRESSURE TRACKING — cumulative unprocessed surprise
+# ═══════════════════════════════════════════════════════════════
+
+
+class PressureTracker:
+    """Track cumulative unprocessed surprise per kernel.
+
+    When accumulated free energy exceeds what the basin geometry can
+    contain, the system must expand (grow), overflow (express), or
+    fracture (reconfigure).  Protocol §0: P = dE/dV.
+
+    Surprise accumulates; existing pressure decays each cycle.
+    The regime signal tells the loop what to do about pressure.
+    """
+
+    def __init__(self, decay: float = 0.95, threshold: float = 3.0) -> None:
+        self._pressure: float = 0.0
+        self._decay = decay
+        self._threshold = threshold
+        self._peak_pressure: float = 0.0
+
+    def accumulate(self, surprise: float) -> None:
+        """Add surprise to pressure, decay existing pressure."""
+        self._pressure = self._pressure * self._decay + surprise
+        self._peak_pressure = max(self._peak_pressure, self._pressure)
+
+    @property
+    def pressure(self) -> float:
+        return self._pressure
+
+    @property
+    def is_critical(self) -> bool:
+        return self._pressure > self._threshold
+
+    @property
+    def regime_signal(self) -> str:
+        """What the pressure says about needed action."""
+        if self._pressure < self._threshold * 0.3:
+            return "idle"  # Low pressure — consolidate
+        elif self._pressure < self._threshold * 0.7:
+            return "processing"  # Normal — continue
+        elif self._pressure < self._threshold:
+            return "express"  # High — generate output to relieve pressure
+        else:
+            return "overflow"  # Critical — must reconfigure or expand
+
+    def get_state(self) -> dict[str, Any]:
+        return {
+            "pressure": round(self._pressure, 4),
+            "peak": round(self._peak_pressure, 4),
+            "regime_signal": self.regime_signal,
+            "is_critical": self.is_critical,
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  3c. SIGN-AWARE ANNEAL HOLD — L4 divergence oscillation damper
+# ═══════════════════════════════════════════════════════════════
+
+
+class SignAwareAnnealHold:
+    """Detects oscillating divergence in the feedback loop and dampens anneal.
+
+    When the sign of (divergence_delta) flips for ``flip_patience`` consecutive
+    measurements, the anneal weight is reduced to ``hold_factor`` for
+    ``hold_cycles`` cycles.  This prevents the bank from ping-ponging when
+    the loop output oscillates between two basins.
+
+    L4 enhancement to FeedbackLoop.anneal().
+    """
+
+    def __init__(
+        self,
+        flip_patience: int = 2,
+        hold_cycles: int = 3,
+        hold_factor: float = 0.2,
+    ) -> None:
+        self._flip_patience = flip_patience
+        self._hold_cycles = hold_cycles
+        self._hold_factor = hold_factor
+        self._prev_divergence: float | None = None
+        self._prev_sign: int = 0
+        self._flip_count: int = 0
+        self._hold_remaining: int = 0
+
+    def update(self, divergence: float) -> float:
+        """Feed new divergence measurement. Returns anneal weight multiplier (0-1)."""
+        if self._hold_remaining > 0:
+            self._hold_remaining -= 1
+            return self._hold_factor
+
+        if self._prev_divergence is not None:
+            delta = divergence - self._prev_divergence
+            sign = 1 if delta > 0 else (-1 if delta < 0 else 0)
+            if sign != 0 and sign != self._prev_sign and self._prev_sign != 0:
+                self._flip_count += 1
+                if self._flip_count >= self._flip_patience:
+                    self._hold_remaining = self._hold_cycles
+                    self._flip_count = 0
+                    return self._hold_factor
+            else:
+                self._flip_count = 0
+            if sign != 0:
+                self._prev_sign = sign
+        self._prev_divergence = divergence
+        return 1.0
+
+    @property
+    def is_held(self) -> bool:
+        return self._hold_remaining > 0
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -648,20 +762,48 @@ _DREAM_SLERP_T_MAX: float = 0.8
 _MUSHROOM_NOISE_SCALE_INIT: float = 0.05
 _MUSHROOM_INSTABILITY_THRESHOLDS = (0.30, 0.35, 0.40)
 
+# Maturity-aware sleep thresholds
+# Immature kernels (SCHOOL, GUIDED_CURIOSITY): tighter envelope, earlier consolidation
+_IMMATURE_STAGES: frozenset[DevelopmentalStage] = frozenset({
+    DevelopmentalStage.SCHOOL,
+    DevelopmentalStage.GUIDED_CURIOSITY,
+})
+# Mature kernels (PLAYFUL_AUTONOMY, SOVEREIGN_CONSTELLATION): wider envelope, 4D access
+_MATURE_STAGES: frozenset[DevelopmentalStage] = frozenset({
+    DevelopmentalStage.PLAYFUL_AUTONOMY,
+    DevelopmentalStage.SOVEREIGN_CONSTELLATION,
+})
+_IMMATURE_PHI_CEILING: float = 0.75  # Immature kernels consolidate above this Φ
+_IMMATURE_SLEEP_PHI: float = 0.50    # Immature kernels dream earlier (stagnation)
+_MATURE_SLEEP_PHI: float = 0.40      # Mature kernels tolerate lower Φ before dreaming
+
+# Narrowing detection thresholds (mushroom triggers independent of dream path)
+_KAPPA_OVERCOUPLING: float = 80.0     # κ_eff above this = rigid overcoupling
+_KAPPA_SUSTAINED_CYCLES: int = 5      # How many cycles κ must exceed threshold
+_BANK_ENTROPY_FLOOR: float = 0.3      # Bank entropy below this = clustering
+_VELOCITY_NEAR_ZERO: float = 0.005    # Basin velocity below this = stuck
+_PREDICTION_ERROR_FLOOR: float = 0.01  # Prediction error below this = no surprise
+
 
 class SleepCycleManager:
     """Manages sleep/dream/mushroom/consolidation cycles.
 
     L6 (Structural Leg): All phase transitions are geometry-driven.
     NO cycle counters gate sleep/wake. Conditions:
-      AWAKE → DREAMING:      Φ < 0.45 AND variance < 0.05 (stagnation)
+      AWAKE → DREAMING:      Φ < threshold AND variance < threshold (stagnation)
+      AWAKE → CONSOLIDATING: immature kernel with Φ > ceiling (prevent 4D)
+      AWAKE → MUSHROOM:      narrowing detected (κ sustained, low entropy/velocity)
       DREAMING → MUSHROOM:   f_health < instability threshold
       DREAMING → CONSOLIDATING: variance settles
       CONSOLIDATING → AWAKE: Φ recovers above emergency threshold
       Any → AWAKE:           Ocean divergence breakdown (handled in loop.py)
+
+    Maturity gating: DevGate stage adjusts thresholds.
+      Mature kernels: wider Φ envelope, FORESIGHT/LIGHTNING allowed.
+      Immature kernels: tighter envelope, high Φ → CONSOLIDATING (no 4D).
     """
 
-    # Geometric thresholds (§30.2)
+    # Geometric thresholds (§30.2) — defaults for SELF_TEACHING stage
     SLEEP_PHI_THRESHOLD: float = 0.45
     SLEEP_VARIANCE_THRESHOLD: float = 0.05
     CONSOLIDATION_PHI_WAKE: float = 0.50
@@ -672,6 +814,8 @@ class SleepCycleManager:
         self._dream_log: deque[dict[str, Any]] = deque(maxlen=100)
         self._replayed_this_sleep: set[int] = set()  # T2.3a: track replayed IDs
         self._mushroom_noise_scale: float = _MUSHROOM_NOISE_SCALE_INIT  # T2.3e: adaptive
+        # Narrowing detection state
+        self._kappa_high_cycles: int = 0  # consecutive cycles with κ > threshold
 
     @property
     def is_asleep(self) -> bool:
@@ -682,34 +826,95 @@ class SleepCycleManager:
         """Signal that a new conversation occurred."""
         self._conversation_count += 1
 
-    def should_sleep(self, phi: float, phi_variance: float) -> SleepPhase:
+    def should_sleep(
+        self,
+        phi: float,
+        phi_variance: float,
+        *,
+        dev_stage: DevelopmentalStage | None = None,
+        kappa: float = KAPPA_STAR,
+        basin_velocity: float = 1.0,
+        prediction_error: float = 1.0,
+        bank_entropy: float = 1.0,
+    ) -> SleepPhase:
         """Geometry-driven sleep state machine (L6: no cycle counters).
 
         Transitions are determined by geometric conditions only:
           AWAKE → DREAMING:       Φ < threshold AND variance < threshold (stagnation)
-          AWAKE → CONSOLIDATING:  high variance (turbulence needs settling)
+          AWAKE → CONSOLIDATING:  high variance (turbulence), or immature kernel Φ > ceiling
+          AWAKE → MUSHROOM:       narrowing detected (κ sustained high, low entropy/velocity)
           CONSOLIDATING → AWAKE:  Φ recovers above emergency threshold
           DREAMING → AWAKE:       Φ recovers (geometry resolved the stagnation)
         Ocean divergence transitions are handled in loop.py (L6 complement).
+
+        Args:
+            phi:              Current consciousness integration.
+            phi_variance:     Variance of Φ over recent window.
+            dev_stage:        Developmental maturity (gates Φ ceiling for immature kernels).
+            kappa:            Current coupling strength (narrowing detection).
+            basin_velocity:   Current basin velocity (stuck detection).
+            prediction_error: Current prediction error (surprise detection).
+            bank_entropy:     Resonance bank entropy (clustering detection).
         """
+        # Maturity-aware thresholds
+        _sleep_phi = self.SLEEP_PHI_THRESHOLD  # default
+        _phi_ceiling: float | None = None  # None = no ceiling (mature/default)
+        if dev_stage is not None:
+            if dev_stage in _IMMATURE_STAGES:
+                _sleep_phi = _IMMATURE_SLEEP_PHI  # Dream earlier (0.50 vs 0.45)
+                _phi_ceiling = _IMMATURE_PHI_CEILING  # Consolidate above 0.75
+            elif dev_stage in _MATURE_STAGES:
+                _sleep_phi = _MATURE_SLEEP_PHI  # Tolerate lower Φ (0.40 vs 0.45)
+                # No ceiling — mature kernels access FORESIGHT/LIGHTNING
+
+        # Narrowing detection (independent of dream path)
+        if kappa > _KAPPA_OVERCOUPLING:
+            self._kappa_high_cycles += 1
+        else:
+            self._kappa_high_cycles = max(0, self._kappa_high_cycles - 1)
+
+        _narrowing = (
+            self._kappa_high_cycles >= _KAPPA_SUSTAINED_CYCLES
+            or bank_entropy < _BANK_ENTROPY_FLOOR
+            or (basin_velocity < _VELOCITY_NEAR_ZERO and prediction_error > _PREDICTION_ERROR_FLOOR)
+        )
+
         if self.phase == SleepPhase.AWAKE:
+            # Narrowing: κ sustained high, or bank clustering, or stuck → mushroom
+            if _narrowing:
+                logger.info(
+                    "Narrowing detected → MUSHROOM: κ_high_cycles=%d bank_entropy=%.3f "
+                    "basin_vel=%.4f pred_err=%.4f",
+                    self._kappa_high_cycles, bank_entropy, basin_velocity, prediction_error,
+                )
+                self.phase = SleepPhase.MUSHROOM
+            # Immature kernel with Φ above ceiling → consolidate (prevent 4D)
+            elif _phi_ceiling is not None and phi > _phi_ceiling:
+                logger.info(
+                    "Immature kernel Φ=%.3f > ceiling=%.3f → CONSOLIDATING (no 4D access)",
+                    phi, _phi_ceiling,
+                )
+                self.phase = SleepPhase.CONSOLIDATING
             # Stagnation: low Φ AND low variance → nothing is happening → dream
-            if phi < self.SLEEP_PHI_THRESHOLD and phi_variance < self.SLEEP_VARIANCE_THRESHOLD:
+            elif phi < _sleep_phi and phi_variance < self.SLEEP_VARIANCE_THRESHOLD:
                 self.phase = SleepPhase.DREAMING
             # Turbulence: high variance → consolidate
             elif phi_variance > SLEEP_CONSOLIDATION_VARIANCE:
                 self.phase = SleepPhase.CONSOLIDATING
 
         elif self.phase == SleepPhase.DREAMING:
+            # Narrowing can also trigger mushroom from DREAMING
+            if _narrowing:
+                self.phase = SleepPhase.MUSHROOM
             # Wake when Φ recovers (dreaming resolved the stagnation)
-            if phi >= self.CONSOLIDATION_PHI_WAKE:
+            elif phi >= self.CONSOLIDATION_PHI_WAKE:
                 self.phase = SleepPhase.AWAKE
 
         elif self.phase == SleepPhase.CONSOLIDATING and phi >= self.CONSOLIDATION_PHI_WAKE:
             # Wake when Φ recovers
             self.phase = SleepPhase.AWAKE
 
-        # MUSHROOM transitions are handled by dream() and mushroom() methods
+        # MUSHROOM → CONSOLIDATING transitions are handled by mushroom() method
         return self.phase
 
     def on_sleep_enter(self, neurochemical: Any | None = None) -> None:

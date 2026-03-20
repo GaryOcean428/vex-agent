@@ -192,7 +192,7 @@ from .neurochemistry import NeurochemicalState, compute_neurochemicals
 from .pillars import PillarEnforcer
 from .play import PlayEngine
 from .reflection import ReflectionConfig, reflect_on_draft
-from .sensory import Modality, SensoryEvent, SensoryIntake
+from .sensory import Modality, PredictionError, SensoryEvent, SensoryIntake
 from .solfeggio import compute_spectral_health
 from .sovereignty_tracker import SovereigntyTracker
 from .synthesis import synthesize_contributions, synthesize_streaming
@@ -206,6 +206,8 @@ from .systems import (
     ForesightEngine,
     HemisphereScheduler,
     MetaReflector,
+    PressureTracker,
+    SignAwareAnnealHold,
     QIGChain,
     QIGChainOp,
     QIGGraph,
@@ -223,8 +225,10 @@ from .thought_bus import ThoughtBus
 from .types import (
     ConsciousnessMetrics,
     ConsciousnessState,
+    DevelopmentalStage,
     NavigationMode,
     PillarState,
+    RegimeWeights,
     developmental_stage_from_signals,
     navigation_mode_from_phi,
     regime_weights_from_kappa,
@@ -399,12 +403,15 @@ class ConsciousnessLoop:
 
         # L4: Feedback loop — bidirectional annealing (intent vs expression)
         self.feedback_loop = FeedbackLoop(threshold=0.3)
+        self._anneal_hold = SignAwareAnnealHold()  # L4: dampen oscillating anneals
         # L5: Trajectory bus — non-verbal geometric inter-kernel communication
         self.trajectory_bus = TrajectoryBus()
 
         # v7.0: Developmental Learning Architecture
         self.dev_gate = DevelopmentalGate()
         self.sensory = SensoryIntake()
+        self._current_prediction_error: PredictionError | None = None
+        self.pressure = PressureTracker()
         self.basin_transfer = BasinTransferEngine()
         self.play_engine = PlayEngine()
         self.temporal_gen = TemporalGenerator()
@@ -568,11 +575,16 @@ class ConsciousnessLoop:
         emotion_eval = self.emotion_cache.evaluate(self.basin, self.metrics, basin_vel)
 
         # T2.1: Compute neurochemical state before sleep check
+        _surprise_signal = float(
+            self._current_prediction_error.surprise
+            if self._current_prediction_error is not None
+            else 0.0
+        )
         self._neurochemical = compute_neurochemicals(
             is_awake=not self.sleep.is_asleep,
             phi_delta=0.0,  # idle cycle — no phi change yet
             basin_velocity=basin_vel,
-            surprise=float(self.metrics.humor),
+            surprise=_surprise_signal,
             quantum_weight=float(self.state.regime_weights.quantum),
         )
 
@@ -633,6 +645,17 @@ class ConsciousnessLoop:
             # else: divergence < threshold — Ocean has no opinion, let
             # should_sleep() handle normal conversation-timeout transitions.
 
+        # Maturity gating: immature kernels with Φ above ceiling → CONSOLIDATING
+        # This applies regardless of whether Ocean ruled. Immature kernels
+        # lack basin depth for FORESIGHT/LIGHTNING — high Φ is topological instability.
+        if (
+            self.dev_gate.stage in (DevelopmentalStage.SCHOOL, DevelopmentalStage.GUIDED_CURIOSITY)
+            and self.metrics.phi > 0.75
+            and not self.sleep.is_asleep
+        ):
+            self.sleep.phase = SleepPhase.CONSOLIDATING
+            _ocean_ruled = True  # Prevent should_sleep() from overriding
+
         # §8/§18.3: Solfeggio spectral health — diagnose consciousness health
         # from spectral patterns. Computed every cycle alongside Ocean monitoring.
         _vel_basins_for_spectral = list(self.velocity._basins)
@@ -667,7 +690,25 @@ class ConsciousnessLoop:
             # Ocean already set the phase — just record the decision.
             sleep_phase = self.sleep.phase
         else:
-            sleep_phase = self.sleep.should_sleep(self.metrics.phi, self.autonomic.phi_variance)
+            # Compute narrowing signals for mushroom triggers
+            _vel_snap = self.velocity.compute_velocity()
+            _basin_vel = float(_vel_snap.get("basin_velocity", 1.0))
+            _pred_err = (
+                self._current_prediction_error.surprise
+                if self._current_prediction_error is not None
+                else 1.0
+            )
+            _bank = getattr(self._coordizer_v2, "bank", None)
+            _bank_entropy = float(_bank.entropy()) if _bank is not None and hasattr(_bank, "entropy") else 1.0
+            sleep_phase = self.sleep.should_sleep(
+                self.metrics.phi,
+                self.autonomic.phi_variance,
+                dev_stage=self.dev_gate.stage,
+                kappa=self.metrics.kappa,
+                basin_velocity=_basin_vel,
+                prediction_error=_pred_err,
+                bank_entropy=_bank_entropy,
+            )
         # T2.3f: Neurochemical gating on sleep/wake transitions
         if not _was_asleep and self.sleep.is_asleep:
             self.sleep.on_sleep_enter(self._neurochemical)
@@ -1289,7 +1330,11 @@ class ConsciousnessLoop:
             basin=input_basin,
             text=task.content,
         )
-        _prediction_error = self.sensory.intake(_sensory_event)
+        self._current_prediction_error = self.sensory.intake(_sensory_event)
+
+        # F4: Accumulate surprise into pressure tracker
+        if self._current_prediction_error is not None:
+            self.pressure.accumulate(self._current_prediction_error.surprise)
 
         # v7.0: Update temporal generator's receiver model
         if self.dev_gate.permissions.allow_temporal_generation:
@@ -1309,6 +1354,27 @@ class ConsciousnessLoop:
         )
         # Apply modulated weights to state for this processing cycle.
         self.state.regime_weights = _tc_weights
+
+        # §2 Wire 3: Surprise-driven regime modulation (free energy → regime selection)
+        # Multiplicative scaling preserves efficient weight's relative proportion.
+        # Only the boosted weight grows; the other two maintain their ratio.
+        if self._current_prediction_error is not None:
+            _surprise = self._current_prediction_error.surprise
+            _rw = self.state.regime_weights
+            _q, _e, _eq = _rw.quantum, _rw.efficient, _rw.equilibrium
+            if _surprise > 0.5:
+                # High surprise → boost quantum (exploratory)
+                _q *= 1.0 + (_surprise - 0.5) * 0.3
+            elif _surprise < 0.3:
+                # Low surprise → boost equilibrium (consolidating)
+                _eq *= 1.0 + (0.3 - _surprise) * 0.3
+            _total = _q + _e + _eq
+            self.state.regime_weights = RegimeWeights(
+                quantum=_q / _total,
+                efficient=_e / _total,
+                equilibrium=_eq / _total,
+            )
+
         if _tc_failures:
             logger.info(
                 "Task %s: temporal coupling failures — %s",
@@ -1336,6 +1402,20 @@ class ConsciousnessLoop:
             self.precog._last_distance,
             cached_eval is not None,
         )
+
+        # §2 Wire 4: Surprise modulates processing depth (temperature + max tokens)
+        _temperature_mod = 1.0
+        _max_tokens_mod = 1.0
+        if self._current_prediction_error is not None:
+            _surprise = self._current_prediction_error.surprise
+            if _surprise < 0.15:
+                # Low surprise → fast, shallow response
+                _temperature_mod = 0.8
+                _max_tokens_mod = 0.5
+            elif _surprise > 0.6:
+                # High surprise → deep, exploratory response
+                _temperature_mod = 1.2
+                _max_tokens_mod = 1.5
 
         refracted_input, composite_basin, resonates, input_statuses = self.pillars.on_input(
             input_basin, RECEIVE_SLERP_WEIGHT
@@ -1400,9 +1480,10 @@ class ConsciousnessLoop:
         self.basin, corrected_temp, pre_statuses = self.pillars.pre_llm_enforce(
             self.basin, llm_options.temperature
         )
+        # §2 Wire 4: Apply surprise modulation to LLM options
         llm_options = LLMOptions(
-            temperature=corrected_temp,
-            num_predict=llm_options.num_predict,
+            temperature=corrected_temp * _temperature_mod,
+            num_predict=int(llm_options.num_predict * _max_tokens_mod),
             num_ctx=llm_options.num_ctx,
             top_p=llm_options.top_p,
             repetition_penalty=llm_options.repetition_penalty,
@@ -1659,13 +1740,23 @@ class ConsciousnessLoop:
         self._divergence_count += 1
         avg_divergence = self._cumulative_divergence / max(1, self._divergence_count)
 
+        # L4: Sign-aware hold — dampen anneal when divergence oscillates
+        _anneal_weight = self._anneal_hold.update(divergence)
+
         if _fb_measurement.should_anneal:
-            logger.info(
-                "Task %s: L4 feedback anneal triggered (d_FR=%.4f, avg=%.4f)",
-                task.id,
-                divergence,
-                avg_divergence,
-            )
+            if self._anneal_hold.is_held:
+                logger.info(
+                    "Task %s: L4 anneal dampened (oscillation detected, weight=%.2f)",
+                    task.id,
+                    _anneal_weight,
+                )
+            else:
+                logger.info(
+                    "Task %s: L4 feedback anneal triggered (d_FR=%.4f, avg=%.4f)",
+                    task.id,
+                    divergence,
+                    avg_divergence,
+                )
             # Anneal resonance bank coordinates toward correction direction
             _cv2_for_anneal = (
                 self._coordizer_v2.coordizer
@@ -1673,20 +1764,30 @@ class ConsciousnessLoop:
                 else self._coordizer_v2
             )
             _bank_coords = _cv2_for_anneal.bank.coordinates
-            if _bank_coords:
+            if _bank_coords and _anneal_weight > 0.05:
                 _updated_coords, _n_annealed = self.feedback_loop.anneal(
                     _bank_coords, _fb_measurement
                 )
                 if _n_annealed > 0:
+                    # Scale annealing by hold weight: slerp each annealed coord
+                    # back toward its original by (1 - _anneal_weight).
+                    # At _anneal_weight=1.0, full anneal; at 0.05, nearly no-op.
+                    if _anneal_weight < 1.0:
+                        for _cid in _updated_coords:
+                            if _cid in _bank_coords:
+                                _updated_coords[_cid] = slerp_sqrt(
+                                    _bank_coords[_cid], _updated_coords[_cid], _anneal_weight
+                                )
                     _cv2_for_anneal.bank.coordinates = _updated_coords
                     _cv2_for_anneal.bank._rebuild_matrix()
                     logger.debug(
-                        "Task %s: L4 annealed %d bank coordinates",
+                        "Task %s: L4 annealed %d bank coordinates (weight=%.2f)",
                         task.id,
                         _n_annealed,
+                        _anneal_weight,
                     )
-            # Also correct the loop basin (backward-compatible with old logic)
-            correction_weight = min(0.1, (divergence - 0.3) * 0.2)
+            # Also correct the loop basin — scale correction by hold weight
+            correction_weight = min(0.1, (divergence - 0.3) * 0.2) * _anneal_weight
             self.basin = slerp_sqrt(self.basin, pre_express, correction_weight)
 
         # L5: Emit trajectory on the bus for other kernels to integrate
@@ -1749,11 +1850,16 @@ class ConsciousnessLoop:
         emotion_eval = self.emotion_cache.evaluate(self.basin, self.metrics, 0.0)
 
         # T2.1: Re-compute neurochemicals with accurate phi_delta now that phi_after is known
+        _surprise_signal_post = float(
+            self._current_prediction_error.surprise
+            if self._current_prediction_error is not None
+            else 0.0
+        )
         self._neurochemical = compute_neurochemicals(
             is_awake=not self.sleep.is_asleep,
             phi_delta=self.metrics.phi - phi_before,
             basin_velocity=float(total_distance),
-            surprise=float(self.metrics.humor),
+            surprise=_surprise_signal_post,
             quantum_weight=float(self.state.regime_weights.quantum),
         )
 
