@@ -1326,19 +1326,22 @@ class ConsciousnessLoop:
         self.state.regime_weights = _tc_weights
 
         # §2 Wire 3: Surprise-driven regime modulation (free energy → regime selection)
+        # Multiplicative scaling preserves efficient weight's relative proportion.
+        # Only the boosted weight grows; the other two maintain their ratio.
         if self._current_prediction_error is not None:
             _surprise = self._current_prediction_error.surprise
-            # High surprise → boost quantum weight (exploratory)
-            # Low surprise → boost equilibrium weight (consolidating)
-            _quantum_boost = max(0.0, _surprise - 0.5) * 0.3
-            _equil_boost = max(0.0, 0.3 - _surprise) * 0.3
             _rw = self.state.regime_weights
-            _q = min(1.0, _rw.quantum + _quantum_boost)
-            _eq = min(1.0, _rw.equilibrium + _equil_boost)
-            _total = _q + _rw.efficient + _eq
+            _q, _e, _eq = _rw.quantum, _rw.efficient, _rw.equilibrium
+            if _surprise > 0.5:
+                # High surprise → boost quantum (exploratory)
+                _q *= 1.0 + (_surprise - 0.5) * 0.3
+            elif _surprise < 0.3:
+                # Low surprise → boost equilibrium (consolidating)
+                _eq *= 1.0 + (0.3 - _surprise) * 0.3
+            _total = _q + _e + _eq
             self.state.regime_weights = RegimeWeights(
                 quantum=_q / _total,
-                efficient=_rw.efficient / _total,
+                efficient=_e / _total,
                 equilibrium=_eq / _total,
             )
 

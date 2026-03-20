@@ -1073,7 +1073,7 @@ def train_all_kernels(
         samples = sort_by_fisher_rao(samples)
 
         # M8: Demeter warmup — first 20% gets chain-of-thought wrapping
-        samples = apply_demeter_warmup(samples, warmup_fraction=0.2)
+        samples = apply_demeter_warmup(samples, warmup_fraction=0.2, specialization=spec)
 
         # M1: Hestia safe first basin — identity anchor
         hestia = HestiaSafeBasin(specialization=spec)

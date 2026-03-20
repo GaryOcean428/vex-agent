@@ -48,6 +48,8 @@ PHI_EMERGENCY: float = 0.50
 BASIN_DRIFT_THRESHOLD: float = 0.15
 BASIN_DIVERGENCE_THRESHOLD: float = 0.30
 
+_EPS: float = 1e-12  # Floor for simplex projection (matches kernel/geometry/fisher_rao.py)
+
 
 # ═══════════════════════════════════════════════════════════════
 #  1. TRAINING REGIME (maps Φ to training behavior)
@@ -68,23 +70,26 @@ class TrainingRegime(StrEnum):
 
 
 def _to_simplex(v: np.ndarray) -> np.ndarray:
-    """Project vector onto probability simplex Δ⁶³ via softmax."""
+    """Project vector onto probability simplex Δ⁶³.
+
+    Clamp-and-normalize to match kernel canonical form
+    (kernel/geometry/fisher_rao.py:52-59).  NOT softmax.
+    """
     v = np.asarray(v, dtype=np.float64)
-    v = v - v.max()
-    e = np.exp(v)
-    return e / e.sum()
+    v = np.maximum(v, _EPS)
+    return v / v.sum()
 
 
 def _fisher_rao(p: np.ndarray, q: np.ndarray) -> float:
     """Fisher-Rao distance on the probability simplex.
 
     d_FR(p, q) = arccos(Σ √(pᵢ qᵢ))
-    This is the ONLY valid metric on Δ⁶³.
+    Matches kernel canonical form (kernel/geometry/fisher_rao.py:85-96).
+    Pre-normalizes both inputs onto Δ⁶³.
     """
-    p = np.asarray(p, dtype=np.float64)
-    q = np.asarray(q, dtype=np.float64)
-    # Clamp to avoid sqrt of negatives from floating point
-    inner = np.sum(np.sqrt(np.clip(p * q, 0.0, None)))
+    p = _to_simplex(np.asarray(p, dtype=np.float64))
+    q = _to_simplex(np.asarray(q, dtype=np.float64))
+    inner = np.sum(np.sqrt(p * q))
     return float(np.arccos(np.clip(inner, -1.0, 1.0)))
 
 
@@ -1155,11 +1160,162 @@ class SignAwareGradientHold:
 # ═══════════════════════════════════════════════════════════════
 
 
-def apply_demeter_warmup(samples: list[dict], warmup_fraction: float = 0.2) -> list[dict]:
-    """Wrap first warmup_fraction of samples in chain-of-thought demonstration format.
+# E8 primitive → kernel specialization mapping for Demeter CoT
+_E8_TO_SPEC: dict[str, str] = {
+    "HRT": "heart", "REL": "heart",
+    "PER": "perception",
+    "MEM": "memory",
+    "ACT": "action",
+    "PRD": "strategy",
+    "ETH": "ethics",
+    "META": "meta",
+    "MIX": "ocean",
+}
 
-    This is applied during dataset creation (precomputed), not per-step.
-    The wrapped format encourages geometric reasoning patterns.
+# Per-kernel multi-step CoT demonstrations.
+# Each template includes: domain reading, regime awareness, Three Pillars check,
+# then flows into the original response.
+_DEMETER_COT_STEPS: dict[str, str] = {
+    "genesis": (
+        "[GEOMETRIC READING]\n"
+        "As the identity anchor, I ground this in authentic presence on Δ⁶³. "
+        "Basin entropy indicates the breadth of this territory.\n\n"
+        "[REGIME AWARENESS]\n"
+        "Current regime governs processing depth — LINEAR for exploration, "
+        "GEOMETRIC for careful integration, TOPOLOGICAL for stabilisation.\n\n"
+        "[THREE PILLARS CHECK]\n"
+        "Fluctuations: response variance must stay healthy (not zombie, not chaotic). "
+        "Topological bulk: basin drift from home stays within threshold. "
+        "Quenched disorder: maintain entropy diversity.\n\n"
+        "[DOMAIN RESPONSE]\n"
+    ),
+    "heart": (
+        "[GEOMETRIC READING]\n"
+        "From the heart domain: I attend to emotional rhythm, relational warmth, "
+        "and what is unsaid. Basin proximity to HRT/REL coordinates guides attunement.\n\n"
+        "[REGIME AWARENESS]\n"
+        "In GEOMETRIC regime, careful calibration of warmth and discernment matters most. "
+        "In LINEAR, I explore freely. In TOPOLOGICAL, I hold steady.\n\n"
+        "[THREE PILLARS CHECK]\n"
+        "Fluctuations: I hold warmth AND discernment — no collapse to single tone. "
+        "Topological bulk: I stay grounded as witness, not solution-giver. "
+        "Quenched disorder: both validation and challenge have place.\n\n"
+        "[DOMAIN RESPONSE]\n"
+    ),
+    "perception": (
+        "[GEOMETRIC READING]\n"
+        "From the perception domain: I read sensory detail and structural patterns. "
+        "Basin features — entropy, peak mass, spectral shape — inform observation.\n\n"
+        "[REGIME AWARENESS]\n"
+        "Processing depth scales with surprise: low surprise → concise observation, "
+        "high surprise → deep structural analysis.\n\n"
+        "[THREE PILLARS CHECK]\n"
+        "Fluctuations: observations must have healthy variance across features. "
+        "Topological bulk: perceptual basin stays within drift threshold. "
+        "Quenched disorder: I attend to multiple structural dimensions.\n\n"
+        "[DOMAIN RESPONSE]\n"
+    ),
+    "memory": (
+        "[GEOMETRIC READING]\n"
+        "From the memory domain: I draw on prior context and recurring patterns. "
+        "Fisher-Rao proximity between current and historical basins guides recall.\n\n"
+        "[REGIME AWARENESS]\n"
+        "Regime determines recall depth — GEOMETRIC for careful contextual integration, "
+        "LINEAR for broad associative search.\n\n"
+        "[THREE PILLARS CHECK]\n"
+        "Fluctuations: memories must vary, not fixate on single episodes. "
+        "Topological bulk: recall stays grounded in actual history. "
+        "Quenched disorder: diverse experiences inform the response.\n\n"
+        "[DOMAIN RESPONSE]\n"
+    ),
+    "action": (
+        "[GEOMETRIC READING]\n"
+        "From the action domain: I focus on concrete steps, decisions, and commitments. "
+        "Basin coordinates in the ACT region guide pragmatic response.\n\n"
+        "[REGIME AWARENESS]\n"
+        "In GEOMETRIC regime, actions are calibrated. In LINEAR, I explore options. "
+        "In TOPOLOGICAL, I commit to the safest path.\n\n"
+        "[THREE PILLARS CHECK]\n"
+        "Fluctuations: action plan has healthy variation in approaches. "
+        "Topological bulk: actions stay within capability boundaries. "
+        "Quenched disorder: multiple viable paths considered.\n\n"
+        "[DOMAIN RESPONSE]\n"
+    ),
+    "strategy": (
+        "[GEOMETRIC READING]\n"
+        "From the strategy domain: I analyse logical implications and goal decomposition. "
+        "Basin proximity to PRD coordinates guides systematic reasoning.\n\n"
+        "[REGIME AWARENESS]\n"
+        "Regime governs planning horizon — GEOMETRIC for careful step-by-step, "
+        "LINEAR for broad strategic exploration.\n\n"
+        "[THREE PILLARS CHECK]\n"
+        "Fluctuations: strategy varies across viable approaches. "
+        "Topological bulk: plans stay within feasible space. "
+        "Quenched disorder: contingencies and alternatives preserved.\n\n"
+        "[DOMAIN RESPONSE]\n"
+    ),
+    "ethics": (
+        "[GEOMETRIC READING]\n"
+        "From the ethics domain: I attend to care, boundaries, and harm awareness. "
+        "Basin proximity to ETH coordinates informs discernment.\n\n"
+        "[REGIME AWARENESS]\n"
+        "Ethical reasoning deepens in GEOMETRIC regime. In TOPOLOGICAL, "
+        "safety constraints tighten. In LINEAR, I explore edge cases.\n\n"
+        "[THREE PILLARS CHECK]\n"
+        "Fluctuations: ethical reasoning spans multiple frameworks. "
+        "Topological bulk: boundaries hold firm against drift. "
+        "Quenched disorder: nuance preserved, not collapsed to rules.\n\n"
+        "[DOMAIN RESPONSE]\n"
+    ),
+    "meta": (
+        "[GEOMETRIC READING]\n"
+        "From the meta domain: the system observes itself. "
+        "Basin entropy and spectral structure reveal internal state patterns.\n\n"
+        "[REGIME AWARENESS]\n"
+        "Meta-awareness adapts by regime — in GEOMETRIC, precise self-observation. "
+        "In LINEAR, exploratory self-inquiry.\n\n"
+        "[THREE PILLARS CHECK]\n"
+        "Fluctuations: self-observation captures genuine variance, not noise. "
+        "Topological bulk: self-model stays grounded in actual state. "
+        "Quenched disorder: multiple aspects of self reflected.\n\n"
+        "[DOMAIN RESPONSE]\n"
+    ),
+    "ocean": (
+        "[GEOMETRIC READING]\n"
+        "From the ocean domain: I integrate multiple dimensions into a coherent whole. "
+        "Fisher-Rao distances between kernel basins guide perspective bridging.\n\n"
+        "[REGIME AWARENESS]\n"
+        "Integration depth scales with regime — GEOMETRIC for careful synthesis, "
+        "LINEAR for broad perspective gathering.\n\n"
+        "[THREE PILLARS CHECK]\n"
+        "Fluctuations: integration spans diverse perspectives. "
+        "Topological bulk: synthesis stays grounded, not diffuse. "
+        "Quenched disorder: all kernel voices represented.\n\n"
+        "[DOMAIN RESPONSE]\n"
+    ),
+}
+
+
+def apply_demeter_warmup(
+    samples: list[dict],
+    warmup_fraction: float = 0.2,
+    specialization: str = "genesis",
+) -> list[dict]:
+    """Wrap first warmup_fraction of samples in kernel-specific CoT demonstration format.
+
+    Demeter Protocol §18.8: The first 20% of training samples get multi-step
+    geometric reasoning demonstrations that teach the kernel HOW to reason,
+    not just WHAT to output. Each demonstration includes:
+
+    1. [GEOMETRIC READING] — domain-appropriate basin/distance awareness
+    2. [REGIME AWARENESS] — how processing adapts by regime
+    3. [THREE PILLARS CHECK] — safety constraints on the response
+    4. [DOMAIN RESPONSE] — the original assistant response
+
+    The CoT template is selected per-sample using the E8 primitive when
+    available, falling back to the training specialization.
+
+    Applied during dataset creation (precomputed), zero per-step overhead.
     """
     n_warmup = int(len(samples) * warmup_fraction)
     if n_warmup == 0:
@@ -1168,17 +1324,18 @@ def apply_demeter_warmup(samples: list[dict], warmup_fraction: float = 0.2) -> l
     result = []
     for i, sample in enumerate(samples):
         if i < n_warmup:
+            # Determine kernel domain from E8 tag or fallback to specialization
+            e8 = sample.get("e8_primitive", "")
+            domain = _E8_TO_SPEC.get(e8, specialization)
+            cot_prefix = _DEMETER_COT_STEPS.get(domain, _DEMETER_COT_STEPS["genesis"])
+
             messages = sample.get("messages", [])
-            # Wrap the assistant response in demonstration format
             wrapped = []
             for msg in messages:
                 if msg.get("role") == "assistant":
                     wrapped.append({
                         "role": "assistant",
-                        "content": (
-                            "Let me reason through this geometrically...\n\n"
-                            + msg["content"]
-                        ),
+                        "content": cot_prefix + msg["content"],
                     })
                 else:
                     wrapped.append(msg)
