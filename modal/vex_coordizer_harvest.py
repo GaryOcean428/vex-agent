@@ -228,7 +228,7 @@ class CoordizerHarvester:
                         per_pos_entropy_gpu /= n_layers
                         # Single CPU transfer at the end
                         per_pos_entropy = per_pos_entropy_gpu.cpu().numpy()
-                        del per_pos_entropy_gpu, outputs.attentions
+                        del per_pos_entropy_gpu
                         for pos in range(len(input_ids)):
                             tid = input_ids[pos]
                             if tid not in attention_entropies:

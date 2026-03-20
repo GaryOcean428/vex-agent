@@ -606,8 +606,8 @@ class QLoRATrainer:
 
                 # Validate steering inputs
                 if steering_vec and len(steering_vec) > 0:
-                    if not all(isinstance(v, (int, float)) for v in steering_vec) or not all(
-                        math.isfinite(v) for v in steering_vec
+                    if not all(
+                        isinstance(v, (int, float)) and math.isfinite(v) for v in steering_vec
                     ):
                         steering_vec = None
                 if not math.isfinite(alpha):
