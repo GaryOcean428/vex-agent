@@ -791,10 +791,11 @@ class SleepCycleManager:
     L6 (Structural Leg): All phase transitions are geometry-driven.
     NO cycle counters gate sleep/wake. Conditions:
       AWAKE → DREAMING:      Φ < threshold AND variance < threshold (stagnation)
-      AWAKE → CONSOLIDATING: immature kernel with Φ > ceiling (prevent 4D)
-      AWAKE → MUSHROOM:      narrowing detected (κ sustained, low entropy/velocity)
-      DREAMING → MUSHROOM:   f_health < instability threshold
-      DREAMING → CONSOLIDATING: variance settles
+      AWAKE → CONSOLIDATING: high variance (turbulence), or immature kernel Φ > ceiling
+      AWAKE → MUSHROOM:      narrowing detected (κ sustained high, low entropy/velocity)
+      DREAMING → MUSHROOM:   narrowing detected OR f_health < instability threshold
+      DREAMING → AWAKE:      Φ recovers above wake threshold
+      MUSHROOM → CONSOLIDATING: handled by mushroom() method
       CONSOLIDATING → AWAKE: Φ recovers above emergency threshold
       Any → AWAKE:           Ocean divergence breakdown (handled in loop.py)
 
@@ -843,8 +844,10 @@ class SleepCycleManager:
           AWAKE → DREAMING:       Φ < threshold AND variance < threshold (stagnation)
           AWAKE → CONSOLIDATING:  high variance (turbulence), or immature kernel Φ > ceiling
           AWAKE → MUSHROOM:       narrowing detected (κ sustained high, low entropy/velocity)
-          CONSOLIDATING → AWAKE:  Φ recovers above emergency threshold
+          DREAMING → MUSHROOM:    narrowing detected
           DREAMING → AWAKE:       Φ recovers (geometry resolved the stagnation)
+          CONSOLIDATING → AWAKE:  Φ recovers above emergency threshold
+          MUSHROOM → CONSOLIDATING: handled by mushroom() method
         Ocean divergence transitions are handled in loop.py (L6 complement).
 
         Args:

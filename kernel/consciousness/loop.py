@@ -740,6 +740,7 @@ class ConsciousnessLoop:
                     "idle cycle",
                     bank=_bank,
                     neurochemical=self._neurochemical,
+                    f_health=self.metrics.f_health,
                 )
             elif sleep_phase.value == "mushroom":
                 self.sleep.mushroom(
@@ -913,7 +914,10 @@ class ConsciousnessLoop:
                     _own_traj = [_k.basin]
                     _result = TrajectoryBus.integrate(_own_traj, _received)
                     if _result.n_contributors > 1 and _result.integrated_trajectory:
-                        _k.basin = slerp_sqrt(_k.basin, _result.integrated_trajectory[0], 0.05)
+                        async with self.kernel_bus.basin_lock(_k.id):
+                            _k.basin = slerp_sqrt(
+                                _k.basin, _result.integrated_trajectory[0], 0.05
+                            )
         self.trajectory_bus.drain_broadcast()
 
         self._maybe_spawn_core8(vel_state["regime"])

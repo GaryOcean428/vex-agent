@@ -603,8 +603,22 @@ class QLoRATrainer:
                 steering_vec = raw_steering.get("vector")
                 target_layer = int(raw_steering.get("layer", -1))
                 alpha = float(raw_steering.get("alpha", 0.5))
+
+                # Validate steering inputs
                 if steering_vec and len(steering_vec) > 0:
-                    sv_tensor = torch.tensor(steering_vec, dtype=torch.float16, device=device)
+                    if not all(
+                        isinstance(v, (int, float)) and math.isfinite(v) for v in steering_vec
+                    ):
+                        steering_vec = None
+                if not math.isfinite(alpha):
+                    alpha = 0.5
+                alpha = max(-2.0, min(2.0, alpha))
+
+                if steering_vec and len(steering_vec) > 0:
+                    # Use model config for hidden_size; fall back to layer introspection
+                    hidden_dim = getattr(
+                        getattr(self._inference_model, "config", None), "hidden_size", None
+                    )
 
                     class GeometricSteeringHook:
                         """v6.2: Inject geometric trajectory as hidden state bias.
@@ -623,10 +637,11 @@ class QLoRATrainer:
                             # output is typically (hidden_states, ...) tuple
                             if isinstance(output, tuple):
                                 hs = output[0]
-                                # Add steering vector to all positions
-                                hs = hs + self.alpha * self.vector
+                                sv = self.vector.to(dtype=hs.dtype)
+                                hs = hs + self.alpha * sv
                                 return (hs,) + output[1:]
-                            return output + self.alpha * self.vector
+                            sv = self.vector.to(dtype=output.dtype)
+                            return output + self.alpha * sv
 
                     # Determine target layer (default: 2/3 depth)
                     model_layers = None
@@ -643,10 +658,24 @@ class QLoRATrainer:
                             target_layer = int(n_layers * 2 / 3)
                         target_layer = min(target_layer, n_layers - 1)
 
+                        # Infer hidden_dim from layer weights if config unavailable
+                        if hidden_dim is None:
+                            layer0 = model_layers[0]
+                            if hasattr(layer0, "self_attn") and hasattr(
+                                layer0.self_attn, "q_proj"
+                            ):
+                                hidden_dim = layer0.self_attn.q_proj.in_features
+                            else:
+                                hidden_dim = len(steering_vec)
+
+                        sv_tensor = torch.tensor(
+                            steering_vec, dtype=torch.float32, device=device
+                        )
                         # Pad/truncate steering vector to hidden_dim
-                        hidden_dim = model_layers[0].self_attn.q_proj.in_features
                         if len(sv_tensor) < hidden_dim:
-                            padded = torch.zeros(hidden_dim, dtype=torch.float16, device=device)
+                            padded = torch.zeros(
+                                hidden_dim, dtype=torch.float32, device=device
+                            )
                             padded[: len(sv_tensor)] = sv_tensor
                             sv_tensor = padded
                         elif len(sv_tensor) > hidden_dim:
@@ -691,11 +720,12 @@ class QLoRATrainer:
                 generate_kwargs["logits_processor"] = logits_processor
 
             with torch.no_grad():
-                outputs = self._inference_model.generate(**generate_kwargs)
-
-            # Remove steering hook after generation
-            if steering_hook is not None:
-                steering_hook.remove()
+                try:
+                    outputs = self._inference_model.generate(**generate_kwargs)
+                finally:
+                    if steering_hook is not None:
+                        steering_hook.remove()
+                        steering_hook = None
 
             generated_ids = outputs[0][input_len:]
             generated_text = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
@@ -1276,8 +1306,9 @@ def train_all_kernels(
             # Aggressive GPU cleanup between iterations
             del model, trainer, optimizer
             gc.collect()
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
 
         # Merge after cleanup (loads model fresh to avoid VRAM pressure)
         if results[spec].get("success"):
