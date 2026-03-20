@@ -92,7 +92,7 @@ function MessageBubble({ msg, onRetry }: { msg: ChatMessage; onRetry?: (text: st
         </time>
       </div>
 
-      {msg.role === "vex" && msg.pipeline_trace && !msg.pipeline_trace.bypassed && (
+      {msg.role === "vex" && msg.pipeline_trace && (
         <PipelineTrace trace={msg.pipeline_trace} isStreaming={isThinking} />
       )}
 

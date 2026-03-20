@@ -24,7 +24,10 @@ declare module "express" {
     sendFile(path: string): void;
     redirect(url: string): void;
     setHeader(name: string, value: string | number | readonly string[]): this;
-    write(chunk: string | Buffer, cb?: (error: Error | null | undefined) => void): boolean;
+    write(
+      chunk: string | Buffer,
+      cb?: (error: Error | null | undefined) => void,
+    ): boolean;
     end(): this;
     setTimeout(ms: number): this;
   }
@@ -32,7 +35,11 @@ declare module "express" {
   export type NextFunction = (err?: unknown) => void;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export type RequestHandler = (req: Request, res: Response, next: NextFunction) => any;
+  export type RequestHandler = (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => any;
 
   export interface IRouter {
     get(path: string, ...handlers: RequestHandler[]): this;
@@ -55,7 +62,10 @@ declare module "express" {
   interface Express {
     (): Application;
     json(options?: { limit?: string }): RequestHandler;
-    static(root: string, options?: { index?: boolean; maxAge?: string; immutable?: boolean }): RequestHandler;
+    static(
+      root: string,
+      options?: { index?: boolean; maxAge?: string; immutable?: boolean },
+    ): RequestHandler;
     Router(): IRouter;
   }
 

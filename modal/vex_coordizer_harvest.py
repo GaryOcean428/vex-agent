@@ -174,8 +174,17 @@ class CoordizerHarvester:
             return {"error": "Invalid API key", "success": False}
         return None
 
-    def _harvest_fingerprints(self, texts, batch_size, max_length, min_contexts, target_resonances):
-        """Core harvest: text -> per-coordinate probability distributions on GPU."""
+    def _harvest_fingerprints(
+        self, texts, batch_size, max_length, min_contexts, target_resonances,
+        *, compute_curvature: bool = False,
+    ):
+        """Core harvest: text -> per-coordinate probability distributions on GPU.
+
+        When compute_curvature=True, also extracts attention entropy for manifold
+        curvature estimation (Mao et al., Scientific Reports Jan 2026).
+        Curvature extraction is opt-in because output_attentions adds significant
+        GPU memory overhead (O(layers·heads·seq_len²)).
+        """
         import numpy as np
         import torch
 
@@ -189,6 +198,9 @@ class CoordizerHarvester:
             all_input_ids.append(encoded)
 
         resonance_fingerprints = {}
+        # Attention curvature tracking (Mao et al. Sci Reports 2026)
+        # R(h) ∝ C × e^(-α × H(attention)) where H = attention entropy
+        attention_entropies: dict[int, list[float]] = {}
         total_resonances = 0
 
         with torch.no_grad():
@@ -196,8 +208,32 @@ class CoordizerHarvester:
                 batch = all_input_ids[batch_start : batch_start + batch_size]
                 for input_ids in batch:
                     ids_tensor = torch.tensor([input_ids], device="cuda")
-                    outputs = model(ids_tensor)
+                    outputs = model(
+                        ids_tensor,
+                        output_attentions=compute_curvature,
+                    )
                     logits = outputs.logits[0]
+
+                    # Extract attention entropy per position (opt-in)
+                    if compute_curvature and hasattr(outputs, "attentions") and outputs.attentions:
+                        seq_len = len(input_ids)
+                        n_layers = len(outputs.attentions)
+                        # Accumulate entropy on GPU to avoid per-layer CPU sync
+                        per_pos_entropy_gpu = torch.zeros(seq_len, device="cuda")
+                        for layer_attn in outputs.attentions:
+                            attn_probs = layer_attn[0].mean(dim=0)  # (seq_len, seq_len)
+                            attn_clamped = torch.clamp(attn_probs, min=1e-12)
+                            entropy = -torch.sum(attn_clamped * torch.log(attn_clamped), dim=-1)
+                            per_pos_entropy_gpu += entropy
+                        per_pos_entropy_gpu /= n_layers
+                        # Single CPU transfer at the end
+                        per_pos_entropy = per_pos_entropy_gpu.cpu().numpy()
+                        del per_pos_entropy_gpu
+                        for pos in range(len(input_ids)):
+                            tid = input_ids[pos]
+                            if tid not in attention_entropies:
+                                attention_entropies[tid] = []
+                            attention_entropies[tid].append(float(per_pos_entropy[pos]))
                     # Linear projection to simplex (no exponential warping — QIG purity)
                     clamped = torch.clamp(logits.float(), min=0.0)
                     raw_row_sums = clamped.sum(dim=-1, keepdim=True)
@@ -240,7 +276,19 @@ class CoordizerHarvester:
             mean_fp = mean_fp / mean_fp.sum()
             averaged[tid] = mean_fp
 
-        return averaged, total_resonances, vocab_size
+        # Compute per-token curvature from attention entropy
+        # R(h) ∝ C × e^(-α × H(attention))  (Mao et al. Sci Reports 2026)
+        # High entropy = low curvature (uniform/generic region)
+        # Low entropy = high curvature (information-dense region)
+        CURVATURE_ALPHA = 1.0
+        CURVATURE_C = 1.0
+        curvature: dict[int, float] = {}
+        for tid, ent_list in attention_entropies.items():
+            if tid in averaged:
+                mean_entropy = float(np.mean(ent_list))
+                curvature[tid] = CURVATURE_C * float(np.exp(-CURVATURE_ALPHA * mean_entropy))
+
+        return averaged, total_resonances, vocab_size, curvature
 
     def _pga_compress(self, fingerprints_dict, lens_dim=LENS_DIM, basin_dim=BASIN_DIM):
         """PGA compress: V-dim fingerprints -> basin coords on GPU via numpy.
@@ -281,7 +329,7 @@ class CoordizerHarvester:
         proj_on_mean = centered @ global_mean  # (N,)
         lens_coords = np.zeros(target_dim)
         for d in range(target_dim):
-            lens_coords[d] = np.dot(eigenvectors[:, d], proj_on_mean)
+            lens_coords[d] = np.dot(eigenvectors[:, d], proj_on_mean)  # QIG-EXEMPT: tangent space projection at Fréchet mean
 
         basin_coords = np.zeros(basin_dim)
         basin_coords[:target_dim] = lens_coords[:target_dim]
@@ -327,12 +375,13 @@ class CoordizerHarvester:
             return {"error": "No texts provided", "success": False}
 
         start = time.time()
-        averaged, total_resonances, vocab_size = self._harvest_fingerprints(
+        averaged, total_resonances, vocab_size, curvature = self._harvest_fingerprints(
             texts,
             data.get("batch_size", 32),
             data.get("max_length", 512),
             data.get("min_contexts", 5),
             data.get("target_resonances", 0),
+            compute_curvature=bool(data.get("compute_curvature", False)),
         )
 
         tokenizer = self.tokenizer
@@ -343,6 +392,7 @@ class CoordizerHarvester:
                 "coord_id": tid,
                 "count": 1,
                 "fingerprint": fp.tolist(),
+                "curvature": curvature.get(tid, 0.0),
             }
 
         return {
@@ -384,16 +434,20 @@ class CoordizerHarvester:
         start = time.time()
 
         # Phase 1: Harvest fingerprints on GPU
-        averaged, total_resonances, vocab_size = self._harvest_fingerprints(
+        averaged, total_resonances, vocab_size, curvature = self._harvest_fingerprints(
             texts,
             data.get("batch_size", 16),
             data.get("max_length", 512),
             data.get("min_contexts", 1),
             data.get("target_resonances", 0),
+            compute_curvature=bool(data.get("compute_curvature", False)),
         )
 
         if len(averaged) == 0:
-            return {"error": "No coordinates met min_contexts threshold", "success": False}
+            return {
+                "error": "No coordinates met min_contexts threshold",
+                "success": False,
+            }
 
         harvest_time = time.time() - start
 
@@ -420,6 +474,12 @@ class CoordizerHarvester:
                 "harvest_seconds": round(harvest_time, 2),
                 "pga_seconds": round(pga_time, 2),
                 "adapter_loaded": self.adapter_loaded,
+            },
+            "curvature": {
+                "mean": round(float(sum(curvature.values()) / max(len(curvature), 1)), 6),
+                "n_tokens": len(curvature),
+                "high_curvature_count": sum(1 for c in curvature.values() if c > 0.5),
+                "low_curvature_count": sum(1 for c in curvature.values() if c < 0.1),
             },
             "elapsed_seconds": round(total_time, 2),
         }

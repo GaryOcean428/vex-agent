@@ -1423,6 +1423,11 @@ input:focus-visible,
   animation: pulse-soft 2s infinite;
 }
 
+.pipeline-trace-summary.bypassed {
+  color: var(--text-dim);
+  border-left: 2px solid var(--warning, #f59e0b);
+}
+
 .pipeline-trace-chevron,
 .pipeline-section-chevron,
 .pipeline-gen-chevron {

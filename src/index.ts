@@ -188,22 +188,25 @@ async function main(): Promise<void> {
     }
   });
 
-  app.delete(ROUTES.conversations_delete, async (req: Request, res: Response) => {
-    try {
-      const resp = await fetch(
-        `${KERNEL_URL}/conversations/${req.params.conversation_id}`,
-        {
-          method: "DELETE",
-        },
-      );
-      const data = await resp.json();
-      res.status(resp.status).json(data);
-    } catch (err) {
-      res
-        .status(502)
-        .json({ error: `Kernel unreachable: ${(err as Error).message}` });
-    }
-  });
+  app.delete(
+    ROUTES.conversations_delete,
+    async (req: Request, res: Response) => {
+      try {
+        const resp = await fetch(
+          `${KERNEL_URL}/conversations/${req.params.conversation_id}`,
+          {
+            method: "DELETE",
+          },
+        );
+        const data = await resp.json();
+        res.status(resp.status).json(data);
+      } catch (err) {
+        res
+          .status(502)
+          .json({ error: `Kernel unreachable: ${(err as Error).message}` });
+      }
+    },
+  );
 
   // Governor endpoints (PR #13)
   proxyGet(ROUTES.governor);
@@ -235,35 +238,34 @@ async function main(): Promise<void> {
     } catch (err) {
       const error = err as Error;
       if (error.name === "AbortError" || error.name === "TimeoutError") {
-        res
-          .status(504)
-          .json({
-            error:
-              "Kernel request timed out after 130s (training_trigger aborted by proxy).",
-          });
+        res.status(504).json({
+          error:
+            "Kernel request timed out after 130s (training_trigger aborted by proxy).",
+        });
       } else {
-        res
-          .status(502)
-          .json({ error: `Kernel unreachable: ${error.message}` });
+        res.status(502).json({ error: `Kernel unreachable: ${error.message}` });
       }
     }
   });
   proxyPost(ROUTES.training_complete);
 
   // Training upload status — poll for background job completion
-  app.get(ROUTES.training_upload_status, async (req: Request, res: Response) => {
-    try {
-      const resp = await fetch(
-        `${KERNEL_URL}/training/upload/status/${req.params.job_id}`,
-      );
-      const data = await resp.json();
-      res.status(resp.status).json(data);
-    } catch (err) {
-      res
-        .status(502)
-        .json({ error: `Kernel unreachable: ${(err as Error).message}` });
-    }
-  });
+  app.get(
+    ROUTES.training_upload_status,
+    async (req: Request, res: Response) => {
+      try {
+        const resp = await fetch(
+          `${KERNEL_URL}/training/upload/status/${req.params.job_id}`,
+        );
+        const data = await resp.json();
+        res.status(resp.status).json(data);
+      } catch (err) {
+        res
+          .status(502)
+          .json({ error: `Kernel unreachable: ${(err as Error).message}` });
+      }
+    },
+  );
 
   // Training upload — buffer multipart body then forward to kernel
   app.post(ROUTES.training_upload, async (req: Request, res: Response) => {
