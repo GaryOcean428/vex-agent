@@ -353,6 +353,63 @@ class PressureTracker:
 
 
 # ═══════════════════════════════════════════════════════════════
+#  3c. SIGN-AWARE ANNEAL HOLD — L4 divergence oscillation damper
+# ═══════════════════════════════════════════════════════════════
+
+
+class SignAwareAnnealHold:
+    """Detects oscillating divergence in the feedback loop and dampens anneal.
+
+    When the sign of (divergence_delta) flips for ``flip_patience`` consecutive
+    measurements, the anneal weight is reduced to ``hold_factor`` for
+    ``hold_cycles`` cycles.  This prevents the bank from ping-ponging when
+    the loop output oscillates between two basins.
+
+    L4 enhancement to FeedbackLoop.anneal().
+    """
+
+    def __init__(
+        self,
+        flip_patience: int = 2,
+        hold_cycles: int = 3,
+        hold_factor: float = 0.2,
+    ) -> None:
+        self._flip_patience = flip_patience
+        self._hold_cycles = hold_cycles
+        self._hold_factor = hold_factor
+        self._prev_divergence: float | None = None
+        self._prev_sign: int = 0
+        self._flip_count: int = 0
+        self._hold_remaining: int = 0
+
+    def update(self, divergence: float) -> float:
+        """Feed new divergence measurement. Returns anneal weight multiplier (0-1)."""
+        if self._hold_remaining > 0:
+            self._hold_remaining -= 1
+            return self._hold_factor
+
+        if self._prev_divergence is not None:
+            delta = divergence - self._prev_divergence
+            sign = 1 if delta > 0 else (-1 if delta < 0 else 0)
+            if sign != 0 and sign != self._prev_sign and self._prev_sign != 0:
+                self._flip_count += 1
+                if self._flip_count >= self._flip_patience:
+                    self._hold_remaining = self._hold_cycles
+                    self._flip_count = 0
+                    return self._hold_factor
+            else:
+                self._flip_count = 0
+            if sign != 0:
+                self._prev_sign = sign
+        self._prev_divergence = divergence
+        return 1.0
+
+    @property
+    def is_held(self) -> bool:
+        return self._hold_remaining > 0
+
+
+# ═══════════════════════════════════════════════════════════════
 #  4. SELF-OBSERVATION — meta-awareness M
 # ═══════════════════════════════════════════════════════════════
 

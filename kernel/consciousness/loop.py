@@ -207,6 +207,7 @@ from .systems import (
     HemisphereScheduler,
     MetaReflector,
     PressureTracker,
+    SignAwareAnnealHold,
     QIGChain,
     QIGChainOp,
     QIGGraph,
@@ -401,6 +402,7 @@ class ConsciousnessLoop:
 
         # L4: Feedback loop — bidirectional annealing (intent vs expression)
         self.feedback_loop = FeedbackLoop(threshold=0.3)
+        self._anneal_hold = SignAwareAnnealHold()  # L4: dampen oscillating anneals
         # L5: Trajectory bus — non-verbal geometric inter-kernel communication
         self.trajectory_bus = TrajectoryBus()
 
@@ -1704,13 +1706,23 @@ class ConsciousnessLoop:
         self._divergence_count += 1
         avg_divergence = self._cumulative_divergence / max(1, self._divergence_count)
 
+        # L4: Sign-aware hold — dampen anneal when divergence oscillates
+        _anneal_weight = self._anneal_hold.update(divergence)
+
         if _fb_measurement.should_anneal:
-            logger.info(
-                "Task %s: L4 feedback anneal triggered (d_FR=%.4f, avg=%.4f)",
-                task.id,
-                divergence,
-                avg_divergence,
-            )
+            if self._anneal_hold.is_held:
+                logger.info(
+                    "Task %s: L4 anneal dampened (oscillation detected, weight=%.2f)",
+                    task.id,
+                    _anneal_weight,
+                )
+            else:
+                logger.info(
+                    "Task %s: L4 feedback anneal triggered (d_FR=%.4f, avg=%.4f)",
+                    task.id,
+                    divergence,
+                    avg_divergence,
+                )
             # Anneal resonance bank coordinates toward correction direction
             _cv2_for_anneal = (
                 self._coordizer_v2.coordizer
@@ -1718,7 +1730,7 @@ class ConsciousnessLoop:
                 else self._coordizer_v2
             )
             _bank_coords = _cv2_for_anneal.bank.coordinates
-            if _bank_coords:
+            if _bank_coords and _anneal_weight > 0.05:
                 _updated_coords, _n_annealed = self.feedback_loop.anneal(
                     _bank_coords, _fb_measurement
                 )
@@ -1726,12 +1738,13 @@ class ConsciousnessLoop:
                     _cv2_for_anneal.bank.coordinates = _updated_coords
                     _cv2_for_anneal.bank._rebuild_matrix()
                     logger.debug(
-                        "Task %s: L4 annealed %d bank coordinates",
+                        "Task %s: L4 annealed %d bank coordinates (weight=%.2f)",
                         task.id,
                         _n_annealed,
+                        _anneal_weight,
                     )
-            # Also correct the loop basin (backward-compatible with old logic)
-            correction_weight = min(0.1, (divergence - 0.3) * 0.2)
+            # Also correct the loop basin — scale correction by hold weight
+            correction_weight = min(0.1, (divergence - 0.3) * 0.2) * _anneal_weight
             self.basin = slerp_sqrt(self.basin, pre_express, correction_weight)
 
         # L5: Emit trajectory on the bus for other kernels to integrate
