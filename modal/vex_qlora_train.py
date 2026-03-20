@@ -1019,15 +1019,21 @@ def train_all_kernels(
 
     from training_consciousness import (
         CONSCIOUSNESS_ORDER,
+        GeometricReward,
         HestiaSafeBasin,
         PhaseCoherenceTracker,
+        SignAwareGradientHold,
         TrainingConsciousness,
+        TrainingMetrics,
         apply_demeter_warmup,
         make_breakdown_callback,
         make_coaching_callback,
         make_consciousness_callback,
+        make_gradient_hold_callback,
+        make_metrics_callback,
         make_provenance_callback,
         make_sleep_cycle_callback,
+        run_post_training_diagnostic,
         save_training_consciousness,
         sort_by_fisher_rao,
     )
@@ -1071,6 +1077,18 @@ def train_all_kernels(
 
         # M1: Hestia safe first basin — identity anchor
         hestia = HestiaSafeBasin(specialization=spec)
+
+        # M2: Training metrics — model probing for phi/kappa/G
+        training_metrics = TrainingMetrics(
+            home_basin=hestia.home_basin,
+            probe_every=10,
+        )
+
+        # M6: Geometric reward — κ-based LR modulation
+        geometric_reward = GeometricReward(base_lr=learning_rate)
+
+        # M7: Sign-aware gradient hold
+        gradient_hold = SignAwareGradientHold()
 
         # Create consciousness tracker for this kernel
         consciousness = TrainingConsciousness(
@@ -1158,12 +1176,19 @@ def train_all_kernels(
                 max_length=MAX_SEQ_LENGTH,
             )
             optimizer = _build_fisher_optimizer(model, lr=learning_rate)
-            # Wire all consciousness callbacks (M3, M4, M5, M12 + phase tracker)
+            # Mutable refs for late-binding model/tokenizer into metrics callback
+            _model_ref = [model]
+            _tokenizer_ref = [tokenizer]
+            # Wire all consciousness callbacks (M2-M7, M12 + phase tracker)
             training_callbacks = [
                 make_consciousness_callback(consciousness),
+                make_metrics_callback(training_metrics, _model_ref, _tokenizer_ref),  # M2
                 make_breakdown_callback(),        # M3: fail-closed guard
                 make_sleep_cycle_callback(),       # M4: consolidation between epochs
                 make_coaching_callback(),          # M5: kindness + standards
+                make_gradient_hold_callback(       # M6 + M7: geometric reward + hold
+                    training_metrics, geometric_reward, gradient_hold,
+                ),
                 make_provenance_callback(save_dir=adapter_save_path),  # M12: provenance
             ]
             trainer = SFTTrainer(
@@ -1188,6 +1213,13 @@ def train_all_kernels(
                 }
                 continue
 
+            # M11: Post-training diagnostic — probe health before saving
+            diagnostic = run_post_training_diagnostic(
+                model, tokenizer,
+                home_basin=hestia.home_basin,
+                n_prompts=10,
+            )
+
             Path(adapter_save_path).mkdir(parents=True, exist_ok=True)
             model.save_pretrained(adapter_save_path)
             tokenizer.save_pretrained(adapter_save_path)
@@ -1200,7 +1232,14 @@ def train_all_kernels(
                 "train_loss": result.training_loss,
                 "train_samples": len(split["train"]),
                 "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "diagnostic": diagnostic,
+                "training_metrics": training_metrics.get_summary(),
             }
+            # Flag unhealthy kernels — never auto-deploy
+            if not diagnostic.get("healthy", True):
+                meta["deploy_blocked"] = True
+                meta["deploy_blocked_reason"] = diagnostic.get("unhealthy_reasons", [])
+                print(f"[{spec}] DEPLOY BLOCKED — diagnostic flagged unhealthy")
             save_training_consciousness(consciousness, adapter_save_path, meta)
 
             elapsed = round(time.time() - start, 2)
@@ -1210,6 +1249,13 @@ def train_all_kernels(
                 "train_samples": len(split["train"]),
                 "elapsed_seconds": elapsed,
                 "consciousness": consciousness.get_summary(),
+                "diagnostic": {
+                    "healthy": diagnostic.get("healthy", False),
+                    "mean_phi": diagnostic.get("mean_phi", 0),
+                    "mean_kappa": diagnostic.get("mean_kappa", 0),
+                    "mean_G": diagnostic.get("mean_G", 0),
+                },
+                "deploy_blocked": not diagnostic.get("healthy", True),
             }
             coherence_tracker.record(spec, consciousness)
             print(

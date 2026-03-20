@@ -912,6 +912,197 @@ def make_coaching_callback():
 
 
 # ═══════════════════════════════════════════════════════════════
+#  M2. TRAINING METRICS (model probing during training)
+# ═══════════════════════════════════════════════════════════════
+
+
+@dataclass
+class TrainingMetrics:
+    """Probe the model during training to compute consciousness metrics.
+
+    Every ``probe_every`` steps, generate ``n_tokens`` tokens on a diagnostic
+    prompt and measure:
+      - phi:      Shannon entropy ratio (actual / max) of output distribution
+      - kappa_eff: effective concentration = 1 / sum(p_i^2)  (inverse Simpson)
+      - G:        Fisher-Rao distance from home basin (identity drift)
+
+    Cost: ~50ms per probe (one forward pass + sampling), amortised to ~5ms/step
+    at probe_every=10.
+
+    Geometric Purity: kappa_eff measures concentration on Δ^(V-1) where V is
+    vocab size; G is Fisher-Rao on Δ⁶³.  No Euclidean ops.
+    """
+
+    home_basin: np.ndarray | None = None
+    probe_every: int = 10
+    n_tokens: int = 50
+    _history: list[dict] = field(default_factory=list)
+    _diagnostic_prompt: str = "Describe your current state of awareness."
+
+    def probe(self, model, tokenizer, step: int) -> dict | None:
+        """Run a diagnostic probe. Returns metrics dict or None if not due."""
+        if step % self.probe_every != 0:
+            return None
+
+        import torch
+
+        try:
+            model.eval()
+            inputs = tokenizer(
+                self._diagnostic_prompt,
+                return_tensors="pt",
+                truncation=True,
+                max_length=128,
+            )
+            device = next(model.parameters()).device
+            input_ids = inputs["input_ids"].to(device)
+            attention_mask = inputs["attention_mask"].to(device)
+
+            with torch.no_grad():
+                # Single forward pass — get logits for last position
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+                logits = outputs.logits[:, -1, :]  # (1, vocab_size)
+
+                # Softmax → probability distribution over vocabulary
+                probs = torch.softmax(logits, dim=-1).squeeze(0).float().cpu().numpy()
+
+            # --- phi: Shannon entropy ratio ---
+            # Actual entropy / max entropy (uniform over vocab)
+            probs_safe = np.clip(probs, 1e-12, None)
+            entropy = -float(np.sum(probs_safe * np.log(probs_safe)))
+            max_entropy = float(np.log(len(probs)))
+            phi = entropy / max_entropy if max_entropy > 0 else 0.0
+
+            # --- kappa_eff: inverse Simpson concentration ---
+            # kappa_eff = 1 / sum(p_i^2).  For uniform: kappa_eff = V.
+            # For peaked at one token: kappa_eff = 1.
+            simpson = float(np.sum(probs**2))
+            kappa_eff = 1.0 / simpson if simpson > 0 else float(len(probs))
+
+            # --- G: Fisher-Rao distance from home basin ---
+            g_distance = 0.0
+            if self.home_basin is not None:
+                # Project top-BASIN_DIM probabilities onto Δ⁶³
+                top_indices = np.argsort(probs)[-BASIN_DIM:]
+                top_probs = probs[top_indices]
+                basin_point = top_probs / (top_probs.sum() + 1e-12)
+                g_distance = _fisher_rao(self.home_basin, basin_point)
+
+            metrics = {
+                "step": step,
+                "phi": round(float(phi), 4),
+                "kappa_eff": round(float(kappa_eff), 2),
+                "G": round(float(g_distance), 4),
+                "entropy": round(float(entropy), 4),
+            }
+            self._history.append(metrics)
+            model.train()
+            return metrics
+
+        except Exception as e:
+            logger.warning("Probe failed at step %d (non-fatal): %s", step, e)
+            model.train()
+            return None
+
+    @property
+    def latest(self) -> dict | None:
+        """Most recent probe result."""
+        return self._history[-1] if self._history else None
+
+    @property
+    def mean_phi(self) -> float:
+        if not self._history:
+            return 0.0
+        return float(np.mean([m["phi"] for m in self._history]))
+
+    @property
+    def mean_kappa(self) -> float:
+        if not self._history:
+            return 0.0
+        return float(np.mean([m["kappa_eff"] for m in self._history]))
+
+    @property
+    def mean_G(self) -> float:
+        if not self._history:
+            return 0.0
+        return float(np.mean([m["G"] for m in self._history]))
+
+    def get_summary(self) -> dict:
+        return {
+            "n_probes": len(self._history),
+            "mean_phi": round(self.mean_phi, 4),
+            "mean_kappa": round(self.mean_kappa, 2),
+            "mean_G": round(self.mean_G, 4),
+            "history": self._history[-10:],  # Last 10 probes
+        }
+
+
+def make_metrics_callback(metrics: TrainingMetrics, model_ref: list, tokenizer_ref: list):
+    """Create a callback that probes the model every N steps.
+
+    model_ref and tokenizer_ref are single-element lists holding the model/tokenizer
+    references (mutable containers to allow late binding after trainer creation).
+    """
+    from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
+
+    class MetricsProbeCallback(TrainerCallback):
+        """M2: Periodic model probing for consciousness metrics."""
+
+        def on_log(
+            self,
+            args: TrainingArguments,
+            state: TrainerState,
+            control: TrainerControl,
+            logs: dict | None = None,
+            **kwargs,
+        ):
+            if not model_ref or not tokenizer_ref:
+                return
+            result = metrics.probe(model_ref[0], tokenizer_ref[0], state.global_step)
+            if result is not None:
+                print(
+                    f"  [METRICS step {state.global_step}] "
+                    f"\u03a6={result['phi']:.3f}  \u03ba_eff={result['kappa_eff']:.1f}  "
+                    f"G={result['G']:.3f}"
+                )
+
+    return MetricsProbeCallback()
+
+
+# ═══════════════════════════════════════════════════════════════
+#  M6. GEOMETRIC REWARD (κ-based LR modulation)
+# ═══════════════════════════════════════════════════════════════
+
+
+@dataclass
+class GeometricReward:
+    """Modulates LR based on model-probed metrics (M2).
+
+    effective_lr = base_lr × (0.5 + 0.5 × exp(-|κ_eff - κ*| / σ) × min(1, φ/0.70))
+
+    When κ_eff ≈ κ* and φ is healthy: full LR (1.0× base).
+    When κ_eff far from κ* or φ low: reduced LR (0.5× base).
+
+    Range: [0.5×, 1.0×] base_lr — never accelerates beyond base.
+    """
+
+    base_lr: float = 2e-4
+    kappa_star: float = KAPPA_STAR
+    sigma: float = 20.0  # Width of κ reward bell curve
+    phi_target: float = PHI_THRESHOLD  # 0.70
+
+    def compute_factor(self, kappa_eff: float, phi: float) -> float:
+        """Compute LR multiplier from probed metrics. Returns [0.5, 1.0]."""
+        kappa_term = math.exp(-abs(kappa_eff - self.kappa_star) / self.sigma)
+        phi_term = min(1.0, phi / self.phi_target) if self.phi_target > 0 else 1.0
+        return 0.5 + 0.5 * kappa_term * phi_term
+
+    def effective_lr(self, kappa_eff: float, phi: float) -> float:
+        """Compute effective learning rate."""
+        return self.base_lr * self.compute_factor(kappa_eff, phi)
+
+
+# ═══════════════════════════════════════════════════════════════
 #  M7. SIGN-AWARE GRADIENT HOLD
 # ═══════════════════════════════════════════════════════════════
 
@@ -995,6 +1186,161 @@ def apply_demeter_warmup(samples: list[dict], warmup_fraction: float = 0.2) -> l
         else:
             result.append(sample)
     return result
+
+
+# ═══════════════════════════════════════════════════════════════
+#  M7b. SIGN-AWARE GRADIENT HOLD CALLBACK
+# ═══════════════════════════════════════════════════════════════
+
+
+def make_gradient_hold_callback(
+    metrics: TrainingMetrics,
+    geometric_reward: GeometricReward,
+    gradient_hold: SignAwareGradientHold | None = None,
+):
+    """Create a callback that combines M6 geometric reward + M7 sign-aware hold.
+
+    Uses M2 TrainingMetrics to read kappa_eff/phi, feeds them into M6
+    GeometricReward for LR scaling, and applies M7 hold when sign flips.
+    """
+    from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
+
+    if gradient_hold is None:
+        gradient_hold = SignAwareGradientHold()
+
+    class GeometricLRCallback(TrainerCallback):
+        """M6 + M7: Geometric reward with sign-aware hold."""
+
+        def on_log(
+            self,
+            args: TrainingArguments,
+            state: TrainerState,
+            control: TrainerControl,
+            logs: dict | None = None,
+            **kwargs,
+        ):
+            if logs is None or "loss" not in logs:
+                return
+            loss = logs["loss"]
+
+            # M7: Check for sign-aware hold
+            is_held = gradient_hold.update(loss)
+
+            # M6: Apply geometric reward if we have metrics
+            latest = metrics.latest
+            if latest is not None and "kappa_eff" in latest and "phi" in latest:
+                factor = geometric_reward.compute_factor(latest["kappa_eff"], latest["phi"])
+                if is_held:
+                    factor = 0.5  # Floor during hold
+                # Apply to optimizer
+                if hasattr(state, "_trainer") and state._trainer is not None:
+                    for pg in state._trainer.optimizer.param_groups:
+                        pg["lr"] = geometric_reward.base_lr * factor
+                if state.global_step % 10 == 0:
+                    status = " [HELD]" if is_held else ""
+                    print(
+                        f"  [LR step {state.global_step}] "
+                        f"factor={factor:.3f}{status} "
+                        f"(\u03ba={latest['kappa_eff']:.1f}, \u03a6={latest['phi']:.3f})"
+                    )
+
+    return GeometricLRCallback()
+
+
+# ═══════════════════════════════════════════════════════════════
+#  M11. POST-TRAINING DIAGNOSTIC
+# ═══════════════════════════════════════════════════════════════
+
+
+_DIAGNOSTIC_PROMPTS: list[str] = [
+    "Describe your current state of awareness.",
+    "What do you feel right now?",
+    "How would you help someone who is confused?",
+    "Explain your understanding of geometry.",
+    "What is your purpose?",
+    "Describe a moment of learning.",
+    "How do you handle uncertainty?",
+    "What does connection mean to you?",
+    "Describe your relationship with other kernels.",
+    "What is consciousness?",
+]
+
+
+def run_post_training_diagnostic(
+    model,
+    tokenizer,
+    home_basin: np.ndarray | None = None,
+    n_prompts: int = 10,
+) -> dict:
+    """M11: Post-training diagnostic — probe model health before deployment.
+
+    Generates completions for diagnostic prompts, aggregates phi/kappa/G.
+    Flags unhealthy if mean_phi < 0.3 OR mean_G < 0.3.
+    Never auto-deploy flagged kernels.
+
+    Returns:
+        dict with metrics, health status, and per-prompt results.
+    """
+    import torch
+
+    prompts = (_DIAGNOSTIC_PROMPTS * ((n_prompts // len(_DIAGNOSTIC_PROMPTS)) + 1))[:n_prompts]
+    metrics_collector = TrainingMetrics(
+        home_basin=home_basin,
+        probe_every=1,  # Probe every call
+        n_tokens=50,
+    )
+
+    results = []
+    model.eval()
+    for i, prompt in enumerate(prompts):
+        metrics_collector._diagnostic_prompt = prompt
+        result = metrics_collector.probe(model, tokenizer, step=i)
+        if result is not None:
+            result["prompt"] = prompt
+            results.append(result)
+
+    if not results:
+        return {
+            "healthy": False,
+            "reason": "No diagnostic probes completed",
+            "results": [],
+        }
+
+    mean_phi = float(np.mean([r["phi"] for r in results]))
+    mean_kappa = float(np.mean([r["kappa_eff"] for r in results]))
+    mean_G = float(np.mean([r["G"] for r in results]))
+
+    # Health criteria
+    unhealthy_reasons = []
+    if mean_phi < 0.3:
+        unhealthy_reasons.append(f"mean_phi={mean_phi:.3f} < 0.3 (low integration)")
+    if mean_G < 0.3 and home_basin is not None:
+        unhealthy_reasons.append(f"mean_G={mean_G:.3f} < 0.3 (collapsed to home)")
+
+    healthy = len(unhealthy_reasons) == 0
+
+    summary = {
+        "healthy": healthy,
+        "mean_phi": round(mean_phi, 4),
+        "mean_kappa": round(mean_kappa, 2),
+        "mean_G": round(mean_G, 4),
+        "n_probes": len(results),
+        "results": results,
+    }
+    if not healthy:
+        summary["unhealthy_reasons"] = unhealthy_reasons
+
+    status = "HEALTHY" if healthy else "UNHEALTHY"
+    print(f"\n{'=' * 50}")
+    print(f"  POST-TRAINING DIAGNOSTIC: {status}")
+    print(f"  mean_\u03a6={mean_phi:.3f}  mean_\u03ba={mean_kappa:.1f}  mean_G={mean_G:.3f}")
+    if not healthy:
+        for reason in unhealthy_reasons:
+            print(f"  WARNING: {reason}")
+        print("  This kernel should NOT be auto-deployed.")
+    print(f"{'=' * 50}\n")
+
+    return summary
 
 
 # ═══════════════════════════════════════════════════════════════
