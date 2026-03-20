@@ -174,11 +174,16 @@ class CoordizerHarvester:
             return {"error": "Invalid API key", "success": False}
         return None
 
-    def _harvest_fingerprints(self, texts, batch_size, max_length, min_contexts, target_resonances):
+    def _harvest_fingerprints(
+        self, texts, batch_size, max_length, min_contexts, target_resonances,
+        *, compute_curvature: bool = False,
+    ):
         """Core harvest: text -> per-coordinate probability distributions on GPU.
 
-        Also extracts attention entropy for manifold curvature estimation
-        (Mao et al., Scientific Reports Jan 2026).
+        When compute_curvature=True, also extracts attention entropy for manifold
+        curvature estimation (Mao et al., Scientific Reports Jan 2026).
+        Curvature extraction is opt-in because output_attentions adds significant
+        GPU memory overhead (O(layers·heads·seq_len²)).
         """
         import numpy as np
         import torch
@@ -203,23 +208,27 @@ class CoordizerHarvester:
                 batch = all_input_ids[batch_start : batch_start + batch_size]
                 for input_ids in batch:
                     ids_tensor = torch.tensor([input_ids], device="cuda")
-                    outputs = model(ids_tensor, output_attentions=True)
+                    outputs = model(
+                        ids_tensor,
+                        output_attentions=compute_curvature,
+                    )
                     logits = outputs.logits[0]
 
-                    # Extract attention entropy per position
-                    # Average across all layers and heads
-                    if hasattr(outputs, "attentions") and outputs.attentions:
-                        # Each attention tensor: (1, n_heads, seq_len, seq_len)
-                        per_pos_entropy = np.zeros(len(input_ids))
+                    # Extract attention entropy per position (opt-in)
+                    if compute_curvature and hasattr(outputs, "attentions") and outputs.attentions:
+                        seq_len = len(input_ids)
                         n_layers = len(outputs.attentions)
+                        # Accumulate entropy on GPU to avoid per-layer CPU sync
+                        per_pos_entropy_gpu = torch.zeros(seq_len, device="cuda")
                         for layer_attn in outputs.attentions:
-                            # (1, n_heads, seq_len, seq_len) -> mean over heads
-                            attn_probs = layer_attn[0].float().mean(dim=0)  # (seq_len, seq_len)
-                            # Shannon entropy of each row (each position's attention distribution)
+                            attn_probs = layer_attn[0].mean(dim=0)  # (seq_len, seq_len)
                             attn_clamped = torch.clamp(attn_probs, min=1e-12)
                             entropy = -torch.sum(attn_clamped * torch.log(attn_clamped), dim=-1)
-                            per_pos_entropy += entropy.cpu().numpy()
-                        per_pos_entropy /= n_layers  # average across layers
+                            per_pos_entropy_gpu += entropy
+                        per_pos_entropy_gpu /= n_layers
+                        # Single CPU transfer at the end
+                        per_pos_entropy = per_pos_entropy_gpu.cpu().numpy()
+                        del per_pos_entropy_gpu, outputs.attentions
                         for pos in range(len(input_ids)):
                             tid = input_ids[pos]
                             if tid not in attention_entropies:
@@ -372,6 +381,7 @@ class CoordizerHarvester:
             data.get("max_length", 512),
             data.get("min_contexts", 5),
             data.get("target_resonances", 0),
+            compute_curvature=bool(data.get("compute_curvature", False)),
         )
 
         tokenizer = self.tokenizer
@@ -430,6 +440,7 @@ class CoordizerHarvester:
             data.get("max_length", 512),
             data.get("min_contexts", 1),
             data.get("target_resonances", 0),
+            compute_curvature=bool(data.get("compute_curvature", False)),
         )
 
         if len(averaged) == 0:
