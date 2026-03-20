@@ -407,6 +407,23 @@ class ResonanceBank:
             return to_simplex(np.ones(self.dim))
         return frechet_mean(list(self.coordinates.values()))
 
+    def entropy(self) -> float:
+        """Mean Shannon entropy of bank coordinates, normalized to [0, 1].
+
+        Low entropy = entries clustering in a small manifold region (narrowing).
+        High entropy = entries spread across simplex (healthy diversity).
+        Returns 1.0 for empty banks (no narrowing signal).
+        """
+        if not self.coordinates:
+            return 1.0
+        max_entropy = np.log(self.dim)  # log(64) = uniform on Δ⁶³
+        total = 0.0
+        for basin in self.coordinates.values():
+            # Shannon entropy of each simplex point
+            safe = np.clip(basin, 1e-12, None)
+            total += float(-np.sum(safe * np.log(safe)))
+        return (total / len(self.coordinates)) / max_entropy
+
     def __len__(self) -> int:
         return len(self.coordinates)
 

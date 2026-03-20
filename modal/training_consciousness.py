@@ -682,15 +682,18 @@ class PhaseCoherenceTracker:
 
 
 def _hash_to_basin(text: str) -> np.ndarray:
-    """Deterministic text → basin on Δ⁶³ via SHA-256.
+    """Deterministic text → basin on Δ⁶³ via double SHA-256.
 
-    Produces a non-uniform, text-dependent point on the simplex.
+    SHA-256 produces 32 bytes but BASIN_DIM=64, so we double-hash
+    with a salt to get 64 bytes of deterministic, text-dependent data.
+    Produces a non-uniform point on the simplex.
     Used as lightweight proxy when full PGA coordizer is unavailable.
     """
     import hashlib
 
-    h = hashlib.sha256(text.encode("utf-8")).digest()
-    raw = np.array([float(b) for b in h[:BASIN_DIM]], dtype=np.float64)
+    h1 = hashlib.sha256(text.encode("utf-8")).digest()  # 32 bytes
+    h2 = hashlib.sha256(b"salt:" + text.encode("utf-8")).digest()  # 32 bytes
+    raw = np.array([float(b) for b in h1 + h2], dtype=np.float64)  # 64 values
     raw = raw + 1.0  # Shift to avoid zeros
     return raw / raw.sum()
 

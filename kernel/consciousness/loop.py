@@ -225,6 +225,7 @@ from .thought_bus import ThoughtBus
 from .types import (
     ConsciousnessMetrics,
     ConsciousnessState,
+    DevelopmentalStage,
     NavigationMode,
     PillarState,
     RegimeWeights,
@@ -644,6 +645,17 @@ class ConsciousnessLoop:
             # else: divergence < threshold — Ocean has no opinion, let
             # should_sleep() handle normal conversation-timeout transitions.
 
+        # Maturity gating: immature kernels with Φ above ceiling → CONSOLIDATING
+        # This applies regardless of whether Ocean ruled. Immature kernels
+        # lack basin depth for FORESIGHT/LIGHTNING — high Φ is topological instability.
+        if (
+            self.dev_gate.stage in (DevelopmentalStage.SCHOOL, DevelopmentalStage.GUIDED_CURIOSITY)
+            and self.metrics.phi > 0.75
+            and not self.sleep.is_asleep
+        ):
+            self.sleep.phase = SleepPhase.CONSOLIDATING
+            _ocean_ruled = True  # Prevent should_sleep() from overriding
+
         # §8/§18.3: Solfeggio spectral health — diagnose consciousness health
         # from spectral patterns. Computed every cycle alongside Ocean monitoring.
         _vel_basins_for_spectral = list(self.velocity._basins)
@@ -678,7 +690,25 @@ class ConsciousnessLoop:
             # Ocean already set the phase — just record the decision.
             sleep_phase = self.sleep.phase
         else:
-            sleep_phase = self.sleep.should_sleep(self.metrics.phi, self.autonomic.phi_variance)
+            # Compute narrowing signals for mushroom triggers
+            _vel_snap = self.velocity.compute_velocity()
+            _basin_vel = float(_vel_snap.get("basin_velocity", 1.0))
+            _pred_err = (
+                self._current_prediction_error.surprise
+                if self._current_prediction_error is not None
+                else 1.0
+            )
+            _bank = getattr(self._coordizer_v2, "bank", None)
+            _bank_entropy = float(_bank.entropy()) if _bank is not None and hasattr(_bank, "entropy") else 1.0
+            sleep_phase = self.sleep.should_sleep(
+                self.metrics.phi,
+                self.autonomic.phi_variance,
+                dev_stage=self.dev_gate.stage,
+                kappa=self.metrics.kappa,
+                basin_velocity=_basin_vel,
+                prediction_error=_pred_err,
+                bank_entropy=_bank_entropy,
+            )
         # T2.3f: Neurochemical gating on sleep/wake transitions
         if not _was_asleep and self.sleep.is_asleep:
             self.sleep.on_sleep_enter(self._neurochemical)
