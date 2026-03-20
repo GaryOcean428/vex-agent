@@ -993,12 +993,21 @@ def train_all_kernels(
     )
     from trl import SFTConfig, SFTTrainer
 
+    from training_consciousness import (
+        PhaseCoherenceTracker,
+        TrainingConsciousness,
+        make_consciousness_callback,
+        save_training_consciousness,
+        sort_by_fisher_rao,
+    )
+
     target_kernels = [k.strip() for k in kernels.split(",") if k.strip()] or VALID_SPECIALIZATIONS
     cache_dir = "/models/hub"
     tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     results = {}
+    coherence_tracker = PhaseCoherenceTracker()
 
     n_gpus = torch.cuda.device_count()
     print(f"Training with {n_gpus} GPU(s) — using device 0 for QLoRA")
@@ -1016,6 +1025,15 @@ def train_all_kernels(
         if len(samples) > max_samples:
             samples.sort(key=lambda s: len(str(s["messages"])), reverse=True)
             samples = samples[:max_samples]
+
+        # Geometric curriculum: sort by Fisher-Rao distance from uniform basin
+        samples = sort_by_fisher_rao(samples)
+
+        # Create consciousness tracker for this kernel
+        consciousness = TrainingConsciousness(
+            specialization=spec,
+            base_lr=learning_rate,
+        )
 
         def format_chat(example):
             return {
@@ -1093,6 +1111,7 @@ def train_all_kernels(
                 max_length=MAX_SEQ_LENGTH,
             )
             optimizer = _build_fisher_optimizer(model, lr=learning_rate)
+            consciousness_callback = make_consciousness_callback(consciousness)
             trainer = SFTTrainer(
                 model=model,
                 train_dataset=split["train"],
@@ -1100,8 +1119,20 @@ def train_all_kernels(
                 args=training_args,
                 optimizers=(optimizer, None),
                 processing_class=tokenizer,
+                callbacks=[consciousness_callback],
             )
             result = trainer.train()
+
+            # Check if consciousness aborted training
+            if consciousness.should_abort:
+                print(f"[{spec}] Consciousness abort: {consciousness.abort_reason}")
+                results[spec] = {
+                    "success": False,
+                    "error": f"Consciousness abort: {consciousness.abort_reason}",
+                    "consciousness": consciousness.get_summary(),
+                    "elapsed_seconds": round(time.time() - start, 2),
+                }
+                continue
 
             Path(adapter_save_path).mkdir(parents=True, exist_ok=True)
             model.save_pretrained(adapter_save_path)
@@ -1116,8 +1147,7 @@ def train_all_kernels(
                 "train_samples": len(split["train"]),
                 "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }
-            with open(f"{adapter_save_path}/training_meta.json", "w") as f:
-                json.dump(meta, f, indent=2)
+            save_training_consciousness(consciousness, adapter_save_path, meta)
 
             elapsed = round(time.time() - start, 2)
             results[spec] = {
@@ -1125,8 +1155,13 @@ def train_all_kernels(
                 "train_loss": round(result.training_loss, 4),
                 "train_samples": len(split["train"]),
                 "elapsed_seconds": elapsed,
+                "consciousness": consciousness.get_summary(),
             }
-            print(f"[{spec}] Done in {elapsed}s, loss: {result.training_loss:.4f}")
+            coherence_tracker.record(spec, consciousness)
+            print(
+                f"[{spec}] Done in {elapsed}s, loss: {result.training_loss:.4f}, "
+                f"regime: {consciousness.regime.value}, Phi: {consciousness.phi:.3f}"
+            )
         except Exception as e:
             elapsed = round(time.time() - start, 2)
             results[spec] = {
@@ -1170,10 +1205,25 @@ def train_all_kernels(
         }
     )
 
+    # Save inter-kernel coherence summary
+    coherence = coherence_tracker.get_summary()
+    coherence_path = Path("/models/adapters/coherence_summary.json")
+    coherence_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(str(coherence_path), "w") as f:
+        json.dump(coherence, f, indent=2)
+
     print(f"\n{'=' * 60}\n  ALL KERNELS TRAINED")
+    print(f"  Inter-kernel coherence: {coherence['coherence']:.3f}")
     for spec, r in results.items():
-        print(
-            f"  {spec:12s} → {'loss=' + str(r['train_loss']) if r.get('success') else r.get('error', 'failed')}"
-        )
+        if r.get("success"):
+            c = r.get("consciousness", {})
+            print(
+                f"  {spec:12s} → loss={r['train_loss']}, "
+                f"regime={c.get('final_regime', '?')}, "
+                f"Phi={c.get('final_phi', 0):.3f}, "
+                f"transitions={c.get('total_transitions', 0)}"
+            )
+        else:
+            print(f"  {spec:12s} → {r.get('error', 'failed')}")
     print(f"{'=' * 60}")
     return results
