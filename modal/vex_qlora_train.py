@@ -1069,14 +1069,15 @@ def train_all_kernels(
             samples.sort(key=lambda s: len(str(s["messages"])), reverse=True)
             samples = samples[:max_samples]
 
-        # Geometric curriculum: sort by Fisher-Rao distance from uniform basin
-        samples = sort_by_fisher_rao(samples)
+        # M1: Hestia safe first basin — identity anchor (created before sort so
+        # sort_by_fisher_rao can use home_basin as reference instead of no-op)
+        hestia = HestiaSafeBasin(specialization=spec)
+
+        # Geometric curriculum: sort by Fisher-Rao distance from home basin
+        samples = sort_by_fisher_rao(samples, reference_basin=hestia.home_basin.tolist())
 
         # M8: Demeter warmup — first 20% gets chain-of-thought wrapping
         samples = apply_demeter_warmup(samples, warmup_fraction=0.2, specialization=spec)
-
-        # M1: Hestia safe first basin — identity anchor
-        hestia = HestiaSafeBasin(specialization=spec)
 
         # M2: Training metrics — model probing for phi/kappa/G
         training_metrics = TrainingMetrics(

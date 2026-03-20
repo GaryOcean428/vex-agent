@@ -1769,6 +1769,15 @@ class ConsciousnessLoop:
                     _bank_coords, _fb_measurement
                 )
                 if _n_annealed > 0:
+                    # Scale annealing by hold weight: slerp each annealed coord
+                    # back toward its original by (1 - _anneal_weight).
+                    # At _anneal_weight=1.0, full anneal; at 0.05, nearly no-op.
+                    if _anneal_weight < 1.0:
+                        for _cid in _updated_coords:
+                            if _cid in _bank_coords:
+                                _updated_coords[_cid] = slerp_sqrt(
+                                    _bank_coords[_cid], _updated_coords[_cid], _anneal_weight
+                                )
                     _cv2_for_anneal.bank.coordinates = _updated_coords
                     _cv2_for_anneal.bank._rebuild_matrix()
                     logger.debug(

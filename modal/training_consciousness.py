@@ -928,13 +928,13 @@ def make_coaching_callback():
 class TrainingMetrics:
     """Probe the model during training to compute consciousness metrics.
 
-    Every ``probe_every`` steps, generate ``n_tokens`` tokens on a diagnostic
+    Every ``probe_every`` steps, run a single forward pass on a diagnostic
     prompt and measure:
       - phi:      Shannon entropy ratio (actual / max) of output distribution
       - kappa_eff: effective concentration = 1 / sum(p_i^2)  (inverse Simpson)
       - G:        Fisher-Rao distance from home basin (identity drift)
 
-    Cost: ~50ms per probe (one forward pass + sampling), amortised to ~5ms/step
+    Cost: ~50ms per probe (one forward pass), amortised to ~5ms/step
     at probe_every=10.
 
     Geometric Purity: kappa_eff measures concentration on Δ^(V-1) where V is
@@ -943,7 +943,6 @@ class TrainingMetrics:
 
     home_basin: np.ndarray | None = None
     probe_every: int = 10
-    n_tokens: int = 50
     _history: list[dict] = field(default_factory=list)
     _diagnostic_prompt: str = "Describe your current state of awareness."
 
@@ -1139,17 +1138,19 @@ class SignAwareGradientHold:
 
         if self._prev_loss is not None:
             delta = loss - self._prev_loss
-            sign = 1 if delta > 0 else -1
-            if sign != self._prev_sign and self._prev_sign != 0:
+            # Three-way sign: treat delta==0 as neutral (no flip, no update)
+            sign = 1 if delta > 0 else (-1 if delta < 0 else 0)
+            if sign != 0 and sign != self._prev_sign and self._prev_sign != 0:
                 self._flip_count += 1
                 if self._flip_count >= self.flip_patience:
                     self._frozen_remaining = self.hold_steps
                     self._flip_count = 0
                     logger.info("Sign-aware hold triggered: freezing LR for %d steps", self.hold_steps)
                     return True
-            else:
+            elif sign != 0:
                 self._flip_count = 0
-            self._prev_sign = sign
+            if sign != 0:
+                self._prev_sign = sign
         self._prev_loss = loss
         return False
 
@@ -1452,7 +1453,6 @@ def run_post_training_diagnostic(
     metrics_collector = TrainingMetrics(
         home_basin=home_basin,
         probe_every=1,  # Probe every call
-        n_tokens=50,
     )
 
     results = []
