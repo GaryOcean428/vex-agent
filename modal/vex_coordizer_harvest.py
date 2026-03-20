@@ -320,7 +320,7 @@ class CoordizerHarvester:
         proj_on_mean = centered @ global_mean  # (N,)
         lens_coords = np.zeros(target_dim)
         for d in range(target_dim):
-            lens_coords[d] = np.dot(eigenvectors[:, d], proj_on_mean)
+            lens_coords[d] = np.dot(eigenvectors[:, d], proj_on_mean)  # QIG-EXEMPT: tangent space projection at Fréchet mean
 
         basin_coords = np.zeros(basin_dim)
         basin_coords[:target_dim] = lens_coords[:target_dim]

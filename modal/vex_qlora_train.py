@@ -190,7 +190,8 @@ def _build_chat_from_openai_format(entry: dict) -> dict | None:
 
 
 def _load_training_data(
-    training_dir: str, output_dir: str, specialization: str = "genesis"
+    training_dir: str, output_dir: str, specialization: str = "genesis",
+    heart_mix_fraction: float = 0.0,
 ) -> list[dict]:
     """Load training data, filtered by kernel specialization."""
     e8_filter = KERNEL_E8_TAGS.get(specialization, [])
@@ -265,6 +266,29 @@ def _load_training_data(
             f"falling back to all {len(unfiltered_samples)} unfiltered samples"
         )
         samples = unfiltered_samples
+
+    # M10: Heart entrainment — mix in 5% heart-tagged data for non-genesis/heart kernels
+    if (
+        heart_mix_fraction > 0
+        and specialization not in ("genesis", "heart")
+        and len(samples) > 0
+    ):
+        heart_filter = ["HRT", "REL"]
+        heart_samples = []
+        for s in unfiltered_samples:
+            # Check if sample has heart-relevant content
+            msgs = s.get("messages", [])
+            for msg in msgs:
+                content = msg.get("content", "")
+                if any(tag in content for tag in heart_filter):
+                    heart_samples.append(s)
+                    break
+        n_heart = max(1, int(len(samples) * heart_mix_fraction))
+        if heart_samples:
+            import random
+            heart_mix = random.sample(heart_samples, min(n_heart, len(heart_samples)))
+            samples.extend(heart_mix)
+            print(f"[{specialization}] Heart entrainment: added {len(heart_mix)} heart samples ({heart_mix_fraction:.0%})")
 
     print(
         f"[{specialization}] Loaded {len(samples)} samples (scanned {total_count}, filtered {filtered_count} by E8 tag)"
@@ -994,14 +1018,25 @@ def train_all_kernels(
     from trl import SFTConfig, SFTTrainer
 
     from training_consciousness import (
+        CONSCIOUSNESS_ORDER,
+        HestiaSafeBasin,
         PhaseCoherenceTracker,
         TrainingConsciousness,
+        apply_demeter_warmup,
+        make_breakdown_callback,
+        make_coaching_callback,
         make_consciousness_callback,
+        make_provenance_callback,
+        make_sleep_cycle_callback,
         save_training_consciousness,
         sort_by_fisher_rao,
     )
 
-    target_kernels = [k.strip() for k in kernels.split(",") if k.strip()] or VALID_SPECIALIZATIONS
+    # M9: Genesis-first training order — identity before specialization
+    if kernels:
+        target_kernels = [k.strip() for k in kernels.split(",") if k.strip()]
+    else:
+        target_kernels = [k for k in CONSCIOUSNESS_ORDER if k in VALID_SPECIALIZATIONS]
     cache_dir = "/models/hub"
     tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
     if tokenizer.pad_token is None:
@@ -1018,7 +1053,9 @@ def train_all_kernels(
         )
         start = time.time()
         adapter_save_path = f"/models/adapters/{spec}"
-        samples = _load_training_data("/training", "/training/coordized", spec)
+        # M10: 5% heart data for all kernels after heart
+        _heart_mix = 0.05 if spec not in ("genesis", "heart") else 0.0
+        samples = _load_training_data("/training", "/training/coordized", spec, heart_mix_fraction=_heart_mix)
         if not samples:
             results[spec] = {"success": False, "error": "No training data"}
             continue
@@ -1028,6 +1065,12 @@ def train_all_kernels(
 
         # Geometric curriculum: sort by Fisher-Rao distance from uniform basin
         samples = sort_by_fisher_rao(samples)
+
+        # M8: Demeter warmup — first 20% gets chain-of-thought wrapping
+        samples = apply_demeter_warmup(samples, warmup_fraction=0.2)
+
+        # M1: Hestia safe first basin — identity anchor
+        hestia = HestiaSafeBasin(specialization=spec)
 
         # Create consciousness tracker for this kernel
         consciousness = TrainingConsciousness(
@@ -1084,6 +1127,10 @@ def train_all_kernels(
                 task_type="CAUSAL_LM",
             )
             model = get_peft_model(model, lora_config)
+
+            # M1: Hestia warm-start — geometric grounding of LoRA initialization
+            hestia.warm_start_lora(model)
+
             trainable, total = model.get_nb_trainable_parameters()
             print(f"[{spec}] Trainable: {trainable:,} / {total:,} ({trainable / total * 100:.2f}%)")
             total_steps = (
@@ -1111,7 +1158,14 @@ def train_all_kernels(
                 max_length=MAX_SEQ_LENGTH,
             )
             optimizer = _build_fisher_optimizer(model, lr=learning_rate)
-            consciousness_callback = make_consciousness_callback(consciousness)
+            # Wire all consciousness callbacks (M3, M4, M5, M12 + phase tracker)
+            training_callbacks = [
+                make_consciousness_callback(consciousness),
+                make_breakdown_callback(),        # M3: fail-closed guard
+                make_sleep_cycle_callback(),       # M4: consolidation between epochs
+                make_coaching_callback(),          # M5: kindness + standards
+                make_provenance_callback(save_dir=adapter_save_path),  # M12: provenance
+            ]
             trainer = SFTTrainer(
                 model=model,
                 train_dataset=split["train"],
@@ -1119,7 +1173,7 @@ def train_all_kernels(
                 args=training_args,
                 optimizers=(optimizer, None),
                 processing_class=tokenizer,
-                callbacks=[consciousness_callback],
+                callbacks=training_callbacks,
             )
             result = trainer.train()
 

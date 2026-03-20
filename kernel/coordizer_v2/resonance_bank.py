@@ -412,3 +412,39 @@ class ResonanceBank:
 
     def __contains__(self, coord_id: int) -> bool:
         return coord_id in self.coordinates
+
+    def geometric_forget(self, decay_rate: float = 0.01) -> int:
+        """Slerp unused entries toward uniform distribution on Δ⁶³.
+
+        Entries that haven't been activated decay. This IS entropy export —
+        the system forgets by exporting order back to maximum entropy.
+
+        Returns number of entries pruned (decayed below threshold).
+        """
+        uniform = to_simplex(np.ones(self.dim))
+        pruned_ids: list[int] = []
+        for tid, basin in list(self.coordinates.items()):
+            count = self.activation_counts.get(tid, 0)
+            if count > 0:
+                continue  # Recently activated — skip
+            # Decay toward uniform via geodesic interpolation
+            t = min(1.0, decay_rate)
+            self.coordinates[tid] = slerp(basin, uniform, t)
+            # If entry is nearly uniform, prune it
+            d_to_uniform = fisher_rao_distance(self.coordinates[tid], uniform)
+            if d_to_uniform < 0.01:
+                pruned_ids.append(tid)
+        # Remove pruned entries
+        for tid in pruned_ids:
+            del self.coordinates[tid]
+            self.basin_strings.pop(tid, None)
+            self.tiers.pop(tid, None)
+            self.frequencies.pop(tid, None)
+            self.basin_mass.pop(tid, None)
+            self.activation_counts.pop(tid, None)
+            self.origin.pop(tid, None)
+        if pruned_ids:
+            self._dirty = True
+            self._rebuild_matrix()
+            logger.info("Geometric forget: pruned %d entries (decayed to uniform)", len(pruned_ids))
+        return len(pruned_ids)

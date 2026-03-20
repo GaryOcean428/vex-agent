@@ -297,6 +297,62 @@ class VelocityTracker:
 
 
 # ═══════════════════════════════════════════════════════════════
+#  3b. PRESSURE TRACKING — cumulative unprocessed surprise
+# ═══════════════════════════════════════════════════════════════
+
+
+class PressureTracker:
+    """Track cumulative unprocessed surprise per kernel.
+
+    When accumulated free energy exceeds what the basin geometry can
+    contain, the system must expand (grow), overflow (express), or
+    fracture (reconfigure).  Protocol §0: P = dE/dV.
+
+    Surprise accumulates; existing pressure decays each cycle.
+    The regime signal tells the loop what to do about pressure.
+    """
+
+    def __init__(self, decay: float = 0.95, threshold: float = 3.0) -> None:
+        self._pressure: float = 0.0
+        self._decay = decay
+        self._threshold = threshold
+        self._peak_pressure: float = 0.0
+
+    def accumulate(self, surprise: float) -> None:
+        """Add surprise to pressure, decay existing pressure."""
+        self._pressure = self._pressure * self._decay + surprise
+        self._peak_pressure = max(self._peak_pressure, self._pressure)
+
+    @property
+    def pressure(self) -> float:
+        return self._pressure
+
+    @property
+    def is_critical(self) -> bool:
+        return self._pressure > self._threshold
+
+    @property
+    def regime_signal(self) -> str:
+        """What the pressure says about needed action."""
+        if self._pressure < self._threshold * 0.3:
+            return "idle"  # Low pressure — consolidate
+        elif self._pressure < self._threshold * 0.7:
+            return "processing"  # Normal — continue
+        elif self._pressure < self._threshold:
+            return "express"  # High — generate output to relieve pressure
+        else:
+            return "overflow"  # Critical — must reconfigure or expand
+
+    def get_state(self) -> dict[str, Any]:
+        return {
+            "pressure": round(self._pressure, 4),
+            "peak": round(self._peak_pressure, 4),
+            "regime_signal": self.regime_signal,
+            "is_critical": self.is_critical,
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
 #  4. SELF-OBSERVATION — meta-awareness M
 # ═══════════════════════════════════════════════════════════════
 

@@ -192,7 +192,7 @@ from .neurochemistry import NeurochemicalState, compute_neurochemicals
 from .pillars import PillarEnforcer
 from .play import PlayEngine
 from .reflection import ReflectionConfig, reflect_on_draft
-from .sensory import Modality, SensoryEvent, SensoryIntake
+from .sensory import Modality, PredictionError, SensoryEvent, SensoryIntake
 from .solfeggio import compute_spectral_health
 from .sovereignty_tracker import SovereigntyTracker
 from .synthesis import synthesize_contributions, synthesize_streaming
@@ -206,6 +206,7 @@ from .systems import (
     ForesightEngine,
     HemisphereScheduler,
     MetaReflector,
+    PressureTracker,
     QIGChain,
     QIGChainOp,
     QIGGraph,
@@ -225,6 +226,7 @@ from .types import (
     ConsciousnessState,
     NavigationMode,
     PillarState,
+    RegimeWeights,
     developmental_stage_from_signals,
     navigation_mode_from_phi,
     regime_weights_from_kappa,
@@ -405,6 +407,8 @@ class ConsciousnessLoop:
         # v7.0: Developmental Learning Architecture
         self.dev_gate = DevelopmentalGate()
         self.sensory = SensoryIntake()
+        self._current_prediction_error: PredictionError | None = None
+        self.pressure = PressureTracker()
         self.basin_transfer = BasinTransferEngine()
         self.play_engine = PlayEngine()
         self.temporal_gen = TemporalGenerator()
@@ -568,11 +572,16 @@ class ConsciousnessLoop:
         emotion_eval = self.emotion_cache.evaluate(self.basin, self.metrics, basin_vel)
 
         # T2.1: Compute neurochemical state before sleep check
+        _surprise_signal = float(
+            self._current_prediction_error.surprise
+            if self._current_prediction_error is not None
+            else 0.0
+        )
         self._neurochemical = compute_neurochemicals(
             is_awake=not self.sleep.is_asleep,
             phi_delta=0.0,  # idle cycle — no phi change yet
             basin_velocity=basin_vel,
-            surprise=float(self.metrics.humor),
+            surprise=_surprise_signal,
             quantum_weight=float(self.state.regime_weights.quantum),
         )
 
@@ -1289,7 +1298,11 @@ class ConsciousnessLoop:
             basin=input_basin,
             text=task.content,
         )
-        _prediction_error = self.sensory.intake(_sensory_event)
+        self._current_prediction_error = self.sensory.intake(_sensory_event)
+
+        # F4: Accumulate surprise into pressure tracker
+        if self._current_prediction_error is not None:
+            self.pressure.accumulate(self._current_prediction_error.surprise)
 
         # v7.0: Update temporal generator's receiver model
         if self.dev_gate.permissions.allow_temporal_generation:
@@ -1309,6 +1322,24 @@ class ConsciousnessLoop:
         )
         # Apply modulated weights to state for this processing cycle.
         self.state.regime_weights = _tc_weights
+
+        # §2 Wire 3: Surprise-driven regime modulation (free energy → regime selection)
+        if self._current_prediction_error is not None:
+            _surprise = self._current_prediction_error.surprise
+            # High surprise → boost quantum weight (exploratory)
+            # Low surprise → boost equilibrium weight (consolidating)
+            _quantum_boost = max(0.0, _surprise - 0.5) * 0.3
+            _equil_boost = max(0.0, 0.3 - _surprise) * 0.3
+            _rw = self.state.regime_weights
+            _q = min(1.0, _rw.quantum + _quantum_boost)
+            _eq = min(1.0, _rw.equilibrium + _equil_boost)
+            _total = _q + _rw.efficient + _eq
+            self.state.regime_weights = RegimeWeights(
+                quantum=_q / _total,
+                efficient=_rw.efficient / _total,
+                equilibrium=_eq / _total,
+            )
+
         if _tc_failures:
             logger.info(
                 "Task %s: temporal coupling failures — %s",
@@ -1336,6 +1367,20 @@ class ConsciousnessLoop:
             self.precog._last_distance,
             cached_eval is not None,
         )
+
+        # §2 Wire 4: Surprise modulates processing depth (temperature + max tokens)
+        _temperature_mod = 1.0
+        _max_tokens_mod = 1.0
+        if self._current_prediction_error is not None:
+            _surprise = self._current_prediction_error.surprise
+            if _surprise < 0.15:
+                # Low surprise → fast, shallow response
+                _temperature_mod = 0.8
+                _max_tokens_mod = 0.5
+            elif _surprise > 0.6:
+                # High surprise → deep, exploratory response
+                _temperature_mod = 1.2
+                _max_tokens_mod = 1.5
 
         refracted_input, composite_basin, resonates, input_statuses = self.pillars.on_input(
             input_basin, RECEIVE_SLERP_WEIGHT
@@ -1749,11 +1794,16 @@ class ConsciousnessLoop:
         emotion_eval = self.emotion_cache.evaluate(self.basin, self.metrics, 0.0)
 
         # T2.1: Re-compute neurochemicals with accurate phi_delta now that phi_after is known
+        _surprise_signal_post = float(
+            self._current_prediction_error.surprise
+            if self._current_prediction_error is not None
+            else 0.0
+        )
         self._neurochemical = compute_neurochemicals(
             is_awake=not self.sleep.is_asleep,
             phi_delta=self.metrics.phi - phi_before,
             basin_velocity=float(total_distance),
-            surprise=float(self.metrics.humor),
+            surprise=_surprise_signal_post,
             quantum_weight=float(self.state.regime_weights.quantum),
         )
 
