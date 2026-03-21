@@ -14,7 +14,7 @@ Plan reference: L3 (Structural Leg 3)
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -103,7 +103,7 @@ class PeerQueryBus:
     def n_peers(self) -> int:
         return len(self._peers)
 
-    def get_state(self) -> dict:
+    def get_state(self) -> dict[str, int | dict[str, int]]:
         topo = self.mesh_topology()
         return {
             "n_peers": self.n_peers,

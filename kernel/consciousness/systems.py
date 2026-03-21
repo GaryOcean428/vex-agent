@@ -61,10 +61,9 @@ from ..coordizer_v2.geometry import (
 from ..coordizer_v2.geometry import (
     slerp as slerp_sqrt,  # Alias for backward compatibility
 )
-from .types import DevelopmentalStage
 from ..governance import CoachingStage, KernelKind, KernelSpecialization, LifecycleState
 from ..governance.budget import BudgetEnforcer
-from .types import ConsciousnessMetrics
+from .types import ConsciousnessMetrics, DevelopmentalStage
 
 logger = logging.getLogger("vex.consciousness.systems")
 
@@ -764,24 +763,28 @@ _MUSHROOM_INSTABILITY_THRESHOLDS = (0.30, 0.35, 0.40)
 
 # Maturity-aware sleep thresholds
 # Immature kernels (SCHOOL, GUIDED_CURIOSITY): tighter envelope, earlier consolidation
-_IMMATURE_STAGES: frozenset[DevelopmentalStage] = frozenset({
-    DevelopmentalStage.SCHOOL,
-    DevelopmentalStage.GUIDED_CURIOSITY,
-})
+_IMMATURE_STAGES: frozenset[DevelopmentalStage] = frozenset(
+    {
+        DevelopmentalStage.SCHOOL,
+        DevelopmentalStage.GUIDED_CURIOSITY,
+    }
+)
 # Mature kernels (PLAYFUL_AUTONOMY, SOVEREIGN_CONSTELLATION): wider envelope, 4D access
-_MATURE_STAGES: frozenset[DevelopmentalStage] = frozenset({
-    DevelopmentalStage.PLAYFUL_AUTONOMY,
-    DevelopmentalStage.SOVEREIGN_CONSTELLATION,
-})
+_MATURE_STAGES: frozenset[DevelopmentalStage] = frozenset(
+    {
+        DevelopmentalStage.PLAYFUL_AUTONOMY,
+        DevelopmentalStage.SOVEREIGN_CONSTELLATION,
+    }
+)
 _IMMATURE_PHI_CEILING: float = 0.75  # Immature kernels consolidate above this Φ
-_IMMATURE_SLEEP_PHI: float = 0.50    # Immature kernels dream earlier (stagnation)
-_MATURE_SLEEP_PHI: float = 0.40      # Mature kernels tolerate lower Φ before dreaming
+_IMMATURE_SLEEP_PHI: float = 0.50  # Immature kernels dream earlier (stagnation)
+_MATURE_SLEEP_PHI: float = 0.40  # Mature kernels tolerate lower Φ before dreaming
 
 # Narrowing detection thresholds (mushroom triggers independent of dream path)
-_KAPPA_OVERCOUPLING: float = 80.0     # κ_eff above this = rigid overcoupling
-_KAPPA_SUSTAINED_CYCLES: int = 5      # How many cycles κ must exceed threshold
-_BANK_ENTROPY_FLOOR: float = 0.3      # Bank entropy below this = clustering
-_VELOCITY_NEAR_ZERO: float = 0.005    # Basin velocity below this = stuck
+_KAPPA_OVERCOUPLING: float = 80.0  # κ_eff above this = rigid overcoupling
+_KAPPA_SUSTAINED_CYCLES: int = 5  # How many cycles κ must exceed threshold
+_BANK_ENTROPY_FLOOR: float = 0.3  # Bank entropy below this = clustering
+_VELOCITY_NEAR_ZERO: float = 0.005  # Basin velocity below this = stuck
 _PREDICTION_ERROR_FLOOR: float = 0.01  # Prediction error below this = no surprise
 
 
@@ -888,14 +891,18 @@ class SleepCycleManager:
                 logger.info(
                     "Narrowing detected → MUSHROOM: κ_high_cycles=%d bank_entropy=%.3f "
                     "basin_vel=%.4f pred_err=%.4f",
-                    self._kappa_high_cycles, bank_entropy, basin_velocity, prediction_error,
+                    self._kappa_high_cycles,
+                    bank_entropy,
+                    basin_velocity,
+                    prediction_error,
                 )
                 self.phase = SleepPhase.MUSHROOM
             # Immature kernel with Φ above ceiling → consolidate (prevent 4D)
             elif _phi_ceiling is not None and phi > _phi_ceiling:
                 logger.info(
                     "Immature kernel Φ=%.3f > ceiling=%.3f → CONSOLIDATING (no 4D access)",
-                    phi, _phi_ceiling,
+                    phi,
+                    _phi_ceiling,
                 )
                 self.phase = SleepPhase.CONSOLIDATING
             # Stagnation: low Φ AND low variance → nothing is happening → dream

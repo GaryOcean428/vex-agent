@@ -207,12 +207,12 @@ from .systems import (
     HemisphereScheduler,
     MetaReflector,
     PressureTracker,
-    SignAwareAnnealHold,
     QIGChain,
     QIGChainOp,
     QIGGraph,
     SelfNarrative,
     SelfObserver,
+    SignAwareAnnealHold,
     SleepCycleManager,
     SleepPhase,
     TackingController,
@@ -699,7 +699,9 @@ class ConsciousnessLoop:
                 else 1.0
             )
             _bank = getattr(self._coordizer_v2, "bank", None)
-            _bank_entropy = float(_bank.entropy()) if _bank is not None and hasattr(_bank, "entropy") else 1.0
+            _bank_entropy = (
+                float(_bank.entropy()) if _bank is not None and hasattr(_bank, "entropy") else 1.0
+            )
             sleep_phase = self.sleep.should_sleep(
                 self.metrics.phi,
                 self.autonomic.phi_variance,
@@ -915,9 +917,7 @@ class ConsciousnessLoop:
                     _result = TrajectoryBus.integrate(_own_traj, _received)
                     if _result.n_contributors > 1 and _result.integrated_trajectory:
                         async with self.kernel_bus.basin_lock(_k.id):
-                            _k.basin = slerp_sqrt(
-                                _k.basin, _result.integrated_trajectory[0], 0.05
-                            )
+                            _k.basin = slerp_sqrt(_k.basin, _result.integrated_trajectory[0], 0.05)
         self.trajectory_bus.drain_broadcast()
 
         self._maybe_spawn_core8(vel_state["regime"])

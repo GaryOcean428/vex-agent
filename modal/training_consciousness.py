@@ -463,7 +463,10 @@ class TrainingConsciousness:
 
         # 5. Pillar safety
         violations = self._pillar_guard.check(loss, drift)
-        if "topological_bulk" in violations and violations["topological_bulk"]["status"] == "collapse":
+        if (
+            "topological_bulk" in violations
+            and violations["topological_bulk"]["status"] == "collapse"
+        ):
             self._should_abort = True
             self._abort_reason = "Identity collapse: basin drift exceeded divergence threshold"
             logger.warning("ABORT: %s", self._abort_reason)
@@ -1145,7 +1148,9 @@ class SignAwareGradientHold:
                 if self._flip_count >= self.flip_patience:
                     self._frozen_remaining = self.hold_steps
                     self._flip_count = 0
-                    logger.info("Sign-aware hold triggered: freezing LR for %d steps", self.hold_steps)
+                    logger.info(
+                        "Sign-aware hold triggered: freezing LR for %d steps", self.hold_steps
+                    )
                     return True
             elif sign != 0:
                 self._flip_count = 0
@@ -1166,7 +1171,8 @@ class SignAwareGradientHold:
 
 # E8 primitive → kernel specialization mapping for Demeter CoT
 _E8_TO_SPEC: dict[str, str] = {
-    "HRT": "heart", "REL": "heart",
+    "HRT": "heart",
+    "REL": "heart",
     "PER": "perception",
     "MEM": "memory",
     "ACT": "action",
@@ -1337,10 +1343,12 @@ def apply_demeter_warmup(
             wrapped = []
             for msg in messages:
                 if msg.get("role") == "assistant":
-                    wrapped.append({
-                        "role": "assistant",
-                        "content": cot_prefix + msg["content"],
-                    })
+                    wrapped.append(
+                        {
+                            "role": "assistant",
+                            "content": cot_prefix + msg["content"],
+                        }
+                    )
                 else:
                     wrapped.append(msg)
             result.append({**sample, "messages": wrapped})
@@ -1447,7 +1455,6 @@ def run_post_training_diagnostic(
     Returns:
         dict with metrics, health status, and per-prompt results.
     """
-    import torch
 
     prompts = (_DIAGNOSTIC_PROMPTS * ((n_prompts // len(_DIAGNOSTIC_PROMPTS)) + 1))[:n_prompts]
     metrics_collector = TrainingMetrics(

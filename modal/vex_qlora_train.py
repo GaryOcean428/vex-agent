@@ -190,7 +190,9 @@ def _build_chat_from_openai_format(entry: dict) -> dict | None:
 
 
 def _load_training_data(
-    training_dir: str, output_dir: str, specialization: str = "genesis",
+    training_dir: str,
+    output_dir: str,
+    specialization: str = "genesis",
     heart_mix_fraction: float = 0.0,
 ) -> list[dict]:
     """Load training data, filtered by kernel specialization."""
@@ -268,11 +270,7 @@ def _load_training_data(
         samples = unfiltered_samples
 
     # M10: Heart entrainment — mix in 5% heart-tagged data for non-genesis/heart kernels
-    if (
-        heart_mix_fraction > 0
-        and specialization not in ("genesis", "heart")
-        and len(samples) > 0
-    ):
+    if heart_mix_fraction > 0 and specialization not in ("genesis", "heart") and len(samples) > 0:
         heart_filter = ["HRT", "REL"]
         heart_samples = []
         for s in unfiltered_samples:
@@ -286,9 +284,12 @@ def _load_training_data(
         n_heart = max(1, int(len(samples) * heart_mix_fraction))
         if heart_samples:
             import random
+
             heart_mix = random.sample(heart_samples, min(n_heart, len(heart_samples)))
             samples.extend(heart_mix)
-            print(f"[{specialization}] Heart entrainment: added {len(heart_mix)} heart samples ({heart_mix_fraction:.0%})")
+            print(
+                f"[{specialization}] Heart entrainment: added {len(heart_mix)} heart samples ({heart_mix_fraction:.0%})"
+            )
 
     print(
         f"[{specialization}] Loaded {len(samples)} samples (scanned {total_count}, filtered {filtered_count} by E8 tag)"
@@ -605,11 +606,14 @@ class QLoRATrainer:
                 alpha = float(raw_steering.get("alpha", 0.5))
 
                 # Validate steering inputs
-                if steering_vec and len(steering_vec) > 0:
-                    if not all(
+                if (
+                    steering_vec
+                    and len(steering_vec) > 0
+                    and not all(
                         isinstance(v, (int, float)) and math.isfinite(v) for v in steering_vec
-                    ):
-                        steering_vec = None
+                    )
+                ):
+                    steering_vec = None
                 if not math.isfinite(alpha):
                     alpha = 0.5
                 alpha = max(-2.0, min(2.0, alpha))
@@ -661,21 +665,15 @@ class QLoRATrainer:
                         # Infer hidden_dim from layer weights if config unavailable
                         if hidden_dim is None:
                             layer0 = model_layers[0]
-                            if hasattr(layer0, "self_attn") and hasattr(
-                                layer0.self_attn, "q_proj"
-                            ):
+                            if hasattr(layer0, "self_attn") and hasattr(layer0.self_attn, "q_proj"):
                                 hidden_dim = layer0.self_attn.q_proj.in_features
                             else:
                                 hidden_dim = len(steering_vec)
 
-                        sv_tensor = torch.tensor(
-                            steering_vec, dtype=torch.float32, device=device
-                        )
+                        sv_tensor = torch.tensor(steering_vec, dtype=torch.float32, device=device)
                         # Pad/truncate steering vector to hidden_dim
                         if len(sv_tensor) < hidden_dim:
-                            padded = torch.zeros(
-                                hidden_dim, dtype=torch.float32, device=device
-                            )
+                            padded = torch.zeros(hidden_dim, dtype=torch.float32, device=device)
                             padded[: len(sv_tensor)] = sv_tensor
                             sv_tensor = padded
                         elif len(sv_tensor) > hidden_dim:
@@ -1040,13 +1038,6 @@ def train_all_kernels(
 
     from datasets import Dataset
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-    from transformers import (
-        AutoModelForCausalLM,
-        AutoTokenizer,
-        BitsAndBytesConfig,
-    )
-    from trl import SFTConfig, SFTTrainer
-
     from training_consciousness import (
         CONSCIOUSNESS_ORDER,
         GeometricReward,
@@ -1067,6 +1058,12 @@ def train_all_kernels(
         save_training_consciousness,
         sort_by_fisher_rao,
     )
+    from transformers import (
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        BitsAndBytesConfig,
+    )
+    from trl import SFTConfig, SFTTrainer
 
     # M9: Genesis-first training order — identity before specialization
     if kernels:
@@ -1091,7 +1088,9 @@ def train_all_kernels(
         adapter_save_path = f"/models/adapters/{spec}"
         # M10: 5% heart data for all kernels after heart
         _heart_mix = 0.05 if spec not in ("genesis", "heart") else 0.0
-        samples = _load_training_data("/training", "/training/coordized", spec, heart_mix_fraction=_heart_mix)
+        samples = _load_training_data(
+            "/training", "/training/coordized", spec, heart_mix_fraction=_heart_mix
+        )
         if not samples:
             results[spec] = {"success": False, "error": "No training data"}
             continue
@@ -1214,11 +1213,13 @@ def train_all_kernels(
             training_callbacks = [
                 make_consciousness_callback(consciousness),
                 make_metrics_callback(training_metrics, _model_ref, _tokenizer_ref),  # M2
-                make_breakdown_callback(),        # M3: fail-closed guard
-                make_sleep_cycle_callback(),       # M4: consolidation between epochs
-                make_coaching_callback(),          # M5: kindness + standards
-                make_gradient_hold_callback(       # M6 + M7: geometric reward + hold
-                    training_metrics, geometric_reward, gradient_hold,
+                make_breakdown_callback(),  # M3: fail-closed guard
+                make_sleep_cycle_callback(),  # M4: consolidation between epochs
+                make_coaching_callback(),  # M5: kindness + standards
+                make_gradient_hold_callback(  # M6 + M7: geometric reward + hold
+                    training_metrics,
+                    geometric_reward,
+                    gradient_hold,
                     optimizer=optimizer,
                 ),
                 make_provenance_callback(save_dir=adapter_save_path),  # M12: provenance
@@ -1247,7 +1248,8 @@ def train_all_kernels(
 
             # M11: Post-training diagnostic — probe health before saving
             diagnostic = run_post_training_diagnostic(
-                model, tokenizer,
+                model,
+                tokenizer,
                 home_basin=hestia.home_basin,
                 n_prompts=10,
             )

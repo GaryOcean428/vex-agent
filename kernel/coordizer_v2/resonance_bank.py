@@ -422,7 +422,7 @@ class ResonanceBank:
             # Shannon entropy of each simplex point
             safe = np.clip(basin, 1e-12, None)
             total += float(-np.sum(safe * np.log(safe)))
-        return (total / len(self.coordinates)) / max_entropy
+        return float((total / len(self.coordinates)) / max_entropy)
 
     def __len__(self) -> int:
         return len(self.coordinates)
