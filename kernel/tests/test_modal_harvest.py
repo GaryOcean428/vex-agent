@@ -43,13 +43,13 @@ def _is_on_simplex(p: np.ndarray, tol: float = 1e-8) -> bool:
 
 
 def _make_mock_modal_response(
-    n_tokens: int = 50,
+    n_resonances: int = 50,
     vocab_size: int = 1000,
 ) -> dict:
     """Build a mock Modal endpoint response for testing."""
     rng = np.random.default_rng(42)
     tokens = {}
-    for i in range(n_tokens):
+    for i in range(n_resonances):
         fp = rng.dirichlet(np.ones(vocab_size))
         tokens[str(i)] = {
             "string": f"tok_{i}",
@@ -60,7 +60,7 @@ def _make_mock_modal_response(
         "success": True,
         "model_id": "test-model",
         "vocab_size": vocab_size,
-        "total_tokens_processed": n_tokens * 50,
+        "total_resonances_processed": n_resonances * 50,
         "tokens": tokens,
         "elapsed_seconds": 1.5,
     }
@@ -75,62 +75,62 @@ class TestParseModalResponse:
     """Test _parse_modal_response converts endpoint JSON to HarvestResult."""
 
     def test_basic_parse(self):
-        data = _make_mock_modal_response(n_tokens=20, vocab_size=500)
+        data = _make_mock_modal_response(n_resonances=20, vocab_size=500)
         result = _parse_modal_response(data, "test-model", 1.5)
 
         assert isinstance(result, HarvestResult)
         assert result.model_name == "test-model"
         assert result.vocab_size == 500
         assert result.harvest_time_seconds == 1.5
-        assert len(result.token_fingerprints) == 20
+        assert len(result.resonance_fingerprints) == 20
 
     def test_fingerprints_on_simplex(self):
-        data = _make_mock_modal_response(n_tokens=30, vocab_size=200)
+        data = _make_mock_modal_response(n_resonances=30, vocab_size=200)
         result = _parse_modal_response(data, "test-model", 1.0)
 
-        for tid, fp in result.token_fingerprints.items():
-            assert _is_on_simplex(fp), f"Token {tid} fingerprint not on simplex"
+        for tid, fp in result.resonance_fingerprints.items():
+            assert _is_on_simplex(fp), f"Coordinate {tid} fingerprint not on simplex"
 
     def test_fingerprints_correct_dimension(self):
-        data = _make_mock_modal_response(n_tokens=10, vocab_size=300)
+        data = _make_mock_modal_response(n_resonances=10, vocab_size=300)
         result = _parse_modal_response(data, "test-model", 1.0)
 
-        for fp in result.token_fingerprints.values():
+        for fp in result.resonance_fingerprints.values():
             assert fp.shape == (300,)
 
     def test_context_counts_preserved(self):
-        data = _make_mock_modal_response(n_tokens=5, vocab_size=100)
+        data = _make_mock_modal_response(n_resonances=5, vocab_size=100)
         result = _parse_modal_response(data, "test-model", 1.0)
 
         for tid_str, token_data in data["tokens"].items():
             tid = int(tid_str)
             assert result.context_counts[tid] == token_data["context_count"]
 
-    def test_token_strings_preserved(self):
-        data = _make_mock_modal_response(n_tokens=5, vocab_size=100)
+    def test_basin_strings_preserved(self):
+        data = _make_mock_modal_response(n_resonances=5, vocab_size=100)
         result = _parse_modal_response(data, "test-model", 1.0)
 
         for tid_str, token_data in data["tokens"].items():
             tid = int(tid_str)
-            assert result.token_strings[tid] == token_data["string"]
+            assert result.basin_strings[tid] == token_data["string"]
 
     def test_empty_tokens(self):
         data = {
             "success": True,
             "vocab_size": 100,
-            "total_tokens_processed": 0,
+            "total_resonances_processed": 0,
             "tokens": {},
             "elapsed_seconds": 0.1,
         }
         result = _parse_modal_response(data, "test-model", 0.1)
-        assert len(result.token_fingerprints) == 0
+        assert len(result.resonance_fingerprints) == 0
 
     def test_strictly_positive_fingerprints(self):
         """Fingerprints must be strictly positive for Fisher-Rao geometry."""
-        data = _make_mock_modal_response(n_tokens=10, vocab_size=100)
+        data = _make_mock_modal_response(n_resonances=10, vocab_size=100)
         result = _parse_modal_response(data, "test-model", 1.0)
 
-        for fp in result.token_fingerprints.values():
+        for fp in result.resonance_fingerprints.values():
             assert np.all(fp > 0), "Fingerprint has zero/negative entries"
 
 
@@ -143,7 +143,7 @@ class TestSyntheticFallback:
     """Test synthetic harvest generation for Modal-unavailable scenarios."""
 
     def test_generate_synthetic_harvest_dict(self):
-        result = generate_synthetic_harvest(vocab_size=100, n_tokens=50)
+        result = generate_synthetic_harvest(vocab_size=100, n_resonances=50)
         assert "fingerprints" in result
         assert "context_counts" in result
         assert "vocab_size" in result
@@ -151,41 +151,41 @@ class TestSyntheticFallback:
         assert len(result["fingerprints"]) == 50
 
     def test_generate_synthetic_harvest_result(self):
-        result = generate_synthetic_harvest_result(vocab_size=100, n_tokens=50)
+        result = generate_synthetic_harvest_result(vocab_size=100, n_resonances=50)
         assert isinstance(result, HarvestResult)
         assert result.model_name == "synthetic"
         assert result.vocab_size == 100
-        assert len(result.token_fingerprints) == 50
+        assert len(result.resonance_fingerprints) == 50
 
     def test_synthetic_result_on_simplex(self):
-        result = generate_synthetic_harvest_result(vocab_size=200, n_tokens=30)
-        for tid, fp in result.token_fingerprints.items():
+        result = generate_synthetic_harvest_result(vocab_size=200, n_resonances=30)
+        for tid, fp in result.resonance_fingerprints.items():
             assert _is_on_simplex(fp), f"Synthetic token {tid} not on simplex"
 
     def test_synthetic_result_correct_dimension(self):
-        result = generate_synthetic_harvest_result(vocab_size=500, n_tokens=20)
-        for fp in result.token_fingerprints.values():
+        result = generate_synthetic_harvest_result(vocab_size=500, n_resonances=20)
+        for fp in result.resonance_fingerprints.values():
             assert fp.shape == (500,)
 
-    def test_synthetic_result_has_token_strings(self):
-        result = generate_synthetic_harvest_result(n_tokens=10)
-        for tid in result.token_fingerprints:
-            assert tid in result.token_strings
-            assert result.token_strings[tid].startswith("<synthetic_")
+    def test_synthetic_result_has_basin_strings(self):
+        result = generate_synthetic_harvest_result(n_resonances=10)
+        for tid in result.resonance_fingerprints:
+            assert tid in result.basin_strings
+            assert result.basin_strings[tid].startswith("<synthetic_")
 
     def test_synthetic_result_has_context_counts(self):
-        result = generate_synthetic_harvest_result(n_tokens=10)
-        for tid in result.token_fingerprints:
+        result = generate_synthetic_harvest_result(n_resonances=10)
+        for tid in result.resonance_fingerprints:
             assert tid in result.context_counts
             assert result.context_counts[tid] >= 10
 
     def test_synthetic_is_deterministic(self):
-        r1 = generate_synthetic_harvest_result(vocab_size=100, n_tokens=10)
-        r2 = generate_synthetic_harvest_result(vocab_size=100, n_tokens=10)
-        for tid in r1.token_fingerprints:
+        r1 = generate_synthetic_harvest_result(vocab_size=100, n_resonances=10)
+        r2 = generate_synthetic_harvest_result(vocab_size=100, n_resonances=10)
+        for tid in r1.resonance_fingerprints:
             np.testing.assert_array_equal(
-                r1.token_fingerprints[tid],
-                r2.token_fingerprints[tid],
+                r1.resonance_fingerprints[tid],
+                r2.resonance_fingerprints[tid],
             )
 
 
@@ -278,7 +278,7 @@ class TestHarvestModelAuto:
     @pytest.mark.asyncio
     async def test_returns_harvest_result(self):
         """harvest_model_auto should return HarvestResult, not dict."""
-        mock_result = generate_synthetic_harvest_result(vocab_size=100, n_tokens=10)
+        mock_result = generate_synthetic_harvest_result(vocab_size=100, n_resonances=10)
 
         with (
             patch("kernel.config.settings.settings") as mock_settings,
@@ -295,7 +295,7 @@ class TestHarvestModelAuto:
 
             result = await harvest_model_auto(model_id="test-model")
             assert isinstance(result, HarvestResult)
-            assert len(result.token_fingerprints) == 10
+            assert len(result.resonance_fingerprints) == 10
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -321,7 +321,7 @@ class TestFromModalHarvestFallback:
         ):
             coordizer = await CoordizerV2.from_modal_harvest(
                 output_dir=str(tmp_path),
-                target_tokens=100,
+                target_resonances=100,
             )
 
         assert isinstance(coordizer, CoordizerV2)
@@ -340,8 +340,8 @@ class TestFromModalHarvestFallback:
         ):
             coordizer = await CoordizerV2.from_modal_harvest(
                 output_dir=str(tmp_path),
-                target_tokens=100,
+                target_resonances=100,
             )
 
         for tid, coord in coordizer.bank.coordinates.items():
-            assert _is_on_simplex(coord), f"Token {tid}: not on simplex"
+            assert _is_on_simplex(coord), f"Coordinate {tid}: not on simplex"

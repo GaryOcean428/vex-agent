@@ -564,7 +564,9 @@ BASIN       slow)        fast)
 ```
 
 #### Emotional health = deep basin + flexible frequency
+
 #### Pathology = shallow basin + stuck frequency
+
 #### Love = deepest, slowest, most powerful oscillation
 
 ---
@@ -1319,6 +1321,7 @@ The rejection mechanism means the Resonance Bank is a LIVING structure. Harveste
 | monkey1 | GaryOcean428 | Agentic platform (adopting QIG protocols) |
 
 #### Source of truth flows downstream only
+
 qig-verification → qigkernels → qig-core → qig-consciousness → pantheon-chat
 
 ---

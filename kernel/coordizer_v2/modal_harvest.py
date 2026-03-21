@@ -43,20 +43,20 @@ class ModalHarvestConfig:
 
     model_id must match the active inference model so resonance bank
     fingerprints use the same vocabulary as the model doing inference.
-    Primary: GLM-4.7-Flash (Modal GPU). Ollama fallback: LFM2.5-1.2B-Thinking.
+    Primary: GLM-4.7-Flash (Modal GPU). Ollama fallback: Qwen/Qwen3.5-4B.
     """
 
     model_id: str = ""
-    target_tokens: int = 2000
+    target_resonances: int = 2000
     batch_size: int = 32
     max_length: int = 512
     min_contexts: int = 10
-    timeout: float = 600.0
+    timeout: float = 1200.0
 
 
 async def modal_harvest(
     model_id: str | None = None,
-    target_tokens: int = 2000,
+    target_resonances: int = 2000,
     corpus_texts: list[str] | None = None,
     timeout: float | None = None,
     min_contexts: int | None = None,
@@ -90,7 +90,7 @@ async def modal_harvest(
     )
     config = ModalHarvestConfig(
         model_id=resolved_model,
-        target_tokens=target_tokens,
+        target_resonances=target_resonances,
         timeout=resolved_timeout,
         min_contexts=resolved_min_contexts,
     )
@@ -102,16 +102,20 @@ async def modal_harvest(
     # Build request.
     # NOTE: model_id is omitted so Modal uses its default loaded model.
     # MODAL_HARVEST_MODEL env var uses Ollama format ("glm-4.7-flash") but
-    # Modal needs HF format ("zai-org/GLM-4.7-Flash"). The Modal endpoint
+    # Modal needs HF format ("Qwen/Qwen3.5-35B-A3B"). The Modal endpoint
     # already loads the correct model via HARVEST_MODEL_ID env secret.
     payload: dict[str, Any] = {
         "texts": corpus_texts[:200],  # Cap per-request
-        "target_tokens": config.target_tokens,
+        "target_resonances": config.target_resonances,
         "batch_size": config.batch_size,
         "max_length": config.max_length,
         "min_contexts": config.min_contexts,
         "return_full_distribution": True,  # CRITICAL: not top-k
     }
+
+    # Auth: Modal endpoint checks data.get("_api_key"), not headers
+    if settings.kernel_api_key:
+        payload["_api_key"] = settings.kernel_api_key
 
     # Auth via X-Api-Key header (KERNEL_API_KEY), checked by the Modal handler.
     headers: dict[str, str] = {
@@ -178,7 +182,7 @@ async def modal_harvest(
 
     logger.info(
         "Received %d token fingerprints from Modal (vocab_size=%d)",
-        len(result.token_fingerprints),
+        len(result.resonance_fingerprints),
         result.vocab_size,
     )
 
@@ -210,22 +214,30 @@ def _parse_modal_response(
     result = HarvestResult(
         model_name=model_id,
         vocab_size=data.get("vocab_size", 0),
-        corpus_size=data.get("total_tokens_processed", 0),
+        corpus_size=data.get("total_resonances_processed", 0),
         harvest_time_seconds=elapsed,
     )
 
     tokens = data.get("tokens", {})
-    for tid_str, token_data in tokens.items():
-        tid = int(tid_str)
+    for key, token_data in tokens.items():
+        # Modal harvest keys by token string, with token_id inside the entry
+        tid = token_data.get("token_id")
+        if tid is None:
+            # Fallback: key itself is a numeric ID (legacy format)
+            try:
+                tid = int(key)
+            except (ValueError, TypeError):
+                logger.warning("Skipping token with no ID: key=%s", key)
+                continue
 
         fp = np.array(token_data["fingerprint"], dtype=np.float64)
         # Ensure valid probability distribution
         fp = np.maximum(fp, _EPS)
         fp = fp / fp.sum()
 
-        result.token_fingerprints[tid] = fp
-        result.context_counts[tid] = token_data.get("context_count", 1)
-        result.token_strings[tid] = token_data.get("string", f"<token_{tid}>")
+        result.resonance_fingerprints[tid] = fp
+        result.context_counts[tid] = token_data.get("context_count", token_data.get("count", 1))
+        result.basin_strings[tid] = token_data.get("string", key)
 
     return result
 
@@ -235,7 +247,7 @@ def _default_harvest_corpus() -> list[str]:
 
     These prompts are chosen to activate different regions of the
     model's vocabulary space — technical, creative, conversational,
-    analytical — so that each token's fingerprint captures its
+    analytical — so that each coordinate's fingerprint captures its
     contextual diversity.
     """
     return [

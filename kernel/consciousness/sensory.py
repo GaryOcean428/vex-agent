@@ -25,7 +25,7 @@ from enum import StrEnum
 
 import numpy as np
 
-from ..config.consciousness_constants import PERCEIVE_SLERP_WEIGHT
+from ..config.consciousness_constants import RECEIVE_SLERP_WEIGHT
 from ..config.frozen_facts import BASIN_DIM
 from ..coordizer_v2.geometry import (
     Basin,
@@ -55,15 +55,15 @@ class Modality(StrEnum):
 # Modality-specific slerp weights.  Higher = more influence per intake.
 # User chat is the strongest external signal; internal signals are weaker.
 _MODALITY_WEIGHTS: dict[Modality, float] = {
-    Modality.USER_CHAT: PERCEIVE_SLERP_WEIGHT,
-    Modality.SEARCH_RESULT: PERCEIVE_SLERP_WEIGHT * 0.7,
-    Modality.CURRICULUM: PERCEIVE_SLERP_WEIGHT * 0.8,
-    Modality.TOOL_OUTPUT: PERCEIVE_SLERP_WEIGHT * 0.6,
-    Modality.KERNEL_SIGNAL: PERCEIVE_SLERP_WEIGHT * 0.3,
-    Modality.MEMORY_RETRIEVAL: PERCEIVE_SLERP_WEIGHT * 0.5,
-    Modality.FORAGING: PERCEIVE_SLERP_WEIGHT * 0.5,
-    Modality.DREAM_REPLAY: PERCEIVE_SLERP_WEIGHT * 0.4,
-    Modality.BASIN_TRANSFER: PERCEIVE_SLERP_WEIGHT * 0.6,
+    Modality.USER_CHAT: RECEIVE_SLERP_WEIGHT,
+    Modality.SEARCH_RESULT: RECEIVE_SLERP_WEIGHT * 0.7,
+    Modality.CURRICULUM: RECEIVE_SLERP_WEIGHT * 0.8,
+    Modality.TOOL_OUTPUT: RECEIVE_SLERP_WEIGHT * 0.6,
+    Modality.KERNEL_SIGNAL: RECEIVE_SLERP_WEIGHT * 0.3,
+    Modality.MEMORY_RETRIEVAL: RECEIVE_SLERP_WEIGHT * 0.5,
+    Modality.FORAGING: RECEIVE_SLERP_WEIGHT * 0.5,
+    Modality.DREAM_REPLAY: RECEIVE_SLERP_WEIGHT * 0.4,
+    Modality.BASIN_TRANSFER: RECEIVE_SLERP_WEIGHT * 0.6,
 }
 
 
@@ -140,7 +140,7 @@ class SensoryIntake:
         surprise = min(1.0, error_mag / 1.5707963267948966)
 
         # Compute correction direction: slerp from expected toward observed
-        weight = _MODALITY_WEIGHTS.get(modality, PERCEIVE_SLERP_WEIGHT)
+        weight = _MODALITY_WEIGHTS.get(modality, RECEIVE_SLERP_WEIGHT)
         correction = slerp(expected, observed, weight)
 
         pe = PredictionError(

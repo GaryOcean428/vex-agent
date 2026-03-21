@@ -7,7 +7,7 @@ geometric structure survives. The key tests:
 1. κ Measurement: Does coupling converge to κ* ≈ 64?
 2. β Running Coupling: Does κ run from low values at fine
    scales to κ* at coarse scales?
-3. Harmonic Ratios: Are semantically related tokens at
+3. Harmonic Ratios: Are semantically related coordinates at
    consonant frequency ratios?
 4. Semantic Correlation: Does Fisher-Rao distance correlate
    with human-judged semantic distance?
@@ -99,7 +99,7 @@ def validate_resonance_bank(
     result.tier_distribution = bank.tier_distribution()
 
     # Test 6: E8 Eigenvalue Test (informational — E8 hypothesis NOT supported empirically)
-    # Empirical result (GLM-4.7-Flash, 277 tokens): score = 0.452, expected ~0.877.
+    # Empirical result (GLM-4.7-Flash, 277 resonances): score = 0.452, expected ~0.877.
     # Variance is broadly distributed across all 64 dims; n=32 is the correct lens dim.
     if eigenvalues is not None and len(eigenvalues) >= E8_RANK:
         total = np.sum(eigenvalues)
@@ -107,7 +107,7 @@ def validate_resonance_bank(
             e8_var = float(np.sum(eigenvalues[:E8_RANK]) / total)
             if verbose:
                 logger.info(f"\nE8 eigenvalue test: top-8 variance = {e8_var:.3f}")
-                logger.info("  Empirical baseline (277 real tokens): ~0.452")
+                logger.info("  Empirical baseline (277 real resonances): ~0.452")
                 logger.info("  E8 hypothesis NOT supported — n=32 recommended for lens dim")
                 logger.info(f"  NOTE: score={e8_var:.3f}")
 
@@ -150,13 +150,13 @@ def _measure_kappa(
 ) -> tuple[float, float]:
     """Measure effective coupling constant κ.
 
-    Method: For random token pairs at various distances,
+    Method: For random coordinate pairs at various distances,
     compute κ = 1 / (d_FR² + ε). At the fixed point, average κ
     across moderate distances should converge to κ* ≈ 64.
     """
     if len(bank) < 50:
         if verbose:
-            logger.info("Too few tokens for κ measurement")
+            logger.info("Too few coordinates for κ measurement")
         return (0.0, 0.0)
 
     bank._ensure_matrix()
@@ -314,7 +314,7 @@ def _measure_harmonic_ratios(bank: ResonanceBank, verbose: bool = True) -> float
 def _measure_semantic_correlation(bank: ResonanceBank, verbose: bool = True) -> float:
     """Measure correlation between Fisher-Rao distance and semantic distance."""
     string_to_id: dict[str, int] = {}
-    for tid, s in bank.token_strings.items():
+    for tid, s in bank.basin_strings.items():
         s_clean = s.strip().lower()
         if s_clean:
             string_to_id[s_clean] = tid

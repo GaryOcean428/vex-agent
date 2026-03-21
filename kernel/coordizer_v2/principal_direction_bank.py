@@ -105,7 +105,7 @@ class PrincipalDirectionBank:
                 computed by Fisher-Rao PGA eigendecomposition.
             frechet_mean: (source_dim,) Fréchet mean on Δ^(source_dim-1).
             eigenvalues: (target_dim,) eigenvalue spectrum.
-            meta: Optional metadata dict (e.g. model_id, n_tokens).
+            meta: Optional metadata dict (e.g. model_id, n_resonances).
         """
         return cls(
             directions=np.asarray(principal_directions, dtype=np.float64),

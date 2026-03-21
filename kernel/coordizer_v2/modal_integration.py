@@ -151,7 +151,7 @@ class ModalHarvestClient:
                 {
                     "success": True,
                     "vocab_size": 65536,
-                    "total_tokens_processed": 12345,
+                    "total_resonances_processed": 12345,
                     "tokens": {
                         "42": {
                             "string": "hello",
@@ -168,7 +168,7 @@ class ModalHarvestClient:
             return None
 
         # Send all texts in a single request — the Modal endpoint
-        # aggregates across all texts internally (Fréchet means per token).
+        # aggregates across all texts internally (Fréchet means per coordinate).
         result = await self._harvest_batch(texts, max_length)
         if result is None or not result.get("success"):
             return None
@@ -181,7 +181,7 @@ class ModalHarvestClient:
         min_contexts: int = 10,
         max_length: int = 512,
     ) -> dict[str, Any] | None:
-        """Harvest and compute Fréchet mean fingerprints per token.
+        """Harvest and compute Fréchet mean fingerprints per coordinate.
 
         This is the full pipeline:
             texts → Modal GPU → raw logits → Fréchet means on Δ^(V-1)
@@ -331,7 +331,7 @@ class ModalHarvestClient:
 
 def generate_synthetic_harvest(
     vocab_size: int = 32000,
-    n_tokens: int = 5000,
+    n_resonances: int = 5000,
     basin_dim: int = 64,
 ) -> dict[str, Any]:
     """Generate synthetic harvest data for development/testing.
@@ -348,7 +348,7 @@ def generate_synthetic_harvest(
     fingerprints: dict[int, NDArray[np.float64]] = {}
     context_counts: dict[int, int] = {}
 
-    for i in range(n_tokens):
+    for i in range(n_resonances):
         # Dirichlet distribution → point on Δ^(V-1)
         # Use varying concentration to simulate different token types
         alpha = rng.uniform(0.1, 2.0)
@@ -365,7 +365,7 @@ def generate_synthetic_harvest(
 
 def generate_synthetic_harvest_result(
     vocab_size: int = 32000,
-    n_tokens: int = 500,
+    n_resonances: int = 500,
 ) -> HarvestResult:
     """Generate a synthetic HarvestResult for fallback when Modal is unavailable.
 
@@ -386,11 +386,11 @@ def generate_synthetic_harvest_result(
         harvest_time_seconds=0.0,
     )
 
-    for i in range(n_tokens):
+    for i in range(n_resonances):
         alpha = rng.uniform(0.1, 2.0)
         fp = rng.dirichlet(np.ones(vocab_size) * alpha).astype(np.float64)
-        result.token_fingerprints[i] = fp
+        result.resonance_fingerprints[i] = fp
         result.context_counts[i] = int(rng.integers(10, 500))
-        result.token_strings[i] = f"<synthetic_{i}>"
+        result.basin_strings[i] = f"<synthetic_{i}>"
 
     return result

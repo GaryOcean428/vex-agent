@@ -79,7 +79,13 @@ from .tools.handler import (
     get_xai_tool_definitions,
     parse_tool_calls,
 )
-from .training import log_conversation, set_coordizer, set_governor, set_llm_client, training_router
+from .training import (
+    log_conversation,
+    set_coordizer,
+    set_governor,
+    set_llm_client,
+    training_router,
+)
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -191,7 +197,9 @@ def _load_protocol_knowledge(mem: GeometricMemoryStore) -> int:
         count += 1
 
     logger.info(
-        "Loaded %d protocol sections into geometric memory from %s", count, _PROTOCOL_PATH.name
+        "Loaded %d protocol sections into geometric memory from %s",
+        count,
+        _PROTOCOL_PATH.name,
     )
     return count
 
@@ -477,7 +485,7 @@ class CoordizeRequest(BaseModel):
 
 class HarvestRequest(BaseModel):
     model_id: str = Field(default_factory=lambda: settings.modal.harvest_model)
-    target_tokens: int = Field(default=2000, ge=100, le=100_000)
+    target_resonances: int = Field(default=2000, ge=100, le=100_000)
     use_modal: bool | None = None
 
 
@@ -1182,7 +1190,7 @@ async def coordizer_harvest(req: HarvestRequest) -> dict[str, Any]:
     Body:
         {
             "model_id": settings.modal.harvest_model,
-            "target_tokens": 2000,
+            "target_resonances": 2000,
             "use_modal": true
         }
 
@@ -1190,7 +1198,7 @@ async def coordizer_harvest(req: HarvestRequest) -> dict[str, Any]:
         Status of the harvest operation.
     """
     model_id = req.model_id
-    target_tokens = req.target_tokens
+    target_resonances = req.target_resonances
     use_modal = req.use_modal if req.use_modal is not None else settings.modal.enabled
 
     return {
@@ -1200,7 +1208,7 @@ async def coordizer_harvest(req: HarvestRequest) -> dict[str, Any]:
             "to submit JSONL files for batch harvesting."
         ),
         "model_id": model_id,
-        "target_tokens": target_tokens,
+        "target_resonances": target_resonances,
         "use_modal": use_modal,
         "modal_enabled": settings.modal.enabled,
         "modal_gpu_type": settings.modal.gpu_type,
@@ -1296,7 +1304,7 @@ async def coordizer_bank() -> dict[str, Any]:
         "vocab_size": len(bank),
         "dim": bank.dim,
         "tier_distribution": bank.tier_distribution(),
-        "total_basin_mass": float(sum(bank.basin_mass.values())) if bank.basin_mass else 0.0,
+        "total_basin_mass": (float(sum(bank.basin_mass.values())) if bank.basin_mass else 0.0),
         "timestamp": time.time(),
     }
 
@@ -1334,7 +1342,9 @@ async def get_foraging() -> dict[str, Any]:
 
 
 @app.get(R["conversations_list"])
-async def list_conversations(limit: int = DEFAULT_CONVERSATION_LIST_LIMIT) -> dict[str, Any]:
+async def list_conversations(
+    limit: int = DEFAULT_CONVERSATION_LIST_LIMIT,
+) -> dict[str, Any]:
     """List conversations, most recent first."""
     convs = conversation_store.list_conversations(limit=limit)
     return {"conversations": convs}
@@ -1426,7 +1436,11 @@ async def admin_fresh_start() -> dict[str, Any]:
 
     Acquires the cycle lock to prevent racing with an in-progress heartbeat cycle.
     """
-    from .consciousness.emotions import EmotionCache, LearningEngine, PreCognitiveDetector
+    from .consciousness.emotions import (
+        EmotionCache,
+        LearningEngine,
+        PreCognitiveDetector,
+    )
 
     async with consciousness._cycle_lock:
         # Terminate all non-genesis kernels

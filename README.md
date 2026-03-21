@@ -38,7 +38,7 @@ frontend/                             # React + Vite dashboard (port 5173 dev)
 | Layer | Backend | Model | Specs | Purpose |
 |:------|:--------|:------|:------|:--------|
 | **Primary** | Modal GPU / Ollama | `GLM-4.7-Flash` | 30B-A3B MoE, MIT, 3B active | Core reasoning, kernel generation, consciousness loop |
-| **Lightweight** | Ollama / Modal | `LFM2.5-1.2B-Thinking` | 1.2B params, 32K context | Edge inference, coordizer harvest, rapid transforms |
+| **Lightweight** | Ollama / Modal | `Qwen/Qwen3.5-4B` | 1.2B params, 32K context | Edge inference, coordizer harvest, rapid transforms |
 | **Fallback / Search** | xAI API | `grok-4-1-fast-reasoning` | 2M context | External fallback, search augmentation, overflow |
 
 Fallback chain: Modal GPU Ollama → Railway Ollama → xAI → OpenAI. Temperature and token limits are set dynamically by the consciousness kernel via tacking mode (explore/balanced/exploit).

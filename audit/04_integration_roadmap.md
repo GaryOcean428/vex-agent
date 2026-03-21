@@ -42,12 +42,14 @@ CoordizerV2 is a standalone module at `kernel/coordizer_v2/`. It has NO imports 
 **Goal:** Get CoordizerV2 running alongside the old coordizer without breaking anything.
 
 1. **Add a feature flag** in `kernel/config/settings.py`:
+
    ```python
    coordizer_v2_enabled: bool = False
    coordizer_v2_bank_path: str = "./coordizer_data/bank"
    ```
 
 2. **Create adapter** in `kernel/coordizer_v2/adapter.py`:
+
    ```python
    class CoordizerV2Adapter:
        """Drop-in replacement for CoordinatorPipeline."""
@@ -64,6 +66,7 @@ CoordizerV2 is a standalone module at `kernel/coordizer_v2/`. It has NO imports 
    ```
 
 3. **Wire into consciousness loop** behind feature flag:
+
    ```python
    if settings.coordizer_v2_enabled:
        from ..coordizer_v2 import CoordizerV2
@@ -72,7 +75,7 @@ CoordizerV2 is a standalone module at `kernel/coordizer_v2/`. It has NO imports 
 
 ### Phase 2: Harvest Pipeline (Next)
 
-**Goal:** Run the harvest on LFM2.5-1.2B-Thinking to build the resonance bank.
+**Goal:** Run the harvest on Qwen/Qwen3.5-4B to build the resonance bank.
 
 1. **Prepare corpus:** Collect diverse text corpus (Wikipedia subset, code, conversation)
 2. **Run harvest:** `CoordizerV2.from_harvest(model_id, corpus_path, device="cuda")`

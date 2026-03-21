@@ -35,7 +35,7 @@ def _make_bank_with_entries(entries: dict[str, Basin]) -> ResonanceBank:
     bank = ResonanceBank(target_dim=BASIN_DIM)
     for i, (name, basin) in enumerate(entries.items()):
         bank.coordinates[i] = to_simplex(basin)
-        bank.token_strings[i] = name
+        bank.basin_strings[i] = name
         bank.tiers[i] = HarmonicTier.FUNDAMENTAL
         bank.basin_mass[i] = 0.5
         bank.frequencies[i] = 1.0

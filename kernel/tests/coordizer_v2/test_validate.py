@@ -40,7 +40,7 @@ def populated_bank(rng) -> ResonanceBank:
     for i in range(100):
         basin = rng.dirichlet(np.ones(BASIN_DIM))
         bank.coordinates[i] = to_simplex(basin)
-        bank.token_strings[i] = f"token_{i}"
+        bank.basin_strings[i] = f"token_{i}"
         if i < 10:
             bank.tiers[i] = HarmonicTier.FUNDAMENTAL
         elif i < 30:
@@ -70,7 +70,7 @@ def populated_bank(rng) -> ResonanceBank:
     for name, tid in semantic_tokens.items():
         basin = rng.dirichlet(np.ones(BASIN_DIM))
         bank.coordinates[tid] = to_simplex(basin)
-        bank.token_strings[tid] = name
+        bank.basin_strings[tid] = name
         bank.tiers[tid] = HarmonicTier.FUNDAMENTAL
         bank.frequencies[tid] = 440.0
         bank.basin_mass[tid] = 1.0

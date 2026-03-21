@@ -334,7 +334,7 @@ class TestResonanceBankBasics:
         for i in range(50):
             basin = rng.dirichlet(np.ones(BASIN_DIM))
             bank.coordinates[i] = to_simplex(basin)
-            bank.token_strings[i] = f"token_{i}"
+            bank.basin_strings[i] = f"token_{i}"
             bank.tiers[i] = HarmonicTier.FUNDAMENTAL if i < 10 else HarmonicTier.FIRST_HARMONIC
             bank.frequencies[i] = 50.0 + i * 10.0
             bank.basin_mass[i] = 1.0 / (1 + i * 0.01)
@@ -357,7 +357,7 @@ class TestResonanceBankBasics:
     def test_nearest_uses_fisher_rao(self, small_bank):
         """Nearest-neighbour search must use Fisher-Rao, not Euclidean."""
         query = to_simplex(np.random.randn(BASIN_DIM))
-        tid, d = small_bank.nearest_token(query)
+        tid, d = small_bank.nearest_coord(query)
         # Verify the distance matches Fisher-Rao
         expected = fisher_rao_distance(query, small_bank.coordinates[tid])
         assert abs(d - expected) < 1e-6, f"Distance mismatch: {d} vs {expected}"
@@ -381,7 +381,7 @@ class TestCoordizerV2Integration:
         for i in range(100):
             basin = rng.dirichlet(np.ones(BASIN_DIM))
             bank.coordinates[i] = to_simplex(basin)
-            bank.token_strings[i] = f"tok_{i}"
+            bank.basin_strings[i] = f"tok_{i}"
             bank.tiers[i] = HarmonicTier.FUNDAMENTAL
             bank.frequencies[i] = 440.0
             bank.basin_mass[i] = 1.0
@@ -425,7 +425,7 @@ class TestValidationPipeline:
         for i in range(100):
             basin = rng.dirichlet(np.ones(BASIN_DIM))
             bank.coordinates[i] = to_simplex(basin)
-            bank.token_strings[i] = f"token_{i}"
+            bank.basin_strings[i] = f"token_{i}"
             if i < 10:
                 bank.tiers[i] = HarmonicTier.FUNDAMENTAL
             elif i < 30:

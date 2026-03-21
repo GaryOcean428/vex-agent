@@ -29,7 +29,7 @@ def rng():
 @pytest.fixture
 def sample_compression_result(rng):
     """Create a synthetic CompressionResult for testing."""
-    n_tokens = 50
+    n_resonances = 50
     source_dim = 128
 
     # Simulate eigenvalues with E8-like structure
@@ -42,14 +42,14 @@ def sample_compression_result(rng):
     result = CompressionResult(
         source_dim=source_dim,
         target_dim=BASIN_DIM,
-        n_tokens=n_tokens,
+        n_resonances=n_resonances,
         eigenvalues=eigenvalues,
         frechet_mean_full=rng.dirichlet(np.ones(source_dim)),
-        token_strings={i: f"token_{i}" for i in range(n_tokens)},
+        basin_strings={i: f"token_{i}" for i in range(n_resonances)},
     )
 
     # Generate compressed coordinates on Δ⁶³
-    for i in range(n_tokens):
+    for i in range(n_resonances):
         basin = rng.dirichlet(np.ones(BASIN_DIM))
         result.compressed[i] = basin
 

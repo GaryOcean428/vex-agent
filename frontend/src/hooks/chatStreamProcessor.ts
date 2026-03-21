@@ -30,6 +30,7 @@ export function buildPipelineTrace(
     synthesis: null,
     reflection: null,
     bypassed: false,
+    fallback_reason: "",
   };
 
   if (event.stage === "selection") {
@@ -39,6 +40,7 @@ export function buildPipelineTrace(
       trace.selection_duration_ms = event.duration_ms ?? 0;
       trace.eligible_count = event.eligible_count ?? 0;
       trace.bypassed = event.bypassed ?? false;
+      trace.fallback_reason = event.fallback_reason ?? "";
     }
   } else if (event.stage === "generation") {
     if (event.status === "kernel_done") {
@@ -51,7 +53,7 @@ export function buildPipelineTrace(
         fr_distance: event.fr_distance ?? 0,
         geometric_raw: event.geometric_raw ?? "",
         llm_expanded: event.llm_expanded ?? false,
-        geometric_tokens: event.geometric_tokens ?? 0,
+        geometric_resonances: event.geometric_resonances ?? 0,
       }];
     } else if (event.status === "complete") {
       trace.generation_duration_ms = event.duration_ms ?? 0;

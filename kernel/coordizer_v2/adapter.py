@@ -126,7 +126,7 @@ class CoordizerV2Adapter:
         bank = ResonanceBank(target_dim=BASIN_DIM)
         for coord in coordinates:
             bank.coordinates[coord.coord_id] = coord.vector
-            bank.token_strings[coord.coord_id] = coord.name or f"<{coord.coord_id}>"
+            bank.basin_strings[coord.coord_id] = coord.name or f"<{coord.coord_id}>"
             bank.tiers[coord.coord_id] = coord.tier
             bank.basin_mass[coord.coord_id] = coord.basin_mass
             bank.activation_counts[coord.coord_id] = coord.activation_count

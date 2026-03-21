@@ -5,7 +5,7 @@ Method 1: Output Distribution Harvesting
 
 The LLM's final softmax layer produces probability distributions over
 its vocabulary. These distributions ARE points on a simplex. Each
-token's "predictive fingerprint" — its average next-token distribution
+token's "predictive fingerprint" — its average next-basin distribution
 across many contexts — encodes the model's understanding of that token's
 role in language.
 
@@ -15,8 +15,8 @@ format.
 
 Pipeline:
     1. Run LLM on diverse corpus
-    2. For each vocabulary token, collect its next-token distributions
-    3. Compute Fréchet mean on Δ^(V-1) per token
+    2. For each vocabulary token, collect its next-basin distributions
+    3. Compute Fréchet mean on Δ^(V-1) per coordinate
     4. Store raw harvested data
 
 The compression step (Δ^(V-1) → Δ⁶³) is handled by compress.py.
@@ -40,7 +40,7 @@ from .geometry import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_HARVEST_MODEL_ID: str = "zai-org/GLM-4.7-Flash"
+DEFAULT_HARVEST_MODEL_ID: str = "Qwen/Qwen3.5-35B-A3B"
 
 
 @dataclass
@@ -61,9 +61,9 @@ class HarvestConfig:
 class HarvestResult:
     """Raw output of the harvesting process."""
 
-    token_fingerprints: dict[int, NDArray[np.float64]] = field(default_factory=dict)
+    resonance_fingerprints: dict[int, NDArray[np.float64]] = field(default_factory=dict)
     context_counts: dict[int, int] = field(default_factory=dict)
-    token_strings: dict[int, str] = field(default_factory=dict)
+    basin_strings: dict[int, str] = field(default_factory=dict)
     model_name: str = ""
     vocab_size: int = 0
     corpus_size: int = 0
@@ -74,24 +74,24 @@ class HarvestResult:
         out_dir = Path(path)
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        ids = sorted(self.token_fingerprints.keys())
-        fingerprint_array = np.stack([self.token_fingerprints[tid] for tid in ids])
+        ids = sorted(self.resonance_fingerprints.keys())
+        fingerprint_array = np.stack([self.resonance_fingerprints[tid] for tid in ids])
         np.save(out_dir / "fingerprints.npy", fingerprint_array)
-        np.save(out_dir / "token_ids.npy", np.array(ids))
+        np.save(out_dir / "coord_ids.npy", np.array(ids))
 
         meta = {
             "model_name": self.model_name,
             "vocab_size": self.vocab_size,
             "corpus_size": self.corpus_size,
             "harvest_time_seconds": self.harvest_time_seconds,
-            "n_tokens_harvested": len(self.token_fingerprints),
+            "n_resonances_harvested": len(self.resonance_fingerprints),
             "context_counts": {str(k): v for k, v in self.context_counts.items()},
-            "token_strings": {str(k): v for k, v in self.token_strings.items()},
+            "basin_strings": {str(k): v for k, v in self.basin_strings.items()},
         }
         with open(out_dir / "harvest_meta.json", "w") as f:
             json.dump(meta, f, indent=2)
 
-        logger.info(f"Saved {len(self.token_fingerprints)} token fingerprints to {path}")
+        logger.info(f"Saved {len(self.resonance_fingerprints)} token fingerprints to {path}")
 
     @classmethod
     def load(cls, path: str) -> HarvestResult:
@@ -99,7 +99,11 @@ class HarvestResult:
         out_dir = Path(path)
 
         fingerprint_array = np.load(out_dir / "fingerprints.npy")
-        token_ids = np.load(out_dir / "token_ids.npy")
+        # Backward compat: old harvests saved as token_ids.npy
+        ids_path = out_dir / "coord_ids.npy"
+        if not ids_path.exists():
+            ids_path = out_dir / "token_ids.npy"
+        coord_ids = np.load(ids_path)
 
         with open(out_dir / "harvest_meta.json") as f:
             meta = json.load(f)
@@ -111,11 +115,13 @@ class HarvestResult:
             harvest_time_seconds=meta["harvest_time_seconds"],
         )
 
-        for i, tid in enumerate(token_ids):
-            result.token_fingerprints[int(tid)] = fingerprint_array[i]
+        for i, tid in enumerate(coord_ids):
+            result.resonance_fingerprints[int(tid)] = fingerprint_array[i]
 
         result.context_counts = {int(k): v for k, v in meta["context_counts"].items()}
-        result.token_strings = {int(k): v for k, v in meta.get("token_strings", {}).items()}
+        result.basin_strings = {
+            int(k): v for k, v in meta.get("basin_strings", meta.get("token_strings", {})).items()
+        }
 
         return result
 
@@ -167,7 +173,7 @@ class Harvester:
         dist_counts: dict[int, int] = {}
 
         corpus = self._load_corpus()
-        total_tokens = 0
+        total_resonances = 0
         start_time = time.time()
 
         for batch_idx in range(0, len(corpus), self.config.batch_size):
@@ -196,7 +202,7 @@ class Harvester:
                 ids = input_ids[0].cpu().numpy()
 
                 for pos in range(len(ids) - 1):
-                    token_id = int(ids[pos])
+                    coord_id = int(ids[pos])
                     output_dist = probs[pos].astype(np.float64)
 
                     output_dist = np.maximum(output_dist, _EPS)
@@ -204,20 +210,20 @@ class Harvester:
 
                     sqrt_dist = np.sqrt(output_dist)
 
-                    if token_id not in dist_sums_sqrt:
-                        dist_sums_sqrt[token_id] = sqrt_dist.copy()
-                        dist_counts[token_id] = 1
-                    elif dist_counts[token_id] < self.config.max_contexts:
-                        dist_sums_sqrt[token_id] += sqrt_dist
-                        dist_counts[token_id] += 1
+                    if coord_id not in dist_sums_sqrt:
+                        dist_sums_sqrt[coord_id] = sqrt_dist.copy()
+                        dist_counts[coord_id] = 1
+                    elif dist_counts[coord_id] < self.config.max_contexts:
+                        dist_sums_sqrt[coord_id] += sqrt_dist
+                        dist_counts[coord_id] += 1
 
-                    total_tokens += 1
+                    total_resonances += 1
 
             if (batch_idx // self.config.batch_size) % 10 == 0:
                 elapsed = time.time() - start_time
                 logger.info(
                     f"Batch {batch_idx // self.config.batch_size}: "
-                    f"{total_tokens} tokens processed, "
+                    f"{total_resonances} tokens processed, "
                     f"{len(dist_sums_sqrt)} unique tokens seen, "
                     f"{elapsed:.1f}s elapsed"
                 )
@@ -229,12 +235,12 @@ class Harvester:
         result = HarvestResult(
             model_name=model_id,
             vocab_size=vocab_size,
-            corpus_size=total_tokens,
+            corpus_size=total_resonances,
             harvest_time_seconds=time.time() - start_time,
         )
 
-        for token_id, sqrt_sum in dist_sums_sqrt.items():
-            count = dist_counts[token_id]
+        for coord_id, sqrt_sum in dist_sums_sqrt.items():
+            count = dist_counts[coord_id]
             if count < self.config.min_contexts:
                 continue
 
@@ -242,18 +248,18 @@ class Harvester:
             mean_dist = mean_sqrt * mean_sqrt
             mean_dist = mean_dist / mean_dist.sum()
 
-            result.token_fingerprints[token_id] = mean_dist
-            result.context_counts[token_id] = count
+            result.resonance_fingerprints[coord_id] = mean_dist
+            result.context_counts[coord_id] = count
 
-        for tid in result.token_fingerprints:
+        for tid in result.resonance_fingerprints:
             try:
-                result.token_strings[tid] = tokenizer.decode([tid])
+                result.basin_strings[tid] = tokenizer.decode([tid])
             except Exception:
-                result.token_strings[tid] = f"<token_{tid}>"
+                result.basin_strings[tid] = f"<token_{tid}>"
 
         logger.info(
-            f"Harvested {len(result.token_fingerprints)} tokens "
-            f"from {total_tokens} total contexts in "
+            f"Harvested {len(result.resonance_fingerprints)} tokens "
+            f"from {total_resonances} total contexts in "
             f"{result.harvest_time_seconds:.1f}s"
         )
 
@@ -282,7 +288,7 @@ class Harvester:
         logger.info(f"Harvesting via Ollama at {ollama_url}, model={model_name}")
 
         corpus = self._load_corpus()
-        total_tokens = 0
+        total_resonances = 0
         start_time = time.time()
         observed_vocab_size = 0
 
@@ -313,7 +319,7 @@ class Harvester:
             if not logprobs:
                 continue
 
-            total_tokens += 1
+            total_resonances += 1
 
             if text_idx % 100 == 0:
                 logger.info(f"Processed {text_idx}/{len(corpus)} texts")
@@ -321,7 +327,7 @@ class Harvester:
         result = HarvestResult(
             model_name=model_name,
             vocab_size=observed_vocab_size,
-            corpus_size=total_tokens,
+            corpus_size=total_resonances,
             harvest_time_seconds=time.time() - start_time,
         )
 
@@ -407,7 +413,7 @@ async def harvest_model_auto(
     corpus_path: str | None = None,
     corpus_texts: list[str] | None = None,
     output_dir: str = "./harvest_output",
-    target_tokens: int = 2000,
+    target_resonances: int = 2000,
     device: str = "cpu",
     min_contexts: int = 10,
 ) -> HarvestResult:
@@ -431,12 +437,12 @@ async def harvest_model_auto(
             logger.info("Modal enabled — delegating harvest to Modal GPU")
             result = await modal_harvest(
                 model_id=model_id,
-                target_tokens=target_tokens,
+                target_resonances=target_resonances,
                 corpus_texts=corpus_texts,
             )
             logger.info(
                 "Modal harvest: %d fingerprints in %.1fs",
-                len(result.token_fingerprints),
+                len(result.resonance_fingerprints),
                 result.harvest_time_seconds,
             )
             return result

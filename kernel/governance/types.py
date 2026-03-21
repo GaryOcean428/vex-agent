@@ -223,7 +223,7 @@ _PARAMETER_VARS = [
     ("config.consciousness_constants", "TACKING_PERIOD"),
     ("config.consciousness_constants", "COUPLING_SIGMOID_SCALE"),
     ("config.consciousness_constants", "COUPLING_BLEND_WEIGHT"),
-    ("config.consciousness_constants", "PERCEIVE_SLERP_WEIGHT"),
+    ("config.consciousness_constants", "RECEIVE_SLERP_WEIGHT"),
     ("config.consciousness_constants", "EXPRESS_SLERP_WEIGHT"),
     ("config.consciousness_constants", "PHI_DISTANCE_GAIN"),
     ("config.consciousness_constants", "GAMMA_IDLE_FLOOR"),

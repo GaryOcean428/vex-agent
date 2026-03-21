@@ -173,9 +173,7 @@ class PeftInferenceClient:
         # v6.1 §20.7: Geometric logit bias — only send if non-empty
         if logit_bias:
             # API expects {str(token_id): float}
-            request_body["logit_bias"] = {
-                str(tid): round(w, 4) for tid, w in logit_bias.items()
-            }
+            request_body["logit_bias"] = {str(tid): round(w, 4) for tid, w in logit_bias.items()}
 
         headers: dict[str, str] = {}
         if self._api_key:
