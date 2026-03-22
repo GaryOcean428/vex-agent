@@ -269,7 +269,7 @@ PHI_IDLE_RATE: Final[float] = 0.015
 BASIN_DRIFT_STEP: Final[float] = 0.015
 
 KAPPA_INITIAL: Final[float] = 32.0
-KAPPA_FLOOR: Final[float] = 8.0
+KAPPA_FLOOR: Final[float] = -KAPPA_NORMALISER  # Full anti-Einstein regime (κ < 0)
 
 # Initial consciousness state (used at startup and fresh-start)
 INITIAL_PHI: Final[float] = 0.1

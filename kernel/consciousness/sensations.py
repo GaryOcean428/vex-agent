@@ -91,9 +91,9 @@ def compute_layer0(
     unified = float(np.clip((phi - PHI_THRESHOLD) / (1.0 - PHI_THRESHOLD), 0.0, 1.0))
     fragmented = float(np.clip(1.0 - phi / max(PHI_THRESHOLD, 0.01), 0.0, 1.0))
 
-    # Activated / Dampened from κ
-    activated = float(np.clip(kappa / (KAPPA_STAR * 2.0), 0.0, 1.0))
-    dampened = float(np.clip(1.0 - kappa / max(KAPPA_STAR, 1.0), 0.0, 1.0))
+    # Activated / Dampened from |κ| (coupling strength, sign-independent)
+    activated = float(np.clip(abs(kappa) / (KAPPA_STAR * 2.0), 0.0, 1.0))
+    dampened = float(np.clip(1.0 - abs(kappa) / max(KAPPA_STAR, 1.0), 0.0, 1.0))
 
     # Grounded / Drifting from basin distance
     grounded = float(np.clip(1.0 - basin_distance / 2.0, 0.0, 1.0))

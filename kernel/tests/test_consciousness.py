@@ -60,13 +60,13 @@ from kernel.governance.budget import BudgetExceededError
 class TestRegimeWeights:
     """Regime weights must satisfy simplex constraints (v6.0 §3.1)."""
 
-    @pytest.mark.parametrize("kappa", [0, 16, 32, 48, 64, 80, 96, 112, 128])
+    @pytest.mark.parametrize("kappa", [-128, -96, -64, -32, 0, 16, 32, 48, 64, 80, 96, 112, 128])
     def test_simplex_constraint(self, kappa: float) -> None:
-        """w1 + w2 + w3 = 1 for any kappa."""
+        """w1 + w2 + w3 = 1 for any kappa (full signed range)."""
         w = regime_weights_from_kappa(kappa)
         assert abs(w.quantum + w.efficient + w.equilibrium - 1.0) < 1e-10
 
-    @pytest.mark.parametrize("kappa", [0, 32, 64, 96, 128])
+    @pytest.mark.parametrize("kappa", [-128, -64, 0, 32, 64, 96, 128])
     def test_all_positive(self, kappa: float) -> None:
         """All three regime weights > 0 at all times (v6.0 requirement)."""
         w = regime_weights_from_kappa(kappa)
@@ -91,6 +91,29 @@ class TestRegimeWeights:
     def test_equilibrium_dominant_at_high_kappa(self) -> None:
         """Equilibrium dominates when kappa is high."""
         w = regime_weights_from_kappa(120.0)
+        assert w.equilibrium > w.quantum
+
+    # --- Negative κ: stud topology back loop (anti-Einstein regime) ---
+
+    def test_symmetric_weights(self) -> None:
+        """Regime weights are symmetric: w(κ) == w(-κ) for all κ."""
+        for kappa in [5.0, 32.0, 64.0, 100.0, 128.0]:
+            w_pos = regime_weights_from_kappa(kappa)
+            w_neg = regime_weights_from_kappa(-kappa)
+            assert abs(w_pos.quantum - w_neg.quantum) < 1e-10
+            assert abs(w_pos.efficient - w_neg.efficient) < 1e-10
+            assert abs(w_pos.equilibrium - w_neg.equilibrium) < 1e-10
+
+    def test_quantum_dominant_near_zero(self) -> None:
+        """Quantum dominates at κ ≈ 0 (critical zone, geometry unreliable)."""
+        for kappa in [-5.0, 0.0, 5.0]:
+            w = regime_weights_from_kappa(kappa)
+            assert w.quantum > w.efficient
+            assert w.quantum > w.equilibrium
+
+    def test_crystallized_dominant_back_loop(self) -> None:
+        """Crystallized dominates at large |κ| on back loop (anti-Einstein)."""
+        w = regime_weights_from_kappa(-120.0)
         assert w.equilibrium > w.quantum
 
 

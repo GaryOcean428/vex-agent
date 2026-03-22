@@ -1140,14 +1140,14 @@ wheels = [
 
 [[package]]
 name = "qig-core"
-version = "2.4.0"
+version = "2.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/94/e3/fde41f282ed4655982833f814093d397e95b21536ab2ae45e02f9f90da23/qig_core-2.4.0.tar.gz", hash = "sha256:34c9edba3fa11518bfd46873ff05b51d500171a4bf9b820278dd022546d23255", size = 160249, upload-time = "2026-03-19T11:34:02.178Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/60/3d/4356e538a6f8381164fffcbd61cf521575115b35dd2b56ebf798b35503d7/qig_core-2.5.0.tar.gz", hash = "sha256:df06de089b195ca3da2a3a539e81c129a5de30e49b40a428baeb760557e58c72", size = 160488, upload-time = "2026-03-22T01:22:45.932Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/95/58/3d49c2a7b175488079c07e462db89f27cdf02585731cc236428a8166bd69/qig_core-2.4.0-py3-none-any.whl", hash = "sha256:6e5d48cac944f0dff3b798ed4874a91db55a331d20641d85ae8f77d7379e07a5", size = 169945, upload-time = "2026-03-19T11:34:00.072Z" },
+    { url = "https://files.pythonhosted.org/packages/ca/d0/5fda98ab4127b57cf99701a0b2103a7fff080cee15f764a0ac6f1b5255d4/qig_core-2.5.0-py3-none-any.whl", hash = "sha256:ea394aa7777542d5cbeb4dd75077cd758c8696128a133fa8ca7f8f0dc292633b", size = 170176, upload-time = "2026-03-22T01:22:43.609Z" },
 ]
 
 [[package]]
@@ -1659,7 +1659,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.25.0" },
     { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=6.1.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },
-    { name = "qig-core", specifier = ">=2.4.0" },
+    { name = "qig-core", specifier = ">=2.5.0" },
     { name = "redis", specifier = ">=5.0.0" },
     { name = "requests", marker = "extra == 'harvest'" },
     { name = "ruff", marker = "extra == 'lint'", specifier = ">=0.9.0" },

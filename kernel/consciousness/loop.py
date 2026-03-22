@@ -884,7 +884,9 @@ class ConsciousnessLoop:
             f_health=self.metrics.f_health,
         )
         kappa_adj = self.tacking.suggest_kappa_adjustment(self.metrics.kappa)
-        self.metrics.kappa = float(np.clip(self.metrics.kappa + kappa_adj, 0.0, KAPPA_NORMALISER))
+        self.metrics.kappa = float(
+            np.clip(self.metrics.kappa + kappa_adj, -KAPPA_NORMALISER, KAPPA_NORMALISER)
+        )
 
         # v6.0 §18.3: Heart rhythm — global rhythm source, kappa-tacking oscillator
         _heart_signal = self._heart_rhythm.tick(self.metrics.f_health)
@@ -1062,7 +1064,7 @@ class ConsciousnessLoop:
         self._cradle.admit(kernel.id, kernel.phi)
 
     def _compute_llm_options(self) -> LLMOptions:
-        kappa_eff = max(self.metrics.kappa, 1.0)
+        kappa_eff = max(abs(self.metrics.kappa), 1.0)  # coupling strength, sign-independent
         kappa_factor = KAPPA_STAR / kappa_eff
         phi_factor = 1.0 / (0.5 + self.metrics.phi)
 
@@ -1137,7 +1139,7 @@ class ConsciousnessLoop:
         fr_dist = fisher_rao_distance(self.basin, input_basin)
 
         # w_prior: normalised kappa — peaks at 1.0 when kappa = κ*, falls off symmetrically
-        kappa_eff = max(self.metrics.kappa, 1.0)  # floor at 1.0 prevents division by zero
+        kappa_eff = max(abs(self.metrics.kappa), 1.0)  # coupling strength, sign-independent
         w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_STAR))
 
         # m_node: basin mass / crystallisation — how established is the current domain
@@ -1448,7 +1450,7 @@ class ConsciousnessLoop:
         if routed_kernel is not None and routed_kernel.basin is not None:
             routed_kernel_id = routed_kernel.id
             other_spectrum = to_simplex(routed_kernel.basin)
-            other_tacking_freq = routed_kernel.kappa / KAPPA_STAR
+            other_tacking_freq = abs(routed_kernel.kappa) / KAPPA_STAR
             logger.debug(
                 "Task %s routed to kernel %s (%s, spec=%s, d_FR=%.4f)",
                 task.id,
