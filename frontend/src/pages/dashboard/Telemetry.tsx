@@ -167,58 +167,17 @@ export default function Telemetry() {
       </div>
 
       {/* Resonance Bank */}
-      {t.coordizer_v2 && (
+      {t.coordizer && (
         <div className="dash-section">
           <div className="dash-section-title">Resonance Bank</div>
           <div className="dash-card">
             <div className="dash-row">
-              <span className="dash-row-label">Bank size</span>
-              <span className="dash-row-value">{t.coordizer_v2.bank_size?.toLocaleString() ?? '?'}</span>
+              <span className="dash-row-label">Peer count</span>
+              <span className="dash-row-value">{t.coordizer.peer_count ?? 0}</span>
             </div>
             <div className="dash-row">
-              <span className="dash-row-label">Vocab size</span>
-              <span className="dash-row-value">{t.coordizer_v2.vocab_size?.toLocaleString() ?? '?'}</span>
-            </div>
-            <div className="dash-row">
-              <span className="dash-row-label">Bank entropy</span>
-              <span className="dash-row-value" style={{
-                color: (t.coordizer_v2.bank_entropy ?? 0) > 0.7 ? 'var(--alive)' :
-                  (t.coordizer_v2.bank_entropy ?? 0) > 0.4 ? 'var(--warning)' : 'var(--error)'
-              }}>
-                {t.coordizer_v2.bank_entropy?.toFixed(4) ?? '?'}
-              </span>
-            </div>
-            <div className="dash-row">
-              <span className="dash-row-label">Dimension</span>
-              <span className="dash-row-value">{t.coordizer_v2.dim ?? 64}</span>
-            </div>
-            {t.coordizer_v2.tier_distribution && (
-              <div style={{ marginTop: 8 }}>
-                <div className="dash-row-label" style={{ marginBottom: 4 }}>Tier distribution</div>
-                {Object.entries(t.coordizer_v2.tier_distribution).map(([tier, count]) => (
-                  <div className="dash-row" key={tier}>
-                    <span className="dash-row-label" style={{ textTransform: 'capitalize' }}>{tier.replace(/_/g, ' ')}</span>
-                    <span className="dash-row-value">{String(count)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Context Estimate */}
-      {t.context_estimate && (
-        <div className="dash-section">
-          <div className="dash-section-title">Context Window</div>
-          <div className="dash-card">
-            <div className="dash-row">
-              <span className="dash-row-label">Context size (num_ctx)</span>
-              <span className="dash-row-value">{t.context_estimate.num_ctx?.toLocaleString() ?? '?'}</span>
-            </div>
-            <div className="dash-row">
-              <span className="dash-row-label">Max output (num_predict)</span>
-              <span className="dash-row-value">{t.context_estimate.num_predict?.toLocaleString() ?? '?'}</span>
+              <span className="dash-row-label">Last sync</span>
+              <span className="dash-row-value">{t.coordizer.last_sync ? new Date(t.coordizer.last_sync * 1000).toLocaleTimeString() : '—'}</span>
             </div>
           </div>
         </div>
