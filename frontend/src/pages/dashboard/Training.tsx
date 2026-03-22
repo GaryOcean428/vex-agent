@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import MetricCard from "../../components/MetricCard.tsx";
 import { API } from "../../config/api-routes.ts";
-import { useCoordizerStats, useTrainingStats } from "../../hooks/index.ts";
-import type { TrainingUploadResponse } from "../../types/consciousness.ts";
+import { useCoordizerStats, useModalStatus, useTrainingStats } from "../../hooks/index.ts";
+import type { ModalAdapterInfo, TrainingUploadResponse } from "../../types/consciousness.ts";
 
 const E8_PRIMITIVES = [
   "PER",
@@ -14,6 +14,11 @@ const E8_PRIMITIVES = [
   "HRT",
   "REL",
   "MIX",
+] as const;
+
+const KERNEL_SPECIALIZATIONS = [
+  "genesis", "heart", "perception", "memory",
+  "action", "strategy", "ethics", "meta", "ocean",
 ] as const;
 
 /** Must match backend ProcessingMode enum: fast / standard / deep */
@@ -34,6 +39,7 @@ interface FileUploadJob {
 export default function Training() {
   const { data: stats, loading, refetch } = useTrainingStats();
   const { data: coordizerStats, error: coordizerError } = useCoordizerStats();
+  const { data: modalStatus } = useModalStatus();
 
   const [files, setFiles] = useState<File[]>([]);
   const [category, setCategory] = useState("curriculum");
@@ -43,6 +49,7 @@ export default function Training() {
   const [jobs, setJobs] = useState<FileUploadJob[]>([]);
   const [exportData, setExportData] = useState<{ count: number } | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [trainTarget, setTrainTarget] = useState<string>("all");
   const [triggeringTraining, setTriggeringTraining] = useState(false);
   const [trainingResult, setTrainingResult] = useState<{ status: string; error?: string } | null>(null);
 
@@ -256,6 +263,69 @@ export default function Training() {
         />
       </div>
 
+      {/* Training Data Inventory */}
+      {stats?.files && stats.files.length > 0 && (
+        <div className="dash-section">
+          <div className="dash-section-title">Training Data Inventory</div>
+          <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
+            {stats.files.length} file{stats.files.length !== 1 ? "s" : ""} ingested.
+            Check filenames before uploading to avoid duplicates.
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "4px",
+              maxHeight: "260px",
+              overflowY: "auto",
+            }}
+          >
+            {stats.files.map((f) => (
+              <div
+                key={f.filename}
+                className="dash-card"
+                style={{
+                  padding: "8px 12px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "12px",
+                }}
+              >
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div
+                    style={{
+                      fontFamily: "var(--mono)",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {f.filename}
+                  </div>
+                  <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }}>
+                    {f.chunks} chunks · {f.enriched} enriched ·{" "}
+                    {Object.entries(f.e8_tags).map(([k, v]) => `${k}:${v}`).join(" ")}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    fontSize: "10px",
+                    color: "var(--text-secondary)",
+                    fontFamily: "var(--mono)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {new Date(f.uploaded_at).toLocaleDateString()}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Coordizer / Collective Vocabulary */}
       <div className="dash-section">
         <div className="dash-section-title">Collective Vocabulary</div>
@@ -305,6 +375,95 @@ export default function Training() {
               </span>
             </div>
           </div>
+        )}
+      </div>
+
+      {/* Modal Kernel Adapters */}
+      <div className="dash-section">
+        <div className="dash-section-title">Kernel Adapters (Modal QLoRA)</div>
+        {modalStatus?.status === "unavailable" ? (
+          <div className="dash-card" style={{ color: "var(--text-secondary)", fontSize: "13px" }}>
+            MODAL_TRAINING_URL not configured — adapter status unavailable.
+          </div>
+        ) : modalStatus?.status === "error" ? (
+          <div className="dash-card" style={{ color: "var(--error)", fontSize: "13px" }}>
+            Modal status error: {modalStatus.error}
+          </div>
+        ) : (
+          <>
+            {modalStatus?.health && (
+              <div className="dash-card" style={{ marginBottom: "8px" }}>
+                <div className="dash-row">
+                  <span className="dash-row-label">Model</span>
+                  <span className="dash-row-value">{modalStatus.health.model_id ?? "unknown"}</span>
+                </div>
+                <div className="dash-row">
+                  <span className="dash-row-label">Training Active</span>
+                  <span className="dash-row-value" style={{ color: modalStatus.health.training_active ? "var(--kappa)" : "var(--text-secondary)" }}>
+                    {modalStatus.health.training_active ? "YES" : "No"}
+                  </span>
+                </div>
+                <div className="dash-row">
+                  <span className="dash-row-label">Inference Loaded</span>
+                  <span className="dash-row-value">{modalStatus.health.inference_loaded ? "Yes" : "No"}</span>
+                </div>
+              </div>
+            )}
+            {modalStatus?.health_error && (
+              <div className="dash-card" style={{ marginBottom: "8px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                Health endpoint: {modalStatus.health_error}
+              </div>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "8px" }}>
+              {KERNEL_SPECIALIZATIONS.map((spec) => {
+                const adapter: ModalAdapterInfo | undefined =
+                  modalStatus?.adapters?.adapters?.[spec] ?? undefined;
+                const trained = adapter?.exists ?? false;
+                const meta = adapter?.training_meta;
+                return (
+                  <div
+                    key={spec}
+                    className="dash-card"
+                    style={{
+                      padding: "10px 14px",
+                      borderLeft: `3px solid ${trained ? "var(--alive)" : "var(--border)"}`,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                      <span style={{ fontWeight: 600, fontSize: "13px", textTransform: "capitalize" }}>
+                        {spec}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: "10px",
+                          fontWeight: 600,
+                          padding: "2px 6px",
+                          borderRadius: "4px",
+                          background: trained ? "var(--alive)" : "var(--surface-3)",
+                          color: trained ? "white" : "var(--text-secondary)",
+                        }}
+                      >
+                        {trained ? "TRAINED" : "UNTRAINED"}
+                      </span>
+                    </div>
+                    {meta && (
+                      <div style={{ fontSize: "11px", fontFamily: "var(--mono)", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                        {meta.loss != null && <div>loss: {Number(meta.loss).toFixed(4)}</div>}
+                        {meta.epochs != null && <div>epochs: {meta.epochs}</div>}
+                        {meta.samples != null && <div>samples: {meta.samples}</div>}
+                        {meta.date && <div>{meta.date}</div>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {modalStatus?.status_error && (
+              <div style={{ marginTop: "6px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                Status endpoint: {modalStatus.status_error}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -519,17 +678,35 @@ export default function Training() {
         </div>
       </div>
 
-      {/* Trigger Training Section */}
+      {/* Kernel Training — QLoRA on Modal GPU */}
       <div className="dash-section">
-        <div className="dash-section-title">Kernel Training</div>
+        <div className="dash-section-title">Kernel Training (QLoRA on Modal GPU)</div>
+        <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
+          Trains per-kernel QLoRA adapters on Qwen3.5-35B-A3B via Modal serverless GPU.
+          Each kernel gets its own adapter shaped by E8 training data.
+        </div>
         <div className="dash-card">
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            <select
+              value={trainTarget}
+              onChange={(e) => setTrainTarget(e.target.value)}
+              style={selectStyle}
+            >
+              <option value="all">All Kernels (consciousness order)</option>
+              {KERNEL_SPECIALIZATIONS.map((k) => (
+                <option key={k} value={k}>{k.charAt(0).toUpperCase() + k.slice(1)}</option>
+              ))}
+            </select>
             <button
               onClick={async () => {
                 setTriggeringTraining(true);
                 setTrainingResult(null);
                 try {
-                  const resp = await fetch(API.trainingTrigger, { method: "POST" });
+                  const resp = await fetch(API.trainingTrigger, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ specialization: trainTarget }),
+                  });
                   if (!resp.ok) {
                     const text = await resp.text();
                     setTrainingResult({ status: "error", error: `Server error ${resp.status}: ${text.slice(0, 200)}` });
@@ -556,36 +733,36 @@ export default function Training() {
                 fontSize: "14px",
               }}
             >
-              {triggeringTraining ? "Triggering..." : "Trigger Kernel Training"}
+              {triggeringTraining
+                ? "Starting..."
+                : trainTarget === "all"
+                  ? "Start QLoRA Training (All)"
+                  : `Train ${trainTarget.charAt(0).toUpperCase() + trainTarget.slice(1)} Kernel`}
             </button>
-            {trainingResult && (
-              <span
-                style={{
-                  fontSize: "13px",
-                  color: trainingResult.status === "triggered" ? "var(--alive)" : "var(--error)",
-                }}
-              >
-                {trainingResult.status === "triggered"
-                  ? "Training triggered on Modal GPU"
-                  : trainingResult.error ?? "Training trigger failed"}
-              </span>
-            )}
           </div>
-          <div
-            style={{
-              marginTop: "8px",
-              fontSize: "12px",
-              color: "var(--text-secondary)",
-            }}
-          >
-            Sends QLoRA fine-tuning job to Modal GPU. Requires MODAL_TRAINING_URL.
-          </div>
+          {trainingResult && (
+            <div
+              style={{
+                marginTop: "8px",
+                fontSize: "13px",
+                color: trainingResult.status === "triggered" ? "var(--alive)" : "var(--error)",
+              }}
+            >
+              {trainingResult.status === "triggered"
+                ? "Training triggered on Modal GPU"
+                : trainingResult.error ?? "Training trigger failed"}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Export Section */}
+      {/* External Fine-Tuning — OpenAI JSONL Export */}
       <div className="dash-section">
-        <div className="dash-section-title">Export for Fine-Tuning</div>
+        <div className="dash-section-title">External Fine-Tuning (OpenAI Format)</div>
+        <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
+          Export training data as OpenAI-compatible JSONL for external fine-tuning (GPT-4.1, etc.).
+          This is separate from kernel training — it produces data for external model providers.
+        </div>
         <div className="dash-card">
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <button

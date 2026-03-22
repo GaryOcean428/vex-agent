@@ -9,6 +9,7 @@ import type {
   KernelListResponse,
   KernelSummary,
   MemoryStatsResponse,
+  ModalStatus,
   SleepStateResponse,
   TrainingStats,
   VexState,
@@ -32,6 +33,7 @@ export const useMemoryStats = () => usePolledData<MemoryStatsResponse>(API.memor
 export const useSleepState = () => usePolledData<SleepStateResponse>(API.sleepState, 3000);
 export const useTrainingStats = () => usePolledData<TrainingStats>(API.trainingStats, 10000);
 export const useCoordizerStats = () => usePolledData<CoordizerStats>(API.coordizerStats, 10000);
+export const useModalStatus = () => usePolledData<ModalStatus>(API.trainingModalStatus, 15000);
 
 /**
  * Accumulate polled VexState snapshots into a time-series array.

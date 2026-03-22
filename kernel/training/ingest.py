@@ -892,6 +892,40 @@ def get_stats() -> dict[str, Any]:
         sum(1 for _ in HARVEST_PENDING_DIR.glob("*.jsonl")) if HARVEST_PENDING_DIR.exists() else 0
     )
 
+    # Build per-file inventory for duplicate detection and visibility
+    file_inventory: list[dict[str, Any]] = []
+    for f in curriculum_files:
+        try:
+            chunks = 0
+            enriched = 0
+            e8_tags: dict[str, int] = {}
+            with open(f, encoding="utf-8") as fh:
+                for raw_line in fh:
+                    raw_line = raw_line.strip()
+                    if not raw_line:
+                        continue
+                    chunks += 1
+                    try:
+                        entry = json.loads(raw_line)
+                        if entry.get("summary") or entry.get("concepts"):
+                            enriched += 1
+                        tag = entry.get("e8_primitive", "MIX")
+                        e8_tags[tag] = e8_tags.get(tag, 0) + 1
+                    except (json.JSONDecodeError, KeyError):
+                        pass
+            mtime = f.stat().st_mtime
+            file_inventory.append(
+                {
+                    "filename": f.name,
+                    "chunks": chunks,
+                    "enriched": enriched,
+                    "e8_tags": e8_tags,
+                    "uploaded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(mtime)),
+                }
+            )
+        except OSError:
+            pass
+
     return {
         "conversations": stats.get("conversations", 0),
         "feedback": stats.get("feedback", 0),
@@ -900,6 +934,7 @@ def get_stats() -> dict[str, Any]:
         "coordizer_active": _coordizer is not None,
         "uploads": len(upload_files),
         "curriculum_files": [f.name for f in curriculum_files],
+        "files": file_inventory,
         "harvest_pending_files": harvest_pending,
         "dir_exists": TRAINING_DIR.exists(),
         "training_dir": str(TRAINING_DIR),
@@ -1367,6 +1402,62 @@ async def training_feedback_endpoint(req: FeedbackRequest) -> dict[str, str]:
     return {"status": "recorded"}
 
 
+@training_router.get("/training/modal-status", response_model=None)
+async def training_modal_status_endpoint() -> dict[str, Any]:
+    """Proxy Modal QLoRA trainer /status and /health endpoints.
+
+    Derives endpoint URLs from MODAL_TRAINING_URL:
+      .../qloratrainer-train.modal.run → .../qloratrainer-status.modal.run
+      .../qloratrainer-train.modal.run → .../qloratrainer-health.modal.run
+    """
+    from ..config.settings import settings
+
+    training_url = settings.modal.training_url
+    if not training_url:
+        return {"status": "unavailable", "error": "MODAL_TRAINING_URL not configured"}
+
+    # Derive /status and /health URLs from the /train URL
+    status_url = training_url.replace("-train.", "-status.")
+    health_url = training_url.replace("-train.", "-health.")
+
+    result: dict[str, Any] = {"status": "ok"}
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Fetch both in parallel
+            status_resp, health_resp = await asyncio.gather(
+                client.get(status_url),
+                client.get(health_url),
+                return_exceptions=True,
+            )
+
+            if isinstance(status_resp, Exception):
+                result["adapters"] = None
+                result["status_error"] = str(status_resp)
+            elif status_resp.status_code == 200:
+                result["adapters"] = status_resp.json()
+            else:
+                result["adapters"] = None
+                result["status_error"] = f"HTTP {status_resp.status_code}"
+
+            if isinstance(health_resp, Exception):
+                result["health"] = None
+                result["health_error"] = str(health_resp)
+            elif health_resp.status_code == 200:
+                result["health"] = health_resp.json()
+            else:
+                result["health"] = None
+                result["health_error"] = f"HTTP {health_resp.status_code}"
+
+    except Exception as e:
+        logger.error("Modal status proxy failed: %s", e)
+        result = {"status": "error", "error": str(e)}
+
+    return result
+
+
 @training_router.post("/training/trigger", response_model=None)
 async def training_trigger_endpoint() -> dict[str, Any]:
     """Manually trigger kernel training (QLoRA fine-tuning on Modal GPU).
@@ -1398,7 +1489,10 @@ async def training_trigger_endpoint() -> dict[str, Any]:
                 }
     except Exception as e:
         logger.error("Manual training trigger failed: %s", e)
-        return {"status": "error", "error": "Training trigger failed. Check server logs."}
+        return {
+            "status": "error",
+            "error": "Training trigger failed. Check server logs.",
+        }
 
 
 @training_router.post("/training/complete", response_model=None)

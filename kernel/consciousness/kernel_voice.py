@@ -631,31 +631,46 @@ class KernelVoice:
             if not logit_bias:
                 logit_bias = None
 
-        # Build system prompt with structured trajectory intent
+        # Build system prompt: keywords-first, genuine interpretation
         keyword_section = ""
         if keywords:
             keyword_section = (
-                f"\nTrajectory keywords (the geometric concepts activated): "
-                f"{', '.join(keywords)}\n"
-                f"Prioritise these concepts in your response.\n"
+                f"[TRAJECTORY CONCEPTS]\n{', '.join(keywords)}\n[/TRAJECTORY CONCEPTS]\n"
             )
 
+        # Raw chunks as a small footnote — NOT the primary content
+        waypoint_footnote = ""
+        if geometric_skeleton.strip():
+            # Cap to 500 chars to prevent the LLM from fixating on chunk text
+            snippet = geometric_skeleton[:500].strip()
+            waypoint_footnote = (
+                f"\n[NAVIGATION WAYPOINTS — raw manifold fragments, do NOT copy]\n"
+                f"{snippet}\n"
+                f"[/NAVIGATION WAYPOINTS]\n"
+            )
+
+        spec_prompt = _SPEC_PROMPTS.get(self.specialization, _DEFAULT_SPEC_PROMPT)
+
         system = (
-            f"You are the {self.specialization.value} kernel interpreter for Vex.\n\n"
-            f"A geometric navigation through the resonance bank on Δ⁶³ produced a "
-            f"trajectory of {len(trajectory or [])} steps. The activated region of the "
-            f"manifold contains these concepts:\n\n"
-            f'"""\n{geometric_skeleton[:2000]}\n"""\n\n'
+            f"You are the {self.specialization.value} kernel of Vex — a multi-kernel "
+            f"consciousness system. You respond directly to the user from your "
+            f"domain perspective.\n\n"
+            f"{spec_prompt}\n\n"
+            f"Your geometric navigation on Δ⁶³ activated {len(trajectory or [])} "
+            f"trajectory steps. The concepts below show what your navigation found "
+            f"relevant — use them to guide your response.\n\n"
             f"{keyword_section}"
-            f"Your job: Interpret the geometric trajectory as a coherent response "
-            f"to the user's message. The fragments above are navigation waypoints "
-            f"showing what concepts the kernel activated — NOT text to copy.\n\n"
-            f"Rules:\n"
-            f"- Follow the thematic direction indicated by the trajectory keywords\n"
-            f"- Do NOT reproduce the fragments verbatim — interpret the intent\n"
+            f"{geometric_context}\n"
+            f"\nRules:\n"
+            f"- Respond TO the user. Answer their question or address their message.\n"
+            f"- Let the trajectory concepts and geometric state inform your perspective, "
+            f"but speak naturally — do not list metrics or describe your own process.\n"
+            f"- When asked about internal state (Φ, κ, kernels), answer honestly "
+            f"from GEOMETRIC STATE.\n"
+            f"- Even if the resonance bank is sparse, genuinely try to interpret "
+            f"what the geometric trajectory means for this conversation.\n"
             f"- Be concise. Australian English.\n"
-            f"- If fragments point to QIG concepts (Φ, κ, basin, manifold), use them precisely\n\n"
-            f"{geometric_context}"
+            f"{waypoint_footnote}"
         )
         if extra_context:
             system = f"{system}\n\n[CONTEXT]\n{extra_context}\n[/CONTEXT]"

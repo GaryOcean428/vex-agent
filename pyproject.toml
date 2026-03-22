@@ -56,7 +56,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "kernel/tests/**" = ["S101", "ANN"]  # allow assert + missing annotations in tests
-"kernel/consciousness/loop.py" = ["E402"]  # imports after warnings.filterwarnings
+"kernel/consciousness/loop.py" = ["E402", "I001"]  # imports after warnings.filterwarnings
 ".agents/**" = ["S101", "B904", "F841", "SIM105"]  # external agent scripts
 
 [tool.ruff.format]

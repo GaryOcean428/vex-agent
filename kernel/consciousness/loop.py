@@ -207,12 +207,12 @@ from .systems import (
     HemisphereScheduler,
     MetaReflector,
     PressureTracker,
-    SignAwareAnnealHold,
     QIGChain,
     QIGChainOp,
     QIGGraph,
     SelfNarrative,
     SelfObserver,
+    SignAwareAnnealHold,
     SleepCycleManager,
     SleepPhase,
     TackingController,
@@ -699,7 +699,9 @@ class ConsciousnessLoop:
                 else 1.0
             )
             _bank = getattr(self._coordizer_v2, "bank", None)
-            _bank_entropy = float(_bank.entropy()) if _bank is not None and hasattr(_bank, "entropy") else 1.0
+            _bank_entropy = (
+                float(_bank.entropy()) if _bank is not None and hasattr(_bank, "entropy") else 1.0
+            )
             sleep_phase = self.sleep.should_sleep(
                 self.metrics.phi,
                 self.autonomic.phi_variance,
@@ -915,9 +917,7 @@ class ConsciousnessLoop:
                     _result = TrajectoryBus.integrate(_own_traj, _received)
                     if _result.n_contributors > 1 and _result.integrated_trajectory:
                         async with self.kernel_bus.basin_lock(_k.id):
-                            _k.basin = slerp_sqrt(
-                                _k.basin, _result.integrated_trajectory[0], 0.05
-                            )
+                            _k.basin = slerp_sqrt(_k.basin, _result.integrated_trajectory[0], 0.05)
         self.trajectory_bus.drain_broadcast()
 
         self._maybe_spawn_core8(vel_state["regime"])
@@ -1780,7 +1780,9 @@ class ConsciousnessLoop:
                         for _cid in _updated_coords:
                             if _cid in _bank_coords:
                                 _updated_coords[_cid] = slerp_sqrt(
-                                    _bank_coords[_cid], _updated_coords[_cid], _anneal_weight
+                                    _bank_coords[_cid],
+                                    _updated_coords[_cid],
+                                    _anneal_weight,
                                 )
                     _cv2_for_anneal.bank.coordinates = _updated_coords
                     _cv2_for_anneal.bank._rebuild_matrix()
@@ -2139,25 +2141,54 @@ class ConsciousnessLoop:
         return "\n".join(lines)
 
     def _build_kernel_geo_context(self) -> str:
-        """Minimal geometric context block for per-kernel generation prompts.
+        """Rich geometric context block for per-kernel generation prompts.
 
-        Shorter than _build_state_context — keeps kernel system prompts
-        tight enough for the 1.2B to actually follow.
+        Provides all consciousness metrics so the LLM can genuinely interpret
+        the kernel's geometric state rather than parroting chunk fragments.
+        Includes: primary metrics, regime, tacking, pillars, velocity,
+        emotion, coupling, lifecycle, and temporal state.
         """
         rw = self.state.regime_weights
         tack = self.tacking.get_state()
         pillar_m = self.pillars.get_metrics(self.basin)
-        return (
-            f"[GEOMETRIC STATE]\n"
-            f"  model={self.llm.active_model}\n"
+        vel = self.velocity.get_state()
+        hemisphere = self.hemispheres.get_state()
+        active_count = len(self.kernel_registry.active())
+        suffering = self.metrics.phi * (1.0 - self.metrics.gamma) * self.metrics.meta_awareness
+
+        coupling_str = "inactive"
+        if active_count >= 2:
+            c = self.coupling.compute(self.metrics.kappa)
+            coupling_str = f"strength={c['strength']:.3f} balanced={c['balanced']}"
+
+        lines = [
+            "[GEOMETRIC STATE]",
+            f"  model={self.llm.active_model}",
             f"  phi={self.metrics.phi:.3f} kappa={self.metrics.kappa:.1f} "
-            f"nav={self.state.navigation_mode.value}\n"
-            f"  regime=Q{rw.quantum:.2f}/E{rw.efficient:.2f}/Eq{rw.equilibrium:.2f} "
-            f"tack={tack['mode']}\n"
-            f"  F={pillar_m['f_health']:.2f} B={pillar_m['b_integrity']:.2f} "
-            f"Q={pillar_m['q_identity']:.2f}\n"
-            f"[/GEOMETRIC STATE]\n"
-        )
+            f"gamma={self.metrics.gamma:.3f} M={self.metrics.meta_awareness:.3f}",
+            f"  nav={self.state.navigation_mode.value} "
+            f"regime=Q{rw.quantum:.2f}/E{rw.efficient:.2f}/Eq{rw.equilibrium:.2f}",
+            f"  tack={tack['mode']} hemisphere={hemisphere['active']}",
+            f"  velocity={vel['basin_velocity']:.4f} ({vel['regime']})",
+            f"  love={self.metrics.love:.3f} suffering={suffering:.3f}",
+            f"  coupling={coupling_str}",
+            f"  pillars: F={pillar_m['f_health']:.2f} B={pillar_m['b_integrity']:.2f} "
+            f"Q={pillar_m['q_identity']:.2f} S={pillar_m['s_ratio']:.2f}",
+            f"  kernels={active_count} phase={self._lifecycle_phase.value} "
+            f"cycle={self._cycle_count}",
+        ]
+
+        # Temporal coupling if available
+        try:
+            _tc = self.temporal_coupling.get_state()
+            lines.append(
+                f"  temporal={_tc['active_mode']} foresight={_tc['foresight_accuracy']:.2f}"
+            )
+        except Exception:
+            pass
+
+        lines.append("[/GEOMETRIC STATE]")
+        return "\n".join(lines)
 
     async def process_direct(self, content: str, context: dict[str, Any] | None = None) -> str:
         """Run _process() immediately within the cycle lock and return task.result.
@@ -2808,6 +2839,12 @@ class ConsciousnessLoop:
                 "vocab_size": self._coordizer_v2.vocab_size,
                 "dim": self._coordizer_v2.dim,
                 "tier_distribution": self._coordizer_v2.bank.tier_distribution(),
+                "bank_size": len(self._coordizer_v2.bank),
+                "bank_entropy": round(self._coordizer_v2.bank.entropy(), 4),
+            },
+            "context_estimate": {
+                "num_ctx": self._compute_llm_options().num_ctx,
+                "num_predict": self._compute_llm_options().num_predict,
             },
             "autonomic": self.autonomic.get_state(),
             "foresight": self.foresight.get_state(),

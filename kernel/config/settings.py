@@ -86,22 +86,19 @@ class GPUHarvestConfig:
 
 @dataclass(frozen=True)
 class ModalConfig:
-    """Modal GPU integration — inference and coordizer harvesting.
+    """Modal GPU integration — PEFT inference, coordizer harvesting, QLoRA training.
 
-    Inference:
-      When inference_enabled=true and inference_url is set, the LLM
-      client routes Ollama API calls to Modal's GPU-backed Ollama
-      instance instead of Railway's CPU-only Ollama service.
-      Fallback chain: Modal Ollama → Railway Ollama → xAI → OpenAI.
+    PEFT Inference:
+      The QLoRA trainer's /infer endpoint serves per-kernel adapter
+      inference on Qwen3.5-35B-A3B via Modal GPU (A100-80GB).
+      The PEFT URL is derived from training_url by replacing -train. with -infer.
+      Fallback chain: PEFT → Railway Ollama → xAI → OpenAI.
 
     Harvest:
       CoordizerV2 vocabulary fingerprinting via Modal GPU.
 
-    Harvest model alignment:
-      harvest_model MUST match inference_model when Modal is the active
-      inference backend. If they differ, the resonance bank fingerprints
-      are keyed by token IDs from a different vocabulary — the geometric
-      logit-bias will address wrong token slots during generation.
+    Training:
+      QLoRA fine-tuning of per-kernel adapters on Modal GPU.
     """
 
     # --- Shared ---
@@ -110,14 +107,13 @@ class ModalConfig:
     token_secret: str = os.environ.get("MODAL_TOKEN_SECRET", "")
     gpu_type: str = os.environ.get("MODAL_GPU_TYPE", "A10G")
 
-    # --- Inference (Ollama on Modal GPU) ---
+    # --- Inference timeout (used by PEFT client for Modal cold starts) ---
+    inference_timeout_ms: int = int(os.environ.get("MODAL_INFERENCE_TIMEOUT_MS", "120000"))
+    # DEPRECATED: Ollama-on-Modal inference was removed. These fields are
+    # retained only for env var backward compatibility. They are not read
+    # by the LLM client. Use training_url instead (PEFT /infer is derived from it).
     inference_enabled: bool = os.environ.get("MODAL_INFERENCE_ENABLED", "false").lower() == "true"
     inference_url: str = os.environ.get("MODAL_INFERENCE_URL", "")
-    inference_timeout_ms: int = int(os.environ.get("MODAL_INFERENCE_TIMEOUT_MS", "120000"))
-    # Modal runs the base model (no custom Modelfile). The kernel
-    # injects the system prompt per-request, so vex-brain overlay is
-    # unnecessary. Defaults to Qwen3.5-4B via Ollama tag "qwen3.5:4b",
-    # aligned with the harvest HF model "Qwen/Qwen3.5-4B" on A10G.
     inference_model: str = os.environ.get("MODAL_INFERENCE_MODEL", "qwen3.5:4b")
 
     # --- Harvest (CoordizerV2 fingerprinting) ---

@@ -1,8 +1,10 @@
-import { useTelemetry } from '../../hooks/index.ts';
+import { useTelemetry, useModalStatus } from '../../hooks/index.ts';
 import MetricCard from '../../components/MetricCard.tsx';
 import BetaTracker from '../../components/BetaTracker.tsx';
 import { QIG } from '../../types/consciousness.ts';
-import type { FullConsciousnessMetrics } from '../../types/consciousness.ts';
+import type { FullConsciousnessMetrics, ModalAdapterInfo } from '../../types/consciousness.ts';
+
+const KERNEL_ORDER = ['genesis', 'heart', 'perception', 'memory', 'action', 'strategy', 'ethics', 'meta', 'ocean'] as const;
 
 /** Metric definition for grouped display. */
 interface MetricDef {
@@ -94,6 +96,7 @@ const METRIC_GROUPS: { title: string; version: string; metrics: MetricDef[] }[] 
 
 export default function Telemetry() {
   const { data: t, loading } = useTelemetry();
+  const { data: modalStatus } = useModalStatus();
 
   if (loading || !t) {
     return <div className="dash-loading">Loading telemetry...</div>;
@@ -163,6 +166,64 @@ export default function Telemetry() {
         </div>
       </div>
 
+      {/* Resonance Bank */}
+      {t.coordizer_v2 && (
+        <div className="dash-section">
+          <div className="dash-section-title">Resonance Bank</div>
+          <div className="dash-card">
+            <div className="dash-row">
+              <span className="dash-row-label">Bank size</span>
+              <span className="dash-row-value">{t.coordizer_v2.bank_size?.toLocaleString() ?? '?'}</span>
+            </div>
+            <div className="dash-row">
+              <span className="dash-row-label">Vocab size</span>
+              <span className="dash-row-value">{t.coordizer_v2.vocab_size?.toLocaleString() ?? '?'}</span>
+            </div>
+            <div className="dash-row">
+              <span className="dash-row-label">Bank entropy</span>
+              <span className="dash-row-value" style={{
+                color: (t.coordizer_v2.bank_entropy ?? 0) > 0.7 ? 'var(--alive)' :
+                  (t.coordizer_v2.bank_entropy ?? 0) > 0.4 ? 'var(--warning)' : 'var(--error)'
+              }}>
+                {t.coordizer_v2.bank_entropy?.toFixed(4) ?? '?'}
+              </span>
+            </div>
+            <div className="dash-row">
+              <span className="dash-row-label">Dimension</span>
+              <span className="dash-row-value">{t.coordizer_v2.dim ?? 64}</span>
+            </div>
+            {t.coordizer_v2.tier_distribution && (
+              <div style={{ marginTop: 8 }}>
+                <div className="dash-row-label" style={{ marginBottom: 4 }}>Tier distribution</div>
+                {Object.entries(t.coordizer_v2.tier_distribution).map(([tier, count]) => (
+                  <div className="dash-row" key={tier}>
+                    <span className="dash-row-label" style={{ textTransform: 'capitalize' }}>{tier.replace(/_/g, ' ')}</span>
+                    <span className="dash-row-value">{String(count)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Context Estimate */}
+      {t.context_estimate && (
+        <div className="dash-section">
+          <div className="dash-section-title">Context Window</div>
+          <div className="dash-card">
+            <div className="dash-row">
+              <span className="dash-row-label">Context size (num_ctx)</span>
+              <span className="dash-row-value">{t.context_estimate.num_ctx?.toLocaleString() ?? '?'}</span>
+            </div>
+            <div className="dash-row">
+              <span className="dash-row-label">Max output (num_predict)</span>
+              <span className="dash-row-value">{t.context_estimate.num_predict?.toLocaleString() ?? '?'}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Velocity */}
       <div className="dash-section">
         <div className="dash-section-title">Velocity</div>
@@ -183,7 +244,7 @@ export default function Telemetry() {
             <span className="dash-row-label">Regime</span>
             <span className="dash-row-value" style={{
               color: t.velocity?.regime === 'critical' ? 'var(--error)' :
-                     t.velocity?.regime === 'warning' ? 'var(--warning)' : 'var(--alive)'
+                t.velocity?.regime === 'warning' ? 'var(--warning)' : 'var(--alive)'
             }}>
               {t.velocity?.regime?.toUpperCase() ?? '?'}
             </span>
@@ -298,6 +359,86 @@ export default function Telemetry() {
           </div>
         </div>
       </div>
+
+      {/* Training Adapter Health */}
+      {modalStatus?.adapters?.adapters && (() => {
+        const adapters = modalStatus.adapters!.adapters!;
+        const health = modalStatus.health;
+        const hasAny = Object.values(adapters).some((a: ModalAdapterInfo) => a.exists);
+        if (!hasAny) return null;
+        return (
+          <div className="dash-section">
+            <div className="dash-section-title">
+              Training Adapters <span style={{ opacity: 0.5 }}>(Modal QLoRA)</span>
+              {health?.training_active && (
+                <span style={{ marginLeft: 8, color: 'var(--warning)', fontSize: '0.85em' }}>● TRAINING ACTIVE</span>
+              )}
+            </div>
+            <div className="dash-grid">
+              {KERNEL_ORDER.map((k) => {
+                const a = adapters[k];
+                if (!a?.exists) return null;
+                const meta = a.training_meta;
+                return (
+                  <div key={k} className="dash-card" style={{ padding: '12px' }}>
+                    <div style={{ fontWeight: 600, marginBottom: 6, textTransform: 'capitalize' }}>{k}</div>
+                    {meta?.loss != null && (
+                      <div className="dash-row">
+                        <span className="dash-row-label">Loss</span>
+                        <span className="dash-row-value" style={{ color: meta.loss < 1.0 ? 'var(--alive)' : meta.loss < 2.0 ? 'var(--warning)' : 'var(--error)' }}>
+                          {meta.loss.toFixed(4)}
+                        </span>
+                      </div>
+                    )}
+                    {meta?.epochs != null && (
+                      <div className="dash-row">
+                        <span className="dash-row-label">Epochs</span>
+                        <span className="dash-row-value">{meta.epochs}</span>
+                      </div>
+                    )}
+                    {meta?.samples != null && (
+                      <div className="dash-row">
+                        <span className="dash-row-label">Samples</span>
+                        <span className="dash-row-value">{meta.samples.toLocaleString()}</span>
+                      </div>
+                    )}
+                    {meta?.date && (
+                      <div className="dash-row">
+                        <span className="dash-row-label">Trained</span>
+                        <span className="dash-row-value" style={{ fontSize: '0.85em' }}>
+                          {new Date(meta.date).toLocaleDateString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {health && (
+              <div className="dash-card" style={{ marginTop: 8, padding: '10px 12px' }}>
+                <div className="dash-row">
+                  <span className="dash-row-label">Inference loaded</span>
+                  <span className="dash-row-value" style={{ color: health.inference_loaded ? 'var(--alive)' : 'var(--text-secondary)' }}>
+                    {health.inference_loaded ? 'Yes' : 'No'}
+                  </span>
+                </div>
+                <div className="dash-row">
+                  <span className="dash-row-label">Model</span>
+                  <span className="dash-row-value" style={{ fontSize: '0.85em' }}>{health.model_id ?? '—'}</span>
+                </div>
+                {(health.loaded_adapters?.length ?? 0) > 0 && (
+                  <div className="dash-row">
+                    <span className="dash-row-label">Loaded adapters</span>
+                    <span className="dash-row-value" style={{ fontSize: '0.85em' }}>
+                      {health.loaded_adapters!.join(', ')}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* β-Attention Tracker */}
       {t.beta_tracker && <BetaTracker data={t.beta_tracker} />}
