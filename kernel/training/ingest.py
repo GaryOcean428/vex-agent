@@ -1453,7 +1453,10 @@ async def training_modal_status_endpoint() -> dict[str, Any]:
 
     except Exception as e:
         logger.error("Modal status proxy failed: %s", e)
-        result = {"status": "error", "error": str(e)}
+        result = {
+            "status": "error",
+            "error": "Modal status proxy failed. Check server logs.",
+        }
 
     return result
 
