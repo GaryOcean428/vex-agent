@@ -161,6 +161,7 @@ class IngestionResult:
     output_path: str
     harvest_pending_path: str = ""
     harvest_chunks_forwarded: int = 0
+    modal_push: dict[str, Any] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
 
 
@@ -641,6 +642,72 @@ def _inject_records_into_local_bank(records: list[ChunkRecord], source_filename:
 
 
 # ═══════════════════════════════════════════════════════════════
+#  MODAL DATA BRIDGE — Push training data to Modal volume
+# ═══════════════════════════════════════════════════════════════
+
+
+def _derive_modal_data_url(suffix: str = "data_receive") -> str | None:
+    """Derive a Modal endpoint URL from MODAL_TRAINING_URL.
+
+    e.g. .../qloratrainer-train.modal.run → .../qloratrainer-{suffix}.modal.run
+    """
+    training_url = settings.modal.training_url
+    if not training_url or "-train." not in training_url:
+        return None
+    parts = training_url.rsplit("-train.", 1)
+    return f"{parts[0]}-{suffix}.{parts[1]}"
+
+
+async def _push_to_modal(records: list[ChunkRecord], filename: str) -> dict[str, Any]:
+    """Push ingested training records to Modal's vex-training volume.
+
+    Called after local JSONL write so Modal trainer has the same data.
+    Best-effort: logs warnings on failure but never blocks ingestion.
+    """
+    url = _derive_modal_data_url("data_receive")
+    if not url:
+        return {"pushed": False, "reason": "MODAL_TRAINING_URL not configured"}
+
+    api_key = os.environ.get("KERNEL_API_KEY", "")
+    payload = {
+        "_api_key": api_key,
+        "filename": filename,
+        "records": [
+            {
+                "text": r.text,
+                "source": r.source,
+                "category": r.category,
+                "e8_primitive": r.e8_primitive,
+                "basin_coords": r.basin_coords,
+                "coordized": r.coordized,
+                "summary": r.summary,
+                "concepts": r.concepts,
+                "qa_pairs": r.qa_pairs,
+                "hash": r.hash,
+            }
+            for r in records
+        ],
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, json=payload)
+            if resp.status_code == 200:
+                result = resp.json()
+                logger.info(
+                    "Pushed %d records to Modal volume for %s",
+                    result.get("records_written", 0),
+                    filename,
+                )
+                return {"pushed": True, **result}
+            logger.warning("Modal data_receive returned %d: %s", resp.status_code, resp.text[:200])
+            return {"pushed": False, "error": f"HTTP {resp.status_code}"}
+    except Exception:
+        logger.exception("Failed to push training data to Modal for %s", filename)
+        return {"pushed": False, "error": "Failed to push data to Modal"}
+
+
+# ═══════════════════════════════════════════════════════════════
 #  MAIN INGESTION PIPELINE
 # ═══════════════════════════════════════════════════════════════
 
@@ -695,7 +762,8 @@ async def ingest_document(
     # Extract text
     try:
         text = _extract_text(content, filename)
-    except Exception as e:
+    except Exception:
+        logger.exception("Text extraction failed for %s", filename)
         return IngestionResult(
             status="error",
             source=filename,
@@ -707,7 +775,7 @@ async def ingest_document(
             qa_pairs_generated=0,
             processing_time_s=round(time.time() - start, 2),
             output_path="",
-            errors=[str(e)],
+            errors=["Failed to extract text from file"],
         )
 
     # Save original file to uploads/ so get_stats() counts it (best-effort)
@@ -819,6 +887,9 @@ async def ingest_document(
     harvest_path, harvest_count = _forward_chunks_to_harvest(records, filename)
     _inject_records_into_local_bank(records, filename)
 
+    # Push to Modal volume (best-effort, truly non-blocking — fire and forget)
+    asyncio.create_task(_push_to_modal(records, filename))
+
     return IngestionResult(
         status="ingested",
         source=filename,
@@ -832,6 +903,7 @@ async def ingest_document(
         output_path=str(dest),
         harvest_pending_path=harvest_path,
         harvest_chunks_forwarded=harvest_count,
+        modal_push={"pushed": "pending", "note": "fired async"},
         errors=errors,
     )
 
@@ -1565,3 +1637,122 @@ async def training_complete_endpoint(request: Request) -> dict[str, Any]:
         "training_flag_reset": reset_fn is not None,
         "harvest_queued": harvest_queued,
     }
+
+
+@training_router.post("/training/sync", response_model=None)
+async def training_sync_endpoint() -> dict[str, Any]:
+    """Bulk-sync all local training data to Modal volume.
+
+    Reads every JSONL file from the local training directory and pushes
+    each to Modal's /data_receive endpoint. Use from the dashboard's
+    "Sync Training Data" button for a full re-sync.
+    """
+    url = _derive_modal_data_url("data_receive")
+    if not url:
+        return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
+
+    curriculum_dir = TRAINING_DIR / "curriculum"
+    if not curriculum_dir.exists():
+        return {
+            "status": "ok",
+            "files_synced": 0,
+            "message": "No curriculum data to sync",
+        }
+
+    api_key = os.environ.get("KERNEL_API_KEY", "")
+    results: list[dict[str, Any]] = []
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        for jsonl_file in sorted(curriculum_dir.glob("*.jsonl")):
+            records: list[dict[str, Any]] = []
+            try:
+                with open(jsonl_file, encoding="utf-8") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            entry = json.loads(line)
+                            if isinstance(entry, dict):
+                                records.append(entry)
+                        except json.JSONDecodeError:
+                            continue
+            except OSError:
+                logger.exception("Error reading training JSONL file %s", jsonl_file.name)
+                results.append(
+                    {
+                        "file": jsonl_file.name,
+                        "error": "Failed to read file",
+                        "success": False,
+                    }
+                )
+                continue
+
+            if not records:
+                continue
+
+            payload = {
+                "_api_key": api_key,
+                "filename": jsonl_file.name,
+                "records": records,
+            }
+            try:
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 200:
+                    resp_data = resp.json()
+                    results.append(
+                        {
+                            "file": jsonl_file.name,
+                            "records_pushed": resp_data.get("records_written", 0),
+                            "success": True,
+                        }
+                    )
+                else:
+                    results.append(
+                        {
+                            "file": jsonl_file.name,
+                            "error": f"HTTP {resp.status_code}",
+                            "success": False,
+                        }
+                    )
+            except Exception:
+                logger.exception("Error pushing training data file %s to Modal", jsonl_file.name)
+                results.append(
+                    {
+                        "file": jsonl_file.name,
+                        "error": "Failed to push data to Modal",
+                        "success": False,
+                    }
+                )
+
+    total_pushed = sum(r.get("records_pushed", 0) for r in results)
+    files_synced = sum(1 for r in results if r.get("success"))
+    logger.info(
+        "Training sync: pushed %d records from %d files to Modal",
+        total_pushed,
+        files_synced,
+    )
+    return {
+        "status": "ok",
+        "files_synced": files_synced,
+        "total_records_pushed": total_pushed,
+        "details": results,
+    }
+
+
+@training_router.get("/training/modal-data", response_model=None)
+async def training_modal_data_endpoint() -> dict[str, Any]:
+    """Proxy Modal trainer's /data_stats to show what data exists on Modal volume."""
+    url = _derive_modal_data_url("data_stats")
+    if not url:
+        return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                return {"status": "ok", **resp.json()}
+            return {"status": "error", "error": f"HTTP {resp.status_code}"}
+    except Exception:
+        logger.exception("Error fetching Modal training data from %s", url)
+        return {"status": "error", "error": "Failed to fetch Modal training data"}

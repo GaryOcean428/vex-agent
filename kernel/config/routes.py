@@ -75,6 +75,8 @@ ROUTES: dict[str, str] = {
     "training_complete": "/training/complete",
     "training_feedback": "/training/feedback",
     "training_modal_status": "/training/modal-status",
+    "training_sync": "/training/sync",
+    "training_modal_data": "/training/modal-data",
     "task_status": "/task/{task_id}",
     "context_objectives": "/context/objectives",
 }
@@ -127,6 +129,8 @@ ROUTE_GROUPS: dict[str, list[str]] = {
         "training_complete",
         "training_feedback",
         "training_modal_status",
+        "training_sync",
+        "training_modal_data",
         "task_status",
         "context_objectives",
     ],

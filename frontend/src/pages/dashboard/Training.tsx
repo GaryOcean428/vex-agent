@@ -52,6 +52,10 @@ export default function Training() {
   const [trainTarget, setTrainTarget] = useState<string>("all");
   const [triggeringTraining, setTriggeringTraining] = useState(false);
   const [trainingResult, setTrainingResult] = useState<{ status: string; error?: string } | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ status: string; files_synced?: number; total_records_pushed?: number; error?: string } | null>(null);
+  const [modalData, setModalData] = useState<{ total_files?: number; total_records?: number; files?: { path: string; records: number; size_kb: number; modified_at: string }[] } | null>(null);
+  const [modalDataLoading, setModalDataLoading] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -219,6 +223,39 @@ export default function Training() {
       setExporting(false);
     }
   }, []);
+
+  const fetchModalData = useCallback(async () => {
+    setModalDataLoading(true);
+    try {
+      const resp = await fetch(API.trainingModalData);
+      if (!resp.ok) throw new Error(`${resp.status}`);
+      const data = await resp.json();
+      if (data.status === "ok") setModalData(data);
+    } catch {
+      /* best-effort */
+    } finally {
+      setModalDataLoading(false);
+    }
+  }, []);
+
+  const handleSync = useCallback(async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const resp = await fetch(API.trainingSync, { method: "POST" });
+      if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+      const data = await resp.json();
+      setSyncResult(data);
+      fetchModalData();
+    } catch (err) {
+      setSyncResult({ status: "error", error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setSyncing(false);
+    }
+  }, [fetchModalData]);
+
+  // Fetch Modal data stats on mount
+  useEffect(() => { fetchModalData(); }, [fetchModalData]);
 
   const completedCount = jobs.filter((j) => j.status === "done").length;
   const errorCount = jobs.filter((j) => j.status === "error").length;
@@ -492,6 +529,86 @@ export default function Training() {
             <span className="dash-row-value">{stats?.coordized_chunks ?? 0}</span>
           </div>
         </div>
+      </div>
+
+      {/* Modal Data Bridge — Sync Railway → Modal */}
+      <div className="dash-section">
+        <div className="dash-section-title">Modal Training Volume</div>
+        <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
+          Training data auto-pushes to Modal on upload. Use Sync to bulk-push all local data.
+        </div>
+        <div className="dash-card">
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              style={{
+                background: "var(--gamma)",
+                border: "none",
+                borderRadius: "var(--radius-sm)",
+                padding: "10px 20px",
+                color: "white",
+                fontWeight: 600,
+                cursor: syncing ? "not-allowed" : "pointer",
+                opacity: syncing ? 0.5 : 1,
+                fontSize: "14px",
+              }}
+            >
+              {syncing ? "Syncing..." : "Sync Training Data to Modal"}
+            </button>
+            <button
+              onClick={fetchModalData}
+              disabled={modalDataLoading}
+              style={{
+                background: "var(--surface-3)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                padding: "10px 16px",
+                color: "var(--text)",
+                fontWeight: 500,
+                cursor: modalDataLoading ? "not-allowed" : "pointer",
+                fontSize: "13px",
+              }}
+            >
+              {modalDataLoading ? "Loading..." : "Refresh"}
+            </button>
+            {modalData && (
+              <span style={{ fontSize: "13px", color: "var(--text-secondary)", fontFamily: "var(--mono)" }}>
+                {modalData.total_files ?? 0} files &middot; {modalData.total_records ?? 0} records on Modal
+              </span>
+            )}
+          </div>
+          {syncResult && (
+            <div
+              style={{
+                marginTop: "8px",
+                fontSize: "13px",
+                color: syncResult.status === "ok" ? "var(--alive)" : "var(--error)",
+              }}
+            >
+              {syncResult.status === "ok"
+                ? `Synced ${syncResult.files_synced ?? 0} files (${syncResult.total_records_pushed ?? 0} records) to Modal`
+                : syncResult.error ?? "Sync failed"}
+            </div>
+          )}
+        </div>
+
+        {modalData?.files && modalData.files.length > 0 && (
+          <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "4px", maxHeight: "200px", overflowY: "auto" }}>
+            {modalData.files.map((f) => (
+              <div
+                key={f.path}
+                className="dash-card"
+                style={{ padding: "6px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+              >
+                <span style={{ fontFamily: "var(--mono)", fontSize: "12px", fontWeight: 600 }}>{f.path}</span>
+                <span style={{ fontSize: "11px", color: "var(--text-secondary)", fontFamily: "var(--mono)" }}>
+                  {f.records} records &middot; {f.size_kb}KB
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Upload Section */}

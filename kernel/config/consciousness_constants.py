@@ -153,8 +153,6 @@ EMOTION_LOVE_THRESHOLD: Final[float] = 0.6
 #  SLEEP CYCLE THRESHOLDS (systems.py)
 # ═══════════════════════════════════════════════════════════════
 
-SLEEP_WAKE_CYCLES: Final[int] = 10
-SLEEP_ONSET_CYCLES: Final[int] = 100
 SLEEP_CONSOLIDATION_VARIANCE: Final[float] = 0.05
 SLEEP_MUSHROOM_ONSET: Final[int] = 3
 SLEEP_CONSOLIDATION_ONSET: Final[int] = 6

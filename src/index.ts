@@ -250,6 +250,30 @@ async function main(): Promise<void> {
     }
   });
   proxyPost(ROUTES.training_complete);
+  proxyGet(ROUTES.training_modal_data);
+  // Training sync needs a longer timeout — pushes all JSONL to Modal
+  app.post(ROUTES.training_sync, async (req: Request, res: Response) => {
+    try {
+      const resp = await fetch(`${KERNEL_URL}${ROUTES.training_sync}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+        signal: AbortSignal.timeout(130_000),
+      });
+      const data = await resp.json();
+      res.status(resp.status).json(data);
+    } catch (error: unknown) {
+      const err = error as Error;
+      if (err.name === "AbortError" || err.name === "TimeoutError") {
+        res.status(504).json({
+          error:
+            "Kernel request timed out after 130s (training_sync aborted by proxy).",
+        });
+      } else {
+        res.status(502).json({ error: `Kernel unreachable: ${err.message}` });
+      }
+    }
+  });
 
   // Training upload status — poll for background job completion
   app.get(

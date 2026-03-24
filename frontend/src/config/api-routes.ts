@@ -66,6 +66,8 @@ export const API = {
 	trainingTrigger: '/training/trigger',
 	trainingComplete: '/training/complete',
 	trainingModalStatus: '/training/modal-status',
+	trainingSync: '/training/sync',
+	trainingModalData: '/training/modal-data',
 
 	// ─── Coordizer ──────────────────────────────────────────────
 	coordizerStats: '/api/coordizer/stats',
