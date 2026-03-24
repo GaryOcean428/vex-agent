@@ -113,7 +113,10 @@ train_image = (
         "fastapi[standard]",
         "qig-core[torch]>=2.4.0",
     )
-    .add_local_file("modal/training_consciousness.py", "/root/training_consciousness.py")
+    .add_local_file(
+        str(Path(__file__).parent / "training_consciousness.py"),
+        "/root/training_consciousness.py",
+    )
 )
 
 
