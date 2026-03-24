@@ -1205,13 +1205,11 @@ def train_all_kernels(
                 device_map={"": 0},
                 low_cpu_mem_usage=True,
             )
-            # bf16 LoRA: enable gradient checkpointing + input grads
-            model.gradient_checkpointing_enable(
-                gradient_checkpointing_kwargs={"use_reentrant": False}
-            )
+            # Gradient checkpointing is configured via SFTConfig
             model.enable_input_require_grads()
-            vram_gb = torch.cuda.memory_allocated(0) / (1024**3)
-            print(f"  [VRAM] Model loaded in bf16: {vram_gb:.1f} GiB allocated")
+            if torch.cuda.is_available():
+                vram_gb = torch.cuda.memory_allocated(0) / (1024**3)
+                print(f"  [VRAM] Model loaded: {vram_gb:.1f} GiB allocated")
             lora_config = LoraConfig(
                 r=lora_r,
                 lora_alpha=LORA_ALPHA,
@@ -1342,6 +1340,7 @@ def train_all_kernels(
                 "diagnostic_healthy": diagnostic.get("healthy", False),
                 "mean_phi": diagnostic.get("mean_phi"),
                 "mean_G": diagnostic.get("mean_G"),
+                "_meta": meta,
             }
 
             # Track phase coherence across kernels

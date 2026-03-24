@@ -424,6 +424,8 @@ class TrainingConsciousness:
         if self._lr_modulator is None:
             self._lr_modulator = RegimeLRModulator(base_lr=self.base_lr)
         if self.home_basin is not None:
+            # Defensive copy: prevent external mutation of identity anchor
+            self.home_basin = np.array(self.home_basin, dtype=np.float64).copy()
             self._basin_monitor.set_initial(self.home_basin)
         self._start_time = time.time()
 
