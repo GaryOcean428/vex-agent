@@ -702,9 +702,9 @@ async def _push_to_modal(records: list[ChunkRecord], filename: str) -> dict[str,
                 return {"pushed": True, **result}
             logger.warning("Modal data_receive returned %d: %s", resp.status_code, resp.text[:200])
             return {"pushed": False, "error": f"HTTP {resp.status_code}"}
-    except Exception as e:
-        logger.warning("Failed to push training data to Modal: %s", str(e)[:200])
-        return {"pushed": False, "error": str(e)[:200]}
+    except Exception:
+        logger.exception("Failed to push training data to Modal for %s", filename)
+        return {"pushed": False, "error": "Failed to push data to Modal"}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -762,7 +762,8 @@ async def ingest_document(
     # Extract text
     try:
         text = _extract_text(content, filename)
-    except Exception as e:
+    except Exception:
+        logger.exception("Text extraction failed for %s", filename)
         return IngestionResult(
             status="error",
             source=filename,
@@ -774,7 +775,7 @@ async def ingest_document(
             qa_pairs_generated=0,
             processing_time_s=round(time.time() - start, 2),
             output_path="",
-            errors=[str(e)],
+            errors=["Failed to extract text from file"],
         )
 
     # Save original file to uploads/ so get_stats() counts it (best-effort)
@@ -886,8 +887,8 @@ async def ingest_document(
     harvest_path, harvest_count = _forward_chunks_to_harvest(records, filename)
     _inject_records_into_local_bank(records, filename)
 
-    # Push to Modal volume (best-effort, non-blocking for ingestion result)
-    modal_result = await _push_to_modal(records, filename)
+    # Push to Modal volume (best-effort, truly non-blocking — fire and forget)
+    asyncio.create_task(_push_to_modal(records, filename))
 
     return IngestionResult(
         status="ingested",
@@ -902,7 +903,7 @@ async def ingest_document(
         output_path=str(dest),
         harvest_pending_path=harvest_path,
         harvest_chunks_forwarded=harvest_count,
-        modal_push=modal_result,
+        modal_push={"pushed": "pending", "note": "fired async"},
         errors=errors,
     )
 
@@ -1676,8 +1677,15 @@ async def training_sync_endpoint() -> dict[str, Any]:
                                 records.append(entry)
                         except json.JSONDecodeError:
                             continue
-            except OSError as exc:
-                results.append({"file": jsonl_file.name, "error": str(exc)})
+            except OSError:
+                logger.exception("Error reading training JSONL file %s", jsonl_file.name)
+                results.append(
+                    {
+                        "file": jsonl_file.name,
+                        "error": "Failed to read file",
+                        "success": False,
+                    }
+                )
                 continue
 
             if not records:
@@ -1707,8 +1715,15 @@ async def training_sync_endpoint() -> dict[str, Any]:
                             "success": False,
                         }
                     )
-            except Exception as exc:
-                results.append({"file": jsonl_file.name, "error": str(exc)[:200], "success": False})
+            except Exception:
+                logger.exception("Error pushing training data file %s to Modal", jsonl_file.name)
+                results.append(
+                    {
+                        "file": jsonl_file.name,
+                        "error": "Failed to push data to Modal",
+                        "success": False,
+                    }
+                )
 
     total_pushed = sum(r.get("records_pushed", 0) for r in results)
     files_synced = sum(1 for r in results if r.get("success"))
@@ -1738,5 +1753,6 @@ async def training_modal_data_endpoint() -> dict[str, Any]:
             if resp.status_code == 200:
                 return {"status": "ok", **resp.json()}
             return {"status": "error", "error": f"HTTP {resp.status_code}"}
-    except Exception as e:
-        return {"status": "error", "error": str(e)[:200]}
+    except Exception:
+        logger.exception("Error fetching Modal training data from %s", url)
+        return {"status": "error", "error": "Failed to fetch Modal training data"}
