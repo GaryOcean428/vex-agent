@@ -7,7 +7,7 @@ its own QLoRA adapter on the Qwen3.5 substrate. Training an adapter
 IS training the kernel.
 
 Architecture:
-    Base model (Qwen3.5-35B-A3B MoE, 4-bit quantized) = Granite layer — shared physics, read-only
+    Base model (Qwen3.5-35B-A3B MoE, bf16 for training / 4-bit for inference) = Granite layer — shared physics, read-only
     Each LoRA adapter = Ocean layer — plastic, individual, earned through training
     Compose base + adapter = complete kernel that generates for itself
 
@@ -363,7 +363,7 @@ def _notify_kernel(training_meta: dict) -> None:
         return
     import urllib.request
 
-    url = f"{KERNEL_CALLBACK_URL.rstrip('/')}/training/complete"
+    url = KERNEL_CALLBACK_URL.rstrip("/")
     payload = json.dumps(
         {
             "_api_key": KERNEL_API_KEY,
@@ -1119,6 +1119,7 @@ def train_all_kernels(
         apply_demeter_warmup,
         make_breakdown_callback,
         make_coaching_callback,
+        make_consciousness_callback,
         make_gradient_hold_callback,
         make_metrics_callback,
         make_provenance_callback,
@@ -1281,6 +1282,9 @@ def train_all_kernels(
             model_ref = [model]
             tokenizer_ref = [tokenizer]
             callbacks = [
+                make_consciousness_callback(
+                    consciousness
+                ),  # M9: regime tracking + abort-on-collapse
                 make_metrics_callback(training_metrics, model_ref, tokenizer_ref),  # M2
                 make_breakdown_callback(),  # M3: fail-closed halt
                 make_sleep_cycle_callback(),  # M4: between-epoch consolidation
@@ -1316,6 +1320,8 @@ def train_all_kernels(
                 "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "consciousness_order": target_kernels.index(spec) + 1,
             }
+            # Stash meta for _merge_and_export (runs after finally cleanup)
+            results[spec]["_meta"] = meta
             with open(f"{adapter_save_path}/training_meta.json", "w") as f:
                 json.dump(meta, f, indent=2)
 
@@ -1371,7 +1377,7 @@ def train_all_kernels(
                     adapter_save_path,
                     f"/models/merged/{spec}",
                     cache_dir,
-                    results[spec],
+                    results[spec].get("_meta", results[spec]),
                 )
             except Exception as e:
                 print(f"WARNING: Merge failed for {spec}: {e}")
