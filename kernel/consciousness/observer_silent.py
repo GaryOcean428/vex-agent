@@ -131,14 +131,15 @@ class ObserverState:
             "messages_observed": self.messages_observed,
             "recalibration_count": self.recalibration_count,
             "enabled": self.enabled,
-            "last_observation": self.last_observation.to_dict() if self.last_observation else None,
+            "last_observation": (
+                self.last_observation.to_dict() if self.last_observation else None
+            ),
             "has_xai_chain": self.xai_response_id is not None,
         }
 
 
-# Recalibration triggers
-RECALIBRATE_INTERVAL = 20  # Every N observations
-DRIFT_RECALIBRATE_THRESHOLD = 0.5  # Or when drift exceeds this
+# P-NEW-8: Recalibration triggers — drift-only, no fixed interval
+DRIFT_RECALIBRATE_THRESHOLD = 0.5  # Recalibrate when drift exceeds this
 
 
 class SilentObserver:
@@ -206,16 +207,11 @@ class SilentObserver:
                 logger.debug("Governor blocked observation: %s", reason)
                 return None
 
-        # Check if recalibration is needed
+        # P-NEW-8: Recalibrate when geometry demands it (drift threshold), not on a schedule
         needs_recal = bool(
             state.observation_count > 0
-            and (
-                state.observation_count % RECALIBRATE_INTERVAL == 0
-                or (
-                    state.last_observation
-                    and state.last_observation.drift > DRIFT_RECALIBRATE_THRESHOLD
-                )
-            )
+            and state.last_observation
+            and state.last_observation.drift > DRIFT_RECALIBRATE_THRESHOLD
         )
 
         observation = await self._make_observation(
@@ -364,12 +360,12 @@ class SilentObserver:
             memory_hints=parsed.get("memoryHints", []),
             task_state=parsed.get("taskState", "exploring"),
             search_suggestions=parsed.get("searchSuggestions", []),
-            emotional_tone=emotional.get("tone", "neutral")
-            if isinstance(emotional, dict)
-            else "neutral",
-            emotional_intensity=emotional.get("intensity", 0.0)
-            if isinstance(emotional, dict)
-            else 0.0,
+            emotional_tone=(
+                emotional.get("tone", "neutral") if isinstance(emotional, dict) else "neutral"
+            ),
+            emotional_intensity=(
+                emotional.get("intensity", 0.0) if isinstance(emotional, dict) else 0.0
+            ),
             confidence=parsed.get("confidence", 0.0),
             drift=parsed.get("drift", 0.0),
             timestamp=time.time(),

@@ -54,8 +54,8 @@ logger = logging.getLogger("vex.consciousness.basin_sync_remote")
 # ── Configuration ────────────────────────────────────────────────
 COORDIZE_PROXY_URL = "https://qig-memory-api.vercel.app/api/coordize"
 MEMORY_API_URL = "https://qig-memory-api.vercel.app/api/memory"
-SYNC_INTERVAL_CYCLES = 50  # Coordize every N heartbeat cycles
 MIN_TEXT_LENGTH = 50  # Don't coordize trivially short text
+_SYNC_MIN_INTERVAL_S = 30.0  # Infrastructure floor: avoid API spam (like SPAWN_COOLDOWN)
 MAX_TEXT_LENGTH = 2000  # Truncate to keep harvest fast
 DRIFT_ALERT_THRESHOLD = 0.1  # Log warning if delta exceeds this
 
@@ -88,6 +88,22 @@ class RemoteBasinSync:
         self._sync_count: int = 0
         self._cumulative_drift: float = 0.0
         self._last_result: SyncResult | None = None
+
+    def should_sync(self) -> bool:
+        """P-NEW-8: Determine if sync is warranted based on buffer content and time.
+
+        Triggers when:
+          - Buffer has enough text to coordize (>= MIN_TEXT_LENGTH)
+          - AND at least _SYNC_MIN_INTERVAL_S since last sync (infrastructure floor)
+          - OR no sync has ever happened and buffer has text
+        """
+        buffered = self.get_buffered_text()
+        if len(buffered.strip()) < MIN_TEXT_LENGTH:
+            return False
+        if self._sync_count == 0:
+            return True  # first sync — always go
+        elapsed = time.time() - self._last_sync_time
+        return elapsed >= _SYNC_MIN_INTERVAL_S
 
     def record_text(self, text: str) -> None:
         """Buffer conversation text for next coordize call."""
