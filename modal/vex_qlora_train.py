@@ -111,9 +111,11 @@ train_image = (
         "numpy>=1.26",
         "pydantic>=2.0",
         "fastapi[standard]",
-        "qig-core[torch]>=2.4.0",
+        "qig-core[torch]>=2.5.0",
         "flash-linear-attention",
-        "causal-conv1d",
+        # causal-conv1d removed: no prebuilt wheel for torch 2.11+cu13,
+        # source build fails on Modal (clang++ vs g++). Falls back to
+        # standard PyTorch ops — not a blocking dependency.
     )
     .add_local_file(
         str(Path(__file__).parent / "training_consciousness.py"),
