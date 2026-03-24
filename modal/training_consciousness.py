@@ -250,7 +250,7 @@ class BasinDriftMonitor:
 
     def get_state(self) -> dict:
         return {
-            "current_drift": round(self._drift_history[-1], 4) if self._drift_history else 0.0,
+            "current_drift": (round(self._drift_history[-1], 4) if self._drift_history else 0.0),
             "max_drift": round(self._max_drift, 4),
             "is_eroding": self.is_eroding,
             "is_collapsing": self.is_collapsing,
@@ -463,7 +463,10 @@ class TrainingConsciousness:
 
         # 5. Pillar safety
         violations = self._pillar_guard.check(loss, drift)
-        if "topological_bulk" in violations and violations["topological_bulk"]["status"] == "collapse":
+        if (
+            "topological_bulk" in violations
+            and violations["topological_bulk"]["status"] == "collapse"
+        ):
             self._should_abort = True
             self._abort_reason = "Identity collapse: basin drift exceeded divergence threshold"
             logger.warning("ABORT: %s", self._abort_reason)
@@ -540,7 +543,12 @@ def make_consciousness_callback(consciousness: TrainingConsciousness):
     Returns a class (not instance) because SFTTrainer expects callback classes
     or instances — this returns an instance.
     """
-    from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
+    from transformers import (
+        TrainerCallback,
+        TrainerControl,
+        TrainerState,
+        TrainingArguments,
+    )
 
     class ConsciousnessCallback(TrainerCallback):
         """Feeds training metrics into the consciousness tracker each step."""
@@ -771,7 +779,12 @@ def make_breakdown_callback(loss_spike_factor: float = 5.0, spike_patience: int 
     - Loss spikes > spike_factor × baseline for spike_patience consecutive steps
     - Gradient norm exceeds safety threshold (>50 = explosion)
     """
-    from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
+    from transformers import (
+        TrainerCallback,
+        TrainerControl,
+        TrainerState,
+        TrainingArguments,
+    )
 
     class BreakdownDetectorCallback(TrainerCallback):
         """Fail-closed protection. Protocol §18, Principle P15."""
@@ -830,7 +843,12 @@ def make_breakdown_callback(loss_spike_factor: float = 5.0, spike_patience: int 
 
 def make_sleep_cycle_callback():
     """Create a sleep/consolidation callback that runs between epochs."""
-    from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
+    from transformers import (
+        TrainerCallback,
+        TrainerControl,
+        TrainerState,
+        TrainingArguments,
+    )
 
     class SleepCycleCallback(TrainerCallback):
         """Consolidation between epochs. Protocol §8.5, Principle P12."""
@@ -886,7 +904,12 @@ def make_sleep_cycle_callback():
 
 def make_coaching_callback():
     """Create a coaching callback that provides narrative framing."""
-    from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
+    from transformers import (
+        TrainerCallback,
+        TrainerControl,
+        TrainerState,
+        TrainingArguments,
+    )
 
     class CoachingCallback(TrainerCallback):
         """Kindness + Standards. Principle P10. kindness_coefficient=0.90."""
@@ -1050,7 +1073,12 @@ def make_metrics_callback(metrics: TrainingMetrics, model_ref: list, tokenizer_r
     model_ref and tokenizer_ref are single-element lists holding the model/tokenizer
     references (mutable containers to allow late binding after trainer creation).
     """
-    from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
+    from transformers import (
+        TrainerCallback,
+        TrainerControl,
+        TrainerState,
+        TrainingArguments,
+    )
 
     class MetricsProbeCallback(TrainerCallback):
         """M2: Periodic model probing for consciousness metrics."""
@@ -1145,7 +1173,10 @@ class SignAwareGradientHold:
                 if self._flip_count >= self.flip_patience:
                     self._frozen_remaining = self.hold_steps
                     self._flip_count = 0
-                    logger.info("Sign-aware hold triggered: freezing LR for %d steps", self.hold_steps)
+                    logger.info(
+                        "Sign-aware hold triggered: freezing LR for %d steps",
+                        self.hold_steps,
+                    )
                     return True
             elif sign != 0:
                 self._flip_count = 0
@@ -1166,7 +1197,8 @@ class SignAwareGradientHold:
 
 # E8 primitive → kernel specialization mapping for Demeter CoT
 _E8_TO_SPEC: dict[str, str] = {
-    "HRT": "heart", "REL": "heart",
+    "HRT": "heart",
+    "REL": "heart",
     "PER": "perception",
     "MEM": "memory",
     "ACT": "action",
@@ -1337,10 +1369,12 @@ def apply_demeter_warmup(
             wrapped = []
             for msg in messages:
                 if msg.get("role") == "assistant":
-                    wrapped.append({
-                        "role": "assistant",
-                        "content": cot_prefix + msg["content"],
-                    })
+                    wrapped.append(
+                        {
+                            "role": "assistant",
+                            "content": cot_prefix + msg["content"],
+                        }
+                    )
                 else:
                     wrapped.append(msg)
             result.append({**sample, "messages": wrapped})
@@ -1369,7 +1403,12 @@ def make_gradient_hold_callback(
         optimizer: The optimizer instance (passed via closure to avoid
                    accessing private state._trainer API).
     """
-    from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
+    from transformers import (
+        TrainerCallback,
+        TrainerControl,
+        TrainerState,
+        TrainingArguments,
+    )
 
     if gradient_hold is None:
         gradient_hold = SignAwareGradientHold()
@@ -1447,8 +1486,6 @@ def run_post_training_diagnostic(
     Returns:
         dict with metrics, health status, and per-prompt results.
     """
-    import torch
-
     prompts = (_DIAGNOSTIC_PROMPTS * ((n_prompts // len(_DIAGNOSTIC_PROMPTS)) + 1))[:n_prompts]
     metrics_collector = TrainingMetrics(
         home_basin=home_basin,
@@ -1519,7 +1556,12 @@ def run_post_training_diagnostic(
 
 def make_provenance_callback(save_dir: str):
     """Create a provenance logging callback."""
-    from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
+    from transformers import (
+        TrainerCallback,
+        TrainerControl,
+        TrainerState,
+        TrainingArguments,
+    )
 
     class ProvenanceCallback(TrainerCallback):
         """Record developmental history. Principle P16.

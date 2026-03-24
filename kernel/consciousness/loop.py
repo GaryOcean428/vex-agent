@@ -2179,7 +2179,7 @@ class ConsciousnessLoop:
         rw = self.state.regime_weights
         tack = self.tacking.get_state()
         pillar_m = self.pillars.get_metrics(self.basin)
-        vel = self.velocity.get_state()
+        vel = self.velocity.compute_velocity()
         hemisphere = self.hemispheres.get_state()
         active_count = len(self.kernel_registry.active())
         suffering = self.metrics.phi * (1.0 - self.metrics.gamma) * self.metrics.meta_awareness

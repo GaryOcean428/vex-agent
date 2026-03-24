@@ -1448,7 +1448,7 @@ async def training_modal_status_endpoint() -> dict[str, Any]:
                 return_exceptions=True,
             )
 
-            if isinstance(status_resp, Exception):
+            if isinstance(status_resp, BaseException):
                 result["adapters"] = None
                 result["status_error"] = str(status_resp)
             elif status_resp.status_code == 200:
@@ -1457,7 +1457,7 @@ async def training_modal_status_endpoint() -> dict[str, Any]:
                 result["adapters"] = None
                 result["status_error"] = f"HTTP {status_resp.status_code}"
 
-            if isinstance(health_resp, Exception):
+            if isinstance(health_resp, BaseException):
                 result["health"] = None
                 result["health_error"] = str(health_resp)
             elif health_resp.status_code == 200:
