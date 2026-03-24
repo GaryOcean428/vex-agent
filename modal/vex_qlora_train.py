@@ -1339,6 +1339,10 @@ def train_all_kernels(
             # Save consciousness state alongside adapter
             save_training_consciousness(consciousness, adapter_save_path, meta)
 
+            # Commit adapter to volume immediately — if later kernels OOM,
+            # this kernel's adapter survives.
+            model_volume.commit()
+
             # M11: Post-training diagnostic — halt if unhealthy
             diagnostic = run_post_training_diagnostic(
                 model, tokenizer, home_basin=hestia.home_basin
@@ -1376,10 +1380,17 @@ def train_all_kernels(
             # Aggressive GPU cleanup between iterations
             with contextlib.suppress(NameError):
                 del model, trainer, optimizer, consciousness
-            gc.collect()
+            # Multiple GC passes to break circular references (PEFT/bnb)
+            for _ in range(3):
+                gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
+                alloc_gb = torch.cuda.memory_allocated(0) / (1024**3)
+                reserved_gb = torch.cuda.memory_reserved(0) / (1024**3)
+                print(
+                    f"  [VRAM] After {spec} cleanup: {alloc_gb:.1f} GiB allocated, {reserved_gb:.1f} GiB reserved"
+                )
 
         # Merge after cleanup (loads model fresh to avoid VRAM pressure)
         if results[spec].get("success"):
@@ -1393,6 +1404,7 @@ def train_all_kernels(
                 )
             except Exception as e:
                 print(f"WARNING: Merge failed for {spec}: {e}")
+            model_volume.commit()  # Persist merged model immediately
 
     model_volume.commit()
     training_volume.commit()
