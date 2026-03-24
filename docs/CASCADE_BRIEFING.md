@@ -50,7 +50,7 @@ Bank entries, per-kernel vocab size, entropy, last rebuild.
 System prompt + memory + geometric state + available tokens.
 
 ### 3E. Clear Action Labels
-Separate LLM fine-tuning (Matrix/GPT-4.1 export) from kernel training (QLoRA on Modal).
+Separate LLM fine-tuning (OpenAI/GPT-4.1 export) from kernel training (QLoRA on Modal).
 
 ---
 

@@ -235,7 +235,7 @@ export default function Training() {
       <div className="dash-header">
         <h1 className="dash-title">Training</h1>
         <div className="dash-subtitle">
-          Upload documents, review training data, export for fine-tuning
+          Ingest documents for kernel training (QLoRA) and external LLM fine-tuning (GPT-4.1)
         </div>
       </div>
 
@@ -758,10 +758,10 @@ export default function Training() {
 
       {/* External Fine-Tuning — OpenAI JSONL Export */}
       <div className="dash-section">
-        <div className="dash-section-title">External Fine-Tuning (OpenAI Format)</div>
+        <div className="dash-section-title">External LLM Fine-Tuning (OpenAI / GPT-4.1)</div>
         <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
-          Export training data as OpenAI-compatible JSONL for external fine-tuning (GPT-4.1, etc.).
-          This is separate from kernel training — it produces data for external model providers.
+          Export training data as OpenAI-compatible JSONL for external LLM fine-tuning (GPT-4.1, etc.).
+          This is <strong>separate from kernel QLoRA training</strong> — it produces data for third-party model providers.
         </div>
         <div className="dash-card">
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -780,7 +780,7 @@ export default function Training() {
                 fontSize: "14px",
               }}
             >
-              {exporting ? "Exporting..." : "Export OpenAI JSONL"}
+              {exporting ? "Exporting..." : "Export JSONL (GPT-4.1 Format)"}
             </button>
             {exportData && (
               <span
