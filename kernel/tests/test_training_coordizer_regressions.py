@@ -55,7 +55,9 @@ def test_ingest_document_populates_local_coordizer_bank(tmp_path: Path) -> None:
 
 def test_training_modal_data_endpoint_handles_read_timeout(tmp_path: Path, monkeypatch) -> None:
     ingest = _load_ingest_with_tmp_training_dir(tmp_path)
-    monkeypatch.setattr(ingest.settings.modal, "training_url", "https://example-qloratrainer-train.modal.run")
+    training_url = "https://example-qloratrainer-train.modal.run"
+    expected_data_stats_url = "https://example-qloratrainer-data-stats.modal.run"
+    monkeypatch.setattr(ingest.settings.modal, "training_url", training_url)
 
     class _TimeoutClient:
         def __init__(self, *args, **kwargs):
@@ -68,6 +70,7 @@ def test_training_modal_data_endpoint_handles_read_timeout(tmp_path: Path, monke
             return False
 
         async def get(self, _url: str):
+            assert _url == expected_data_stats_url
             raise httpx.ReadTimeout("read timed out")
 
     monkeypatch.setattr(ingest.httpx, "AsyncClient", _TimeoutClient)

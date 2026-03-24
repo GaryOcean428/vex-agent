@@ -1755,6 +1755,7 @@ async def training_modal_data_endpoint() -> dict[str, Any]:
             if resp.status_code == 200:
                 return {"status": "ok", **resp.json()}
             return {"status": "error", "error": f"HTTP {resp.status_code}"}
+    # ReadTimeout is a TimeoutException subtype; this handles read/connect/write/pool timeout paths.
     except httpx.TimeoutException:
         logger.warning("Timed out fetching Modal training data from %s", url)
         return {"status": "error", "error": "Timed out fetching Modal training data"}
