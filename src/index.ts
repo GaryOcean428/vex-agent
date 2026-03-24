@@ -11,7 +11,7 @@
  * the Python kernel. This server does NOT run any of that.
  */
 
-import express, { Request, Response, NextFunction } from "express";
+import express, { NextFunction, Request, Response } from "express";
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -218,6 +218,7 @@ async function main(): Promise<void> {
   proxyGet(ROUTES.training_stats);
   proxyGet(ROUTES.training_export);
   proxyPost(ROUTES.training_feedback);
+  proxyGet(ROUTES.training_modal_status);
   // Training trigger needs a longer timeout — kernel waits up to 120s for Modal cold start
   app.post(ROUTES.training_trigger, async (req: Request, res: Response) => {
     try {

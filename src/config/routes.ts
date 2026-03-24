@@ -80,6 +80,7 @@ export const ROUTES = {
   training_upload_status: "/training/upload/status/:job_id",
   training_trigger: "/training/trigger",
   training_complete: "/training/complete",
+  training_modal_status: "/training/modal-status",
 
   // ─── Tools ─────────────────────────────────────────────────
   tools_execute_code: "/api/tools/execute_code",
