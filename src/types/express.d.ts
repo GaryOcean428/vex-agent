@@ -6,10 +6,10 @@
  */
 
 declare module "express" {
-  import { IncomingMessage, ServerResponse, Server } from "http";
+  import { IncomingMessage, Server, ServerResponse } from "http";
 
   export interface Request extends IncomingMessage {
-    body: any;
+    body: unknown;
     params: Record<string, string>;
     query: Record<string, string | string[] | undefined>;
     path: string;
@@ -34,12 +34,11 @@ declare module "express" {
 
   export type NextFunction = (err?: unknown) => void;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export type RequestHandler = (
     req: Request,
     res: Response,
     next: NextFunction,
-  ) => any;
+  ) => void;
 
   export interface IRouter {
     get(path: string, ...handlers: RequestHandler[]): this;
