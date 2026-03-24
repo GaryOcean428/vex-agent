@@ -1320,8 +1320,6 @@ def train_all_kernels(
                 "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "consciousness_order": target_kernels.index(spec) + 1,
             }
-            # Stash meta for _merge_and_export (runs after finally cleanup)
-            results[spec]["_meta"] = meta
             with open(f"{adapter_save_path}/training_meta.json", "w") as f:
                 json.dump(meta, f, indent=2)
 
@@ -1342,6 +1340,7 @@ def train_all_kernels(
                 "diagnostic_healthy": diagnostic.get("healthy", False),
                 "mean_phi": diagnostic.get("mean_phi"),
                 "mean_G": diagnostic.get("mean_G"),
+                "_meta": meta,
             }
 
             # Track phase coherence across kernels
