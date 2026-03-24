@@ -82,6 +82,8 @@ export const ROUTES = {
   training_trigger: "/training/trigger",
   training_complete: "/training/complete",
   training_modal_status: "/training/modal-status",
+  training_sync: "/training/sync",
+  training_modal_data: "/training/modal-data",
 
   // ─── Tools ─────────────────────────────────────────────────
   tools_execute_code: "/api/tools/execute_code",

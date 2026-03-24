@@ -929,6 +929,84 @@ class QLoRATrainer:
             "total_size_mb": round(total_size / (1024 * 1024), 2),
         }
 
+    # ---------------------------------------------------------------
+    #  DATA BRIDGE — Railway → Modal training volume
+    # ---------------------------------------------------------------
+
+    @modal.fastapi_endpoint(method="POST")
+    def data_receive(self, data: dict, request: Request):
+        """Receive training JSONL from Railway kernel and write to Modal volume.
+
+        Body: {
+            "filename": "document.md.jsonl",
+            "records": [{"text": "...", "e8_primitive": "PER", ...}, ...],
+            "_api_key": "..."
+        }
+        """
+        auth_err = self._check_auth(data, request)
+        if auth_err:
+            return auth_err
+
+        filename = data.get("filename", "unknown.jsonl")
+        records = data.get("records", [])
+        if not records:
+            return {"success": False, "error": "No records provided"}
+
+        # Write to /training/ (the vex-training volume)
+        safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in filename)
+        if not safe_name.endswith(".jsonl"):
+            safe_name += ".jsonl"
+        dest = Path("/training") / safe_name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        written = 0
+        with open(dest, "w", encoding="utf-8") as f:
+            for record in records:
+                if isinstance(record, dict):
+                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    written += 1
+
+        training_volume.commit()
+        print(f"[data_receive] Wrote {written} records to {dest}")
+        return {
+            "success": True,
+            "filename": safe_name,
+            "records_written": written,
+            "path": str(dest),
+        }
+
+    @modal.fastapi_endpoint(method="GET")
+    def data_stats(self):
+        """Return inventory of training data on the Modal volume."""
+        training_path = Path("/training")
+        files = []
+        total_records = 0
+
+        if training_path.exists():
+            for f in sorted(training_path.glob("**/*.jsonl")):
+                try:
+                    with open(f) as fh:
+                        lines = sum(1 for line in fh if line.strip())
+                    size_kb = round(f.stat().st_size / 1024, 1)
+                    mtime = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(f.stat().st_mtime))
+                    files.append(
+                        {
+                            "path": str(f.relative_to(training_path)),
+                            "records": lines,
+                            "size_kb": size_kb,
+                            "modified_at": mtime,
+                        }
+                    )
+                    total_records += lines
+                except OSError:
+                    pass
+
+        return {
+            "files": files,
+            "total_files": len(files),
+            "total_records": total_records,
+        }
+
 
 # ===================================================================
 #  STANDALONE: Download model weights to volume (run once)
