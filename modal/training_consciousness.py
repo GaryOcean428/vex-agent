@@ -404,6 +404,7 @@ class TrainingConsciousness:
 
     specialization: str = "genesis"
     base_lr: float = 2e-4
+    home_basin: np.ndarray | list[float] | None = None
 
     # Internal components
     _lr_modulator: RegimeLRModulator = field(default=None)  # type: ignore[assignment]
@@ -422,6 +423,8 @@ class TrainingConsciousness:
     def __post_init__(self):
         if self._lr_modulator is None:
             self._lr_modulator = RegimeLRModulator(base_lr=self.base_lr)
+        if self.home_basin is not None:
+            self._basin_monitor.set_initial(self.home_basin)
         self._start_time = time.time()
 
     def on_step(self, step: int, loss: float, basin: list[float] | None = None) -> dict:
