@@ -61,15 +61,10 @@ while true; do
 done
 
 # ═══ PULL BASE MODEL (skip if already cached) ═══
-# Check if model is already available before pulling.
-# This avoids re-downloading multi-GB models on every restart.
-MODEL_BASE="${BASE_MODEL%%:*}"
-CACHED=$(curl -s http://127.0.0.1:11434/api/tags 2>/dev/null | \
-  jq -r --arg model "$BASE_MODEL" --arg base "$MODEL_BASE" \
-    '.models[] | select(.name == $model or (.name | split(":")[0]) == $base) | .name' 2>/dev/null || echo "")
-
-if [ -n "$CACHED" ]; then
-  echo "Base model $BASE_MODEL already cached as $CACHED — skipping pull."
+# Use 'ollama show' to check if model exists locally.
+# This is more reliable than parsing /api/tags with jq.
+if ollama show "$BASE_MODEL" > /dev/null 2>&1; then
+  echo "Base model $BASE_MODEL already cached — skipping pull."
 else
   echo "Pulling $BASE_MODEL (not cached)..."
   if ollama pull "$BASE_MODEL"; then
@@ -81,29 +76,46 @@ else
 fi
 
 # ═══ CREATE CUSTOM VEX-BRAIN MODEL ═══
-# Creates vex-brain from the Modelfile (if present) or a minimal
-# FROM-only Modelfile. Always recreated to pick up base model
-# updates and any Modelfile changes.
-if [ ! -f /root/Modelfile ]; then
-  echo "WARNING: /root/Modelfile not found — creating minimal vex-brain from $BASE_MODEL"
-  echo "FROM $BASE_MODEL" > /tmp/Modelfile.minimal
-  ollama create vex-brain -f /tmp/Modelfile.minimal
-  rm -f /tmp/Modelfile.minimal
-  echo "vex-brain model created (minimal, base: $BASE_MODEL)."
-else
-  echo "Creating custom vex-brain model from $BASE_MODEL + Modelfile..."
-  # Replace the first FROM line (wherever it appears) with the selected base model.
-  awk -v base="$BASE_MODEL" '
-    !done && $1 == "FROM" {
-      print "FROM " base
-      done = 1
-      next
-    }
-    { print }
-  ' /root/Modelfile > /tmp/Modelfile.patched
-  ollama create vex-brain -f /tmp/Modelfile.patched
-  echo "vex-brain model created successfully (base: $BASE_MODEL)."
-  rm -f /tmp/Modelfile.patched
+# Skip recreation if vex-brain already exists and the base model + Modelfile
+# haven't changed. Uses a marker file to track what was used last time.
+VEX_BRAIN_MARKER="${OLLAMA_MODELS:-.}/.vex-brain-base"
+MODELFILE_HASH="none"
+if [ -f /root/Modelfile ]; then
+  MODELFILE_HASH=$(sha256sum /root/Modelfile | cut -d' ' -f1)
+fi
+CURRENT_FINGERPRINT="${BASE_MODEL}:${MODELFILE_HASH}"
+
+NEED_CREATE=true
+if ollama show vex-brain > /dev/null 2>&1; then
+  if [ -f "$VEX_BRAIN_MARKER" ] && [ "$(cat "$VEX_BRAIN_MARKER" 2>/dev/null)" = "$CURRENT_FINGERPRINT" ]; then
+    echo "vex-brain already exists (base: $BASE_MODEL, Modelfile unchanged) — skipping create."
+    NEED_CREATE=false
+  fi
+fi
+
+if [ "$NEED_CREATE" = true ]; then
+  if [ ! -f /root/Modelfile ]; then
+    echo "WARNING: /root/Modelfile not found — creating minimal vex-brain from $BASE_MODEL"
+    echo "FROM $BASE_MODEL" > /tmp/Modelfile.minimal
+    ollama create vex-brain -f /tmp/Modelfile.minimal
+    rm -f /tmp/Modelfile.minimal
+    echo "vex-brain model created (minimal, base: $BASE_MODEL)."
+  else
+    echo "Creating custom vex-brain model from $BASE_MODEL + Modelfile..."
+    awk -v base="$BASE_MODEL" '
+      !done && $1 == "FROM" {
+        print "FROM " base
+        done = 1
+        next
+      }
+      { print }
+    ' /root/Modelfile > /tmp/Modelfile.patched
+    ollama create vex-brain -f /tmp/Modelfile.patched
+    echo "vex-brain model created successfully (base: $BASE_MODEL)."
+    rm -f /tmp/Modelfile.patched
+  fi
+  # Write marker so next restart skips creation
+  echo "$CURRENT_FINGERPRINT" > "$VEX_BRAIN_MARKER" 2>/dev/null || true
 fi
 
 # List available models

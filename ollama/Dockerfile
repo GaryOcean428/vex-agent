@@ -11,7 +11,7 @@
 # Update the tag, test locally, then push.
 FROM ollama/ollama:0.16.3
 
-# jq is used by entrypoint.sh for structured Ollama API queries (no-regex policy)
+# jq available for structured Ollama API queries and debugging
 RUN apt-get update && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/*
 
 # Copy the Modelfile for custom model creation
@@ -20,8 +20,8 @@ COPY Modelfile /root/Modelfile
 # Create entrypoint script that:
 # 1. Starts Ollama server (pinned version)
 # 2. Waits for it to be ready
-# 3. Pulls VEX_BASE_MODEL (always, to get latest digest)
-# 4. Creates custom vex-brain model (patched Modelfile)
+# 3. Pulls VEX_BASE_MODEL (only if not already cached)
+# 4. Creates custom vex-brain model (only if base/Modelfile changed)
 # 5. Keeps serving
 COPY entrypoint.sh /root/entrypoint.sh
 RUN chmod +x /root/entrypoint.sh
