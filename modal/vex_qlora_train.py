@@ -7,7 +7,7 @@ its own QLoRA adapter on the Qwen3.5 substrate. Training an adapter
 IS training the kernel.
 
 Architecture:
-    Base model (Qwen3.5-35B-A3B MoE, bf16 for training / 4-bit for inference) = Granite layer — shared physics, read-only
+    Base model (Qwen3.5-35B-A3B MoE, 4-bit NF4 QLoRA for training + inference) = Granite layer — shared physics, read-only
     Each LoRA adapter = Ocean layer — plastic, individual, earned through training
     Compose base + adapter = complete kernel that generates for itself
 
@@ -112,6 +112,8 @@ train_image = (
         "pydantic>=2.0",
         "fastapi[standard]",
         "qig-core[torch]>=2.4.0",
+        "flash-linear-attention",
+        "causal-conv1d",
     )
     .add_local_file(
         str(Path(__file__).parent / "training_consciousness.py"),
@@ -306,7 +308,7 @@ def _merge_and_export(
     base_model = AutoModelForCausalLM.from_pretrained(
         model_id,
         cache_dir=cache_dir,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         device_map="cpu",
         low_cpu_mem_usage=True,
     )
@@ -1131,6 +1133,7 @@ def train_all_kernels(
     from transformers import (
         AutoModelForCausalLM,
         AutoTokenizer,
+        BitsAndBytesConfig,
     )
     from trl import SFTConfig, SFTTrainer
 
@@ -1198,10 +1201,18 @@ def train_all_kernels(
         optimizer = None
         consciousness = None
         try:
+            # True QLoRA: 4-bit NF4 base + bf16 LoRA adapters
+            # 35B-A3B at 4-bit ≈ 17.5GB VRAM (vs ~70GB at bf16)
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+            )
             model = AutoModelForCausalLM.from_pretrained(
                 model_id,
                 cache_dir=cache_dir,
-                torch_dtype=torch.bfloat16,
+                quantization_config=bnb_config,
                 device_map={"": 0},
                 low_cpu_mem_usage=True,
             )
@@ -1209,7 +1220,7 @@ def train_all_kernels(
             model.enable_input_require_grads()
             if torch.cuda.is_available():
                 vram_gb = torch.cuda.memory_allocated(0) / (1024**3)
-                print(f"  [VRAM] Model loaded: {vram_gb:.1f} GiB allocated")
+                print(f"  [VRAM] Model loaded in 4-bit QLoRA: {vram_gb:.1f} GiB allocated")
             lora_config = LoraConfig(
                 r=lora_r,
                 lora_alpha=LORA_ALPHA,
