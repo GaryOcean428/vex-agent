@@ -1022,6 +1022,52 @@ class SleepCycleManager:
         if instability_metric <= lo:
             self.phase = SleepPhase.CONSOLIDATING
 
+    def mushroom_zero_crossing(
+        self,
+        metrics: Any,
+        crossing_strength: float = 0.8,
+        instability_metric: float = 0.0,
+    ) -> dict | None:
+        """EXP-011: Drive kappa through zero during mushroom perturbation.
+
+        Applies a directed perturbation that takes kappa_eff through zero,
+        creating the stud topology boundary crossing needed for back-loop
+        solution detection.
+
+        Safety: Uses the same three-tier safety gates as mushroom().
+        Only invoked when EXP-011 mode is active.
+
+        Returns event dict on successful crossing, None otherwise.
+        """
+        import time as _time
+
+        lo, mid, hi = _MUSHROOM_INSTABILITY_THRESHOLDS
+        if instability_metric > mid:
+            return None  # Safety gate: too unstable
+
+        kappa_pre = metrics.kappa
+
+        # Drive kappa toward and through zero
+        # crossing_strength=0.8 → new kappa = 0.2 * old kappa (past zero)
+        # crossing_strength=1.2 → new kappa = -0.2 * old kappa (through zero)
+        scale = max(0.01, self._mushroom_noise_scale)
+        metrics.kappa = kappa_pre * (1.0 - crossing_strength * scale / _MUSHROOM_NOISE_SCALE_INIT)
+
+        crossed = kappa_pre * metrics.kappa < 0
+        event = {
+            "type": "MUSHROOM_ZERO_CROSSING",
+            "kappa_pre": float(kappa_pre),
+            "kappa_post": float(metrics.kappa),
+            "crossed": crossed,
+            "crossing_strength": crossing_strength,
+            "instability": instability_metric,
+            "timestamp_ms": _time.time() * 1000,
+        }
+        if crossed:
+            logger.info(f"EXP-011 zero crossing: κ {kappa_pre:.2f} → {metrics.kappa:.2f}")
+        self.phase = SleepPhase.CONSOLIDATING
+        return event
+
     def consolidate(
         self,
         bank: Any | None = None,

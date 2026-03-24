@@ -22,6 +22,9 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -44,6 +47,17 @@ from .geometry import (
 from .types import DomainBias, HarmonicTier
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ActivationEvent:
+    """Millisecond-level activation record for EXP-011 instrumentation."""
+
+    timestamp_ms: float
+    basin_id: int
+    distance: float  # Fisher-Rao distance to query
+    tier: str  # HarmonicTier name
+    was_selected: bool  # Whether this basin was in top_k result
 
 
 class ResonanceBank:
@@ -70,6 +84,8 @@ class ResonanceBank:
         self._bank_lived_count: int = 0
         self._bank_total_count: int = 0
         self.last_rebuild_ts: float = 0.0  # epoch timestamp of last matrix rebuild
+        # EXP-011 instrumentation: ms-level activation logging
+        self._activation_log: deque[ActivationEvent] = deque(maxlen=10_000)
 
     @property
     def bank_sovereignty(self) -> float:
@@ -289,13 +305,32 @@ class ResonanceBank:
                     (tid, d) for tid, d in pairs if tid not in domain_bias.suppressed_coord_ids
                 ]
         pairs.sort(key=lambda x: x[1])
-        for tid, _ in pairs[:top_k]:
+        ts_ms = time.time() * 1000
+        for tid, d in pairs[:top_k]:
             self.activation_counts[tid] = self.activation_counts.get(tid, 0) + 1
+            self._activation_log.append(
+                ActivationEvent(
+                    timestamp_ms=ts_ms,
+                    basin_id=tid,
+                    distance=d,
+                    tier=self.tiers.get(tid, HarmonicTier.OVERTONE_HAZE).name,
+                    was_selected=True,
+                )
+            )
         return pairs[:top_k]
 
     def activate_ids(self, query: Basin, top_k: int = 64) -> list[int]:
         """Convenience: return just the coordinate IDs."""
         return [tid for tid, _ in self.activate(query, top_k)]
+
+    def get_activation_window(self, t_start_ms: float, t_end_ms: float) -> list[ActivationEvent]:
+        """Return activation events within a time window (for EXP-011 analysis)."""
+        return [e for e in self._activation_log if t_start_ms <= e.timestamp_ms <= t_end_ms]
+
+    def get_recent_activations(self, window_ms: float = 1000.0) -> list[ActivationEvent]:
+        """Return activations from the last N milliseconds."""
+        cutoff = time.time() * 1000 - window_ms
+        return [e for e in self._activation_log if e.timestamp_ms >= cutoff]
 
     def generate_next(
         self,
