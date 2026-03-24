@@ -12,7 +12,7 @@
 # ═══════════════════════════════════════════════════════════════
 
 # ── Stage 1a: Build TypeScript (Express server) ─────────────────
-FROM node:22-alpine AS ts-builder
+FROM node:24-alpine AS ts-builder
 
 WORKDIR /app
 
@@ -25,7 +25,7 @@ COPY src/ ./src/
 RUN pnpm run build
 
 # ── Stage 1b: Build React Frontend (Vite) ───────────────────────
-FROM node:22-alpine AS frontend-builder
+FROM node:24-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
@@ -41,10 +41,10 @@ RUN pnpm run build \
 # ── Stage 2: Production image ─────────────────────────────────
 FROM python:3.14-slim
 
-# Install Node.js 22
+# Install Node.js 24
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash curl ca-certificates && \
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     corepack enable && corepack prepare pnpm@latest --activate && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -54,7 +54,7 @@ WORKDIR /app
 # ── Python kernel dependencies (uv) ──────────────────────────────
 COPY pyproject.toml ./
 COPY kernel/ ./kernel/
-RUN pip install --no-cache-dir uv==0.9.26 && uv pip install --system --no-cache .
+RUN pip install --no-cache-dir uv==0.10.12 && uv pip install --system --no-cache .
 
 # ── Node.js production dependencies ───────────────────────────
 COPY package.json pnpm-lock.yaml* ./
