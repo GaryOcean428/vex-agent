@@ -8,6 +8,7 @@
 export const ROUTES = {
   // ─── Core ──────────────────────────────────────────────────
   health: "/health",
+  health_reachability: "/health/reachability",
   state: "/state",
   telemetry: "/telemetry",
   status: "/status",

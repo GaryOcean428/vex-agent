@@ -144,6 +144,7 @@ async function main(): Promise<void> {
   proxyGet(ROUTES.state);
   proxyGet(ROUTES.telemetry);
   proxyGet(ROUTES.status);
+  proxyGet(ROUTES.health_reachability);
   proxyGet(ROUTES.basin);
   proxyGet(ROUTES.kernels);
   proxyPost(ROUTES.enqueue);

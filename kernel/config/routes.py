@@ -16,6 +16,7 @@ from __future__ import annotations
 ROUTES: dict[str, str] = {
     # ─── Core ──────────────────────────────────────────────────
     "health": "/health",
+    "health_reachability": "/health/reachability",
     "state": "/state",
     "telemetry": "/telemetry",
     "status": "/status",

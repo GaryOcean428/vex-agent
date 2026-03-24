@@ -1110,6 +1110,32 @@ class ConsciousnessLoop:
             repetition_penalty=LLM_REPETITION_PENALTY,
         )
 
+    def _context_window_breakdown(self) -> dict[str, Any]:
+        """Estimate token budget breakdown for telemetry (Task 3D)."""
+        opts = self._compute_llm_options()
+        # Rough token estimates (chars / 4 ≈ tokens for English)
+        sys_prompt_tokens = 800  # base system prompt ~3200 chars
+        geometric_state_tokens = 200  # basin coords + metrics
+        memory_tokens = 0
+        if self.memory:
+            mem_ctx = self.memory.get_context_for_query("")
+            if mem_ctx:
+                memory_tokens = max(1, len(mem_ctx) // 4)
+        active_kernels = len(self.kernel_registry.active())
+        kernel_context_tokens = active_kernels * 150  # ~150 tokens per kernel context
+        used = sys_prompt_tokens + geometric_state_tokens + memory_tokens + kernel_context_tokens
+        available = max(0, opts.num_ctx - used - opts.num_predict)
+        return {
+            "num_ctx": opts.num_ctx,
+            "num_predict": opts.num_predict,
+            "system_prompt_tokens": sys_prompt_tokens,
+            "geometric_state_tokens": geometric_state_tokens,
+            "memory_tokens": memory_tokens,
+            "kernel_context_tokens": kernel_context_tokens,
+            "used_tokens": used,
+            "available_for_history": available,
+        }
+
     def _apply_wu_wei_modulation(
         self,
         base: LLMOptions,
@@ -2843,11 +2869,19 @@ class ConsciousnessLoop:
                 "tier_distribution": self._coordizer_v2.bank.tier_distribution(),
                 "bank_size": len(self._coordizer_v2.bank),
                 "bank_entropy": round(self._coordizer_v2.bank.entropy(), 4),
+                "bank_sovereignty": round(self._coordizer_v2.bank.bank_sovereignty, 4),
+                "origin_breakdown": {
+                    "harvested": sum(
+                        1 for v in self._coordizer_v2.bank.origin.values() if v == "harvested"
+                    ),
+                    "lived": sum(
+                        1 for v in self._coordizer_v2.bank.origin.values() if v == "lived"
+                    ),
+                },
+                "last_rebuild": self._coordizer_v2.bank.last_rebuild_ts or None,
+                "total_activations": sum(self._coordizer_v2.bank.activation_counts.values()),
             },
-            "context_estimate": {
-                "num_ctx": self._compute_llm_options().num_ctx,
-                "num_predict": self._compute_llm_options().num_predict,
-            },
+            "context_estimate": self._context_window_breakdown(),
             "autonomic": self.autonomic.get_state(),
             "foresight": self.foresight.get_state(),
             "coupling": self.coupling.get_state(),

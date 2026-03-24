@@ -271,6 +271,27 @@ export interface VexTelemetry extends VexState {
   foresight: { history_length: number; predicted_phi: number };
   coupling: { strength: number; balanced: boolean; efficiency_boost: number };
   beta_tracker?: BetaTrackerSummary;
+  coordizer_v2?: {
+    vocab_size: number;
+    dim: number;
+    tier_distribution: Record<string, number>;
+    bank_size: number;
+    bank_entropy: number;
+    bank_sovereignty: number;
+    origin_breakdown: { harvested: number; lived: number };
+    last_rebuild: number | null;
+    total_activations: number;
+  };
+  context_estimate?: {
+    num_ctx: number;
+    num_predict: number;
+    system_prompt_tokens: number;
+    geometric_state_tokens: number;
+    memory_tokens: number;
+    kernel_context_tokens: number;
+    used_tokens: number;
+    available_for_history: number;
+  };
 }
 
 // ═══════════════════════════════════════

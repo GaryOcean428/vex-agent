@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from collections import deque
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any
@@ -221,6 +223,12 @@ class LLMClient:
         # Per-response attribution — which backend actually served the last call
         self._last_backend: str = "none"
 
+        # Inference latency/throughput tracking (rolling window of last 50 calls)
+        self._latency_history: deque[float] = deque(maxlen=50)
+        self._tokens_per_sec_history: deque[float] = deque(maxlen=50)
+        self._total_completions: int = 0
+        self._last_completion_ts: float = 0.0
+
         # PEFT adapter inference client (Tier 2 — per-kernel QLoRA adapters on Modal)
         # Modal URL pattern: ...-qloratrainer-train.modal.run → ...-qloratrainer-infer.modal.run
         # The endpoint name is the LAST "-train." in the hostname. Use rsplit to
@@ -356,15 +364,22 @@ class LLMClient:
         opts = options or LLMOptions()
         backend = prefer_backend or self._active_backend
 
+        t0 = time.monotonic()
         if backend == "peft" and self._peft_client is not None:
-            return await self._peft_complete(system_prompt, user_message, opts, specialization)
+            result = await self._peft_complete(system_prompt, user_message, opts, specialization)
         elif backend == "xai" and settings.xai.api_key:
-            return await self._xai_complete(system_prompt, user_message, opts, messages)
+            result = await self._xai_complete(system_prompt, user_message, opts, messages)
         elif backend == "ollama":
-            return await self._ollama_complete(system_prompt, user_message, opts, messages, tools)
+            result = await self._ollama_complete(system_prompt, user_message, opts, messages, tools)
         elif backend == "external":
-            return await self._external_complete(system_prompt, user_message, opts, messages)
-        return "No LLM backend available"
+            result = await self._external_complete(system_prompt, user_message, opts, messages)
+        else:
+            return "No LLM backend available"
+
+        latency_ms = (time.monotonic() - t0) * 1000
+        token_estimate = max(1, len(result) // 4)
+        self.record_completion(latency_ms, token_estimate)
+        return result
 
     async def stream(
         self,
@@ -400,9 +415,30 @@ class LLMClient:
         else:
             yield "No LLM backend available"
 
+    def record_completion(self, latency_ms: float, token_count: int) -> None:
+        """Record a completion's latency and throughput for telemetry."""
+        self._latency_history.append(latency_ms)
+        self._total_completions += 1
+        self._last_completion_ts = time.time()
+        if latency_ms > 0 and token_count > 0:
+            tps = token_count / (latency_ms / 1000.0)
+            self._tokens_per_sec_history.append(tps)
+
     def get_status(self) -> dict[str, Any]:
+        avg_latency = (
+            sum(self._latency_history) / len(self._latency_history)
+            if self._latency_history
+            else 0.0
+        )
+        avg_tps = (
+            sum(self._tokens_per_sec_history) / len(self._tokens_per_sec_history)
+            if self._tokens_per_sec_history
+            else 0.0
+        )
         return {
             "active_backend": self._active_backend,
+            "active_model": self.active_model,
+            "last_backend": self._last_backend,
             "peft_inference": (self._peft_client.available if self._peft_client else False),
             "peft_inference_url": (self._peft_client._base_url if self._peft_client else None),
             "ollama": self._ollama_available,
@@ -411,6 +447,13 @@ class LLMClient:
             "external_model": settings.llm.model if settings.llm.api_key else None,
             "cost_guard": self._cost_guard.summary(),
             "governor": self._governor.get_state() if self._governor else None,
+            "inference": {
+                "avg_latency_ms": round(avg_latency, 1),
+                "tokens_per_second": round(avg_tps, 1),
+                "total_completions": self._total_completions,
+                "last_completion": self._last_completion_ts or None,
+                "sample_size": len(self._latency_history),
+            },
         }
 
     @property

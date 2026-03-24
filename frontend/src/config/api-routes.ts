@@ -8,6 +8,7 @@
 export const API = {
 	// ─── Core ──────────────────────────────────────────────────
 	health: '/health',
+	healthReachability: '/health/reachability',
 	state: '/state',
 	telemetry: '/telemetry',
 	status: '/status',

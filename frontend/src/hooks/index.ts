@@ -34,6 +34,7 @@ export const useSleepState = () => usePolledData<SleepStateResponse>(API.sleepSt
 export const useTrainingStats = () => usePolledData<TrainingStats>(API.trainingStats, 10000);
 export const useCoordizerStats = () => usePolledData<CoordizerStats>(API.coordizerStats, 10000);
 export const useModalStatus = () => usePolledData<ModalStatus>(API.trainingModalStatus, 15000);
+export const useHealthReachability = () => usePolledData<Record<string, { reachable: boolean; error?: string }>>(API.healthReachability, 30000);
 
 /**
  * Accumulate polled VexState snapshots into a time-series array.

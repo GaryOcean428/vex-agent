@@ -519,6 +519,50 @@ async def health() -> dict[str, Any]:
         }
 
 
+@app.get(R["health_reachability"])
+async def health_reachability() -> dict[str, Any]:
+    """Check reachability of external services (Task 4 telemetry)."""
+    import httpx as _httpx
+
+    results: dict[str, Any] = {}
+
+    # Railway Ollama
+    try:
+        async with _httpx.AsyncClient(timeout=5.0) as c:
+            r = await c.get(f"{settings.ollama.url}/api/tags")
+            results["railway_ollama"] = {"reachable": r.status_code == 200}
+    except Exception as e:
+        results["railway_ollama"] = {"reachable": False, "error": str(e)[:100]}
+
+    # Modal coordizer (harvest)
+    harvest_url = settings.modal.harvest_url
+    if harvest_url:
+        try:
+            base = harvest_url.rsplit("/", 1)[0] if "/" in harvest_url else harvest_url
+            async with _httpx.AsyncClient(timeout=10.0) as c:
+                r = await c.get(f"{base.rstrip('/')}/health")
+                results["modal_coordizer"] = {"reachable": r.status_code == 200}
+        except Exception as e:
+            results["modal_coordizer"] = {"reachable": False, "error": str(e)[:100]}
+    else:
+        results["modal_coordizer"] = {"reachable": False, "error": "not configured"}
+
+    # Modal trainer
+    training_url = settings.modal.training_url
+    if training_url:
+        try:
+            base = training_url.rsplit("/", 1)[0] if "/" in training_url else training_url
+            async with _httpx.AsyncClient(timeout=10.0) as c:
+                r = await c.get(f"{base.rstrip('/')}/health")
+                results["modal_trainer"] = {"reachable": r.status_code == 200}
+        except Exception as e:
+            results["modal_trainer"] = {"reachable": False, "error": str(e)[:100]}
+    else:
+        results["modal_trainer"] = {"reachable": False, "error": "not configured"}
+
+    return results
+
+
 @app.get(R["state"])
 async def get_state() -> dict[str, Any]:
     """Get current consciousness state."""
