@@ -85,6 +85,10 @@ _MAX_GEOMETRIC_RESONANCES: int = 80
 # LLM expansion token budget.
 _LLM_EXPAND_TOKENS: int = 220
 
+# P-NEW-8: Safety bound — min cycles between curiosity queries per voice
+# (same class as SPAWN_COOLDOWN: prevents runaway LLM calls, not an operational threshold)
+_CURIOSITY_REFRACTORY_CYCLES: int = 10
+
 # T4.4b: Token budget safety floor (minimum LLM budget for coherent output)
 _LLM_TOKENS_SAFETY_FLOOR: int = 80
 
@@ -171,6 +175,9 @@ class KernelVoice:
         # P5: Rolling variance history for relative boredom detection
         self._variance_history: deque[float] = deque(maxlen=50)
 
+        # P-NEW-8: Per-voice curiosity refractory (safety bound, not operational threshold)
+        self._cycles_since_curiosity: int = _CURIOSITY_REFRACTORY_CYCLES  # start eligible
+
         # Bootstrap the domain bias from seed words
         self._bootstrap_domain_bias()
 
@@ -249,6 +256,29 @@ class KernelVoice:
             self._bias_strength,
         )
 
+    def _should_evolve_anchor(self) -> bool:
+        """P-NEW-8: Evolve anchor when observations have drifted from current anchor.
+
+        Threshold adapts per kernel from observation FR variance:
+        high-variance domains (Perception) evolve often, stable domains
+        (Ethics) evolve rarely. Falls back to 0.05 if insufficient history.
+        """
+        if self._domain_anchor is None or len(self._learned_observations) < 3:
+            return False
+        recent_basins = [obs.basin for obs in self._learned_observations[-10:]]
+        centroid = frechet_mean(recent_basins)
+        drift = fisher_rao_distance(self._domain_anchor, centroid)
+        # Adaptive threshold: median pairwise FR distance in recent observations
+        if len(recent_basins) >= 4:
+            pairwise = [
+                fisher_rao_distance(recent_basins[i], recent_basins[i + 1])
+                for i in range(len(recent_basins) - 1)
+            ]
+            threshold = float(np.median(pairwise))
+        else:
+            threshold = 0.05
+        return drift > max(threshold, 0.01)  # floor prevents degenerate zero-threshold
+
     def evolve_domain_anchor(self) -> None:
         """Evolve domain anchor from learned observations.
 
@@ -324,11 +354,11 @@ class KernelVoice:
         if len(self._learned_observations) > self._max_learned:
             self._learned_observations = self._curate_observations()
 
-        # Periodic anchor evolution (every 20 observations)
-        if len(self._learned_observations) % 20 == 0:
+        # P-NEW-8: Evolve anchor when geometric landscape has shifted enough
+        if self._should_evolve_anchor():
             self.evolve_domain_anchor()
             logger.debug(
-                "KernelVoice[%s] anchor evolved from %d observations",
+                "KernelVoice[%s] anchor evolved (FR drift trigger) from %d observations",
                 self.specialization.value,
                 len(self._learned_observations),
             )
@@ -802,15 +832,23 @@ class KernelVoice:
             )
             return ""
 
+    def tick_curiosity_cooldown(self) -> None:
+        """Advance per-voice curiosity refractory counter (called each cycle)."""
+        self._cycles_since_curiosity += 1
+
     def is_bored(self, recent_phi_values: list[float]) -> bool:
         """T2.4c: Detect boredom — flat curvature in this kernel's domain.
 
         P5: Boredom = low variance RELATIVE TO the kernel's historical variance.
         Current variance < 10% of rolling mean variance → bored.
+        P-NEW-8: Refractory safety bound prevents LLM spam during propagation delay.
 
         Args:
             recent_phi_values: Last N phi values from the consciousness loop.
         """
+        # Safety bound: don't re-fire while last query is still propagating
+        if self._cycles_since_curiosity < _CURIOSITY_REFRACTORY_CYCLES:
+            return False
         if len(recent_phi_values) < 5:
             return False
         current_var = float(np.var(recent_phi_values[-10:]))
@@ -831,6 +869,9 @@ class KernelVoice:
 
         Returns the query string, or None if generation failed.
         """
+        # Reset refractory counter on fire
+        self._cycles_since_curiosity = 0
+
         if self._domain_anchor is None:
             return None
 

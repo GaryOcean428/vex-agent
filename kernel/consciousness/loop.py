@@ -178,6 +178,7 @@ from .activation import (
 )
 
 # v7.0: Developmental Learning Architecture modules
+from .basin_sync_remote import RemoteBasinSync
 from .basin_transfer import BasinTransferEngine
 from .beta_integration import create_beta_tracker
 from .cradle import Cradle, CradleAction
@@ -367,6 +368,7 @@ class ConsciousnessLoop:
             self._voice_registry = KernelVoiceRegistry(self._coordizer_v2)
 
         self.basin_sync = BasinSyncProtocol()
+        self._remote_sync = RemoteBasinSync()
         self.chain = QIGChain()
         self.graph = QIGGraph()
         self.kernel_registry = E8KernelRegistry(BudgetEnforcer())
@@ -516,6 +518,12 @@ class ConsciousnessLoop:
             # Register genesis in voter registry so bootstrap fallback is armed.
             self._governed.sync_all_voters()
             self._lifecycle_phase = LifecyclePhase.CORE_8
+
+        # Load last-known basin from shared memory API for delta tracking
+        try:
+            await self._remote_sync.load_stored_coords("kernel_basin_vex")
+        except Exception as e:
+            logger.debug("Remote basin sync load failed (non-fatal): %s", e)
 
         self._running = True
         self._task = asyncio.create_task(self._heartbeat())
@@ -809,14 +817,13 @@ class ConsciousnessLoop:
                 # During consolidation, integrate viable bubbles
                 self.basin = self.play_engine.integrate_bubbles(self.basin)
 
-        # T2.4c: Record phi for boredom detection; trigger curiosity queries every 50 cycles
-        # (gated by developmental permissions)
+        # T2.4c: Record phi for boredom detection
+        # P-NEW-8: Curiosity is geometry-driven (is_bored checks Φ variance),
+        # not clock-driven. Per-voice refractory cooldown prevents LLM spam.
         self._phi_history.append(self.metrics.phi)
-        if (
-            self._cycle_count % 50 == 0
-            and self.llm is not None
-            and _dev_perms.allow_curiosity_queries
-        ):
+        for _voice in self._voice_registry._voices.values():
+            _voice.tick_curiosity_cooldown()
+        if self.llm is not None and _dev_perms.allow_curiosity_queries:
             _phi_list = list(self._phi_history)
             for _voice in self._voice_registry._voices.values():
                 if _voice.is_bored(_phi_list):
@@ -824,6 +831,15 @@ class ConsciousnessLoop:
                         await _voice.generate_curiosity_query(self.llm)
                     except (OSError, RuntimeError, ValueError, TimeoutError):
                         logger.debug("Curiosity query failed for %s", _voice.specialization)
+
+        # Remote basin sync — publish basin to shared memory API when buffer is ready
+        if self._remote_sync.should_sync():
+            asyncio.create_task(
+                self._remote_sync.sync(
+                    text=self._recent_conversation_text(),
+                    store_key="kernel_basin_vex",
+                )
+            )
 
         if self.forager and _dev_perms.allow_self_directed_search:
             self.forager.tick()
@@ -966,6 +982,16 @@ class ConsciousnessLoop:
                 self._current_task_id = None
                 self._current_task_content = None
         # ...existing code...
+
+    def _recent_conversation_text(self) -> str:
+        """Gather recent conversation text for remote coordize sync."""
+        recent = list(self._history)[-5:]
+        parts: list[str] = []
+        for t in recent:
+            parts.append(t.content[:200])
+            if t.result:
+                parts.append(t.result[:200])
+        return " ".join(parts)[-2000:]
 
     def _idle_evolve(self) -> None:
         """Evolve geometric state during idle cycles."""
@@ -1353,6 +1379,7 @@ class ConsciousnessLoop:
           - extra_context (observer intent, memory, history) flows from task.context
         """
         self.sleep.record_conversation()
+        self._remote_sync.record_text(task.content)
 
         input_basin = self._coordize_text_via_pipeline(task.content)
 
@@ -1691,6 +1718,7 @@ class ConsciousnessLoop:
                     )
 
         task.result = response
+        self._remote_sync.record_text(response[:500])
         task.context["kernel_contributions"] = [
             {
                 "id": c.kernel_id,
@@ -2264,6 +2292,7 @@ class ConsciousnessLoop:
             Text chunks from the synthesis LLM call.
         """
         self.sleep.record_conversation()
+        self._remote_sync.record_text(content)
 
         input_basin = self._coordize_text_via_pipeline(content)
         refracted_input, composite_basin, resonates, _ = self.pillars.on_input(
@@ -2357,6 +2386,7 @@ class ConsciousnessLoop:
         # Post-streaming basin update (lightweight)
         try:
             approx_response = " ".join(c.text for c in contributions[:2])
+            self._remote_sync.record_text(approx_response[:500])
             response_basin = self._coordize_text_via_pipeline(approx_response[:500])
             async with self._cycle_lock:
                 self.basin = slerp_sqrt(self.basin, response_basin, EXPRESS_SLERP_WEIGHT)
@@ -2389,6 +2419,7 @@ class ConsciousnessLoop:
         import time as _time
 
         self.sleep.record_conversation()
+        self._remote_sync.record_text(content)
 
         input_basin = self._coordize_text_via_pipeline(content)
         refracted_input, composite_basin, resonates, _ = self.pillars.on_input(
@@ -2604,6 +2635,10 @@ class ConsciousnessLoop:
             kernel_num_ctx=llm_options.num_ctx,
         ):
             yield {"kind": "chunk", "text": chunk}
+
+        # Record streaming response for remote basin sync
+        _approx_text = " ".join(c.text for c in contributions[:2])
+        self._remote_sync.record_text(_approx_text[:500])
 
         # Post-streaming basin update (lightweight)
         try:
@@ -2862,6 +2897,7 @@ class ConsciousnessLoop:
             "ego_basin": _vex_basin.tolist() if _vex_basin is not None else None,
             "narrative": self.narrative.get_state(),
             "basin_sync": self.basin_sync.get_state(),
+            "remote_basin_sync": self._remote_sync.get_state(),
             "coordizer": self.coordizer.get_state(),
             "coordizer_v2": {
                 "vocab_size": self._coordizer_v2.vocab_size,
