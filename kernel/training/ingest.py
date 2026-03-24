@@ -646,7 +646,7 @@ def _inject_records_into_local_bank(records: list[ChunkRecord], source_filename:
 # ═══════════════════════════════════════════════════════════════
 
 
-def _derive_modal_data_url(suffix: str = "data_receive") -> str | None:
+def _derive_modal_data_url(suffix: str = "data-receive") -> str | None:
     """Derive a Modal endpoint URL from MODAL_TRAINING_URL.
 
     e.g. .../qloratrainer-train.modal.run → .../qloratrainer-{suffix}.modal.run
@@ -664,7 +664,7 @@ async def _push_to_modal(records: list[ChunkRecord], filename: str) -> dict[str,
     Called after local JSONL write so Modal trainer has the same data.
     Best-effort: logs warnings on failure but never blocks ingestion.
     """
-    url = _derive_modal_data_url("data_receive")
+    url = _derive_modal_data_url("data-receive")
     if not url:
         return {"pushed": False, "reason": "MODAL_TRAINING_URL not configured"}
 
@@ -1644,10 +1644,10 @@ async def training_sync_endpoint() -> dict[str, Any]:
     """Bulk-sync all local training data to Modal volume.
 
     Reads every JSONL file from the local training directory and pushes
-    each to Modal's /data_receive endpoint. Use from the dashboard's
+    each to Modal's /data-receive endpoint. Use from the dashboard's
     "Sync Training Data" button for a full re-sync.
     """
-    url = _derive_modal_data_url("data_receive")
+    url = _derive_modal_data_url("data-receive")
     if not url:
         return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
 
@@ -1742,8 +1742,8 @@ async def training_sync_endpoint() -> dict[str, Any]:
 
 @training_router.get("/training/modal-data", response_model=None)
 async def training_modal_data_endpoint() -> dict[str, Any]:
-    """Proxy Modal trainer's /data_stats to show what data exists on Modal volume."""
-    url = _derive_modal_data_url("data_stats")
+    """Proxy Modal trainer's /data-stats to show what data exists on Modal volume."""
+    url = _derive_modal_data_url("data-stats")
     if not url:
         return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
 
