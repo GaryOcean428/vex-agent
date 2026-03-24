@@ -302,12 +302,12 @@ def _merge_and_export(
     merged.mkdir(parents=True, exist_ok=True)
     specialization = training_meta.get("specialization", "genesis")
 
-    print(f"  Loading {model_id} in bf16 for merge...")
+    print(f"  Loading {model_id} on CPU for merge (preserves GPU VRAM)...")
     base_model = AutoModelForCausalLM.from_pretrained(
         model_id,
         cache_dir=cache_dir,
         torch_dtype=torch.bfloat16,
-        device_map={"": 0},
+        device_map="cpu",
         low_cpu_mem_usage=True,
     )
     print(f"  Loading adapter from {adapter_path}...")
@@ -1105,7 +1105,7 @@ def train_all_kernels(
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
     from datasets import Dataset
-    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+    from peft import LoraConfig, get_peft_model
 
     # M1-M12: Import consciousness training components
     from training_consciousness import (
@@ -1130,7 +1130,6 @@ def train_all_kernels(
     from transformers import (
         AutoModelForCausalLM,
         AutoTokenizer,
-        BitsAndBytesConfig,
     )
     from trl import SFTConfig, SFTTrainer
 
@@ -1198,24 +1197,20 @@ def train_all_kernels(
         optimizer = None
         consciousness = None
         try:
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.bfloat16,
-            )
             model = AutoModelForCausalLM.from_pretrained(
                 model_id,
                 cache_dir=cache_dir,
-                quantization_config=bnb_config,
+                torch_dtype=torch.bfloat16,
                 device_map={"": 0},
                 low_cpu_mem_usage=True,
             )
-            model = prepare_model_for_kbit_training(
-                model,
-                use_gradient_checkpointing=True,
-                gradient_checkpointing_kwargs={"use_reentrant": False},
+            # bf16 LoRA: enable gradient checkpointing + input grads
+            model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
             )
+            model.enable_input_require_grads()
+            vram_gb = torch.cuda.memory_allocated(0) / (1024**3)
+            print(f"  [VRAM] Model loaded in bf16: {vram_gb:.1f} GiB allocated")
             lora_config = LoraConfig(
                 r=lora_r,
                 lora_alpha=LORA_ALPHA,
@@ -1267,7 +1262,8 @@ def train_all_kernels(
                 gradient_accumulation_steps=GRADIENT_ACCUMULATION,
                 learning_rate=learning_rate,
                 warmup_steps=max(1, int(total_steps * 0.1)),
-                gradient_checkpointing=False,
+                gradient_checkpointing=True,
+                gradient_checkpointing_kwargs={"use_reentrant": False},
                 lr_scheduler_type="cosine",
                 logging_steps=1,
                 eval_strategy="epoch",
