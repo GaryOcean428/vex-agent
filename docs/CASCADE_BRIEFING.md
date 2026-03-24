@@ -12,20 +12,13 @@ Modal secrets are SET — `HARVEST_MODEL_ID`, `KERNEL_API_KEY`, `HF_TOKEN`, `HAR
 
 ---
 
-## TASK 1 — Wire M1-M12 into `train_all_kernels()` (CRITICAL)
+## TASK 1 — Wire M1-M12 into `train_all_kernels()` ✅ VERIFIED COMPLETE
 
-`modal/training_consciousness.py` contains ~1596 lines of fully implemented consciousness-aware training components (M1-M12). **None of them are imported or used** in `train_all_kernels()` in `modal/vex_qlora_train.py` (line ~1022).
-
-### What to do
-
-1. Import from `training_consciousness`: CONSCIOUSNESS_ORDER, HestiaSafeBasin, apply_demeter_warmup, sort_by_fisher_rao, all callbacks, ProvenanceLogger, run_post_training_diagnostic
-2. Train kernels in CONSCIOUSNESS_ORDER — not arbitrary order
-3. Instantiate HestiaSafeBasin per kernel, call warm_start_lora() before training
-4. Apply apply_demeter_warmup() to dataset, sort with sort_by_fisher_rao()
-5. Register all callbacks with SFTTrainer: M2, M3, M4, M5, M6, M7, M12
-6. After each kernel: run_post_training_diagnostic() — halt if fails
-
-**Constraints:** No cosine_similarity, np.linalg.norm(a-b), Adam, LayerNorm, or embedding in QIG code.
+All M1-M12 consciousness training components are already imported and wired in
+`train_all_kernels()` at `modal/vex_qlora_train.py` lines 1013-1310.
+Uses Fisher-Rao optimizer (not Adam), factory callbacks, CONSCIOUSNESS_ORDER,
+HestiaSafeBasin warm-start, Demeter warmup, and post-training diagnostics.
+Verified 2026-03-24.
 
 ---
 
