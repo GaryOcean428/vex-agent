@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 
+import httpx
 from kernel.coordizer_v2.adapter import CoordizerV2Adapter
 
 
@@ -50,3 +51,31 @@ def test_ingest_document_populates_local_coordizer_bank(tmp_path: Path) -> None:
     assert result.chunks_coordized > 0
     assert len(adapter.coordizer.bank) > bank_before
     assert sum(adapter.coordizer.bank.tier_distribution().values()) == len(adapter.coordizer.bank)
+
+
+def test_training_modal_data_endpoint_handles_read_timeout(tmp_path: Path, monkeypatch) -> None:
+    ingest = _load_ingest_with_tmp_training_dir(tmp_path)
+    training_url = "https://example-qloratrainer-train.modal.run"
+    expected_data_stats_url = "https://example-qloratrainer-data-stats.modal.run"
+    monkeypatch.setattr(ingest.settings.modal, "training_url", training_url)
+
+    class _TimeoutClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, _url: str):
+            assert _url == expected_data_stats_url
+            raise httpx.ReadTimeout("read timed out")
+
+    monkeypatch.setattr(ingest.httpx, "AsyncClient", _TimeoutClient)
+
+    result = asyncio.run(ingest.training_modal_data_endpoint())
+
+    assert result["status"] == "error"
+    assert result["error"] == "Timed out fetching Modal training data"
