@@ -271,6 +271,27 @@ export interface VexTelemetry extends VexState {
   foresight: { history_length: number; predicted_phi: number };
   coupling: { strength: number; balanced: boolean; efficiency_boost: number };
   beta_tracker?: BetaTrackerSummary;
+  coordizer_v2?: {
+    vocab_size: number;
+    dim: number;
+    tier_distribution: Record<string, number>;
+    bank_size: number;
+    bank_entropy: number;
+    bank_sovereignty: number;
+    origin_breakdown: { harvested: number; lived: number };
+    last_rebuild: number | null;
+    total_activations: number;
+  };
+  context_estimate?: {
+    num_ctx: number;
+    num_predict: number;
+    system_prompt_tokens: number;
+    geometric_state_tokens: number;
+    memory_tokens: number;
+    kernel_context_tokens: number;
+    used_tokens: number;
+    available_for_history: number;
+  };
 }
 
 // ═══════════════════════════════════════
@@ -632,6 +653,14 @@ export interface HealthStatus {
 //  Training Types (from /training/*)
 // ═══════════════════════════════════════════════════════════════
 
+export interface TrainingFileInfo {
+  filename: string;
+  chunks: number;
+  enriched: number;
+  e8_tags: Record<string, number>;
+  uploaded_at: string;
+}
+
 export interface TrainingStats {
   conversations: number;
   feedback: number;
@@ -640,6 +669,7 @@ export interface TrainingStats {
   harvest_pending_files?: number;
   coordizer_active: boolean;
   uploads: number;
+  files?: TrainingFileInfo[];
   dir_exists: boolean;
   training_dir: string;
 }
@@ -662,6 +692,42 @@ export interface TrainingUploadResponse {
   processing_time_s: number;
   errors?: string[];
   error?: string;
+}
+
+/** Per-kernel adapter metadata from Modal /status endpoint. */
+export interface ModalAdapterInfo {
+  exists: boolean;
+  adapter_config?: Record<string, unknown>;
+  training_meta?: {
+    epochs?: number;
+    loss?: number;
+    train_loss?: number;
+    date?: string;
+    trained_at?: string;
+    samples?: number;
+    train_samples?: number;
+    [key: string]: unknown;
+  };
+}
+
+/** Response from GET /training/modal-status proxy endpoint. */
+export interface ModalStatus {
+  status: 'ok' | 'unavailable' | 'error';
+  error?: string;
+  adapters?: {
+    adapters?: Record<string, ModalAdapterInfo>;
+    [key: string]: unknown;
+  } | null;
+  status_error?: string;
+  health?: {
+    model_id?: string;
+    training_active?: boolean;
+    inference_loaded?: boolean;
+    loaded_adapters?: string[];
+    specializations?: string[];
+    [key: string]: unknown;
+  } | null;
+  health_error?: string;
 }
 
 // ═══════════════════════════════════════

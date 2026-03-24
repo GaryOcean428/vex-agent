@@ -13,10 +13,10 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: '3.14'
       - run: pip install modal
       # NOTE: vex_inference.py (legacy Ollama-on-Modal) deliberately excluded.
       # It consumed 1 web endpoint and is gated off (MODAL_INFERENCE_ENABLED=false).

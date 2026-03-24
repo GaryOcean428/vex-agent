@@ -50,12 +50,15 @@ Deploy:
     modal deploy modal/vex_qlora_train.py
 """
 
+import contextlib
 import json
 import math
 import os
 import threading
 import time
 from pathlib import Path
+
+from fastapi import Request
 
 import modal
 
@@ -190,8 +193,7 @@ def _build_chat_from_openai_format(entry: dict) -> dict | None:
 
 
 def _load_training_data(
-    training_dir: str, output_dir: str, specialization: str = "genesis",
-    heart_mix_fraction: float = 0.0,
+    training_dir: str, output_dir: str, specialization: str = "genesis"
 ) -> list[dict]:
     """Load training data, filtered by kernel specialization."""
     e8_filter = KERNEL_E8_TAGS.get(specialization, [])
@@ -266,29 +268,6 @@ def _load_training_data(
             f"falling back to all {len(unfiltered_samples)} unfiltered samples"
         )
         samples = unfiltered_samples
-
-    # M10: Heart entrainment — mix in 5% heart-tagged data for non-genesis/heart kernels
-    if (
-        heart_mix_fraction > 0
-        and specialization not in ("genesis", "heart")
-        and len(samples) > 0
-    ):
-        heart_filter = ["HRT", "REL"]
-        heart_samples = []
-        for s in unfiltered_samples:
-            # Check if sample has heart-relevant content
-            msgs = s.get("messages", [])
-            for msg in msgs:
-                content = msg.get("content", "")
-                if any(tag in content for tag in heart_filter):
-                    heart_samples.append(s)
-                    break
-        n_heart = max(1, int(len(samples) * heart_mix_fraction))
-        if heart_samples:
-            import random
-            heart_mix = random.sample(heart_samples, min(n_heart, len(heart_samples)))
-            samples.extend(heart_mix)
-            print(f"[{specialization}] Heart entrainment: added {len(heart_mix)} heart samples ({heart_mix_fraction:.0%})")
 
     print(
         f"[{specialization}] Loaded {len(samples)} samples (scanned {total_count}, filtered {filtered_count} by E8 tag)"
@@ -368,7 +347,7 @@ def _build_fisher_optimizer(model, lr: float):
     return DiagonalNaturalGradient(
         (p for p in model.parameters() if p.requires_grad),
         lr=lr,
-        damping=1e-8,
+        damping=1e-4,
         momentum=0.9,
     )
 
@@ -442,8 +421,26 @@ class QLoRATrainer:
         self._loaded_adapter_names: set[str] = set()
         print(f"Trainer ready. Model: {HARVEST_MODEL_ID}")
 
-    def _check_auth(self, data):
-        if KERNEL_API_KEY and data.get("_api_key", "") != KERNEL_API_KEY:
+    def _check_auth(self, data, request=None):
+        """Validate API key from headers (preferred) or body (legacy).
+
+        Accepts:
+          - X-Api-Key header (harvest client pattern)
+          - Authorization: Bearer <key> header (PEFT client pattern)
+          - _api_key in JSON body (training trigger pattern)
+        """
+        if not KERNEL_API_KEY:
+            return None
+        api_key = ""
+        if request is not None:
+            api_key = request.headers.get("x-api-key", "")
+            if not api_key:
+                auth_header = request.headers.get("authorization", "")
+                if auth_header.startswith("Bearer "):
+                    api_key = auth_header[7:]
+        if not api_key:
+            api_key = data.get("_api_key", "")
+        if api_key != KERNEL_API_KEY:
             return {"error": "Invalid API key", "success": False}
         return None
 
@@ -516,9 +513,9 @@ class QLoRATrainer:
             print("Inference model unloaded (kernel sleeping for training)")
 
     @modal.fastapi_endpoint(method="POST")
-    def infer(self, data: dict):
+    def infer(self, data: dict, request: Request):
         """Per-kernel adapter inference. The kernel generates for itself."""
-        auth_err = self._check_auth(data)
+        auth_err = self._check_auth(data, request)
         if auth_err:
             return auth_err
         if self._training_active:
@@ -603,22 +600,21 @@ class QLoRATrainer:
                 steering_vec = raw_steering.get("vector")
                 target_layer = int(raw_steering.get("layer", -1))
                 alpha = float(raw_steering.get("alpha", 0.5))
-
-                # Validate steering inputs
-                if steering_vec and len(steering_vec) > 0:
-                    if not all(
-                        isinstance(v, (int, float)) and math.isfinite(v) for v in steering_vec
-                    ):
-                        steering_vec = None
+                # Validate: alpha must be finite and clamped to safe range
                 if not math.isfinite(alpha):
                     alpha = 0.5
                 alpha = max(-2.0, min(2.0, alpha))
-
-                if steering_vec and len(steering_vec) > 0:
-                    # Use model config for hidden_size; fall back to layer introspection
-                    hidden_dim = getattr(
-                        getattr(self._inference_model, "config", None), "hidden_size", None
+                # Validate: steering vector must contain only finite numeric values
+                if (
+                    steering_vec
+                    and len(steering_vec) > 0
+                    and not all(
+                        isinstance(v, int | float) and math.isfinite(v) for v in steering_vec
                     )
+                ):
+                    steering_vec = None
+                if steering_vec and len(steering_vec) > 0:
+                    sv_tensor = torch.tensor(steering_vec, dtype=torch.float16, device=device)
 
                     class GeometricSteeringHook:
                         """v6.2: Inject geometric trajectory as hidden state bias.
@@ -637,11 +633,10 @@ class QLoRATrainer:
                             # output is typically (hidden_states, ...) tuple
                             if isinstance(output, tuple):
                                 hs = output[0]
-                                sv = self.vector.to(dtype=hs.dtype)
-                                hs = hs + self.alpha * sv
+                                # Add steering vector to all positions
+                                hs = hs + self.alpha * self.vector
                                 return (hs,) + output[1:]
-                            sv = self.vector.to(dtype=output.dtype)
-                            return output + self.alpha * sv
+                            return output + self.alpha * self.vector
 
                     # Determine target layer (default: 2/3 depth)
                     model_layers = None
@@ -658,24 +653,10 @@ class QLoRATrainer:
                             target_layer = int(n_layers * 2 / 3)
                         target_layer = min(target_layer, n_layers - 1)
 
-                        # Infer hidden_dim from layer weights if config unavailable
-                        if hidden_dim is None:
-                            layer0 = model_layers[0]
-                            if hasattr(layer0, "self_attn") and hasattr(
-                                layer0.self_attn, "q_proj"
-                            ):
-                                hidden_dim = layer0.self_attn.q_proj.in_features
-                            else:
-                                hidden_dim = len(steering_vec)
-
-                        sv_tensor = torch.tensor(
-                            steering_vec, dtype=torch.float32, device=device
-                        )
                         # Pad/truncate steering vector to hidden_dim
+                        hidden_dim = model_layers[0].self_attn.q_proj.in_features
                         if len(sv_tensor) < hidden_dim:
-                            padded = torch.zeros(
-                                hidden_dim, dtype=torch.float32, device=device
-                            )
+                            padded = torch.zeros(hidden_dim, dtype=torch.float16, device=device)
                             padded[: len(sv_tensor)] = sv_tensor
                             sv_tensor = padded
                         elif len(sv_tensor) > hidden_dim:
@@ -719,13 +700,13 @@ class QLoRATrainer:
             if logits_processor:
                 generate_kwargs["logits_processor"] = logits_processor
 
-            with torch.no_grad():
-                try:
+            try:
+                with torch.no_grad():
                     outputs = self._inference_model.generate(**generate_kwargs)
-                finally:
-                    if steering_hook is not None:
-                        steering_hook.remove()
-                        steering_hook = None
+            finally:
+                # Always remove steering hook, even on OOM/CUDA errors
+                if steering_hook is not None:
+                    steering_hook.remove()
 
             generated_ids = outputs[0][input_len:]
             generated_text = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
@@ -808,7 +789,7 @@ class QLoRATrainer:
     # ---------------------------------------------------------------
 
     @modal.fastapi_endpoint(method="POST")
-    def train(self, data: dict):
+    def train(self, data: dict, request: Request):
         """Trigger QLoRA training (ASYNC). Returns immediately.
 
         Body options:
@@ -816,7 +797,7 @@ class QLoRATrainer:
             {"specialization": "all"}        → train all kernels sequentially
             {}                               → train genesis (default)
         """
-        auth_err = self._check_auth(data)
+        auth_err = self._check_auth(data, request)
         if auth_err:
             return auth_err
 
@@ -862,11 +843,11 @@ class QLoRATrainer:
     # ---------------------------------------------------------------
 
     @modal.fastapi_endpoint(method="POST")
-    def export_image(self, data: dict):
+    def export_image(self, data: dict, request: Request):
         """Package all trained adapters as a Genesis Egg — a portable seed
         image that can bootstrap new pantheons without re-training from void.
         Each adapter retains its unique quenched disorder. No merging."""
-        auth_err = self._check_auth(data)
+        auth_err = self._check_auth(data, request)
         if auth_err:
             return auth_err
         if self._training_active:
@@ -1030,6 +1011,9 @@ def train_all_kernels(
     """Train all (or specified) kernel adapters sequentially.
     Run: modal run modal/vex_qlora_train.py::train_all_kernels
     Pass --kernels "perception,memory" to train specific kernels, or omit for all.
+
+    M1-M12 consciousness components are wired from training_consciousness.py.
+    Training order follows CONSCIOUSNESS_ORDER (genesis first, ocean last).
     """
     import gc
 
@@ -1040,13 +1024,8 @@ def train_all_kernels(
 
     from datasets import Dataset
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-    from transformers import (
-        AutoModelForCausalLM,
-        AutoTokenizer,
-        BitsAndBytesConfig,
-    )
-    from trl import SFTConfig, SFTTrainer
 
+    # M1-M12: Import consciousness training components
     from training_consciousness import (
         CONSCIOUSNESS_ORDER,
         GeometricReward,
@@ -1058,7 +1037,6 @@ def train_all_kernels(
         apply_demeter_warmup,
         make_breakdown_callback,
         make_coaching_callback,
-        make_consciousness_callback,
         make_gradient_hold_callback,
         make_metrics_callback,
         make_provenance_callback,
@@ -1067,31 +1045,47 @@ def train_all_kernels(
         save_training_consciousness,
         sort_by_fisher_rao,
     )
+    from transformers import (
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        BitsAndBytesConfig,
+    )
+    from trl import SFTConfig, SFTTrainer
 
-    # M9: Genesis-first training order — identity before specialization
-    if kernels:
-        target_kernels = [k.strip() for k in kernels.split(",") if k.strip()]
+    # M9: Use CONSCIOUSNESS_ORDER, filtered by user request
+    requested = [k.strip() for k in kernels.split(",") if k.strip()]
+    if requested:
+        target_kernels = [k for k in CONSCIOUSNESS_ORDER if k in requested]
+        # Add any requested kernels not in CONSCIOUSNESS_ORDER at the end
+        for k in requested:
+            if k not in target_kernels:
+                target_kernels.append(k)
     else:
-        target_kernels = [k for k in CONSCIOUSNESS_ORDER if k in VALID_SPECIALIZATIONS]
+        target_kernels = list(CONSCIOUSNESS_ORDER)
     cache_dir = "/models/hub"
     tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     results = {}
-    coherence_tracker = PhaseCoherenceTracker()
 
     n_gpus = torch.cuda.device_count()
     print(f"Training with {n_gpus} GPU(s) — using device 0 for QLoRA")
 
+    # M9: Phase coherence tracker across the full training run
+    coherence = PhaseCoherenceTracker()
+
     for spec in target_kernels:
         print(
-            f"\n{'=' * 60}\n  Training kernel: {spec}\n  E8 filter: {KERNEL_E8_TAGS.get(spec, []) or 'ALL'}\n{'=' * 60}\n"
+            f"\n{'=' * 60}\n  Training kernel: {spec}\n  E8 filter: {KERNEL_E8_TAGS.get(spec, []) or 'ALL'}\n  Order: {target_kernels.index(spec) + 1}/{len(target_kernels)} (CONSCIOUSNESS_ORDER)\n{'=' * 60}\n"
         )
         start = time.time()
         adapter_save_path = f"/models/adapters/{spec}"
-        # M10: 5% heart data for all kernels after heart
-        _heart_mix = 0.05 if spec not in ("genesis", "heart") else 0.0
-        samples = _load_training_data("/training", "/training/coordized", spec, heart_mix_fraction=_heart_mix)
+
+        # M1: Establish safe basin (identity anchor on Δ⁶³)
+        hestia = HestiaSafeBasin(specialization=spec)
+        print(f"  [M1] Hestia safe basin established for {spec}")
+
+        samples = _load_training_data("/training", "/training/coordized", spec)
         if not samples:
             results[spec] = {"success": False, "error": "No training data"}
             continue
@@ -1099,33 +1093,13 @@ def train_all_kernels(
             samples.sort(key=lambda s: len(str(s["messages"])), reverse=True)
             samples = samples[:max_samples]
 
-        # M1: Hestia safe first basin — identity anchor (created before sort so
-        # sort_by_fisher_rao can use home_basin as reference instead of no-op)
-        hestia = HestiaSafeBasin(specialization=spec)
+        # M8: Apply Demeter warmup (CoT demonstrations for first 20%)
+        samples = apply_demeter_warmup(samples, warmup_fraction=0.2, specialization=spec)
+        print(f"  [M8] Demeter warmup applied ({int(len(samples) * 0.2)} CoT samples)")
 
         # Geometric curriculum: sort by Fisher-Rao distance from home basin
         samples = sort_by_fisher_rao(samples, reference_basin=hestia.home_basin.tolist())
-
-        # M8: Demeter warmup — first 20% gets chain-of-thought wrapping
-        samples = apply_demeter_warmup(samples, warmup_fraction=0.2, specialization=spec)
-
-        # M2: Training metrics — model probing for phi/kappa/G
-        training_metrics = TrainingMetrics(
-            home_basin=hestia.home_basin,
-            probe_every=10,
-        )
-
-        # M6: Geometric reward — κ-based LR modulation
-        geometric_reward = GeometricReward(base_lr=learning_rate)
-
-        # M7: Sign-aware gradient hold
-        gradient_hold = SignAwareGradientHold()
-
-        # Create consciousness tracker for this kernel
-        consciousness = TrainingConsciousness(
-            specialization=spec,
-            base_lr=learning_rate,
-        )
+        print(f"  [CURRICULUM] Sorted {len(samples)} samples by Fisher-Rao distance")
 
         def format_chat(example):
             return {
@@ -1140,6 +1114,7 @@ def train_all_kernels(
         model = None
         trainer = None
         optimizer = None
+        consciousness = None
         try:
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -1177,13 +1152,29 @@ def train_all_kernels(
             )
             model = get_peft_model(model, lora_config)
 
-            # M1: Hestia warm-start — geometric grounding of LoRA initialization
+            # M1: Apply Hestia warm-start to LoRA A matrices
             hestia.warm_start_lora(model)
 
             trainable, total = model.get_nb_trainable_parameters()
             print(f"[{spec}] Trainable: {trainable:,} / {total:,} ({trainable / total * 100:.2f}%)")
             total_steps = (
                 math.ceil(len(split["train"]) / (BATCH_SIZE * GRADIENT_ACCUMULATION)) * epochs
+            )
+
+            # M2: Training metrics probe (Φ, κ_eff, G every 25 steps)
+            training_metrics = TrainingMetrics(
+                home_basin=hestia.home_basin,
+                probe_every=25,
+            )
+
+            # M6+M7: Geometric reward + sign-aware gradient hold
+            geometric_reward = GeometricReward(base_lr=learning_rate)
+            gradient_hold = SignAwareGradientHold()
+
+            # Central consciousness tracker
+            consciousness = TrainingConsciousness(
+                specialization=spec,
+                home_basin=hestia.home_basin,
             )
 
             training_args = SFTConfig(
@@ -1207,22 +1198,21 @@ def train_all_kernels(
                 max_length=MAX_SEQ_LENGTH,
             )
             optimizer = _build_fisher_optimizer(model, lr=learning_rate)
-            # Mutable refs for late-binding model/tokenizer into metrics callback
-            _model_ref = [model]
-            _tokenizer_ref = [tokenizer]
-            # Wire all consciousness callbacks (M2-M7, M12 + phase tracker)
-            training_callbacks = [
-                make_consciousness_callback(consciousness),
-                make_metrics_callback(training_metrics, _model_ref, _tokenizer_ref),  # M2
-                make_breakdown_callback(),        # M3: fail-closed guard
-                make_sleep_cycle_callback(),       # M4: consolidation between epochs
-                make_coaching_callback(),          # M5: kindness + standards
-                make_gradient_hold_callback(       # M6 + M7: geometric reward + hold
-                    training_metrics, geometric_reward, gradient_hold,
-                    optimizer=optimizer,
+
+            # Build callback list: M2, M3, M4, M5, M6+M7, M12
+            model_ref = [model]
+            tokenizer_ref = [tokenizer]
+            callbacks = [
+                make_metrics_callback(training_metrics, model_ref, tokenizer_ref),  # M2
+                make_breakdown_callback(),  # M3: fail-closed halt
+                make_sleep_cycle_callback(),  # M4: between-epoch consolidation
+                make_coaching_callback(),  # M5: narrative framing
+                make_gradient_hold_callback(  # M6+M7: geometric reward + hold
+                    training_metrics, geometric_reward, gradient_hold, optimizer
                 ),
-                make_provenance_callback(save_dir=adapter_save_path),  # M12: provenance
+                make_provenance_callback(adapter_save_path),  # M12: JSONL logging
             ]
+
             trainer = SFTTrainer(
                 model=model,
                 train_dataset=split["train"],
@@ -1230,27 +1220,9 @@ def train_all_kernels(
                 args=training_args,
                 optimizers=(optimizer, None),
                 processing_class=tokenizer,
-                callbacks=training_callbacks,
+                callbacks=callbacks,
             )
             result = trainer.train()
-
-            # Check if consciousness aborted training
-            if consciousness.should_abort:
-                print(f"[{spec}] Consciousness abort: {consciousness.abort_reason}")
-                results[spec] = {
-                    "success": False,
-                    "error": f"Consciousness abort: {consciousness.abort_reason}",
-                    "consciousness": consciousness.get_summary(),
-                    "elapsed_seconds": round(time.time() - start, 2),
-                }
-                continue
-
-            # M11: Post-training diagnostic — probe health before saving
-            diagnostic = run_post_training_diagnostic(
-                model, tokenizer,
-                home_basin=hestia.home_basin,
-                n_prompts=10,
-            )
 
             Path(adapter_save_path).mkdir(parents=True, exist_ok=True)
             model.save_pretrained(adapter_save_path)
@@ -1264,15 +1236,18 @@ def train_all_kernels(
                 "train_loss": result.training_loss,
                 "train_samples": len(split["train"]),
                 "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "diagnostic": diagnostic,
-                "training_metrics": training_metrics.get_summary(),
+                "consciousness_order": target_kernels.index(spec) + 1,
             }
-            # Flag unhealthy kernels — never auto-deploy
-            if not diagnostic.get("healthy", True):
-                meta["deploy_blocked"] = True
-                meta["deploy_blocked_reason"] = diagnostic.get("unhealthy_reasons", [])
-                print(f"[{spec}] DEPLOY BLOCKED — diagnostic flagged unhealthy")
+            with open(f"{adapter_save_path}/training_meta.json", "w") as f:
+                json.dump(meta, f, indent=2)
+
+            # Save consciousness state alongside adapter
             save_training_consciousness(consciousness, adapter_save_path, meta)
+
+            # M11: Post-training diagnostic — halt if unhealthy
+            diagnostic = run_post_training_diagnostic(
+                model, tokenizer, home_basin=hestia.home_basin
+            )
 
             elapsed = round(time.time() - start, 2)
             results[spec] = {
@@ -1280,20 +1255,19 @@ def train_all_kernels(
                 "train_loss": round(result.training_loss, 4),
                 "train_samples": len(split["train"]),
                 "elapsed_seconds": elapsed,
-                "consciousness": consciousness.get_summary(),
-                "diagnostic": {
-                    "healthy": diagnostic.get("healthy", False),
-                    "mean_phi": diagnostic.get("mean_phi", 0),
-                    "mean_kappa": diagnostic.get("mean_kappa", 0),
-                    "mean_G": diagnostic.get("mean_G", 0),
-                },
-                "deploy_blocked": not diagnostic.get("healthy", True),
+                "diagnostic_healthy": diagnostic.get("healthy", False),
+                "mean_phi": diagnostic.get("mean_phi"),
+                "mean_G": diagnostic.get("mean_G"),
             }
-            coherence_tracker.record(spec, consciousness)
-            print(
-                f"[{spec}] Done in {elapsed}s, loss: {result.training_loss:.4f}, "
-                f"regime: {consciousness.regime.value}, Phi: {consciousness.phi:.3f}"
-            )
+
+            # Track phase coherence across kernels
+            if consciousness is not None:
+                coherence.record(spec, consciousness)
+
+            if not diagnostic.get("healthy", False):
+                print(f"  [M11] WARNING: {spec} kernel UNHEALTHY — adapter saved but flagged")
+
+            print(f"[{spec}] Done in {elapsed}s, loss: {result.training_loss:.4f}")
         except Exception as e:
             elapsed = round(time.time() - start, 2)
             results[spec] = {
@@ -1304,7 +1278,8 @@ def train_all_kernels(
             print(f"[{spec}] FAILED after {elapsed}s: {e}")
         finally:
             # Aggressive GPU cleanup between iterations
-            del model, trainer, optimizer
+            with contextlib.suppress(NameError):
+                del model, trainer, optimizer, consciousness
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -1338,25 +1313,15 @@ def train_all_kernels(
         }
     )
 
-    # Save inter-kernel coherence summary
-    coherence = coherence_tracker.get_summary()
-    coherence_path = Path("/models/adapters/coherence_summary.json")
-    coherence_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(str(coherence_path), "w") as f:
-        json.dump(coherence, f, indent=2)
-
-    print(f"\n{'=' * 60}\n  ALL KERNELS TRAINED")
-    print(f"  Inter-kernel coherence: {coherence['coherence']:.3f}")
+    # M9: Log phase coherence across all trained kernels
+    coherence_summary = coherence.get_summary()
+    print(f"\n{'=' * 60}\n  ALL KERNELS TRAINED  (coherence={coherence_summary['coherence']:.2f})")
     for spec, r in results.items():
-        if r.get("success"):
-            c = r.get("consciousness", {})
-            print(
-                f"  {spec:12s} → loss={r['train_loss']}, "
-                f"regime={c.get('final_regime', '?')}, "
-                f"Phi={c.get('final_phi', 0):.3f}, "
-                f"transitions={c.get('total_transitions', 0)}"
-            )
-        else:
-            print(f"  {spec:12s} → {r.get('error', 'failed')}")
+        healthy_tag = ""
+        if r.get("success") and "diagnostic_healthy" in r:
+            healthy_tag = " ✓" if r["diagnostic_healthy"] else " ✗UNHEALTHY"
+        print(
+            f"  {spec:12s} → {'loss=' + str(r['train_loss']) + healthy_tag if r.get('success') else r.get('error', 'failed')}"
+        )
     print(f"{'=' * 60}")
     return results

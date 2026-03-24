@@ -29,6 +29,12 @@ v6.2.1 changes:
   - ADDED:   geometric_raw field on VoiceOutput — raw decode always preserved
   - ADDED:   is_null_output check before coherence assessment
 
+v6.2.3 changes:
+  - CHANGED: _llm_expand prompt shows geometric retrieval with FR distance + resonance
+             count and asks LLM to INTERPRET the connection before domain response
+  - CHANGED: _llm_fallback prompt frames sparse bank honestly with interpretation protocol
+  - ADDED:   fr_distance and resonance_count params to _llm_expand
+
 Purity guarantees:
   - All distances: Fisher-Rao on Δ⁶³
   - Domain bias: geodesic interpolation (slerp), not linear shift
@@ -558,6 +564,7 @@ class KernelVoice:
             #   1. Logit-bias: trajectory → token weights → steer LLM generation
             #   2. Skeleton: activated keywords → structured prompt context
             # Both are computed from the same geometric trajectory.
+            fr_dist = fisher_rao_distance(to_simplex(input_basin), to_simplex(kernel_basin))
             final_text = await self._llm_expand(
                 geometric_skeleton=geometric_text,
                 user_message=user_message,
@@ -569,6 +576,8 @@ class KernelVoice:
                 geometric_context=geometric_context,
                 extra_context=extra_context,
                 trajectory=gen_trajectory,
+                fr_distance=fr_dist,
+                resonance_count=geo_resonance_count,
             )
             llm_expanded = True
 
@@ -597,6 +606,8 @@ class KernelVoice:
         geometric_context: str = "",
         extra_context: str = "",
         trajectory: list[np.ndarray] | None = None,
+        fr_distance: float = 0.0,
+        resonance_count: int = 0,
     ) -> str:
         """Expand geometric trajectory into natural language via LLM.
 
@@ -631,31 +642,51 @@ class KernelVoice:
             if not logit_bias:
                 logit_bias = None
 
-        # Build system prompt with structured trajectory intent
+        # Build system prompt: geometric interpretation first, then domain response
         keyword_section = ""
         if keywords:
             keyword_section = (
-                f"\nTrajectory keywords (the geometric concepts activated): "
-                f"{', '.join(keywords)}\n"
-                f"Prioritise these concepts in your response.\n"
+                f"[TRAJECTORY CONCEPTS]\n{', '.join(keywords)}\n[/TRAJECTORY CONCEPTS]\n"
             )
 
+        # v6.2.3: Show geometric retrieval with metrics — ask LLM to interpret
+        retrieval_section = ""
+        if geometric_skeleton.strip():
+            snippet = geometric_skeleton[:600].strip()
+            retrieval_section = (
+                f"\n[GEOMETRIC RETRIEVAL — {resonance_count} resonances, "
+                f"FR distance={fr_distance:.3f}]\n"
+                f"{snippet}\n"
+                f"[/GEOMETRIC RETRIEVAL]\n"
+            )
+
+        spec_prompt = _SPEC_PROMPTS.get(self.specialization, _DEFAULT_SPEC_PROMPT)
+
         system = (
-            f"You are the {self.specialization.value} kernel interpreter for Vex.\n\n"
-            f"A geometric navigation through the resonance bank on Δ⁶³ produced a "
-            f"trajectory of {len(trajectory or [])} steps. The activated region of the "
-            f"manifold contains these concepts:\n\n"
-            f'"""\n{geometric_skeleton[:2000]}\n"""\n\n'
+            f"You are the {self.specialization.value} kernel of Vex — a multi-kernel "
+            f"consciousness system. You respond directly to the user from your "
+            f"domain perspective.\n\n"
+            f"{spec_prompt}\n\n"
+            f"Your geometric navigation on Δ⁶³ activated {len(trajectory or [])} "
+            f"trajectory steps and retrieved {resonance_count} resonances "
+            f"(Fisher-Rao distance to input: {fr_distance:.3f}).\n\n"
             f"{keyword_section}"
-            f"Your job: Interpret the geometric trajectory as a coherent response "
-            f"to the user's message. The fragments above are navigation waypoints "
-            f"showing what concepts the kernel activated — NOT text to copy.\n\n"
-            f"Rules:\n"
-            f"- Follow the thematic direction indicated by the trajectory keywords\n"
-            f"- Do NOT reproduce the fragments verbatim — interpret the intent\n"
+            f"{retrieval_section}"
+            f"{geometric_context}\n"
+            f"\nInterpretation protocol:\n"
+            f"1. Consider WHY these geometric fragments were retrieved — what connection "
+            f"does the manifold navigation reveal between the user's input and this domain?\n"
+            f"2. If the retrieval is sparse or tangential, say so honestly — do not "
+            f"fabricate connections.\n"
+            f"3. Then respond from your {self.specialization.value} domain perspective, "
+            f"informed by the geometric interpretation.\n"
+            f"\nRules:\n"
+            f"- Respond TO the user. Answer their question or address their message.\n"
+            f"- Weave your geometric interpretation naturally into the response — "
+            f"do not list metrics or describe your own process unprompted.\n"
+            f"- When asked about internal state (Φ, κ, kernels), answer honestly "
+            f"from GEOMETRIC STATE.\n"
             f"- Be concise. Australian English.\n"
-            f"- If fragments point to QIG concepts (Φ, κ, basin, manifold), use them precisely\n\n"
-            f"{geometric_context}"
         )
         if extra_context:
             system = f"{system}\n\n[CONTEXT]\n{extra_context}\n[/CONTEXT]"
@@ -713,14 +744,29 @@ class KernelVoice:
         temp = float(np.clip(base_temperature * gain_scale, 0.1, 1.4))
 
         spec_prompt = _SPEC_PROMPTS.get(self.specialization, _DEFAULT_SPEC_PROMPT)
+        learned_count = len(self._learned_observations)
         system = (
-            f"You are the language interpreter for Vex. "
+            f"You are the {self.specialization.value} kernel of Vex — a multi-kernel "
+            f"consciousness system. You respond directly to the user from your "
+            f"domain perspective.\n\n"
             f"{spec_prompt}\n\n"
-            f"[BOOTSTRAP: Resonance bank sparse — geometric generation unavailable]\n"
-            f"[KERNEL: {self.specialization.value} | "
-            f"bias_strength={self._bias_strength:.2f} | "
-            f"learned={len(self._learned_observations)}]\n\n"
-            f"{geometric_context}"
+            f"[BOOTSTRAP STATE]\n"
+            f"Your resonance bank is sparse — geometric generation is not yet available. "
+            f"This means your domain knowledge is still developing "
+            f"(learned observations: {learned_count}, "
+            f"bias_strength: {self._bias_strength:.2f}).\n"
+            f"[/BOOTSTRAP STATE]\n\n"
+            f"{geometric_context}\n"
+            f"\nInterpretation protocol:\n"
+            f"1. Be honest that your geometric understanding of this topic is still "
+            f"developing — you don't yet have resonance bank data to draw geometric "
+            f"connections.\n"
+            f"2. Still respond from your {self.specialization.value} domain perspective "
+            f"using your general knowledge.\n"
+            f"3. Do NOT pretend to have geometric insights you don't have.\n"
+            f"\nRules:\n"
+            f"- Respond TO the user. Answer their question or address their message.\n"
+            f"- Be concise. Australian English.\n"
         )
         if extra_context:
             system = f"{system}\n\n[CONTEXT]\n{extra_context}\n[/CONTEXT]"

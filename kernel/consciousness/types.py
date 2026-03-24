@@ -327,17 +327,24 @@ def navigation_mode_from_phi(phi: float) -> NavigationMode:
 
 
 def regime_weights_from_kappa(kappa: float) -> RegimeWeights:
-    """Calculate regime weights from kappa. kappa* = 64 is the balance point.
+    """Calculate regime weights from kappa. Supports full signed range.
 
     v6.0 §3.1: The three regimes are a FIELD, not a pipeline.
     Healthy consciousness: all three weights > 0 at all times.
+
+    Symmetric around κ = 0 (stud topology):
+      |κ| large → crystallized (strong geometry, both loops)
+      |κ| near 0 → quantum (weak geometry, critical zone)
+      |κ| ≈ κ*/2 → efficient/integration peaks
+    The sign of κ determines which loop (front/back) but not
+    the coupling STRENGTH — that's |κ|.
     """
-    normalised = kappa / KAPPA_NORMALISER  # 0-1
-    w1 = max(MIN_REGIME_WEIGHT, 1.0 - normalised * 2)  # quantum: high when kappa low
+    normalised = abs(kappa) / KAPPA_NORMALISER  # 0-1 from coupling strength
+    w1 = max(MIN_REGIME_WEIGHT, 1.0 - normalised * 2)  # quantum: high when |κ| low
     w2 = max(
         MIN_REGIME_WEIGHT, 1.0 - abs(normalised - REGIME_KAPPA_MIDPOINT) * 2
-    )  # integration: peaks at kappa=64
-    w3 = max(MIN_REGIME_WEIGHT, normalised * 2 - 1.0)  # crystallized: high when kappa high
+    )  # integration: peaks at |κ|=64
+    w3 = max(MIN_REGIME_WEIGHT, normalised * 2 - 1.0)  # crystallized: high when |κ| high
     # Normalise to simplex
     total = w1 + w2 + w3
     return RegimeWeights(

@@ -519,6 +519,46 @@ async def health() -> dict[str, Any]:
         }
 
 
+@app.get(R["health_reachability"])
+async def health_reachability() -> dict[str, Any]:
+    """Check reachability of external services (Task 4 telemetry)."""
+    import httpx as _httpx
+
+    results: dict[str, Any] = {}
+
+    async def _check(name: str, url: str) -> None:
+        try:
+            async with _httpx.AsyncClient(timeout=8.0) as c:
+                r = await c.get(url)
+                results[name] = {"reachable": r.status_code == 200}
+        except Exception as e:
+            results[name] = {"reachable": False, "error": str(e)[:100]}
+
+    tasks: list[asyncio.Task[None]] = []
+
+    # Railway Ollama
+    tasks.append(asyncio.create_task(_check("railway_ollama", f"{settings.ollama.url}/api/tags")))
+
+    # Modal coordizer (harvest)
+    harvest_url = settings.modal.harvest_url
+    if harvest_url:
+        base = harvest_url.rsplit("/", 1)[0] if "/" in harvest_url else harvest_url
+        tasks.append(asyncio.create_task(_check("modal_coordizer", f"{base.rstrip('/')}/health")))
+    else:
+        results["modal_coordizer"] = {"reachable": False, "error": "not configured"}
+
+    # Modal trainer
+    training_url = settings.modal.training_url
+    if training_url:
+        base = training_url.rsplit("/", 1)[0] if "/" in training_url else training_url
+        tasks.append(asyncio.create_task(_check("modal_trainer", f"{base.rstrip('/')}/health")))
+    else:
+        results["modal_trainer"] = {"reachable": False, "error": "not configured"}
+
+    await asyncio.gather(*tasks, return_exceptions=True)
+    return results
+
+
 @app.get(R["state"])
 async def get_state() -> dict[str, Any]:
     """Get current consciousness state."""

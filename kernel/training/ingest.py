@@ -33,6 +33,7 @@ v6.1 Integration:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
@@ -892,6 +893,47 @@ def get_stats() -> dict[str, Any]:
         sum(1 for _ in HARVEST_PENDING_DIR.glob("*.jsonl")) if HARVEST_PENDING_DIR.exists() else 0
     )
 
+    # Build per-file inventory (cached by mtime to avoid re-parsing on every poll)
+    file_inventory: list[dict[str, Any]] = []
+    for f in curriculum_files:
+        try:
+            mtime = f.stat().st_mtime
+            cache_key = (str(f), mtime)
+            cached = _file_inventory_cache.get(cache_key)
+            if cached is not None:
+                file_inventory.append(cached)
+                continue
+            chunks = 0
+            enriched = 0
+            e8_tags: dict[str, int] = {}
+            with open(f, encoding="utf-8") as fh:
+                for raw_line in fh:
+                    raw_line = raw_line.strip()
+                    if not raw_line:
+                        continue
+                    chunks += 1
+                    try:
+                        entry = json.loads(raw_line)
+                        if not isinstance(entry, dict):
+                            continue
+                        if entry.get("summary") or entry.get("concepts"):
+                            enriched += 1
+                        tag = entry.get("e8_primitive", "MIX")
+                        e8_tags[tag] = e8_tags.get(tag, 0) + 1
+                    except (json.JSONDecodeError, TypeError, AttributeError):
+                        pass
+            inv_entry = {
+                "filename": f.name,
+                "chunks": chunks,
+                "enriched": enriched,
+                "e8_tags": e8_tags,
+                "modified_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(mtime)),
+            }
+            _file_inventory_cache[cache_key] = inv_entry
+            file_inventory.append(inv_entry)
+        except OSError:
+            pass
+
     return {
         "conversations": stats.get("conversations", 0),
         "feedback": stats.get("feedback", 0),
@@ -900,6 +942,7 @@ def get_stats() -> dict[str, Any]:
         "coordizer_active": _coordizer is not None,
         "uploads": len(upload_files),
         "curriculum_files": [f.name for f in curriculum_files],
+        "files": file_inventory,
         "harvest_pending_files": harvest_pending,
         "dir_exists": TRAINING_DIR.exists(),
         "training_dir": str(TRAINING_DIR),
@@ -1121,6 +1164,7 @@ def export_coordized_format() -> dict[str, Any]:
 _llm_client: LLMClient | None = None
 _governor: GovernorStack | None = None
 _coordizer: Any = None  # CoordizerV2Adapter — typed as Any to avoid circular import
+_file_inventory_cache: dict[tuple[str, float], dict[str, Any]] = {}
 
 
 def set_llm_client(client: LLMClient) -> None:
@@ -1367,12 +1411,78 @@ async def training_feedback_endpoint(req: FeedbackRequest) -> dict[str, str]:
     return {"status": "recorded"}
 
 
+@training_router.get("/training/modal-status", response_model=None)
+async def training_modal_status_endpoint() -> dict[str, Any]:
+    """Proxy Modal QLoRA trainer /status and /health endpoints.
+
+    Derives endpoint URLs from MODAL_TRAINING_URL:
+      .../qloratrainer-train.modal.run → .../qloratrainer-status.modal.run
+      .../qloratrainer-train.modal.run → .../qloratrainer-health.modal.run
+    """
+    from ..config.settings import settings
+
+    training_url = settings.modal.training_url
+    if not training_url:
+        return {"status": "unavailable", "error": "MODAL_TRAINING_URL not configured"}
+
+    # Derive /status and /health URLs from the /train URL (rsplit to replace only last occurrence)
+    if "-train." not in training_url:
+        return {
+            "status": "error",
+            "error": "MODAL_TRAINING_URL missing expected '-train.' segment",
+        }
+    parts = training_url.rsplit("-train.", 1)
+    status_url = f"{parts[0]}-status.{parts[1]}"
+    health_url = f"{parts[0]}-health.{parts[1]}"
+
+    result: dict[str, Any] = {"status": "ok"}
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Fetch both in parallel
+            status_resp, health_resp = await asyncio.gather(
+                client.get(status_url),
+                client.get(health_url),
+                return_exceptions=True,
+            )
+
+            if isinstance(status_resp, Exception):
+                result["adapters"] = None
+                result["status_error"] = str(status_resp)
+            elif status_resp.status_code == 200:
+                result["adapters"] = status_resp.json()
+            else:
+                result["adapters"] = None
+                result["status_error"] = f"HTTP {status_resp.status_code}"
+
+            if isinstance(health_resp, Exception):
+                result["health"] = None
+                result["health_error"] = str(health_resp)
+            elif health_resp.status_code == 200:
+                result["health"] = health_resp.json()
+            else:
+                result["health"] = None
+                result["health_error"] = f"HTTP {health_resp.status_code}"
+
+    except Exception as e:
+        logger.error("Modal status proxy failed: %s", e)
+        result = {
+            "status": "error",
+            "error": "Modal status proxy failed. Check server logs.",
+        }
+
+    return result
+
+
 @training_router.post("/training/trigger", response_model=None)
-async def training_trigger_endpoint() -> dict[str, Any]:
+async def training_trigger_endpoint(request: Request) -> dict[str, Any]:
     """Manually trigger kernel training (QLoRA fine-tuning on Modal GPU).
 
     Sends a POST to the configured MODAL_TRAINING_URL to start a training run.
     Requires MODAL_TRAINING_URL to be set in environment.
+    Accepts optional JSON body: { "specialization": "heart" | "all" | ... }
     """
     from ..config.settings import settings
 
@@ -1380,13 +1490,21 @@ async def training_trigger_endpoint() -> dict[str, Any]:
     if not training_url:
         return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
 
+    # Parse optional specialization from request body
+    body: dict[str, Any] = {}
+    with contextlib.suppress(Exception):
+        body = await request.json()
+    payload: dict[str, Any] = {"_api_key": settings.kernel_api_key}
+    if spec := body.get("specialization"):
+        payload["specialization"] = spec
+
     try:
         import httpx
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
                 training_url,
-                json={"_api_key": settings.kernel_api_key},
+                json=payload,
             )
             if resp.status_code == 200:
                 logger.info("Manual training triggered via /training/trigger")
@@ -1398,7 +1516,10 @@ async def training_trigger_endpoint() -> dict[str, Any]:
                 }
     except Exception as e:
         logger.error("Manual training trigger failed: %s", e)
-        return {"status": "error", "error": "Training trigger failed. Check server logs."}
+        return {
+            "status": "error",
+            "error": "Training trigger failed. Check server logs.",
+        }
 
 
 @training_router.post("/training/complete", response_model=None)

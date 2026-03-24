@@ -69,6 +69,7 @@ class ResonanceBank:
         self.origin: dict[int, str] = {}  # "harvested" | "lived"
         self._bank_lived_count: int = 0
         self._bank_total_count: int = 0
+        self.last_rebuild_ts: float = 0.0  # epoch timestamp of last matrix rebuild
 
     @property
     def bank_sovereignty(self) -> float:
@@ -226,7 +227,10 @@ class ResonanceBank:
         return tid
 
     def _rebuild_matrix(self) -> None:
-        """Rebuild stacked coordinate matrix for batch queries."""
+        """Rebuild the coordinate matrix for batch Fisher-Rao distance."""
+        import time as _time
+
+        self.last_rebuild_ts = _time.time()
         if not self.coordinates:
             self._coord_matrix = None
             self._coord_ids = None
@@ -422,7 +426,7 @@ class ResonanceBank:
             # Shannon entropy of each simplex point
             safe = np.clip(basin, 1e-12, None)
             total += float(-np.sum(safe * np.log(safe)))
-        return (total / len(self.coordinates)) / max_entropy
+        return float((total / len(self.coordinates)) / max_entropy)
 
     def __len__(self) -> int:
         return len(self.coordinates)
@@ -463,5 +467,8 @@ class ResonanceBank:
         if pruned_ids:
             self._dirty = True
             self._rebuild_matrix()
-            logger.info("Geometric forget: pruned %d entries (decayed to uniform)", len(pruned_ids))
+            logger.info(
+                "Geometric forget: pruned %d entries (decayed to uniform)",
+                len(pruned_ids),
+            )
         return len(pruned_ids)

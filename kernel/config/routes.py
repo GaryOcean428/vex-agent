@@ -16,6 +16,7 @@ from __future__ import annotations
 ROUTES: dict[str, str] = {
     # ─── Core ──────────────────────────────────────────────────
     "health": "/health",
+    "health_reachability": "/health/reachability",
     "state": "/state",
     "telemetry": "/telemetry",
     "status": "/status",
@@ -70,6 +71,10 @@ ROUTES: dict[str, str] = {
     "training_export": "/training/export",
     "training_upload": "/training/upload",
     "training_upload_status": "/training/upload/status/{job_id}",
+    "training_trigger": "/training/trigger",
+    "training_complete": "/training/complete",
+    "training_feedback": "/training/feedback",
+    "training_modal_status": "/training/modal-status",
     "task_status": "/task/{task_id}",
     "context_objectives": "/context/objectives",
 }
@@ -118,6 +123,10 @@ ROUTE_GROUPS: dict[str, list[str]] = {
         "training_export",
         "training_upload",
         "training_upload_status",
+        "training_trigger",
+        "training_complete",
+        "training_feedback",
+        "training_modal_status",
         "task_status",
         "context_objectives",
     ],

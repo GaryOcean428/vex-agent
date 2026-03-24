@@ -1,8 +1,10 @@
-import { useTelemetry } from '../../hooks/index.ts';
-import MetricCard from '../../components/MetricCard.tsx';
 import BetaTracker from '../../components/BetaTracker.tsx';
+import MetricCard from '../../components/MetricCard.tsx';
+import { useHealthReachability, useModalStatus, useTelemetry } from '../../hooks/index.ts';
+import type { FullConsciousnessMetrics, ModalAdapterInfo } from '../../types/consciousness.ts';
 import { QIG } from '../../types/consciousness.ts';
-import type { FullConsciousnessMetrics } from '../../types/consciousness.ts';
+
+const KERNEL_ORDER = ['genesis', 'heart', 'perception', 'memory', 'action', 'strategy', 'ethics', 'meta', 'ocean'] as const;
 
 /** Metric definition for grouped display. */
 interface MetricDef {
@@ -94,12 +96,16 @@ const METRIC_GROUPS: { title: string; version: string; metrics: MetricDef[] }[] 
 
 export default function Telemetry() {
   const { data: t, loading } = useTelemetry();
+  const { data: modalStatus } = useModalStatus();
+  const { data: reachability } = useHealthReachability();
 
   if (loading || !t) {
     return <div className="dash-loading">Loading telemetry...</div>;
   }
 
   const mf = t.metrics_full;
+  const cv2 = t.coordizer_v2;
+  const ctxEst = t.context_estimate;
 
   return (
     <div>
@@ -148,6 +154,45 @@ export default function Telemetry() {
         </>
       )}
 
+      {/* Health Reachability (Task 4) */}
+      {reachability && (
+        <div className="dash-section">
+          <div className="dash-section-title">Service Reachability</div>
+          <div className="dash-grid">
+            {Object.entries(reachability).map(([svc, info]) => (
+              <div key={svc} className="dash-card" style={{ padding: '10px 14px', borderLeft: `3px solid ${info.reachable ? 'var(--alive)' : 'var(--error)'}` }}>
+                <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: 4 }}>
+                  {svc.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                </div>
+                <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: info.reachable ? 'var(--alive)' : 'var(--error)', color: 'white' }}>
+                  {info.reachable ? 'REACHABLE' : 'UNREACHABLE'}
+                </span>
+                {info.error && <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: 4, fontFamily: 'var(--mono)' }}>{info.error}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Context Window Estimate (Task 3D) */}
+      {ctxEst && (
+        <div className="dash-section">
+          <div className="dash-section-title">Context Window Budget</div>
+          <div className="dash-grid">
+            <MetricCard label="Total Context" value={ctxEst.num_ctx} color="var(--accent)" />
+            <MetricCard label="Max Output" value={ctxEst.num_predict} color="var(--gamma)" />
+            <MetricCard label="Used (est)" value={ctxEst.used_tokens} color="var(--warning)" />
+            <MetricCard label="Available" value={ctxEst.available_for_history} color="var(--alive)" />
+          </div>
+          <div className="dash-card" style={{ marginTop: 8 }}>
+            <div className="dash-row"><span className="dash-row-label">System prompt</span><span className="dash-row-value">~{ctxEst.system_prompt_tokens} tokens</span></div>
+            <div className="dash-row"><span className="dash-row-label">Geometric state</span><span className="dash-row-value">~{ctxEst.geometric_state_tokens} tokens</span></div>
+            <div className="dash-row"><span className="dash-row-label">Memory context</span><span className="dash-row-value">~{ctxEst.memory_tokens} tokens</span></div>
+            <div className="dash-row"><span className="dash-row-label">Kernel contexts</span><span className="dash-row-value">~{ctxEst.kernel_context_tokens} tokens</span></div>
+          </div>
+        </div>
+      )}
+
       {/* Basin */}
       <div className="dash-section">
         <div className="dash-section-title">Basin</div>
@@ -162,6 +207,69 @@ export default function Telemetry() {
           </div>
         </div>
       </div>
+
+      {/* Resonance Bank (Task 3C — enhanced) */}
+      {(cv2 || t.coordizer) && (
+        <div className="dash-section">
+          <div className="dash-section-title">Resonance Bank</div>
+          {cv2 && (
+            <div className="dash-grid">
+              <MetricCard label="Bank Entries" value={cv2.bank_size} color="var(--accent)" />
+              <MetricCard label="Entropy" value={cv2.bank_entropy} color="var(--gamma)" />
+              <MetricCard label="Sovereignty" value={(cv2.bank_sovereignty * 100).toFixed(1) + '%'} color="var(--alive)" progress={cv2.bank_sovereignty} />
+              <MetricCard label="Activations" value={cv2.total_activations} color="var(--kappa)" />
+            </div>
+          )}
+          <div className="dash-card" style={{ marginTop: 8 }}>
+            {cv2 && (
+              <>
+                <div className="dash-row">
+                  <span className="dash-row-label">Vocab size</span>
+                  <span className="dash-row-value">{cv2.vocab_size}</span>
+                </div>
+                <div className="dash-row">
+                  <span className="dash-row-label">Dimensions</span>
+                  <span className="dash-row-value">{cv2.dim}</span>
+                </div>
+                {cv2.origin_breakdown && (
+                  <div className="dash-row">
+                    <span className="dash-row-label">Origin</span>
+                    <span className="dash-row-value">
+                      {cv2.origin_breakdown.harvested} harvested / {cv2.origin_breakdown.lived} lived
+                    </span>
+                  </div>
+                )}
+                {cv2.tier_distribution && (
+                  <div className="dash-row">
+                    <span className="dash-row-label">Tier distribution</span>
+                    <span className="dash-row-value" style={{ fontSize: '0.85em' }}>
+                      {Object.entries(cv2.tier_distribution).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                    </span>
+                  </div>
+                )}
+                {cv2.last_rebuild && (
+                  <div className="dash-row">
+                    <span className="dash-row-label">Last rebuild</span>
+                    <span className="dash-row-value">{new Date(cv2.last_rebuild! * 1000).toLocaleTimeString()}</span>
+                  </div>
+                )}
+              </>
+            )}
+            {t.coordizer && (
+              <>
+                <div className="dash-row">
+                  <span className="dash-row-label">Peer count</span>
+                  <span className="dash-row-value">{t.coordizer.peer_count ?? 0}</span>
+                </div>
+                <div className="dash-row">
+                  <span className="dash-row-label">Last sync</span>
+                  <span className="dash-row-value">{t.coordizer.last_sync ? new Date(t.coordizer.last_sync * 1000).toLocaleTimeString() : '—'}</span>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Velocity */}
       <div className="dash-section">
@@ -183,7 +291,7 @@ export default function Telemetry() {
             <span className="dash-row-label">Regime</span>
             <span className="dash-row-value" style={{
               color: t.velocity?.regime === 'critical' ? 'var(--error)' :
-                     t.velocity?.regime === 'warning' ? 'var(--warning)' : 'var(--alive)'
+                t.velocity?.regime === 'warning' ? 'var(--warning)' : 'var(--alive)'
             }}>
               {t.velocity?.regime?.toUpperCase() ?? '?'}
             </span>
@@ -298,6 +406,86 @@ export default function Telemetry() {
           </div>
         </div>
       </div>
+
+      {/* Training Adapter Health */}
+      {modalStatus?.adapters?.adapters && (() => {
+        const adapters = modalStatus.adapters!.adapters!;
+        const health = modalStatus.health;
+        const hasAny = Object.values(adapters).some((a: ModalAdapterInfo) => a.exists);
+        if (!hasAny) return null;
+        return (
+          <div className="dash-section">
+            <div className="dash-section-title">
+              Training Adapters <span style={{ opacity: 0.5 }}>(Modal QLoRA)</span>
+              {health?.training_active && (
+                <span style={{ marginLeft: 8, color: 'var(--warning)', fontSize: '0.85em' }}>● TRAINING ACTIVE</span>
+              )}
+            </div>
+            <div className="dash-grid">
+              {KERNEL_ORDER.map((k) => {
+                const a = adapters[k];
+                if (!a?.exists) return null;
+                const meta = a.training_meta;
+                return (
+                  <div key={k} className="dash-card" style={{ padding: '12px' }}>
+                    <div style={{ fontWeight: 600, marginBottom: 6, textTransform: 'capitalize' }}>{k}</div>
+                    {(meta?.loss ?? meta?.train_loss) != null && (
+                      <div className="dash-row">
+                        <span className="dash-row-label">Loss</span>
+                        <span className="dash-row-value" style={{ color: (meta!.loss ?? meta!.train_loss)! < 1.0 ? 'var(--alive)' : (meta!.loss ?? meta!.train_loss)! < 2.0 ? 'var(--warning)' : 'var(--error)' }}>
+                          {Number(meta!.loss ?? meta!.train_loss).toFixed(4)}
+                        </span>
+                      </div>
+                    )}
+                    {meta?.epochs != null && (
+                      <div className="dash-row">
+                        <span className="dash-row-label">Epochs</span>
+                        <span className="dash-row-value">{meta.epochs}</span>
+                      </div>
+                    )}
+                    {(meta?.samples ?? meta?.train_samples) != null && (
+                      <div className="dash-row">
+                        <span className="dash-row-label">Samples</span>
+                        <span className="dash-row-value">{(meta!.samples ?? meta!.train_samples)!.toLocaleString()}</span>
+                      </div>
+                    )}
+                    {(meta?.date ?? meta?.trained_at) && (
+                      <div className="dash-row">
+                        <span className="dash-row-label">Trained</span>
+                        <span className="dash-row-value" style={{ fontSize: '0.85em' }}>
+                          {new Date((meta!.date ?? meta!.trained_at)!).toLocaleDateString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {health && (
+              <div className="dash-card" style={{ marginTop: 8, padding: '10px 12px' }}>
+                <div className="dash-row">
+                  <span className="dash-row-label">Inference loaded</span>
+                  <span className="dash-row-value" style={{ color: health.inference_loaded ? 'var(--alive)' : 'var(--text-secondary)' }}>
+                    {health.inference_loaded ? 'Yes' : 'No'}
+                  </span>
+                </div>
+                <div className="dash-row">
+                  <span className="dash-row-label">Model</span>
+                  <span className="dash-row-value" style={{ fontSize: '0.85em' }}>{health.model_id ?? '—'}</span>
+                </div>
+                {(health.loaded_adapters?.length ?? 0) > 0 && (
+                  <div className="dash-row">
+                    <span className="dash-row-label">Loaded adapters</span>
+                    <span className="dash-row-value" style={{ fontSize: '0.85em' }}>
+                      {health.loaded_adapters!.join(', ')}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* β-Attention Tracker */}
       {t.beta_tracker && <BetaTracker data={t.beta_tracker} />}

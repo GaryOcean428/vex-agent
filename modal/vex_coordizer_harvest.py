@@ -27,6 +27,8 @@ Model persistence:
 
 import os
 
+from fastapi import Request
+
 import modal
 
 # --- Configuration --------------------------------------------------------
@@ -169,14 +171,38 @@ class CoordizerHarvester:
         print(f"Model ready (4-bit NF4). Vocab size: {vocab_size}")
         model_volume.commit()
 
-    def _check_auth(self, data):
-        if KERNEL_API_KEY and data.get("_api_key", "") != KERNEL_API_KEY:
+    def _check_auth(self, data, request=None):
+        """Validate API key from headers (preferred) or body (legacy fallback).
+
+        Accepts:
+          - X-Api-Key header (harvest client pattern)
+          - Authorization: Bearer <key> header (PEFT client pattern)
+          - _api_key in JSON body (legacy pattern)
+        """
+        if not KERNEL_API_KEY:
+            return None
+        api_key = ""
+        if request is not None:
+            api_key = request.headers.get("x-api-key", "")
+            if not api_key:
+                auth_header = request.headers.get("authorization", "")
+                if auth_header.startswith("Bearer "):
+                    api_key = auth_header[7:]
+        if not api_key:
+            api_key = data.get("_api_key", "")
+        if api_key != KERNEL_API_KEY:
             return {"error": "Invalid API key", "success": False}
         return None
 
     def _harvest_fingerprints(
-        self, texts, batch_size, max_length, min_contexts, target_resonances,
-        *, compute_curvature: bool = False,
+        self,
+        texts,
+        batch_size,
+        max_length,
+        min_contexts,
+        target_resonances,
+        *,
+        compute_curvature: bool = False,
     ):
         """Core harvest: text -> per-coordinate probability distributions on GPU.
 
@@ -329,7 +355,9 @@ class CoordizerHarvester:
         proj_on_mean = centered @ global_mean  # (N,)
         lens_coords = np.zeros(target_dim)
         for d in range(target_dim):
-            lens_coords[d] = np.dot(eigenvectors[:, d], proj_on_mean)  # QIG-EXEMPT: tangent space projection at Fréchet mean
+            lens_coords[d] = np.dot(
+                eigenvectors[:, d], proj_on_mean
+            )  # QIG-EXEMPT: tangent space projection at Fréchet mean
 
         basin_coords = np.zeros(basin_dim)
         basin_coords[:target_dim] = lens_coords[:target_dim]
@@ -361,12 +389,12 @@ class CoordizerHarvester:
         }
 
     @modal.fastapi_endpoint(method="POST")
-    def harvest(self, data: dict):
+    def harvest(self, data: dict, request: Request):
         """Raw harvest — returns per-coordinate fingerprints.
         WARNING: Large responses. Use /coordize for production."""
         import time
 
-        auth_err = self._check_auth(data)
+        auth_err = self._check_auth(data, request)
         if auth_err:
             return auth_err
 
@@ -406,7 +434,7 @@ class CoordizerHarvester:
         }
 
     @modal.fastapi_endpoint(method="POST")
-    def coordize(self, data: dict):
+    def coordize(self, data: dict, request: Request):
         """Full pipeline: text -> harvest -> PGA compress -> 64D basin coords.
 
         This is the production endpoint. No V-dim fingerprints in the response.
@@ -417,13 +445,14 @@ class CoordizerHarvester:
             min_contexts: int (default 1),
             target_resonances: int (default 0 = unlimited),
             max_length: int (default 512),
-            lens_dim: int (default 32),
-            _api_key: string
+            lens_dim: int (default 32)
         }
+
+        Auth: X-Api-Key header (preferred) or _api_key in body (legacy).
         """
         import time
 
-        auth_err = self._check_auth(data)
+        auth_err = self._check_auth(data, request)
         if auth_err:
             return auth_err
 

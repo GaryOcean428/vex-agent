@@ -8,6 +8,7 @@
 export const API = {
 	// ─── Core ──────────────────────────────────────────────────
 	health: '/health',
+	healthReachability: '/health/reachability',
 	state: '/state',
 	telemetry: '/telemetry',
 	status: '/status',
@@ -64,6 +65,7 @@ export const API = {
 	trainingUploadStatus: (jobId: string) => `/training/upload/status/${jobId}`,
 	trainingTrigger: '/training/trigger',
 	trainingComplete: '/training/complete',
+	trainingModalStatus: '/training/modal-status',
 
 	// ─── Coordizer ──────────────────────────────────────────────
 	coordizerStats: '/api/coordizer/stats',
