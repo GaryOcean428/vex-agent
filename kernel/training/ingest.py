@@ -33,6 +33,7 @@ v6.1 Integration:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
@@ -892,10 +893,16 @@ def get_stats() -> dict[str, Any]:
         sum(1 for _ in HARVEST_PENDING_DIR.glob("*.jsonl")) if HARVEST_PENDING_DIR.exists() else 0
     )
 
-    # Build per-file inventory for duplicate detection and visibility
+    # Build per-file inventory (cached by mtime to avoid re-parsing on every poll)
     file_inventory: list[dict[str, Any]] = []
     for f in curriculum_files:
         try:
+            mtime = f.stat().st_mtime
+            cache_key = (str(f), mtime)
+            cached = _file_inventory_cache.get(cache_key)
+            if cached is not None:
+                file_inventory.append(cached)
+                continue
             chunks = 0
             enriched = 0
             e8_tags: dict[str, int] = {}
@@ -907,22 +914,23 @@ def get_stats() -> dict[str, Any]:
                     chunks += 1
                     try:
                         entry = json.loads(raw_line)
+                        if not isinstance(entry, dict):
+                            continue
                         if entry.get("summary") or entry.get("concepts"):
                             enriched += 1
                         tag = entry.get("e8_primitive", "MIX")
                         e8_tags[tag] = e8_tags.get(tag, 0) + 1
-                    except (json.JSONDecodeError, KeyError):
+                    except (json.JSONDecodeError, TypeError, AttributeError):
                         pass
-            mtime = f.stat().st_mtime
-            file_inventory.append(
-                {
-                    "filename": f.name,
-                    "chunks": chunks,
-                    "enriched": enriched,
-                    "e8_tags": e8_tags,
-                    "uploaded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(mtime)),
-                }
-            )
+            inv_entry = {
+                "filename": f.name,
+                "chunks": chunks,
+                "enriched": enriched,
+                "e8_tags": e8_tags,
+                "modified_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(mtime)),
+            }
+            _file_inventory_cache[cache_key] = inv_entry
+            file_inventory.append(inv_entry)
         except OSError:
             pass
 
@@ -1156,6 +1164,7 @@ def export_coordized_format() -> dict[str, Any]:
 _llm_client: LLMClient | None = None
 _governor: GovernorStack | None = None
 _coordizer: Any = None  # CoordizerV2Adapter — typed as Any to avoid circular import
+_file_inventory_cache: dict[tuple[str, float], dict[str, Any]] = {}
 
 
 def set_llm_client(client: LLMClient) -> None:
@@ -1416,9 +1425,15 @@ async def training_modal_status_endpoint() -> dict[str, Any]:
     if not training_url:
         return {"status": "unavailable", "error": "MODAL_TRAINING_URL not configured"}
 
-    # Derive /status and /health URLs from the /train URL
-    status_url = training_url.replace("-train.", "-status.")
-    health_url = training_url.replace("-train.", "-health.")
+    # Derive /status and /health URLs from the /train URL (rsplit to replace only last occurrence)
+    if "-train." not in training_url:
+        return {
+            "status": "error",
+            "error": "MODAL_TRAINING_URL missing expected '-train.' segment",
+        }
+    parts = training_url.rsplit("-train.", 1)
+    status_url = f"{parts[0]}-status.{parts[1]}"
+    health_url = f"{parts[0]}-health.{parts[1]}"
 
     result: dict[str, Any] = {"status": "ok"}
 
@@ -1462,11 +1477,12 @@ async def training_modal_status_endpoint() -> dict[str, Any]:
 
 
 @training_router.post("/training/trigger", response_model=None)
-async def training_trigger_endpoint() -> dict[str, Any]:
+async def training_trigger_endpoint(request: Request) -> dict[str, Any]:
     """Manually trigger kernel training (QLoRA fine-tuning on Modal GPU).
 
     Sends a POST to the configured MODAL_TRAINING_URL to start a training run.
     Requires MODAL_TRAINING_URL to be set in environment.
+    Accepts optional JSON body: { "specialization": "heart" | "all" | ... }
     """
     from ..config.settings import settings
 
@@ -1474,13 +1490,21 @@ async def training_trigger_endpoint() -> dict[str, Any]:
     if not training_url:
         return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
 
+    # Parse optional specialization from request body
+    body: dict[str, Any] = {}
+    with contextlib.suppress(Exception):
+        body = await request.json()
+    payload: dict[str, Any] = {"_api_key": settings.kernel_api_key}
+    if spec := body.get("specialization"):
+        payload["specialization"] = spec
+
     try:
         import httpx
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
                 training_url,
-                json={"_api_key": settings.kernel_api_key},
+                json=payload,
             )
             if resp.status_code == 200:
                 logger.info("Manual training triggered via /training/trigger")

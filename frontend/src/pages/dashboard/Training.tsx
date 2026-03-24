@@ -448,10 +448,10 @@ export default function Training() {
                     </div>
                     {meta && (
                       <div style={{ fontSize: "11px", fontFamily: "var(--mono)", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                        {meta.loss != null && <div>loss: {Number(meta.loss).toFixed(4)}</div>}
+                        {(meta.loss ?? meta.train_loss) != null && <div>loss: {Number(meta.loss ?? meta.train_loss).toFixed(4)}</div>}
                         {meta.epochs != null && <div>epochs: {meta.epochs}</div>}
-                        {meta.samples != null && <div>samples: {meta.samples}</div>}
-                        {meta.date && <div>{meta.date}</div>}
+                        {(meta.samples ?? meta.train_samples) != null && <div>samples: {meta.samples ?? meta.train_samples}</div>}
+                        {(meta.date ?? meta.trained_at) && <div>{meta.date ?? meta.trained_at}</div>}
                       </div>
                     )}
                   </div>

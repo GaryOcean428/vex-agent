@@ -701,8 +701,11 @@ export interface ModalAdapterInfo {
   training_meta?: {
     epochs?: number;
     loss?: number;
+    train_loss?: number;
     date?: string;
+    trained_at?: string;
     samples?: number;
+    train_samples?: number;
     [key: string]: unknown;
   };
 }

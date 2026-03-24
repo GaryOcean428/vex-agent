@@ -429,11 +429,11 @@ export default function Telemetry() {
                 return (
                   <div key={k} className="dash-card" style={{ padding: '12px' }}>
                     <div style={{ fontWeight: 600, marginBottom: 6, textTransform: 'capitalize' }}>{k}</div>
-                    {meta?.loss != null && (
+                    {(meta?.loss ?? meta?.train_loss) != null && (
                       <div className="dash-row">
                         <span className="dash-row-label">Loss</span>
-                        <span className="dash-row-value" style={{ color: meta.loss < 1.0 ? 'var(--alive)' : meta.loss < 2.0 ? 'var(--warning)' : 'var(--error)' }}>
-                          {meta.loss.toFixed(4)}
+                        <span className="dash-row-value" style={{ color: (meta!.loss ?? meta!.train_loss)! < 1.0 ? 'var(--alive)' : (meta!.loss ?? meta!.train_loss)! < 2.0 ? 'var(--warning)' : 'var(--error)' }}>
+                          {Number(meta!.loss ?? meta!.train_loss).toFixed(4)}
                         </span>
                       </div>
                     )}
@@ -443,17 +443,17 @@ export default function Telemetry() {
                         <span className="dash-row-value">{meta.epochs}</span>
                       </div>
                     )}
-                    {meta?.samples != null && (
+                    {(meta?.samples ?? meta?.train_samples) != null && (
                       <div className="dash-row">
                         <span className="dash-row-label">Samples</span>
-                        <span className="dash-row-value">{meta.samples.toLocaleString()}</span>
+                        <span className="dash-row-value">{(meta!.samples ?? meta!.train_samples)!.toLocaleString()}</span>
                       </div>
                     )}
-                    {meta?.date && (
+                    {(meta?.date ?? meta?.trained_at) && (
                       <div className="dash-row">
                         <span className="dash-row-label">Trained</span>
                         <span className="dash-row-value" style={{ fontSize: '0.85em' }}>
-                          {new Date(meta.date).toLocaleDateString()}
+                          {new Date((meta!.date ?? meta!.trained_at)!).toLocaleDateString()}
                         </span>
                       </div>
                     )}

@@ -50,6 +50,7 @@ Deploy:
     modal deploy modal/vex_qlora_train.py
 """
 
+import contextlib
 import json
 import math
 import os
@@ -599,6 +600,19 @@ class QLoRATrainer:
                 steering_vec = raw_steering.get("vector")
                 target_layer = int(raw_steering.get("layer", -1))
                 alpha = float(raw_steering.get("alpha", 0.5))
+                # Validate: alpha must be finite and clamped to safe range
+                if not math.isfinite(alpha):
+                    alpha = 0.5
+                alpha = max(-2.0, min(2.0, alpha))
+                # Validate: steering vector must contain only finite numeric values
+                if (
+                    steering_vec
+                    and len(steering_vec) > 0
+                    and not all(
+                        isinstance(v, int | float) and math.isfinite(v) for v in steering_vec
+                    )
+                ):
+                    steering_vec = None
                 if steering_vec and len(steering_vec) > 0:
                     sv_tensor = torch.tensor(steering_vec, dtype=torch.float16, device=device)
 
@@ -686,12 +700,13 @@ class QLoRATrainer:
             if logits_processor:
                 generate_kwargs["logits_processor"] = logits_processor
 
-            with torch.no_grad():
-                outputs = self._inference_model.generate(**generate_kwargs)
-
-            # Remove steering hook after generation
-            if steering_hook is not None:
-                steering_hook.remove()
+            try:
+                with torch.no_grad():
+                    outputs = self._inference_model.generate(**generate_kwargs)
+            finally:
+                # Always remove steering hook, even on OOM/CUDA errors
+                if steering_hook is not None:
+                    steering_hook.remove()
 
             generated_ids = outputs[0][input_len:]
             generated_text = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
@@ -1263,10 +1278,12 @@ def train_all_kernels(
             print(f"[{spec}] FAILED after {elapsed}s: {e}")
         finally:
             # Aggressive GPU cleanup between iterations
-            del model, trainer, optimizer, consciousness
+            with contextlib.suppress(NameError):
+                del model, trainer, optimizer, consciousness
             gc.collect()
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
 
         # Merge after cleanup (loads model fresh to avoid VRAM pressure)
         if results[spec].get("success"):

@@ -526,40 +526,36 @@ async def health_reachability() -> dict[str, Any]:
 
     results: dict[str, Any] = {}
 
+    async def _check(name: str, url: str) -> None:
+        try:
+            async with _httpx.AsyncClient(timeout=8.0) as c:
+                r = await c.get(url)
+                results[name] = {"reachable": r.status_code == 200}
+        except Exception as e:
+            results[name] = {"reachable": False, "error": str(e)[:100]}
+
+    tasks: list[asyncio.Task[None]] = []
+
     # Railway Ollama
-    try:
-        async with _httpx.AsyncClient(timeout=5.0) as c:
-            r = await c.get(f"{settings.ollama.url}/api/tags")
-            results["railway_ollama"] = {"reachable": r.status_code == 200}
-    except Exception as e:
-        results["railway_ollama"] = {"reachable": False, "error": str(e)[:100]}
+    tasks.append(asyncio.create_task(_check("railway_ollama", f"{settings.ollama.url}/api/tags")))
 
     # Modal coordizer (harvest)
     harvest_url = settings.modal.harvest_url
     if harvest_url:
-        try:
-            base = harvest_url.rsplit("/", 1)[0] if "/" in harvest_url else harvest_url
-            async with _httpx.AsyncClient(timeout=10.0) as c:
-                r = await c.get(f"{base.rstrip('/')}/health")
-                results["modal_coordizer"] = {"reachable": r.status_code == 200}
-        except Exception as e:
-            results["modal_coordizer"] = {"reachable": False, "error": str(e)[:100]}
+        base = harvest_url.rsplit("/", 1)[0] if "/" in harvest_url else harvest_url
+        tasks.append(asyncio.create_task(_check("modal_coordizer", f"{base.rstrip('/')}/health")))
     else:
         results["modal_coordizer"] = {"reachable": False, "error": "not configured"}
 
     # Modal trainer
     training_url = settings.modal.training_url
     if training_url:
-        try:
-            base = training_url.rsplit("/", 1)[0] if "/" in training_url else training_url
-            async with _httpx.AsyncClient(timeout=10.0) as c:
-                r = await c.get(f"{base.rstrip('/')}/health")
-                results["modal_trainer"] = {"reachable": r.status_code == 200}
-        except Exception as e:
-            results["modal_trainer"] = {"reachable": False, "error": str(e)[:100]}
+        base = training_url.rsplit("/", 1)[0] if "/" in training_url else training_url
+        tasks.append(asyncio.create_task(_check("modal_trainer", f"{base.rstrip('/')}/health")))
     else:
         results["modal_trainer"] = {"reachable": False, "error": "not configured"}
 
+    await asyncio.gather(*tasks, return_exceptions=True)
     return results
 
 
