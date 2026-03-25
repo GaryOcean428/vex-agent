@@ -54,6 +54,7 @@ ml_image = (
         "numpy>=1.26",
         "pydantic>=2.0",
         "fastapi[standard]",
+        "qig-core>=2.5.0",
         # Qwen3.5 hybrid architecture: linear attention fast path
         "causal-conv1d>=1.4.0",
         "flash-linear-attention",

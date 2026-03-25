@@ -98,7 +98,7 @@ model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 training_volume = modal.Volume.from_name("vex-training", create_if_missing=True)
 
 train_image = (
-    modal.Image.from_registry("nvidia/cuda:12.4.1-devel-ubuntu22.04", add_python="3.12")
+    modal.Image.from_registry("nvidia/cuda:13.0.1-devel-ubuntu22.04", add_python="3.12")
     .env({"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     .pip_install(
         "torch>=2.1",

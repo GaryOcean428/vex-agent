@@ -1041,7 +1041,7 @@ class SleepCycleManager:
         """
         import time as _time
 
-        lo, mid, hi = _MUSHROOM_INSTABILITY_THRESHOLDS
+        _, mid, _ = _MUSHROOM_INSTABILITY_THRESHOLDS
         if instability_metric > mid:
             return None  # Safety gate: too unstable
 

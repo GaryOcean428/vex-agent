@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import httpx
+
 from kernel.coordizer_v2.adapter import CoordizerV2Adapter
 
 
@@ -55,9 +56,12 @@ def test_ingest_document_populates_local_coordizer_bank(tmp_path: Path) -> None:
 
 def test_training_modal_data_endpoint_handles_read_timeout(tmp_path: Path, monkeypatch) -> None:
     ingest = _load_ingest_with_tmp_training_dir(tmp_path)
-    training_url = "https://example-qloratrainer-train.modal.run"
-    expected_data_stats_url = "https://example-qloratrainer-data-stats.modal.run"
-    monkeypatch.setattr(ingest.settings.modal, "training_url", training_url)
+    training_url = "https://archelon--vex-qlora-train-qloratrainer-web.modal.run"
+    expected_data_stats_url = (
+        "https://archelon--vex-qlora-train-qloratrainer-web.modal.run/data-stats"
+    )
+    # Bypass frozen=True on the dataclass
+    object.__setattr__(ingest.settings.modal, "training_url", training_url)
 
     class _TimeoutClient:
         def __init__(self, *args, **kwargs):

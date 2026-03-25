@@ -79,7 +79,7 @@ and resonance metrics. Completed and pushed.
 ## MODAL ENDPOINT REFERENCE
 
 **vex-coordizer-harvest:** /health, /harvest, /coordize
-**vex-qlora-train:** /infer, /health, /status, /train, /export_image
+**vex-qlora-train:** /infer, /health, /status, /train, /export-image, /data-receive, /data-stats
 **vex-inference:** RETIRED — do not use
 
 ## KEY RAILWAY ENV VARS
