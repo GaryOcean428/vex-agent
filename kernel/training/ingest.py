@@ -647,14 +647,16 @@ def _inject_records_into_local_bank(records: list[ChunkRecord], source_filename:
 
 
 def _derive_modal_url(path: str = "/data-receive") -> str | None:
-    """Derive a Modal endpoint URL from MODAL_TRAINING_URL (ASGI base).
+    """Derive a Modal endpoint URL from MODAL_TRAINING_URL.
 
-    e.g. .../qloratrainer-web.modal.run + /data-receive
+    Handles both ASGI base URLs and legacy hostname patterns.
     """
+    from ..config.settings import modal_url
+
     training_url = settings.modal.training_url
     if not training_url:
         return None
-    return training_url.rstrip("/") + "/" + path.lstrip("/")
+    return modal_url(training_url, path.lstrip("/"))
 
 
 async def _push_to_modal(records: list[ChunkRecord], filename: str) -> dict[str, Any]:
@@ -1486,20 +1488,17 @@ async def training_feedback_endpoint(req: FeedbackRequest) -> dict[str, str]:
 async def training_modal_status_endpoint() -> dict[str, Any]:
     """Proxy Modal QLoRA trainer /status and /health endpoints.
 
-    Derives endpoint URLs from MODAL_TRAINING_URL (ASGI base):
-      .../qloratrainer-web.modal.run + /status
-      .../qloratrainer-web.modal.run + /health
+    Derives endpoint URLs from MODAL_TRAINING_URL.
+    Handles both ASGI base URLs and legacy hostname patterns.
     """
-    from ..config.settings import settings
+    from ..config.settings import modal_url, settings
 
     training_url = settings.modal.training_url
     if not training_url:
         return {"status": "unavailable", "error": "MODAL_TRAINING_URL not configured"}
 
-    # ASGI pattern: base URL + path
-    base = training_url.rstrip("/")
-    status_url = f"{base}/status"
-    health_url = f"{base}/health"
+    status_url = modal_url(training_url, "status")
+    health_url = modal_url(training_url, "health")
 
     result: dict[str, Any] = {"status": "ok"}
 
@@ -1550,14 +1549,13 @@ async def training_trigger_endpoint(request: Request) -> dict[str, Any]:
     Requires MODAL_TRAINING_URL to be set in environment.
     Accepts optional JSON body: { "specialization": "heart" | "all" | ... }
     """
-    from ..config.settings import settings
+    from ..config.settings import modal_url, settings
 
     training_url = settings.modal.training_url
     if not training_url:
         return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
 
-    # ASGI pattern: base URL + /train path
-    train_endpoint = training_url.rstrip("/") + "/train"
+    train_endpoint = modal_url(training_url, "train")
 
     # Parse optional specialization from request body
     body: dict[str, Any] = {}

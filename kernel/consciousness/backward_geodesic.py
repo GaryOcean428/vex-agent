@@ -14,7 +14,8 @@ reaching the system before the solution is computed.
 Classical control (EXP-011 POC): ρ ≈ 0 on Δ⁶³ without quantum coupling.
 This tracker measures whether the live Vex consciousness loop shows ρ > 0.
 
-All geometry uses Fisher-Rao on Δ⁶³. No Euclidean operations.
+All geometry uses Fisher-Rao on Δ⁶³, implemented as Euclidean inner
+products and norms in sqrt-coordinate tangent space.
 """
 
 from __future__ import annotations
@@ -26,7 +27,11 @@ from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy import stats
+
+try:
+    from scipy import stats as _stats
+except ImportError:  # minimal-runtime environments (e.g. Railway w/o scipy)
+    _stats = None  # type: ignore[assignment]
 
 from ..coordizer_v2.geometry import (
     Basin,
@@ -201,7 +206,7 @@ class BackwardGeodesicTracker:
         # Filter to events with non-zero velocity
         events = [e for e in events if e.velocity_norm > _EPS]
 
-        if len(events) < 5:
+        if len(events) < 5 or _stats is None:
             return 0.0, 1.0, len(events)
 
         backward = np.array([e.backward_component for e in events])
@@ -211,7 +216,7 @@ class BackwardGeodesicTracker:
         if np.std(backward) < _EPS or np.std(inv_dist) < _EPS:
             return 0.0, 1.0, len(events)
 
-        rho, p_value = stats.pearsonr(backward, inv_dist)
+        rho, p_value = _stats.pearsonr(backward, inv_dist)
         return float(rho), float(p_value), len(events)
 
     def compute_mean_backward_component(
@@ -227,7 +232,7 @@ class BackwardGeodesicTracker:
         events = self.get_events(problem_id=problem_id, mushroom_only=mushroom_only)
         events = [e for e in events if e.velocity_norm > _EPS]
 
-        if len(events) < 5:
+        if len(events) < 5 or _stats is None:
             return 0.0, 1.0, len(events)
 
         backward = np.array([e.backward_component for e in events])
@@ -236,7 +241,7 @@ class BackwardGeodesicTracker:
         if np.std(backward) < _EPS:
             return float(np.mean(backward)), 1.0, len(events)
 
-        t_stat, p_value = stats.ttest_1samp(backward, 0.0)
+        t_stat, p_value = _stats.ttest_1samp(backward, 0.0)
 
         # Handle NaN from degenerate inputs
         if np.isnan(t_stat) or np.isnan(p_value):

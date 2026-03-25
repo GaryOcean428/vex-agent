@@ -107,8 +107,9 @@ class PeftInferenceClient:
 
     async def check_health(self) -> bool:
         """Check if the PEFT inference endpoint is reachable."""
-        # ASGI pattern: /infer → /health (same base URL)
-        health_url = self._infer_url.rsplit("/infer", 1)[0] + "/health"
+        from ..config.settings import modal_url
+
+        health_url = modal_url(self._infer_url, "health")
         try:
             resp = await self._http.get(health_url)
             if resp.status_code == 200:

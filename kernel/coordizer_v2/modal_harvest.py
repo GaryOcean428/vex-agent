@@ -124,13 +124,9 @@ async def modal_harvest(
     if settings.kernel_api_key:
         headers["X-Api-Key"] = settings.kernel_api_key
 
-    # ASGI pattern: base URL + /harvest path.
-    # Handle legacy URLs that already end with /harvest
-    base = settings.modal.harvest_url.rstrip("/")
-    if base.endswith("/harvest"):
-        harvest_endpoint = base
-    else:
-        harvest_endpoint = base + "/harvest"
+    from ..config.settings import modal_url
+
+    harvest_endpoint = modal_url(settings.modal.harvest_url, "harvest")
     logger.info(
         "Sending harvest request to Modal: %s (%d texts, model=%s)",
         harvest_endpoint,

@@ -23,6 +23,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from ..config.settings import modal_url
 from ..config.settings import settings as kernel_settings
 from .harvest import HarvestResult
 
@@ -64,12 +65,7 @@ class ModalIntegrationConfig:
         if modal.harvest_health_url:
             health_url = modal.harvest_health_url
         else:
-            # ASGI pattern: base URL + /health path.
-            # Handle legacy URLs that still point directly to /harvest
-            base = harvest_url.rstrip("/")
-            if base.endswith("/harvest"):
-                base = base[: -len("/harvest")]
-            health_url = base + "/health"
+            health_url = modal_url(harvest_url, "health")
 
         return cls(
             enabled=modal.enabled,

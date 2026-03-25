@@ -527,9 +527,12 @@ class QLoRATrainer:
 
         web_app = FastAPI(title="QLoRATrainer")
 
+        # Sync def for POST routes so FastAPI runs them in threadpool
+        # (GPU/blocking work must not block the event loop)
+
         @web_app.post("/infer")
-        async def infer(request: Request):
-            return self._handle_infer(await request.json(), request)
+        def infer(data: dict, request: Request):
+            return self._handle_infer(data, request)
 
         @web_app.get("/health")
         def health():
@@ -540,16 +543,16 @@ class QLoRATrainer:
             return self._handle_status()
 
         @web_app.post("/train")
-        async def train(request: Request):
-            return self._handle_train(await request.json(), request)
+        def train(data: dict, request: Request):
+            return self._handle_train(data, request)
 
         @web_app.post("/data-receive")
-        async def data_receive(request: Request):
-            return self._handle_data_receive(await request.json(), request)
+        def data_receive(data: dict, request: Request):
+            return self._handle_data_receive(data, request)
 
         @web_app.post("/export-image")
-        async def export_image(request: Request):
-            return self._handle_export_image(await request.json(), request)
+        def export_image(data: dict, request: Request):
+            return self._handle_export_image(data, request)
 
         @web_app.get("/data-stats")
         def data_stats():

@@ -394,12 +394,12 @@ class CoordizerHarvester:
             }
 
         @web_app.post("/harvest")
-        async def harvest(request: Request):
+        def harvest(data: dict, request: Request):
             """Raw harvest — returns per-coordinate fingerprints.
-            WARNING: Large responses. Use /coordize for production."""
+            WARNING: Large responses. Use /coordize for production.
+            Sync def so FastAPI runs in threadpool (GPU work blocks)."""
             import time
 
-            data = await request.json()
             auth_err = self._check_auth(data, request)
             if auth_err:
                 return auth_err
@@ -440,11 +440,11 @@ class CoordizerHarvester:
             }
 
         @web_app.post("/coordize")
-        async def coordize(request: Request):
-            """Full pipeline: text -> harvest -> PGA compress -> 64D basin coords."""
+        def coordize(data: dict, request: Request):
+            """Full pipeline: text -> harvest -> PGA compress -> 64D basin coords.
+            Sync def so FastAPI runs in threadpool (GPU work blocks)."""
             import time
 
-            data = await request.json()
             auth_err = self._check_auth(data, request)
             if auth_err:
                 return auth_err

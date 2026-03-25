@@ -84,6 +84,53 @@ class GPUHarvestConfig:
     phase3_cutoff: int = int(os.environ.get("GPU_HARVEST_PHASE3_CUTOFF", "32768"))
 
 
+def modal_url(base_url: str, path: str) -> str:
+    """Build a Modal endpoint URL from a base URL + route path.
+
+    Handles both ASGI base URLs and legacy per-method hostname patterns:
+      - ASGI:   https://...--app-class-web.modal.run  + /train  → .../web.modal.run/train
+      - Legacy: https://...--app-class-train.modal.run + /train → unchanged (already a full URL)
+      - Legacy: https://...--app-class-train.modal.run + /infer → .../app-class-infer.modal.run
+
+    The legacy pattern is detected by checking if the hostname ends with
+    `-{method}.modal.run` where method matches a known route suffix.
+    """
+    base = base_url.rstrip("/")
+    path = path.strip("/")
+
+    # Legacy hostname pattern: ...-train.modal.run, ...-harvest.modal.run, etc.
+    # If base already ends with the requested path as a hostname segment, return as-is
+    legacy_suffix = f"-{path}.modal.run"
+    if base.endswith(legacy_suffix):
+        return base
+
+    # Legacy hostname: base is ...-train.modal.run but we want a different route
+    # Replace the method segment in the hostname
+    for method in ("train", "infer", "health", "status", "harvest", "coordize"):
+        old_suffix = f"-{method}.modal.run"
+        if base.endswith(old_suffix):
+            return base[: -len(old_suffix)] + f"-{path}.modal.run"
+
+    # ASGI pattern: base URL + path
+    # Strip trailing route if base already includes one (e.g. .../harvest → .../health)
+    for route in (
+        "/train",
+        "/infer",
+        "/health",
+        "/status",
+        "/harvest",
+        "/coordize",
+        "/data-receive",
+        "/data-stats",
+        "/export-image",
+    ):
+        if base.endswith(route):
+            base = base[: -len(route)]
+            break
+
+    return f"{base}/{path}"
+
+
 @dataclass(frozen=True)
 class ModalConfig:
     """Modal GPU integration — PEFT inference, coordizer harvesting, QLoRA training.

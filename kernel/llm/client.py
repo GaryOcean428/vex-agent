@@ -230,9 +230,10 @@ class LLMClient:
         self._last_completion_ts: float = 0.0
 
         # PEFT adapter inference client (Tier 2 — per-kernel QLoRA adapters on Modal)
-        # ASGI pattern: base URL + /infer path (train and infer share the same app)
+        from ..config.settings import modal_url
+
         _training_url = settings.modal.training_url
-        peft_url = (_training_url.rstrip("/") + "/infer") if _training_url else ""
+        peft_url = modal_url(_training_url, "infer") if _training_url else ""
         self._peft_client: PeftInferenceClient | None = None
         if peft_url:
             self._peft_client = PeftInferenceClient(

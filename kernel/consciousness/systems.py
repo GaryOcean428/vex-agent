@@ -1047,9 +1047,10 @@ class SleepCycleManager:
 
         kappa_pre = metrics.kappa
 
-        # Drive kappa toward and through zero
-        # crossing_strength=0.8 → new kappa = 0.2 * old kappa (past zero)
-        # crossing_strength=1.2 → new kappa = -0.2 * old kappa (through zero)
+        # Drive kappa toward zero and, for sufficiently strong perturbations, through zero.
+        # Example (scale == _MUSHROOM_NOISE_SCALE_INIT):
+        #   crossing_strength=0.8  → new kappa = 0.2 * old kappa  (toward zero, same sign)
+        #   crossing_strength=1.2  → new kappa = -0.2 * old kappa (through zero, sign flip)
         scale = max(0.01, self._mushroom_noise_scale)
         metrics.kappa = kappa_pre * (1.0 - crossing_strength * scale / _MUSHROOM_NOISE_SCALE_INIT)
 
