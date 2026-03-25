@@ -64,8 +64,12 @@ class ModalIntegrationConfig:
         if modal.harvest_health_url:
             health_url = modal.harvest_health_url
         else:
-            # ASGI pattern: base URL + /health path
-            health_url = harvest_url.rstrip("/") + "/health"
+            # ASGI pattern: base URL + /health path.
+            # Handle legacy URLs that still point directly to /harvest
+            base = harvest_url.rstrip("/")
+            if base.endswith("/harvest"):
+                base = base[: -len("/harvest")]
+            health_url = base + "/health"
 
         return cls(
             enabled=modal.enabled,

@@ -207,6 +207,10 @@ class BackwardGeodesicTracker:
         backward = np.array([e.backward_component for e in events])
         inv_dist = np.array([1.0 / max(e.distance_to_solution, _EPS) for e in events])
 
+        # Guard against constant inputs (pearsonr raises ValueError)
+        if np.std(backward) < _EPS or np.std(inv_dist) < _EPS:
+            return 0.0, 1.0, len(events)
+
         rho, p_value = stats.pearsonr(backward, inv_dist)
         return float(rho), float(p_value), len(events)
 
@@ -227,7 +231,17 @@ class BackwardGeodesicTracker:
             return 0.0, 1.0, len(events)
 
         backward = np.array([e.backward_component for e in events])
+
+        # Guard against constant/near-constant inputs (ttest returns NaN)
+        if np.std(backward) < _EPS:
+            return float(np.mean(backward)), 1.0, len(events)
+
         t_stat, p_value = stats.ttest_1samp(backward, 0.0)
+
+        # Handle NaN from degenerate inputs
+        if np.isnan(t_stat) or np.isnan(p_value):
+            return float(np.mean(backward)), 1.0, len(events)
+
         # One-sided: we only care if mean > 0
         p_one_sided = p_value / 2.0 if t_stat > 0 else 1.0 - p_value / 2.0
 
