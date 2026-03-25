@@ -161,10 +161,12 @@ class RemoteBasinSync:
                 result.basin_coords = new_coords
                 result.eigenvalues = data.get("eigenvalues", [])[:10]
 
-                # Phase 2: Compute delta against previous coords
+                # Phase 2: Compute Fisher-Rao delta against previous coords
                 if self._last_coords is not None:
-                    delta = np.sqrt(np.sum((new_coords - self._last_coords) ** 2))
-                    result.delta_l2 = float(delta)
+                    from ..geometry.fisher_rao import fisher_rao_distance
+
+                    delta = fisher_rao_distance(new_coords, self._last_coords)
+                    result.delta_l2 = float(delta)  # field name kept for API compat
                     self._cumulative_drift += result.delta_l2
 
                     # Top dimension movers

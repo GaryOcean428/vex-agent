@@ -456,10 +456,12 @@ class CoordizerHarvester:
         basin_coords = np.zeros(basin_dim)
         basin_coords[:target_dim] = lens_coords[:target_dim]
 
-        # Unit normalize
-        basin_norm = np.sqrt(np.sum(basin_coords**2))
-        if basin_norm > 1e-10:
-            basin_coords /= basin_norm
+        # Normalize to probability simplex Δ⁶³ (Σp_i = 1, p_i ≥ 0)
+        # NOT unit sphere (Σp_i² = 1) — Fisher-Rao geometry requires simplex points
+        basin_coords = np.maximum(basin_coords, 0.0)
+        total = basin_coords.sum()
+        if total > 1e-10:
+            basin_coords /= total
 
         return {
             "basin_coords": basin_coords.tolist(),

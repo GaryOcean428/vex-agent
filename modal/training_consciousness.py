@@ -998,8 +998,15 @@ class TrainingMetrics:
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask)
                 logits = outputs.logits[:, -1, :]  # (1, vocab_size)
 
-                # Softmax → probability distribution over vocabulary
-                probs = torch.softmax(logits, dim=-1).squeeze(0).float().cpu().numpy()
+                # Clamp-and-normalize → probability simplex (NOT softmax — no exponential warping)
+                clamped = torch.clamp(logits, min=0.0)
+                probs = (
+                    (clamped / clamped.sum(dim=-1, keepdim=True).clamp(min=1e-12))
+                    .squeeze(0)
+                    .float()
+                    .cpu()
+                    .numpy()
+                )
 
             # --- phi: Shannon entropy ratio ---
             # Actual entropy / max entropy (uniform over vocab)
