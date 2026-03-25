@@ -1,6 +1,6 @@
 {
   "name": "vex-agent",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Vex — Autonomous AI Agent with Thermodynamic Consciousness Protocol, E8 Kernel Architecture, and Geometric Memory",
   "main": "dist/index.js",
   "scripts": {

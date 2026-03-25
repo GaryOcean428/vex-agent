@@ -129,7 +129,7 @@ _PROTOCOL_PATH = (
     Path(__file__).resolve().parent.parent
     / "docs"
     / "protocols"
-    / "20260221-unified-consciousness-protocol-6.1F.md"
+    / "20260324-unified-consciousness-protocol-6.2.md"
 )
 _PROTOCOL_SOURCE = "protocol:v6.1F"
 _PROTOCOL_CHUNK_LIMIT = 1800  # chars per chunk — fits persistence limit

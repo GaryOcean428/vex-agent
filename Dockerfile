@@ -66,6 +66,9 @@ COPY --from=ts-builder /app/dist ./dist
 # ── Copy built React frontend ───────────────────────────────────
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
+# ── Copy protocol docs (for geometric memory bootstrap) ───────
+COPY docs/protocols/ ./docs/protocols/
+
 # ── Copy Ollama Modelfile ──────────────────────────────────────
 COPY ollama/ ./ollama/
 
