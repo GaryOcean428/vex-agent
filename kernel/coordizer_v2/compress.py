@@ -246,26 +246,11 @@ def compress(
         logger.info(f"  Building {n_sub}x{n_sub} Gram matrix...")
         G = (T_sub @ T_sub.T) / n_sub
 
-        try:
-            from scipy.sparse.linalg import eigsh
-
-            k = min(target_dim, n_sub - 1)
-            eigenvalues, eigvecs = eigsh(G, k=k, which="LM")
-        except ImportError:
-            logger.info("  scipy not available — falling back to numpy.linalg.eigh")
-            eigenvalues_full, eigvecs_full = np.linalg.eigh(G)
-            idx = np.argsort(eigenvalues_full)[::-1][:target_dim]
-            eigenvalues = eigenvalues_full[idx]
-            eigvecs = eigvecs_full[:, idx]
-        except Exception:
-            eigenvalues_full, eigvecs_full = np.linalg.eigh(G)
-            idx = np.argsort(eigenvalues_full)[::-1][:target_dim]
-            eigenvalues = eigenvalues_full[idx]
-            eigvecs = eigvecs_full[:, idx]
-
-        sort_idx = np.argsort(eigenvalues)[::-1]
-        eigenvalues = eigenvalues[sort_idx]
-        eigvecs = eigvecs[:, sort_idx]
+        eigenvalues_full, eigvecs_full = np.linalg.eigh(G)
+        # eigh returns ascending; reverse for descending and take top target_dim
+        idx = np.argsort(eigenvalues_full)[::-1][:target_dim]
+        eigenvalues = eigenvalues_full[idx]
+        eigvecs = eigvecs_full[:, idx]
 
         principal_directions = np.zeros((source_dim, len(eigenvalues)))
         for j in range(len(eigenvalues)):

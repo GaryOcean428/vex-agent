@@ -42,10 +42,10 @@ app = modal.App("vex-coordizer-harvest")
 model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 
 ml_image = (
-    modal.Image.from_registry("nvidia/cuda:13.0.1-devel-ubuntu22.04", add_python="3.12")
+    modal.Image.from_registry("nvidia/cuda:13.0.1-devel-ubuntu22.04", add_python="3.14")
     .apt_install("g++", "ninja-build")
     .env({"CXX": "g++", "CC": "gcc"})
-    .pip_install(
+    .uv_pip_install(
         "torch>=2.11",
         "transformers>=4.48.0",
         "accelerate",
@@ -58,12 +58,15 @@ ml_image = (
         # Qwen3.5 hybrid architecture: linear attention fast path
         "causal-conv1d>=1.4.0",
         "flash-linear-attention",
+        # GPU eigensolver — cuSOLVER backend for Fisher-Rao eigendecomposition
+        "cupy-cuda13x>=14.0.0",
     )
     .run_commands(
         # Fix bitsandbytes _check_is_size deprecation (upstream bug, all versions through 0.49.2)
         # PyTorch deprecated torch._check_is_size() — replace with torch._check(x >= 0)
         "sed -i 's/torch\\._check_is_size(blocksize)/torch._check(blocksize >= 0)/g' "
-        "/usr/local/lib/python3.12/site-packages/bitsandbytes/backends/cuda/ops.py || true"
+        "$(python3 -c 'import site; print(site.getsitepackages()[0])')"
+        "/bitsandbytes/backends/cuda/ops.py || true"
     )
 )
 
@@ -322,47 +325,66 @@ class CoordizerHarvester:
         return averaged, total_resonances, vocab_size, curvature
 
     def _pga_compress(self, fingerprints_dict, lens_dim=LENS_DIM, basin_dim=BASIN_DIM):
-        """PGA compress: V-dim fingerprints -> basin coords on GPU via numpy.
+        """PGA compress: V-dim fingerprints -> basin coords via GPU eigensolver.
 
         Uses dual Gram trick (N x N instead of V x V) since N << V.
         All operations in sqrt-space (Bhattacharyya embedding of probability simplex).
+
+        GPU acceleration (CuPy): the (N,V)×(V,N) matmul for the Gram matrix
+        and subsequent eigendecomposition run on GPU via cuSOLVER when CuPy
+        is available. Falls back to numpy on CPU if CuPy import fails.
         """
         import numpy as np
+
+        try:
+            import cupy as cp
+
+            xp = cp  # GPU array module
+            _on_gpu = True
+        except ImportError:
+            xp = np  # CPU fallback
+            _on_gpu = False
 
         fps = list(fingerprints_dict.values())
         N = len(fps)
         V = fps[0].shape[0]
 
+        # Transfer to GPU if available
+        fps_arr = xp.array(np.array(fps))  # (N, V)
+
         # Global mean in sqrt space
-        sqrt_fps = [np.sqrt(np.maximum(fp, 1e-12)) for fp in fps]
-        global_mean = np.mean(sqrt_fps, axis=0)
-        norm = np.sqrt(np.sum(global_mean**2))
-        if norm > 1e-10:
+        sqrt_fps = xp.sqrt(xp.maximum(fps_arr, 1e-12))
+        global_mean = xp.mean(sqrt_fps, axis=0)
+        norm = xp.sqrt(xp.sum(global_mean**2))
+        if float(norm) > 1e-10:
             global_mean /= norm
 
         # Center in tangent space
-        centered = np.array([s - global_mean for s in sqrt_fps])  # (N, V)
+        centered = sqrt_fps - global_mean[None, :]  # (N, V) — broadcast
 
-        # Dual Gram matrix (N x N)
+        # Dual Gram matrix (N x N) — this is the big matmul (N,V)×(V,N)
         G = centered @ centered.T  # (N, N)
 
-        # Eigendecomposition of Gram matrix
+        # Eigendecomposition of Gram matrix (cuSOLVER on GPU, LAPACK on CPU)
         target_dim = min(lens_dim, N, basin_dim)
-        eigenvalues, eigenvectors = np.linalg.eigh(G)
+        eigenvalues, eigenvectors = xp.linalg.eigh(G)
 
         # Sort descending
-        idx = np.argsort(eigenvalues)[::-1]
+        idx = xp.argsort(eigenvalues)[::-1]
         eigenvalues = eigenvalues[idx]
         eigenvectors = eigenvectors[:, idx]
 
         # Project to basin coords
         # projection = eigenvectors^T @ centered @ global_mean
         proj_on_mean = centered @ global_mean  # (N,)
-        lens_coords = np.zeros(target_dim)
-        for d in range(target_dim):
-            lens_coords[d] = np.dot(
-                eigenvectors[:, d], proj_on_mean
-            )  # QIG-EXEMPT: tangent space projection at Fréchet mean
+        lens_coords = (
+            eigenvectors[:, :target_dim].T @ proj_on_mean
+        )  # QIG-EXEMPT: tangent space projection at Fréchet mean
+
+        # Transfer back to CPU
+        if _on_gpu:
+            eigenvalues = cp.asnumpy(eigenvalues)
+            lens_coords = cp.asnumpy(lens_coords)
 
         basin_coords = np.zeros(basin_dim)
         basin_coords[:target_dim] = lens_coords[:target_dim]

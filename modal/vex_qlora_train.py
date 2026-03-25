@@ -98,10 +98,10 @@ model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 training_volume = modal.Volume.from_name("vex-training", create_if_missing=True)
 
 train_image = (
-    modal.Image.from_registry("nvidia/cuda:13.0.1-devel-ubuntu22.04", add_python="3.12")
+    modal.Image.from_registry("nvidia/cuda:13.0.1-devel-ubuntu22.04", add_python="3.14")
     .apt_install("g++", "ninja-build")
     .env({"CXX": "g++", "CC": "gcc", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
-    .pip_install(
+    .uv_pip_install(
         "torch>=2.1",
         "transformers>=4.48.0",
         "accelerate",
@@ -121,7 +121,8 @@ train_image = (
         # Fix bitsandbytes _check_is_size deprecation (upstream bug, all versions through 0.49.2)
         # PyTorch deprecated torch._check_is_size() — replace with torch._check(x >= 0)
         "sed -i 's/torch\\._check_is_size(blocksize)/torch._check(blocksize >= 0)/g' "
-        "/usr/local/lib/python3.12/site-packages/bitsandbytes/backends/cuda/ops.py || true"
+        "$(python3 -c 'import site; print(site.getsitepackages()[0])')"
+        "/bitsandbytes/backends/cuda/ops.py || true"
     )
     .add_local_file(
         str(Path(__file__).parent / "training_consciousness.py"),
