@@ -103,11 +103,11 @@ train_image = (
     .env({"CXX": "g++", "CC": "gcc", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     .uv_pip_install(
         "torch>=2.1",
-        "transformers>=4.48.0",
+        "transformers>=4.48.0,<5.0",
         "accelerate",
         "bitsandbytes>=0.45.0",
-        "peft>=0.13.0",
-        "trl>=0.12.0",
+        "peft>=0.13.0,<1.0",
+        "trl>=0.12.0,<1.0",
         "datasets>=3.0",
         "numpy>=1.26",
         "pydantic>=2.0",
@@ -1343,7 +1343,13 @@ def train_all_kernels(
             }
 
         dataset = Dataset.from_list(samples).map(format_chat)
-        split = dataset.train_test_split(test_size=0.1, seed=42)
+        if len(dataset) < 5:
+            print(
+                f"[{spec}] Only {len(dataset)} samples — too few for train/eval split, using all for training"
+            )
+            split = {"train": dataset, "test": dataset}
+        else:
+            split = dataset.train_test_split(test_size=0.1, seed=42)
 
         model = None
         trainer = None

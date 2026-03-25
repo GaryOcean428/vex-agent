@@ -47,10 +47,10 @@ ml_image = (
     .env({"CXX": "g++", "CC": "gcc"})
     .uv_pip_install(
         "torch>=2.11",
-        "transformers>=4.48.0",
+        "transformers>=4.48.0,<5.0",
         "accelerate",
         "bitsandbytes>=0.45.0",
-        "peft>=0.13.0",
+        "peft>=0.13.0,<1.0",
         "numpy>=1.26",
         "pydantic>=2.0",
         "fastapi[standard]",
