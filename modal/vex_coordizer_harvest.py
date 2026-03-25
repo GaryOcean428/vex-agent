@@ -37,20 +37,32 @@ BASIN_DIM = 64  # frozen
 LENS_DIM = 32  # from eigenvalue analysis
 ADAPTER_PATH = "/models/adapters/harvest-qlora"
 
+# Allowlisted model IDs — trust_remote_code=True is only enabled for these.
+TRUSTED_MODEL_IDS: frozenset[str] = frozenset(
+    {
+        "Qwen/Qwen3.5-4B",
+        "Qwen/Qwen3.5-35B-A3B",
+    }
+)
+
 app = modal.App("vex-coordizer-harvest")
 
 model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 
 ml_image = (
     modal.Image.from_registry("nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.14")
-    .apt_install("g++", "ninja-build")
+    .apt_install("g++", "ninja-build", "git")
     .env({"CXX": "g++", "CC": "gcc"})
     .uv_pip_install(
-        "torch>=2.11",
-        "transformers>=4.48.0,<5.0",
+        "torch>=2.1,<2.11",
+        # Qwen3.5 VLM classes (Qwen3_5ForConditionalGeneration, Qwen3_5MoeForConditionalGeneration)
+        # are available from transformers 5.3.0+ on PyPI.
+        # trust_remote_code=True is required for Qwen's custom architecture code;
+        # only allowlisted model IDs should be loaded (see TRUSTED_MODEL_IDS).
+        "transformers>=5.3.0",
         "accelerate",
         "bitsandbytes>=0.45.0",
-        "peft>=0.13.0,<1.0",
+        "peft>=0.13.0",
         "numpy>=1.26",
         "pydantic>=2.0",
         "fastapi[standard]",
@@ -91,7 +103,7 @@ class CoordizerHarvester:
         from pathlib import Path
 
         import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
         self._model_cache = {}
         default_model_id = HARVEST_MODEL_ID
@@ -99,7 +111,11 @@ class CoordizerHarvester:
 
         print(f"Loading default model: {default_model_id}")
 
-        tokenizer = AutoTokenizer.from_pretrained(default_model_id, cache_dir=cache_dir)
+        tokenizer = AutoTokenizer.from_pretrained(
+            default_model_id,
+            cache_dir=cache_dir,
+            trust_remote_code=True,
+        )
 
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -108,14 +124,59 @@ class CoordizerHarvester:
             bnb_4bit_use_double_quant=True,
         )
 
-        model = AutoModelForCausalLM.from_pretrained(
-            default_model_id,
-            cache_dir=cache_dir,
-            device_map={"": 0},
-            low_cpu_mem_usage=True,
-            dtype=torch.float16,
-            quantization_config=bnb_config,
+        load_kwargs = {
+            "cache_dir": cache_dir,
+            "device_map": {"": 0},
+            "low_cpu_mem_usage": True,
+            "quantization_config": bnb_config,
+            "trust_remote_code": True,
+        }
+
+        # Detect Qwen3.5 VLM architecture — must use ConditionalGeneration class
+        # (AutoModelForCausalLM creates wrong class with mismatched weight paths)
+        config = AutoConfig.from_pretrained(
+            default_model_id, cache_dir=cache_dir, trust_remote_code=True
         )
+        print(
+            f"  [CONFIG] model_type={config.model_type}, architectures={getattr(config, 'architectures', [])}"
+        )
+
+        is_qwen35_vlm = config.model_type in ("qwen3_5", "qwen3_5_moe") and hasattr(
+            config, "text_config"
+        )
+        if is_qwen35_vlm:
+            model_cls_name = (
+                "Qwen3_5MoeForConditionalGeneration"
+                if config.model_type == "qwen3_5_moe"
+                else "Qwen3_5ForConditionalGeneration"
+            )
+            print(
+                f"  [COMPAT] Qwen3.5 VLM detected (type={config.model_type}) — loading as {model_cls_name}"
+            )
+            try:
+                import transformers
+
+                model_cls = getattr(transformers, model_cls_name)
+                model = model_cls.from_pretrained(default_model_id, **load_kwargs)
+                # Prefer model's own config for vocab_size (may differ after remote code)
+                if not hasattr(model.config, "vocab_size") or model.config.vocab_size is None:
+                    mc = model.config
+                    if hasattr(mc, "text_config") and hasattr(mc.text_config, "vocab_size"):
+                        model.config.vocab_size = mc.text_config.vocab_size
+                    elif hasattr(config, "text_config") and hasattr(
+                        config.text_config, "vocab_size"
+                    ):
+                        model.config.vocab_size = config.text_config.vocab_size
+                print(
+                    f"  [COMPAT] Loaded {model_cls_name} (vocab_size={getattr(model.config, 'vocab_size', 'N/A')})"
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    f"Qwen3.5 VLM ({config.model_type}) requires {model_cls_name} but loading failed: {e}. "
+                    f"Ensure transformers>=5.3.0 is installed."
+                ) from e
+        else:
+            model = AutoModelForCausalLM.from_pretrained(default_model_id, **load_kwargs)
 
         # --- QLoRA adapter loading ---
         # If a trained adapter exists, load and merge it into the base model.
@@ -339,9 +400,13 @@ class CoordizerHarvester:
         try:
             import cupy as cp
 
-            xp = cp  # GPU array module
+            xp = cp  # GPU array module — cuSOLVER eigensolver
             _on_gpu = True
         except ImportError:
+            print(
+                "  [WARN] CuPy not available — eigendecomposition will use CPU (LAPACK). "
+                "This is 10-100x slower for large Gram matrices. Install cupy-cuda12x."
+            )
             xp = np  # CPU fallback
             _on_gpu = False
 
@@ -367,6 +432,8 @@ class CoordizerHarvester:
 
         # Eigendecomposition of Gram matrix (cuSOLVER on GPU, LAPACK on CPU)
         target_dim = min(lens_dim, N, basin_dim)
+        backend = "cuSOLVER/GPU" if _on_gpu else "LAPACK/CPU"
+        print(f"  [EIGEN] {N}x{N} Gram matrix → eigh via {backend}")
         eigenvalues, eigenvectors = xp.linalg.eigh(G)
 
         # Sort descending
@@ -554,7 +621,7 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
     from pathlib import Path
 
     import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
     cache_dir = "/models/hub"
 
@@ -562,25 +629,45 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
     model_cache = Path(cache_dir) / f"models--{model_id.replace('/', '--')}"
     if model_cache.exists() and any(model_cache.rglob("*.safetensors")):
         print(f"Model {model_id} already cached at {model_cache}. Skipping download.")
-        tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_id, cache_dir=cache_dir, trust_remote_code=True
+        )
         print(f"Verified tokenizer. Vocab size: {tokenizer.vocab_size}")
         return
 
     print(f"Downloading {model_id} to {cache_dir} (first time — may take 10-20 min)...")
 
-    AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+    AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True)
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
         bnb_4bit_compute_dtype=torch.float16,
         bnb_4bit_use_double_quant=True,
     )
-    AutoModelForCausalLM.from_pretrained(
-        model_id,
-        cache_dir=cache_dir,
-        device_map={"": 0},
-        quantization_config=bnb_config,
-        low_cpu_mem_usage=True,
+    # Use VLM-aware loading (same logic as load_model) so cached weights
+    # match the architecture the runtime will actually load.
+    load_kwargs = {
+        "cache_dir": cache_dir,
+        "device_map": {"": 0},
+        "quantization_config": bnb_config,
+        "low_cpu_mem_usage": True,
+        "trust_remote_code": True,
+    }
+    config = AutoConfig.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True)
+    is_qwen35_vlm = config.model_type in ("qwen3_5", "qwen3_5_moe") and hasattr(
+        config, "text_config"
     )
+    if is_qwen35_vlm:
+        import transformers
+
+        cls_name = (
+            "Qwen3_5MoeForConditionalGeneration"
+            if config.model_type == "qwen3_5_moe"
+            else "Qwen3_5ForConditionalGeneration"
+        )
+        model_cls = getattr(transformers, cls_name)
+        model_cls.from_pretrained(model_id, **load_kwargs)
+    else:
+        AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
     model_volume.commit()
     print(f"Done. Model cached at {cache_dir} (4-bit NF4, persists across runs)")
