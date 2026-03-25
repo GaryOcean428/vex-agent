@@ -646,16 +646,15 @@ def _inject_records_into_local_bank(records: list[ChunkRecord], source_filename:
 # ═══════════════════════════════════════════════════════════════
 
 
-def _derive_modal_data_url(suffix: str = "data-receive") -> str | None:
-    """Derive a Modal endpoint URL from MODAL_TRAINING_URL.
+def _derive_modal_url(path: str = "/data-receive") -> str | None:
+    """Derive a Modal endpoint URL from MODAL_TRAINING_URL (ASGI base).
 
-    e.g. .../qloratrainer-train.modal.run → .../qloratrainer-{suffix}.modal.run
+    e.g. .../qloratrainer-web.modal.run + /data-receive
     """
     training_url = settings.modal.training_url
-    if not training_url or "-train." not in training_url:
+    if not training_url:
         return None
-    parts = training_url.rsplit("-train.", 1)
-    return f"{parts[0]}-{suffix}.{parts[1]}"
+    return training_url.rstrip("/") + "/" + path.lstrip("/")
 
 
 async def _push_to_modal(records: list[ChunkRecord], filename: str) -> dict[str, Any]:
@@ -664,7 +663,7 @@ async def _push_to_modal(records: list[ChunkRecord], filename: str) -> dict[str,
     Called after local JSONL write so Modal trainer has the same data.
     Best-effort: logs warnings on failure but never blocks ingestion.
     """
-    url = _derive_modal_data_url("data-receive")
+    url = _derive_modal_url("/data-receive")
     if not url:
         return {"pushed": False, "reason": "MODAL_TRAINING_URL not configured"}
 
@@ -1487,9 +1486,9 @@ async def training_feedback_endpoint(req: FeedbackRequest) -> dict[str, str]:
 async def training_modal_status_endpoint() -> dict[str, Any]:
     """Proxy Modal QLoRA trainer /status and /health endpoints.
 
-    Derives endpoint URLs from MODAL_TRAINING_URL:
-      .../qloratrainer-train.modal.run → .../qloratrainer-status.modal.run
-      .../qloratrainer-train.modal.run → .../qloratrainer-health.modal.run
+    Derives endpoint URLs from MODAL_TRAINING_URL (ASGI base):
+      .../qloratrainer-web.modal.run + /status
+      .../qloratrainer-web.modal.run + /health
     """
     from ..config.settings import settings
 
@@ -1497,15 +1496,10 @@ async def training_modal_status_endpoint() -> dict[str, Any]:
     if not training_url:
         return {"status": "unavailable", "error": "MODAL_TRAINING_URL not configured"}
 
-    # Derive /status and /health URLs from the /train URL (rsplit to replace only last occurrence)
-    if "-train." not in training_url:
-        return {
-            "status": "error",
-            "error": "MODAL_TRAINING_URL missing expected '-train.' segment",
-        }
-    parts = training_url.rsplit("-train.", 1)
-    status_url = f"{parts[0]}-status.{parts[1]}"
-    health_url = f"{parts[0]}-health.{parts[1]}"
+    # ASGI pattern: base URL + path
+    base = training_url.rstrip("/")
+    status_url = f"{base}/status"
+    health_url = f"{base}/health"
 
     result: dict[str, Any] = {"status": "ok"}
 
@@ -1562,6 +1556,9 @@ async def training_trigger_endpoint(request: Request) -> dict[str, Any]:
     if not training_url:
         return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
 
+    # ASGI pattern: base URL + /train path
+    train_endpoint = training_url.rstrip("/") + "/train"
+
     # Parse optional specialization from request body
     body: dict[str, Any] = {}
     with contextlib.suppress(Exception):
@@ -1575,7 +1572,7 @@ async def training_trigger_endpoint(request: Request) -> dict[str, Any]:
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
-                training_url,
+                train_endpoint,
                 json=payload,
             )
             if resp.status_code == 200:
@@ -1647,7 +1644,7 @@ async def training_sync_endpoint() -> dict[str, Any]:
     each to Modal's /data-receive endpoint. Use from the dashboard's
     "Sync Training Data" button for a full re-sync.
     """
-    url = _derive_modal_data_url("data-receive")
+    url = _derive_modal_url("/data-receive")
     if not url:
         return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
 
@@ -1743,7 +1740,7 @@ async def training_sync_endpoint() -> dict[str, Any]:
 @training_router.get("/training/modal-data", response_model=None)
 async def training_modal_data_endpoint() -> dict[str, Any]:
     """Proxy Modal trainer's /data-stats to show what data exists on Modal volume."""
-    url = _derive_modal_data_url("data-stats")
+    url = _derive_modal_url("/data-stats")
     if not url:
         return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
 

@@ -91,7 +91,7 @@ class ModalConfig:
     PEFT Inference:
       The QLoRA trainer's /infer endpoint serves per-kernel adapter
       inference on Qwen3.5-35B-A3B via Modal GPU (A100-80GB).
-      The PEFT URL is derived from training_url by replacing -train. with -infer.
+      The PEFT URL is derived from training_url (ASGI base) + /infer path.
       Fallback chain: PEFT → Railway Ollama → xAI → OpenAI.
 
     Harvest:
@@ -119,7 +119,7 @@ class ModalConfig:
     # --- Harvest (CoordizerV2 fingerprinting) ---
     harvest_url: str = os.environ.get("MODAL_HARVEST_URL", "")
     # Optional explicit health URL override. If unset, the client derives it
-    # from MODAL_HARVEST_URL using Modal's *-health.modal.run pattern.
+    # from MODAL_HARVEST_URL (ASGI base) + /health path.
     harvest_health_url: str = os.environ.get("MODAL_HARVEST_HEALTH_URL", "")
     # Harvest model for Modal-active deployments.
     # MUST match inference_model so resonance bank fingerprints use the same

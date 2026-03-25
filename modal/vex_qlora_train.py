@@ -39,12 +39,14 @@ Genesis Egg:
     Contains adapter weights + metadata for each kernel, base model reference.
     Can seed new pantheons without re-training from void.
 
-Endpoints:
-    POST /train        — Trigger per-kernel QLoRA training (async, returns immediately)
-    POST /infer        — Per-kernel adapter inference
-    GET  /status       — All kernel adapter statuses + training progress
-    GET  /health       — Health check
-    POST /export_image — Package trained adapters as Genesis Egg
+Single ASGI app (1 endpoint slot) serving all routes:
+    POST /train         — Trigger per-kernel QLoRA training (async, returns immediately)
+    POST /infer         — Per-kernel adapter inference
+    GET  /status        — All kernel adapter statuses + training progress
+    GET  /health        — Health check
+    POST /export-image  — Package trained adapters as Genesis Egg
+    POST /data-receive  — Receive training JSONL from Railway kernel
+    GET  /data-stats    — Training data inventory
 
 Deploy:
     modal deploy modal/vex_qlora_train.py
@@ -57,8 +59,6 @@ import os
 import threading
 import time
 from pathlib import Path
-
-from fastapi import Request
 
 import modal
 
@@ -520,8 +520,48 @@ class QLoRATrainer:
             torch.cuda.empty_cache()
             print("Inference model unloaded (kernel sleeping for training)")
 
-    @modal.fastapi_endpoint(method="POST")
-    def infer(self, data: dict, request: Request):
+    @modal.asgi_app()
+    def web(self):
+        """Single ASGI app serving all routes (1 endpoint slot instead of 5+)."""
+        from fastapi import FastAPI, Request
+
+        web_app = FastAPI(title="QLoRATrainer")
+
+        @web_app.post("/infer")
+        async def infer(request: Request):
+            return self._handle_infer(await request.json(), request)
+
+        @web_app.get("/health")
+        def health():
+            return self._handle_health()
+
+        @web_app.get("/status")
+        def status():
+            return self._handle_status()
+
+        @web_app.post("/train")
+        async def train(request: Request):
+            return self._handle_train(await request.json(), request)
+
+        @web_app.post("/data-receive")
+        async def data_receive(request: Request):
+            return self._handle_data_receive(await request.json(), request)
+
+        @web_app.post("/export-image")
+        async def export_image(request: Request):
+            return self._handle_export_image(await request.json(), request)
+
+        @web_app.get("/data-stats")
+        def data_stats():
+            return self._handle_data_stats()
+
+        return web_app
+
+    # ---------------------------------------------------------------
+    #  ROUTE HANDLERS (called by ASGI app above)
+    # ---------------------------------------------------------------
+
+    def _handle_infer(self, data: dict, request):
         """Per-kernel adapter inference. The kernel generates for itself."""
         auth_err = self._check_auth(data, request)
         if auth_err:
@@ -745,8 +785,7 @@ class QLoRATrainer:
     #  HEALTH & STATUS
     # ---------------------------------------------------------------
 
-    @modal.fastapi_endpoint(method="GET")
-    def health(self):
+    def _handle_health(self):
         return {
             "status": "healthy",
             "model_id": HARVEST_MODEL_ID,
@@ -758,8 +797,7 @@ class QLoRATrainer:
             "lora_config": {"r": LORA_R, "alpha": LORA_ALPHA, "dropout": LORA_DROPOUT},
         }
 
-    @modal.fastapi_endpoint(method="GET")
-    def status(self):
+    def _handle_status(self):
         """Return status of ALL per-kernel adapters + training progress."""
         adapters = {}
         adapters_root = Path("/models/adapters")
@@ -796,8 +834,7 @@ class QLoRATrainer:
     #  TRAINING — Async (spawns train_all_kernels on its own container)
     # ---------------------------------------------------------------
 
-    @modal.fastapi_endpoint(method="POST")
-    def train(self, data: dict, request: Request):
+    def _handle_train(self, data: dict, request):
         """Trigger QLoRA training (ASYNC). Returns immediately.
 
         Body options:
@@ -850,8 +887,7 @@ class QLoRATrainer:
     #  GENESIS EGG — Portable kernel image export
     # ---------------------------------------------------------------
 
-    @modal.fastapi_endpoint(method="POST")
-    def export_image(self, data: dict, request: Request):
+    def _handle_export_image(self, data: dict, request):
         """Package all trained adapters as a Genesis Egg — a portable seed
         image that can bootstrap new pantheons without re-training from void.
         Each adapter retains its unique quenched disorder. No merging."""
@@ -940,8 +976,7 @@ class QLoRATrainer:
     #  DATA BRIDGE — Railway → Modal training volume
     # ---------------------------------------------------------------
 
-    @modal.fastapi_endpoint(method="POST")
-    def data_receive(self, data: dict, request: Request):
+    def _handle_data_receive(self, data: dict, request):
         """Receive training JSONL from Railway kernel and write to Modal volume.
 
         Body: {
@@ -982,8 +1017,7 @@ class QLoRATrainer:
             "path": str(dest),
         }
 
-    @modal.fastapi_endpoint(method="GET")
-    def data_stats(self):
+    def _handle_data_stats(self):
         """Return inventory of training data on the Modal volume."""
         training_path = Path("/training")
         files = []

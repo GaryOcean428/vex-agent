@@ -230,15 +230,9 @@ class LLMClient:
         self._last_completion_ts: float = 0.0
 
         # PEFT adapter inference client (Tier 2 — per-kernel QLoRA adapters on Modal)
-        # Modal URL pattern: ...-qloratrainer-train.modal.run → ...-qloratrainer-infer.modal.run
-        # The endpoint name is the LAST "-train." in the hostname. Use rsplit to
-        # replace only the last occurrence (the app name also contains "train").
+        # ASGI pattern: base URL + /infer path (train and infer share the same app)
         _training_url = settings.modal.training_url
-        if _training_url and "-train." in _training_url:
-            parts = _training_url.rsplit("-train.", 1)
-            peft_url = "-infer.".join(parts)
-        else:
-            peft_url = ""
+        peft_url = (_training_url.rstrip("/") + "/infer") if _training_url else ""
         self._peft_client: PeftInferenceClient | None = None
         if peft_url:
             self._peft_client = PeftInferenceClient(

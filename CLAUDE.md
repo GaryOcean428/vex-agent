@@ -148,7 +148,7 @@ at `HARVEST_OUTPUT_DIR` or `training/curriculum`.
 - ⚡ **ACTION NEEDED:** Set Vercel env var on project `prj_EZv0A2qvMvZtT5R2YW3UytkJjSje`:
 
 ```text
-MODAL_COORDIZE_URL=https://garyocean428--vex-coordizer-harvest-coordizerharvester-coordize.modal.run
+MODAL_COORDIZE_URL=https://archelon--vex-coordizer-harvest-coordizerharvester-web.modal.run/coordize
 ```
 
 ## FROZEN FACTS
@@ -192,10 +192,11 @@ Always verify file SHA before updating.
 
 ## MODAL ENDPOINTS (live)
 
-- Inference: `https://garyocean428--vex-inference-vexollamaserver-serve.modal.run`
-- Harvest: `https://garyocean428--vex-coordizer-harvest-coordizerharvester-harvest.modal.run`
-- Health: `https://garyocean428--vex-coordizer-harvest-coordizerharvester-health.modal.run`
-- Coordize: `https://garyocean428--vex-coordizer-harvest-coordizerharvester-coordize.modal.run`
+- Inference: `https://archelon--vex-inference-vexollamaserver-serve.modal.run`
+- Harvest (ASGI): `https://archelon--vex-coordizer-harvest-coordizerharvester-web.modal.run`
+  - Routes: `/harvest`, `/coordize`, `/health`
+- QLoRA (ASGI): `https://archelon--vex-qlora-train-qloratrainer-web.modal.run`
+  - Routes: `/train`, `/infer`, `/health`, `/status`, `/data-receive`, `/export-image`, `/data-stats`
 
 ## KEY FILES
 

@@ -85,12 +85,12 @@ and resonance metrics. Completed and pushed.
 ## KEY RAILWAY ENV VARS
 
 ```
-MODAL_TRAINING_URL=https://garyocean428--vex-qlora-train-qloratrainer-train.modal.run
-MODAL_HARVEST_URL=https://garyocean428--vex-coordizer-harvest-coordizerharvester-coordize.modal.run
+MODAL_TRAINING_URL=https://archelon--vex-qlora-train-qloratrainer-web.modal.run
+MODAL_HARVEST_URL=https://archelon--vex-coordizer-harvest-coordizerharvester-web.modal.run
 MODAL_INFERENCE_ENABLED=false (RETIRED)
 ```
 
-PEFT inference URL is DERIVED from MODAL_TRAINING_URL by replacing `-train.` with `-infer.`
+PEFT inference URL is DERIVED from MODAL_TRAINING_URL (ASGI base) + `/infer` path
 
 ## HARD RULES
 

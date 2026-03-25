@@ -11,10 +11,10 @@ are ever serialized to JSON. All heavy compute stays on GPU.
 Deploy:
     modal deploy modal/vex_coordizer_harvest.py
 
-Endpoints:
-    POST /harvest — Raw fingerprints (small requests only, for debugging).
+Single ASGI app (1 endpoint slot) serving all routes:
+    GET  /health   — Health check.
+    POST /harvest  — Raw fingerprints (small requests only, for debugging).
     POST /coordize — Full pipeline: text -> fingerprints -> PGA -> 64D basin coords.
-    GET  /health  — Health check.
 
 Lens dimension: 32 (from eigenvalue analysis: cumulative variance 0.7661 at dim 32).
 Basin dimension: 64 (frozen). First 32 dims from PGA, rest zero-padded, unit normalized.
@@ -26,8 +26,6 @@ Model persistence:
 """
 
 import os
-
-from fastapi import Request
 
 import modal
 
@@ -44,11 +42,11 @@ app = modal.App("vex-coordizer-harvest")
 model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 
 ml_image = (
-    modal.Image.from_registry("nvidia/cuda:12.4.1-devel-ubuntu22.04", add_python="3.12")
+    modal.Image.from_registry("nvidia/cuda:13.0.1-devel-ubuntu22.04", add_python="3.12")
     .apt_install("g++", "ninja-build")
     .env({"CXX": "g++", "CC": "gcc"})
     .pip_install(
-        "torch>=2.1",
+        "torch>=2.11",
         "transformers>=4.48.0",
         "accelerate",
         "bitsandbytes>=0.43.0",
@@ -376,142 +374,139 @@ class CoordizerHarvester:
             "V": V,
         }
 
-    @modal.fastapi_endpoint(method="GET")
-    def health(self):
-        return {
-            "status": "ok",
-            "model_id": self.current_model_id,
-            "vocab_size": self.vocab_size,
-            "basin_dim": BASIN_DIM,
-            "lens_dim": LENS_DIM,
-            "adapter_loaded": self.adapter_loaded,
-            "adapter_meta": self.adapter_meta,
-        }
+    @modal.asgi_app()
+    def web(self):
+        """Single ASGI app serving all routes (1 endpoint slot instead of 3)."""
+        from fastapi import FastAPI, Request
 
-    @modal.fastapi_endpoint(method="POST")
-    def harvest(self, data: dict, request: Request):
-        """Raw harvest — returns per-coordinate fingerprints.
-        WARNING: Large responses. Use /coordize for production."""
-        import time
+        web_app = FastAPI(title="CoordizerHarvester")
 
-        auth_err = self._check_auth(data, request)
-        if auth_err:
-            return auth_err
-
-        texts = data.get("texts", [])
-        if not texts:
-            return {"error": "No texts provided", "success": False}
-
-        start = time.time()
-        averaged, total_resonances, vocab_size, curvature = self._harvest_fingerprints(
-            texts,
-            data.get("batch_size", 32),
-            data.get("max_length", 512),
-            data.get("min_contexts", 5),
-            data.get("target_resonances", 0),
-            compute_curvature=bool(data.get("compute_curvature", False)),
-        )
-
-        tokenizer = self.tokenizer
-        result_coords = {}
-        for tid, fp in averaged.items():
-            token_str = tokenizer.decode([tid])
-            result_coords[token_str] = {
-                "coord_id": tid,
-                "count": 1,
-                "fingerprint": fp.tolist(),
-                "curvature": curvature.get(tid, 0.0),
-            }
-
-        return {
-            "success": True,
-            "model_id": self.current_model_id,
-            "vocab_size": vocab_size,
-            "total_resonances_processed": total_resonances,
-            "unique_coords_returned": len(result_coords),
-            "elapsed_seconds": round(time.time() - start, 2),
-            "coordinates": result_coords,
-        }
-
-    @modal.fastapi_endpoint(method="POST")
-    def coordize(self, data: dict, request: Request):
-        """Full pipeline: text -> harvest -> PGA compress -> 64D basin coords.
-
-        This is the production endpoint. No V-dim fingerprints in the response.
-        Returns only basin_coords (64D), lens_coords (32D), eigenvalues, metadata.
-
-        Body: {
-            texts: string[],
-            min_contexts: int (default 1),
-            target_resonances: int (default 0 = unlimited),
-            max_length: int (default 512),
-            lens_dim: int (default 32)
-        }
-
-        Auth: X-Api-Key header (preferred) or _api_key in body (legacy).
-        """
-        import time
-
-        auth_err = self._check_auth(data, request)
-        if auth_err:
-            return auth_err
-
-        texts = data.get("texts", [])
-        if not texts:
-            return {"error": "No texts provided", "success": False}
-
-        start = time.time()
-
-        # Phase 1: Harvest fingerprints on GPU
-        averaged, total_resonances, vocab_size, curvature = self._harvest_fingerprints(
-            texts,
-            data.get("batch_size", 16),
-            data.get("max_length", 512),
-            data.get("min_contexts", 1),
-            data.get("target_resonances", 0),
-            compute_curvature=bool(data.get("compute_curvature", False)),
-        )
-
-        if len(averaged) == 0:
+        @web_app.get("/health")
+        def health():
             return {
-                "error": "No coordinates met min_contexts threshold",
-                "success": False,
+                "status": "ok",
+                "model_id": self.current_model_id,
+                "vocab_size": self.vocab_size,
+                "basin_dim": BASIN_DIM,
+                "lens_dim": LENS_DIM,
+                "adapter_loaded": self.adapter_loaded,
+                "adapter_meta": self.adapter_meta,
             }
 
-        harvest_time = time.time() - start
+        @web_app.post("/harvest")
+        async def harvest(request: Request):
+            """Raw harvest — returns per-coordinate fingerprints.
+            WARNING: Large responses. Use /coordize for production."""
+            import time
 
-        # Phase 2: PGA compress on GPU (numpy, but data already in CPU memory)
-        pga_start = time.time()
-        lens_dim = data.get("lens_dim", LENS_DIM)
-        pga_result = self._pga_compress(averaged, lens_dim=lens_dim)
-        pga_time = time.time() - pga_start
+            data = await request.json()
+            auth_err = self._check_auth(data, request)
+            if auth_err:
+                return auth_err
 
-        total_time = time.time() - start
+            texts = data.get("texts", [])
+            if not texts:
+                return {"error": "No texts provided", "success": False}
 
-        return {
-            "success": True,
-            "basin_coords": pga_result["basin_coords"],
-            "lens_coords": pga_result["lens_coords"],
-            "eigenvalues": pga_result["eigenvalues"],
-            "pga_dim": pga_result["pga_dim"],
-            "harvest_meta": {
+            start = time.time()
+            averaged, total_resonances, vocab_size, curvature = self._harvest_fingerprints(
+                texts,
+                data.get("batch_size", 32),
+                data.get("max_length", 512),
+                data.get("min_contexts", 5),
+                data.get("target_resonances", 0),
+                compute_curvature=bool(data.get("compute_curvature", False)),
+            )
+
+            tokenizer = self.tokenizer
+            result_coords = {}
+            for tid, fp in averaged.items():
+                token_str = tokenizer.decode([tid])
+                result_coords[token_str] = {
+                    "coord_id": tid,
+                    "count": 1,
+                    "fingerprint": fp.tolist(),
+                    "curvature": curvature.get(tid, 0.0),
+                }
+
+            return {
+                "success": True,
                 "model_id": self.current_model_id,
                 "vocab_size": vocab_size,
                 "total_resonances_processed": total_resonances,
-                "unique_tokens": pga_result["N"],
-                "fingerprint_dim": pga_result["V"],
-                "harvest_seconds": round(harvest_time, 2),
-                "pga_seconds": round(pga_time, 2),
-                "adapter_loaded": self.adapter_loaded,
-            },
-            "curvature": {
-                "mean": round(float(sum(curvature.values()) / max(len(curvature), 1)), 6),
-                "n_tokens": len(curvature),
-                "high_curvature_count": sum(1 for c in curvature.values() if c > 0.5),
-                "low_curvature_count": sum(1 for c in curvature.values() if c < 0.1),
-            },
-            "elapsed_seconds": round(total_time, 2),
-        }
+                "unique_coords_returned": len(result_coords),
+                "elapsed_seconds": round(time.time() - start, 2),
+                "coordinates": result_coords,
+            }
+
+        @web_app.post("/coordize")
+        async def coordize(request: Request):
+            """Full pipeline: text -> harvest -> PGA compress -> 64D basin coords."""
+            import time
+
+            data = await request.json()
+            auth_err = self._check_auth(data, request)
+            if auth_err:
+                return auth_err
+
+            texts = data.get("texts", [])
+            if not texts:
+                return {"error": "No texts provided", "success": False}
+
+            start = time.time()
+
+            # Phase 1: Harvest fingerprints on GPU
+            averaged, total_resonances, vocab_size, curvature = self._harvest_fingerprints(
+                texts,
+                data.get("batch_size", 16),
+                data.get("max_length", 512),
+                data.get("min_contexts", 1),
+                data.get("target_resonances", 0),
+                compute_curvature=bool(data.get("compute_curvature", False)),
+            )
+
+            if len(averaged) == 0:
+                return {
+                    "error": "No coordinates met min_contexts threshold",
+                    "success": False,
+                }
+
+            harvest_time = time.time() - start
+
+            # Phase 2: PGA compress on GPU (numpy, but data already in CPU memory)
+            pga_start = time.time()
+            lens_dim = data.get("lens_dim", LENS_DIM)
+            pga_result = self._pga_compress(averaged, lens_dim=lens_dim)
+            pga_time = time.time() - pga_start
+
+            total_time = time.time() - start
+
+            return {
+                "success": True,
+                "basin_coords": pga_result["basin_coords"],
+                "lens_coords": pga_result["lens_coords"],
+                "eigenvalues": pga_result["eigenvalues"],
+                "pga_dim": pga_result["pga_dim"],
+                "harvest_meta": {
+                    "model_id": self.current_model_id,
+                    "vocab_size": vocab_size,
+                    "total_resonances_processed": total_resonances,
+                    "unique_tokens": pga_result["N"],
+                    "fingerprint_dim": pga_result["V"],
+                    "harvest_seconds": round(harvest_time, 2),
+                    "pga_seconds": round(pga_time, 2),
+                    "adapter_loaded": self.adapter_loaded,
+                },
+                "curvature": {
+                    "mean": round(float(sum(curvature.values()) / max(len(curvature), 1)), 6),
+                    "n_tokens": len(curvature),
+                    "high_curvature_count": sum(1 for c in curvature.values() if c > 0.5),
+                    "low_curvature_count": sum(1 for c in curvature.values() if c < 0.1),
+                },
+                "elapsed_seconds": round(total_time, 2),
+            }
+
+        return web_app
 
 
 @app.function(

@@ -124,9 +124,11 @@ async def modal_harvest(
     if settings.kernel_api_key:
         headers["X-Api-Key"] = settings.kernel_api_key
 
+    # ASGI pattern: base URL + /harvest path
+    harvest_endpoint = settings.modal.harvest_url.rstrip("/") + "/harvest"
     logger.info(
         "Sending harvest request to Modal: %s (%d texts, model=%s)",
-        settings.modal.harvest_url,
+        harvest_endpoint,
         len(corpus_texts),
         resolved_model,
     )
@@ -137,7 +139,7 @@ async def modal_harvest(
     async with httpx.AsyncClient(timeout=config.timeout) as client:
         # Initial POST — Modal may return 200 (fast) or 303 (async polling)
         response = await client.post(
-            settings.modal.harvest_url,
+            harvest_endpoint,
             json=payload,
             headers=headers,
         )
