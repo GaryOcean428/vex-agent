@@ -42,7 +42,7 @@ app = modal.App("vex-coordizer-harvest")
 model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 
 ml_image = (
-    modal.Image.from_registry("nvidia/cuda:13.0.1-devel-ubuntu22.04", add_python="3.14")
+    modal.Image.from_registry("nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.14")
     .apt_install("g++", "ninja-build")
     .env({"CXX": "g++", "CC": "gcc"})
     .uv_pip_install(
@@ -59,7 +59,7 @@ ml_image = (
         "causal-conv1d>=1.4.0",
         "flash-linear-attention",
         # GPU eigensolver — cuSOLVER backend for Fisher-Rao eigendecomposition
-        "cupy-cuda13x>=14.0.0",
+        "cupy-cuda12x>=14.0.0",
     )
     .run_commands(
         # Fix bitsandbytes _check_is_size deprecation (upstream bug, all versions through 0.49.2)
