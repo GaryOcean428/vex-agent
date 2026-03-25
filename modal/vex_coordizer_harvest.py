@@ -37,6 +37,14 @@ BASIN_DIM = 64  # frozen
 LENS_DIM = 32  # from eigenvalue analysis
 ADAPTER_PATH = "/models/adapters/harvest-qlora"
 
+# Allowlisted model IDs — trust_remote_code=True is only enabled for these.
+TRUSTED_MODEL_IDS: frozenset[str] = frozenset(
+    {
+        "Qwen/Qwen3.5-4B",
+        "Qwen/Qwen3.5-35B-A3B",
+    }
+)
+
 app = modal.App("vex-coordizer-harvest")
 
 model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
@@ -47,10 +55,11 @@ ml_image = (
     .env({"CXX": "g++", "CC": "gcc"})
     .uv_pip_install(
         "torch>=2.1,<2.11",
-        # Qwen3.5-35B-A3B (qwen3_5_moe) requires transformers from main —
-        # released 5.3.0 lacks Qwen3_5MoeForConditionalGeneration.
-        # trust_remote_code=True on from_pretrained calls is the safety net.
-        "transformers @ git+https://github.com/huggingface/transformers.git@main",
+        # Qwen3.5 VLM classes (Qwen3_5ForConditionalGeneration, Qwen3_5MoeForConditionalGeneration)
+        # are available from transformers 5.3.0+ on PyPI.
+        # trust_remote_code=True is required for Qwen's custom architecture code;
+        # only allowlisted model IDs should be loaded (see TRUSTED_MODEL_IDS).
+        "transformers>=5.3.0",
         "accelerate",
         "bitsandbytes>=0.45.0",
         "peft>=0.13.0",
@@ -132,23 +141,40 @@ class CoordizerHarvester:
             f"  [CONFIG] model_type={config.model_type}, architectures={getattr(config, 'architectures', [])}"
         )
 
-        if config.model_type == "qwen3_5" and hasattr(config, "text_config"):
-            print("  [COMPAT] Qwen3.5 VLM detected — loading as conditional generation model")
+        is_qwen35_vlm = config.model_type in ("qwen3_5", "qwen3_5_moe") and hasattr(
+            config, "text_config"
+        )
+        if is_qwen35_vlm:
+            model_cls_name = (
+                "Qwen3_5MoeForConditionalGeneration"
+                if config.model_type == "qwen3_5_moe"
+                else "Qwen3_5ForConditionalGeneration"
+            )
+            print(
+                f"  [COMPAT] Qwen3.5 VLM detected (type={config.model_type}) — loading as {model_cls_name}"
+            )
             try:
-                from transformers import Qwen3_5ForConditionalGeneration
+                import transformers
 
-                model = Qwen3_5ForConditionalGeneration.from_pretrained(
-                    default_model_id, **load_kwargs
-                )
-                if not hasattr(model.config, "vocab_size") and hasattr(config, "text_config"):
-                    model.config.vocab_size = config.text_config.vocab_size
+                model_cls = getattr(transformers, model_cls_name)
+                model = model_cls.from_pretrained(default_model_id, **load_kwargs)
+                # Prefer model's own config for vocab_size (may differ after remote code)
+                if not hasattr(model.config, "vocab_size") or model.config.vocab_size is None:
+                    mc = model.config
+                    if hasattr(mc, "text_config") and hasattr(mc.text_config, "vocab_size"):
+                        model.config.vocab_size = mc.text_config.vocab_size
+                    elif hasattr(config, "text_config") and hasattr(
+                        config.text_config, "vocab_size"
+                    ):
+                        model.config.vocab_size = config.text_config.vocab_size
                 print(
-                    f"  [COMPAT] Loaded Qwen3_5ForConditionalGeneration (vocab_size={getattr(model.config, 'vocab_size', 'N/A')})"
+                    f"  [COMPAT] Loaded {model_cls_name} (vocab_size={getattr(model.config, 'vocab_size', 'N/A')})"
                 )
             except Exception as e:
-                print(f"  [COMPAT] Qwen3_5ForConditionalGeneration failed: {e}")
-                print("  [COMPAT] Falling back to AutoModelForCausalLM")
-                model = AutoModelForCausalLM.from_pretrained(default_model_id, **load_kwargs)
+                raise RuntimeError(
+                    f"Qwen3.5 VLM ({config.model_type}) requires {model_cls_name} but loading failed: {e}. "
+                    f"Ensure transformers>=5.3.0 is installed."
+                ) from e
         else:
             model = AutoModelForCausalLM.from_pretrained(default_model_id, **load_kwargs)
 
@@ -589,7 +615,7 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
     from pathlib import Path
 
     import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
     cache_dir = "/models/hub"
 
@@ -612,13 +638,30 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
         bnb_4bit_compute_dtype=torch.float16,
         bnb_4bit_use_double_quant=True,
     )
-    AutoModelForCausalLM.from_pretrained(
-        model_id,
-        cache_dir=cache_dir,
-        device_map={"": 0},
-        quantization_config=bnb_config,
-        low_cpu_mem_usage=True,
-        trust_remote_code=True,
+    # Use VLM-aware loading (same logic as load_model) so cached weights
+    # match the architecture the runtime will actually load.
+    load_kwargs = {
+        "cache_dir": cache_dir,
+        "device_map": {"": 0},
+        "quantization_config": bnb_config,
+        "low_cpu_mem_usage": True,
+        "trust_remote_code": True,
+    }
+    config = AutoConfig.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True)
+    is_qwen35_vlm = config.model_type in ("qwen3_5", "qwen3_5_moe") and hasattr(
+        config, "text_config"
     )
+    if is_qwen35_vlm:
+        import transformers
+
+        cls_name = (
+            "Qwen3_5MoeForConditionalGeneration"
+            if config.model_type == "qwen3_5_moe"
+            else "Qwen3_5ForConditionalGeneration"
+        )
+        model_cls = getattr(transformers, cls_name)
+        model_cls.from_pretrained(model_id, **load_kwargs)
+    else:
+        AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
     model_volume.commit()
     print(f"Done. Model cached at {cache_dir} (4-bit NF4, persists across runs)")

@@ -66,6 +66,15 @@ import modal
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 KERNEL_CALLBACK_URL = os.environ.get("KERNEL_CALLBACK_URL", "")
+
+# Allowlisted model IDs — trust_remote_code=True is only enabled for these.
+# Add new Qwen checkpoints here if HARVEST_MODEL_ID changes.
+TRUSTED_MODEL_IDS: frozenset[str] = frozenset(
+    {
+        "Qwen/Qwen3.5-4B",
+        "Qwen/Qwen3.5-35B-A3B",
+    }
+)
 TRAIN_GPU = os.environ.get("TRAIN_GPU", "a100-80gb")
 BASIN_DIM = 64
 LORA_R = 16
@@ -103,9 +112,9 @@ train_image = (
     .env({"CXX": "g++", "CC": "gcc", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     .uv_pip_install(
         "torch>=2.1,<2.11",
-        # Qwen3.5-35B-A3B (qwen3_5_moe) requires transformers from main —
-        # released 5.3.0 lacks Qwen3_5MoeForConditionalGeneration
-        "transformers @ git+https://github.com/huggingface/transformers.git@main",
+        # Qwen3.5 VLM classes (Qwen3_5ForConditionalGeneration, Qwen3_5MoeForConditionalGeneration)
+        # are available from transformers 5.3.0+ on PyPI
+        "transformers>=5.3.0",
         "accelerate",
         "bitsandbytes>=0.45.0",
         "peft>=0.13.0",
@@ -188,20 +197,24 @@ def _load_model_for_training(
 
             model_cls = getattr(transformers, model_cls_name)
             model = model_cls.from_pretrained(model_id, **load_kwargs)
-            # Ensure top-level vocab_size for PEFT/TRL compatibility
-            # (transformers 5.x may move it into text_config only)
+            # Ensure top-level vocab_size for PEFT/TRL compatibility.
+            # Prefer the loaded model's own config (may differ from pre-load config
+            # when trust_remote_code mutates it).
             if not hasattr(model.config, "vocab_size") or model.config.vocab_size is None:
-                if hasattr(config, "text_config") and hasattr(config.text_config, "vocab_size"):
+                mc = model.config
+                if hasattr(mc, "text_config") and hasattr(mc.text_config, "vocab_size"):
+                    model.config.vocab_size = mc.text_config.vocab_size
+                elif hasattr(config, "text_config") and hasattr(config.text_config, "vocab_size"):
                     model.config.vocab_size = config.text_config.vocab_size
-                elif hasattr(config, "vocab_size"):
-                    model.config.vocab_size = config.vocab_size
             print(
                 f"  [COMPAT] Loaded {model_cls_name} (vocab_size={getattr(model.config, 'vocab_size', 'N/A')})"
             )
             return model
         except Exception as e:
-            print(f"  [COMPAT] {model_cls_name} failed: {e}")
-            print("  [COMPAT] Falling back to AutoModelForCausalLM")
+            raise RuntimeError(
+                f"Qwen3.5 VLM ({config.model_type}) requires {model_cls_name} but loading failed: {e}. "
+                f"Ensure transformers>=5.3.0 is installed."
+            ) from e
 
     # Default path: standard causal LM
     model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
@@ -494,7 +507,9 @@ def _merge_and_export(
     specialization = training_meta.get("specialization", "genesis")
 
     print(f"  Loading {model_id} on CPU for merge (preserves GPU VRAM)...")
-    base_model = _load_model_for_training(model_id, cache_dir, bnb_config=None, device_map="cpu")
+    base_model = _load_model_for_training(
+        model_id, cache_dir, bnb_config=None, device_map="cpu", torch_dtype=torch.bfloat16
+    )
     print(f"  Loading adapter from {adapter_path}...")
     model = PeftModel.from_pretrained(base_model, adapter_path)
     model = model.merge_and_unload()
@@ -621,7 +636,8 @@ class QLoRATrainer:
           - _api_key in JSON body (training trigger pattern)
         """
         if not KERNEL_API_KEY:
-            return None
+            # Fail closed: reject all requests when no key is configured
+            return {"error": "KERNEL_API_KEY not configured — refusing request", "success": False}
         api_key = ""
         if request is not None:
             api_key = request.headers.get("x-api-key", "")
