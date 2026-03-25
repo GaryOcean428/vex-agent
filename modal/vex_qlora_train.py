@@ -575,7 +575,13 @@ def _notify_kernel(training_meta: dict) -> None:
         }
     ).encode()
     req = urllib.request.Request(
-        url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "X-Kernel-Key": KERNEL_API_KEY,
+        },
+        method="POST",
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
