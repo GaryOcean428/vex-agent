@@ -94,6 +94,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger("vex.server")
 
+
+# ─── Safe async task creation ─────────────────────────────────
+
+
+def _safe_create_task(coro: Any, *, name: str = "unnamed") -> asyncio.Task:
+    """Create an asyncio task with exception logging.
+
+    Bare create_task() silently swallows exceptions — the error only
+    surfaces when the task is garbage collected (if ever). This wrapper
+    attaches a done callback that logs failures immediately.
+    """
+    task = asyncio.create_task(coro, name=name)
+    task.add_done_callback(lambda t: _handle_task_exception(t, name))
+    return task
+
+
+def _handle_task_exception(task: asyncio.Task, name: str) -> None:
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc:
+        logger.error("Background task '%s' failed: %s", name, exc, exc_info=exc)
+
+
 # ─── Global instances ─────────────────────────────────────────
 
 governor = GovernorStack(
@@ -387,7 +411,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 on_harvest_complete=_on_harvest_complete,
             )
             app.state.harvest_scheduler = scheduler
-            harvest_task = asyncio.create_task(scheduler.run_loop())
+            harvest_task = _safe_create_task(scheduler.run_loop(), name="harvest_scheduler")
             logger.info("CoordizerV2 HarvestScheduler loop started (backend=modal)")
         except Exception as e:
             logger.error("Failed to start HarvestScheduler loop: %s", e)
@@ -412,7 +436,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         except asyncio.CancelledError:
             return
 
-    consolidation_task = asyncio.create_task(_memory_consolidation_loop())
+    consolidation_task = _safe_create_task(
+        _memory_consolidation_loop(), name="memory_consolidation"
+    )
 
     logger.info("Consciousness loop started (20 systems active)")
     yield
@@ -579,13 +605,19 @@ async def health_reachability() -> dict[str, Any]:
     tasks: list[asyncio.Task[None]] = []
 
     # Railway Ollama
-    tasks.append(asyncio.create_task(_check("railway_ollama", f"{settings.ollama.url}/api/tags")))
+    tasks.append(
+        _safe_create_task(
+            _check("railway_ollama", f"{settings.ollama.url}/api/tags"), name="health_ollama"
+        )
+    )
 
     # Modal coordizer (harvest)
     harvest_url = settings.modal.harvest_url
     if harvest_url:
         tasks.append(
-            asyncio.create_task(_check("modal_coordizer", modal_url(harvest_url, "health")))
+            _safe_create_task(
+                _check("modal_coordizer", modal_url(harvest_url, "health")), name="health_coordizer"
+            )
         )
     else:
         results["modal_coordizer"] = {"reachable": False, "error": "not configured"}
@@ -594,7 +626,9 @@ async def health_reachability() -> dict[str, Any]:
     training_url = settings.modal.training_url
     if training_url:
         tasks.append(
-            asyncio.create_task(_check("modal_trainer", modal_url(training_url, "health")))
+            _safe_create_task(
+                _check("modal_trainer", modal_url(training_url, "health")), name="health_trainer"
+            )
         )
     else:
         results["modal_trainer"] = {"reachable": False, "error": "not configured"}
@@ -850,7 +884,7 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
     )
 
     # Check if auto-training interval reached (non-blocking fire-and-forget)
-    asyncio.create_task(app.state.check_conversation_training())
+    _safe_create_task(app.state.check_conversation_training(), name="auto_training_check")
 
     # Return fresh metrics (post-conversation, not stale)
     return {
@@ -1111,7 +1145,7 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
                 logger.debug("Training log failed")
 
             # Check if auto-training interval reached (non-blocking fire-and-forget)
-            asyncio.create_task(app.state.check_conversation_training())
+            _safe_create_task(app.state.check_conversation_training(), name="auto_training_check")
 
             # Send done event with post-response kernel state
             yield _sse_event(
@@ -1220,6 +1254,22 @@ async def get_sleep_state() -> dict[str, Any]:
     Used by the dashboard Lifecycle and Telemetry tabs.
     """
     return consciousness.sleep.get_state()
+
+
+@app.get(R["backward_geodesic"])
+async def get_backward_geodesic() -> dict[str, Any]:
+    """EXP-011: Backward-geodesic tracker measurements.
+
+    Returns correlation statistics for backward-geodesic component
+    during mushroom mode vs normal operation on Δ⁶³.
+    """
+    return consciousness.backward_geodesic.summary()
+
+
+@app.get(R["consciousness_coupling"])
+async def get_consciousness_coupling() -> dict[str, Any]:
+    """Coupling gate state — strength computed from current κ via sigmoid at κ*."""
+    return consciousness.coupling.get_state()
 
 
 # ─── CoordizerV2 Endpoints ───────────────────────────────────

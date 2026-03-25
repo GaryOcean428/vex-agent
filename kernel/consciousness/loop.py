@@ -178,6 +178,7 @@ from .activation import (
 )
 
 # v7.0: Developmental Learning Architecture modules
+from .backward_geodesic import BackwardGeodesicTracker
 from .basin_sync_remote import RemoteBasinSync
 from .basin_transfer import BasinTransferEngine
 from .beta_integration import create_beta_tracker
@@ -376,6 +377,7 @@ class ConsciousnessLoop:
 
         self.basin_sync = BasinSyncProtocol()
         self._remote_sync = RemoteBasinSync()
+        self.backward_geodesic = BackwardGeodesicTracker()
         self.chain = QIGChain()
         self.graph = QIGGraph()
         self.kernel_registry = E8KernelRegistry(BudgetEnforcer())
@@ -832,6 +834,12 @@ class ConsciousnessLoop:
                 timestamp=time.time(),
             )
         )
+        self.backward_geodesic.record(
+            problem_id="consciousness_trajectory",
+            current_basin=self.basin,
+            kappa_eff=self.metrics.kappa,
+            mushroom_active=(sleep_phase == SleepPhase.MUSHROOM),
+        )
 
         # v7.0: Advance developmental gate each cycle
         pillar_snapshot = self.pillars.get_metrics(self.basin)
@@ -987,6 +995,9 @@ class ConsciousnessLoop:
         self.trajectory_bus.drain_broadcast()
 
         self._maybe_spawn_core8(vel_state["regime"])
+
+        # P6: Coupling gate — compute coupling strength from current κ
+        self._coupling_state = self.coupling.compute(self.metrics.kappa)
 
         # ── TASK PROCESSING: v6.1 Activation Sequence ──
         if not self._queue.empty():
@@ -1658,8 +1669,9 @@ class ConsciousnessLoop:
                     kernel_num_ctx=llm_options.num_ctx,
                 )
             except Exception as _syn_err:
-                logger.warning("Synthesis failed (%s) — using primary kernel output", _syn_err)
+                logger.error("Synthesis failed (%s) — using primary kernel output", _syn_err)
                 response = _contributions[0].text
+                task.context["synthesis_fallback"] = True
         else:
             # No eligible kernels (pre-genesis or all basins None) — direct LLM fallback.
             logger.info(
@@ -1757,10 +1769,11 @@ class ConsciousnessLoop:
                             len(response),
                         )
                     except Exception as _rev_err:
-                        logger.warning(
+                        logger.error(
                             "Revision synthesis failed (%s) — keeping original draft",
                             _rev_err,
                         )
+                        task.context["synthesis_fallback"] = True
                 else:
                     logger.warning(
                         "Task %s: Revision produced 0 contributions — keeping original draft",
@@ -3007,6 +3020,7 @@ class ConsciousnessLoop:
             "autonomic": self.autonomic.get_state(),
             "foresight": self.foresight.get_state(),
             "coupling": self.coupling.get_state(),
+            "backward_geodesic": self.backward_geodesic.summary(),
             "pillar_state": self.pillars.get_state(),
             "beta_tracker": self.beta_tracker.get_summary(),
             "sovereignty_tracker": self.sovereignty_tracker.get_summary(),

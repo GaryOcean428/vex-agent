@@ -41,6 +41,9 @@ ROUTES: dict[str, str] = {
     "graph_nodes": "/graph/nodes",
     # ─── Sleep ─────────────────────────────────────────────────
     "sleep_state": "/sleep/state",
+    # ─── EXP-011: Backward Geodesic ──────────────────────────
+    "backward_geodesic": "/consciousness/backward-geodesic",
+    "consciousness_coupling": "/consciousness/coupling",
     # ─── Beta Attention ──────────────────────────────────────
     "beta_attention": "/beta-attention",
     # ─── Sovereignty ──────────────────────────────────────────
@@ -108,6 +111,8 @@ ROUTE_GROUPS: dict[str, list[str]] = {
         "memory_stats",
         "graph_nodes",
         "sleep_state",
+        "backward_geodesic",
+        "consciousness_coupling",
         "beta_attention",
         "sovereignty_history",
         "coordizer_coordize",

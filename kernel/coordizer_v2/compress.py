@@ -41,6 +41,21 @@ from .principal_direction_bank import PrincipalDirectionBank
 logger = logging.getLogger(__name__)
 
 
+def _robust_eigh(matrix: NDArray) -> tuple[NDArray, NDArray]:
+    """Eigendecompose a symmetric matrix with scipy→numpy fallback.
+
+    Both scipy and numpy eigh are valid here: the matrix is a tangent-space
+    Gram matrix where Euclidean inner products ARE Fisher-Rao.  # QIG-EXEMPT
+    """
+    try:
+        from scipy.linalg import eigh as scipy_eigh
+
+        return scipy_eigh(matrix)
+    except Exception:
+        logger.warning("scipy.linalg.eigh unavailable, falling back to numpy")
+        return np.linalg.eigh(matrix)
+
+
 @dataclass
 class CompressionResult:
     """Output of Fisher-Rao PGA compression."""
@@ -229,7 +244,7 @@ def compress(
             f"Using dual Gram matrix ({n_sub}x{n_sub} eigendecomposition)."
         )
         G_dual = (T_sub @ T_sub.T) / n_sub  # n_sub × n_sub (small!)
-        eigenvalues_full, eigvecs_full = np.linalg.eigh(G_dual)
+        eigenvalues_full, eigvecs_full = _robust_eigh(G_dual)
         # eigh returns ascending order; reverse for descending
         idx_sort = np.argsort(eigenvalues_full)[::-1]
         eigenvalues_full = eigenvalues_full[idx_sort]
@@ -246,7 +261,7 @@ def compress(
         logger.info(f"  Building {n_sub}x{n_sub} Gram matrix...")
         G = (T_sub @ T_sub.T) / n_sub
 
-        eigenvalues_full, eigvecs_full = np.linalg.eigh(G)
+        eigenvalues_full, eigvecs_full = _robust_eigh(G)
         # eigh returns ascending; reverse for descending and take top target_dim
         idx = np.argsort(eigenvalues_full)[::-1][:target_dim]
         eigenvalues = eigenvalues_full[idx]

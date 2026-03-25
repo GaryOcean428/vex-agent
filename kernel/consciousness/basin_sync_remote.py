@@ -66,7 +66,7 @@ class SyncResult:
 
     success: bool = False
     basin_coords: np.ndarray | None = None
-    delta_l2: float = 0.0
+    delta_fr: float = 0.0
     top_movers: list[tuple[int, float]] = field(default_factory=list)
     eigenvalues: list[float] = field(default_factory=list)
     elapsed_seconds: float = 0.0
@@ -166,8 +166,8 @@ class RemoteBasinSync:
                     from ..geometry.fisher_rao import fisher_rao_distance
 
                     delta = fisher_rao_distance(new_coords, self._last_coords)
-                    result.delta_l2 = float(delta)  # field name kept for API compat
-                    self._cumulative_drift += result.delta_l2
+                    result.delta_fr = float(delta)
+                    self._cumulative_drift += result.delta_fr
 
                     # Top dimension movers
                     dim_deltas = [
@@ -178,17 +178,17 @@ class RemoteBasinSync:
                     dim_deltas.sort(key=lambda x: -x[1])
                     result.top_movers = dim_deltas[:5]
 
-                    if result.delta_l2 > DRIFT_ALERT_THRESHOLD:
+                    if result.delta_fr > DRIFT_ALERT_THRESHOLD:
                         logger.warning(
-                            "Basin drift alert: delta=%.4f > threshold=%.4f (top movers: %s)",
-                            result.delta_l2,
+                            "Basin drift alert: delta_fr=%.4f > threshold=%.4f (top movers: %s)",
+                            result.delta_fr,
                             DRIFT_ALERT_THRESHOLD,
                             [(d, round(v, 5)) for d, v in result.top_movers[:3]],
                         )
                     else:
                         logger.info(
-                            "Basin sync: delta=%.4f, eigenvalues=[%.1f, %.1f, %.1f]",
-                            result.delta_l2,
+                            "Basin sync: delta_fr=%.4f, eigenvalues=[%.1f, %.1f, %.1f]",
+                            result.delta_fr,
                             *(result.eigenvalues[:3] + [0, 0, 0])[:3],
                         )
 
@@ -207,7 +207,7 @@ class RemoteBasinSync:
                             {
                                 "basin_coords": new_coords.tolist(),
                                 "eigenvalues": result.eigenvalues,
-                                "delta_l2": result.delta_l2,
+                                "delta_fr": result.delta_fr,
                                 "sync_count": self._sync_count,
                                 "cumulative_drift": self._cumulative_drift,
                                 "timestamp": time.time(),
@@ -266,5 +266,5 @@ class RemoteBasinSync:
             "last_sync_time": self._last_sync_time,
             "buffer_size": len(self._text_buffer),
             "has_stored_coords": self._last_coords is not None,
-            "last_delta": (round(self._last_result.delta_l2, 6) if self._last_result else None),
+            "last_delta": (round(self._last_result.delta_fr, 6) if self._last_result else None),
         }
