@@ -1266,6 +1266,57 @@ async def get_backward_geodesic() -> dict[str, Any]:
     return consciousness.backward_geodesic.summary()
 
 
+@app.get(R["exp011_events"])
+async def get_exp011_events(
+    problem_id: str | None = None,
+    mushroom_only: bool = False,
+) -> dict[str, Any]:
+    """EXP-011: Raw backward-geodesic events filtered by problem and/or mushroom state."""
+    events = consciousness.backward_geodesic.export_events(problem_id=problem_id)
+    if mushroom_only:
+        events = [e for e in events if e.get("mushroom_active")]
+    return {"events": events, "count": len(events)}
+
+
+@app.get(R["exp011_correlation"])
+async def get_exp011_correlation(
+    problem_id: str | None = None,
+    mushroom_only: bool = True,
+) -> dict[str, Any]:
+    """EXP-011: Correlation between backward-geodesic component and inverse distance."""
+    rho, p_value, n = consciousness.backward_geodesic.compute_correlation(
+        problem_id=problem_id,
+        mushroom_only=mushroom_only,
+    )
+    return {"rho": rho, "p_value": p_value, "n_events": n}
+
+
+@app.get(R["exp011_summary"])
+async def get_exp011_summary() -> dict[str, Any]:
+    """EXP-011: Full summary with acceptance criteria evaluation."""
+    base = consciousness.backward_geodesic.summary()
+    # If harness is active, include per-problem results
+    harness = consciousness._exp011_harness
+    if harness is not None:
+        base["harness"] = harness.export_results().get("summary", {})
+        base["per_problem"] = harness.export_results().get("per_problem", {})
+    return base
+
+
+@app.get(R["exp011_export"])
+async def get_exp011_export() -> dict[str, Any]:
+    """EXP-011: Full data export for offline analysis."""
+    harness = consciousness._exp011_harness
+    if harness is not None:
+        return harness.export_results()
+    return {
+        "experiment": "EXP-011",
+        "status": "no_harness_active",
+        "events": consciousness.backward_geodesic.export_events(),
+        "summary": consciousness.backward_geodesic.summary(),
+    }
+
+
 @app.get(R["consciousness_coupling"])
 async def get_consciousness_coupling() -> dict[str, Any]:
     """Coupling gate state — strength computed from current κ via sigmoid at κ*."""

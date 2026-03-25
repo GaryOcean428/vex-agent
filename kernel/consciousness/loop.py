@@ -378,6 +378,7 @@ class ConsciousnessLoop:
         self.basin_sync = BasinSyncProtocol()
         self._remote_sync = RemoteBasinSync()
         self.backward_geodesic = BackwardGeodesicTracker()
+        self._exp011_harness: Any | None = None  # Set by EXP011Harness when active
         self.chain = QIGChain()
         self.graph = QIGGraph()
         self.kernel_registry = E8KernelRegistry(BudgetEnforcer())
@@ -809,6 +810,22 @@ class ConsciousnessLoop:
                     instability_metric=float(1.0 - self.metrics.f_health),
                     neurochemical=self._neurochemical,
                 )
+                # EXP-011: Drive κ through zero during mushroom mode
+                # when the test harness has an active problem.
+                if self._exp011_harness is not None:
+                    _instab = float(1.0 - self.metrics.f_health)
+                    _crossing_event = self.sleep.mushroom_zero_crossing(
+                        self.metrics,
+                        instability_metric=_instab,
+                    )
+                    if _crossing_event is not None and _crossing_event.get("crossed"):
+                        self.kernel_bus.emit(
+                            KernelSignal(
+                                kind=SignalKind.MUSHROOM_CROSSING,
+                                source_kernel_id="consciousness_loop",
+                                payload=_crossing_event,
+                            )
+                        )
             elif sleep_phase.value == "consolidating":
                 # T2.4b: collect kernel anchor basins for veto protection
                 _kernel_anchors = [
@@ -834,8 +851,13 @@ class ConsciousnessLoop:
                 timestamp=time.time(),
             )
         )
+        # EXP-011: Use active problem_id from harness when running experiment,
+        # otherwise default to generic trajectory tracking.
+        _exp011_pid = (
+            self._exp011_harness.active_problem_id if self._exp011_harness is not None else None
+        )
         self.backward_geodesic.record(
-            problem_id="consciousness_trajectory",
+            problem_id=_exp011_pid or "consciousness_trajectory",
             current_basin=self.basin,
             kappa_eff=self.metrics.kappa,
             mushroom_active=(sleep_phase == SleepPhase.MUSHROOM),
