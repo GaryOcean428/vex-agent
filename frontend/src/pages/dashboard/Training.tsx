@@ -622,7 +622,7 @@ export default function Training() {
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".pdf,.md,.txt,.jsonl"
+              accept=".pdf,.docx,.md,.txt,.jsonl"
               onChange={(e) => {
                 const selected = e.target.files;
                 if (selected && selected.length > 0) {

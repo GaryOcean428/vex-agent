@@ -432,16 +432,28 @@ def _extract_pdf(content: bytes) -> str:
     return "\n\n".join(pages)
 
 
+def _extract_docx(content: bytes) -> str:
+    """Extract text from a .docx file via python-docx."""
+    import io
+
+    from docx import Document
+
+    doc = Document(io.BytesIO(content))
+    return "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+
 def _extract_text(content: bytes, filename: str) -> str:
     """Extract text from uploaded file based on extension."""
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
     if ext == "pdf":
         return _extract_pdf(content)
+    elif ext == "docx":
+        return _extract_docx(content)
     elif ext in ("md", "markdown", "txt") or ext == "jsonl":
         return content.decode("utf-8", errors="replace")
     else:
-        raise ValueError(f"Unsupported format: .{ext}. Use .pdf, .md, .txt, or .jsonl")
+        raise ValueError(f"Unsupported format: .{ext}. Use .pdf, .docx, .md, .txt, or .jsonl")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1475,7 +1487,7 @@ async def training_upload_endpoint(
 
     # Validate file type
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if ext not in ("pdf", "md", "markdown", "txt", "jsonl"):
+    if ext not in ("pdf", "docx", "md", "markdown", "txt", "jsonl"):
         return {
             "status": "error",
             "filename": filename,
