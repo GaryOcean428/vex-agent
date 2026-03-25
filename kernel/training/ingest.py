@@ -1745,11 +1745,17 @@ async def training_modal_data_endpoint() -> dict[str, Any]:
         return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # data-stats can be slower than health/status when Modal volume is large.
+        timeout = httpx.Timeout(60.0, connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.get(url)
             if resp.status_code == 200:
                 return {"status": "ok", **resp.json()}
             return {"status": "error", "error": f"HTTP {resp.status_code}"}
+    # ReadTimeout is a TimeoutException subtype; this handles read/connect/write/pool timeout paths.
+    except httpx.TimeoutException:
+        logger.warning("Timed out fetching Modal training data from %s", url)
+        return {"status": "error", "error": "Timed out fetching Modal training data"}
     except Exception:
         logger.exception("Error fetching Modal training data from %s", url)
         return {"status": "error", "error": "Failed to fetch Modal training data"}
