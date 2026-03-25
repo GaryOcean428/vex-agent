@@ -330,6 +330,23 @@ def _load_training_data(
                                     filtered_count += 1
                                     continue
                                 samples.append(entry_sample)
+                        elif "text" in entry:
+                            # Coordized curriculum entries (text + e8_primitive)
+                            result = _build_chat_from_coordized(entry)
+                            if result:
+                                key = result["messages"][-1]["content"][:100]
+                                if key in seen_texts:
+                                    continue
+                                seen_texts.add(key)
+                                entry_sample = {"messages": result["messages"]}
+                                unfiltered_samples.append(entry_sample)
+                                if (
+                                    filter_active
+                                    and result.get("e8_primitive", "") not in e8_filter
+                                ):
+                                    filtered_count += 1
+                                    continue
+                                samples.append(entry_sample)
             except Exception as e:
                 print(f"Error reading {f}: {e}")
 
