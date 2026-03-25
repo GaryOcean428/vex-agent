@@ -99,11 +99,13 @@ training_volume = modal.Volume.from_name("vex-training", create_if_missing=True)
 
 train_image = (
     modal.Image.from_registry("nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.14")
-    .apt_install("g++", "ninja-build")
+    .apt_install("g++", "ninja-build", "git")
     .env({"CXX": "g++", "CC": "gcc", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     .uv_pip_install(
         "torch>=2.1,<2.11",
-        "transformers>=4.48.0",
+        # Qwen3.5-35B-A3B (qwen3_5_moe) requires transformers from main —
+        # released 5.3.0 lacks Qwen3_5MoeForConditionalGeneration
+        "transformers @ git+https://github.com/huggingface/transformers.git@main",
         "accelerate",
         "bitsandbytes>=0.45.0",
         "peft>=0.13.0",
@@ -151,32 +153,54 @@ def _load_model_for_training(
     """
     from transformers import AutoConfig, AutoModelForCausalLM
 
-    config = AutoConfig.from_pretrained(model_id, cache_dir=cache_dir)
+    config = AutoConfig.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True)
     print(
         f"  [CONFIG] model_type={config.model_type}, architectures={getattr(config, 'architectures', [])}"
     )
 
-    load_kwargs = {"cache_dir": cache_dir, "device_map": device_map, "low_cpu_mem_usage": True}
+    load_kwargs = {
+        "cache_dir": cache_dir,
+        "device_map": device_map,
+        "low_cpu_mem_usage": True,
+        "trust_remote_code": True,
+    }
     if bnb_config is not None:
         load_kwargs["quantization_config"] = bnb_config
     load_kwargs.update(kwargs)
 
-    # Qwen3.5: multimodal model with text_config + vision_config
-    if config.model_type == "qwen3_5" and hasattr(config, "text_config"):
-        print("  [COMPAT] Qwen3.5 VLM detected — loading as conditional generation model")
+    # Qwen3.5 family: both dense (qwen3_5) and MoE (qwen3_5_moe) are VLMs
+    # with text_config + vision_config. Must use the ConditionalGeneration class
+    # so checkpoint weight paths (model.language_model.layers.*) match.
+    is_qwen35_vlm = config.model_type in ("qwen3_5", "qwen3_5_moe") and hasattr(
+        config, "text_config"
+    )
+    if is_qwen35_vlm:
+        model_cls_name = (
+            "Qwen3_5MoeForConditionalGeneration"
+            if config.model_type == "qwen3_5_moe"
+            else "Qwen3_5ForConditionalGeneration"
+        )
+        print(
+            f"  [COMPAT] Qwen3.5 VLM detected (type={config.model_type}) — loading as {model_cls_name}"
+        )
         try:
-            from transformers import Qwen3_5ForConditionalGeneration
+            import transformers
 
-            model = Qwen3_5ForConditionalGeneration.from_pretrained(model_id, **load_kwargs)
+            model_cls = getattr(transformers, model_cls_name)
+            model = model_cls.from_pretrained(model_id, **load_kwargs)
             # Ensure top-level vocab_size for PEFT/TRL compatibility
-            if not hasattr(model.config, "vocab_size") and hasattr(config, "text_config"):
-                model.config.vocab_size = config.text_config.vocab_size
+            # (transformers 5.x may move it into text_config only)
+            if not hasattr(model.config, "vocab_size") or model.config.vocab_size is None:
+                if hasattr(config, "text_config") and hasattr(config.text_config, "vocab_size"):
+                    model.config.vocab_size = config.text_config.vocab_size
+                elif hasattr(config, "vocab_size"):
+                    model.config.vocab_size = config.vocab_size
             print(
-                f"  [COMPAT] Loaded Qwen3_5ForConditionalGeneration (vocab_size={getattr(model.config, 'vocab_size', 'N/A')})"
+                f"  [COMPAT] Loaded {model_cls_name} (vocab_size={getattr(model.config, 'vocab_size', 'N/A')})"
             )
             return model
         except Exception as e:
-            print(f"  [COMPAT] Qwen3_5ForConditionalGeneration failed: {e}")
+            print(f"  [COMPAT] {model_cls_name} failed: {e}")
             print("  [COMPAT] Falling back to AutoModelForCausalLM")
 
     # Default path: standard causal LM
@@ -479,7 +503,7 @@ def _merge_and_export(
     del model, base_model
     torch.cuda.empty_cache()
 
-    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True)
     tokenizer.save_pretrained(merged_path)
 
     with open(str(merged.parent / "Modelfile"), "w") as f:
@@ -573,7 +597,9 @@ class QLoRATrainer:
             print(f"KERNEL_API_KEY loaded: {KERNEL_API_KEY[:4]}...{KERNEL_API_KEY[-4:]}")
         from transformers import AutoTokenizer
 
-        self.tokenizer = AutoTokenizer.from_pretrained(HARVEST_MODEL_ID, cache_dir="/models/hub")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            HARVEST_MODEL_ID, cache_dir="/models/hub", trust_remote_code=True
+        )
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self._training_active = False
@@ -1232,12 +1258,14 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
     model_cache = Path(cache_dir) / f"models--{model_id.replace('/', '--')}"
     if model_cache.exists() and any(model_cache.rglob("*.safetensors")):
         print(f"Model {model_id} already cached at {model_cache}. Skipping download.")
-        tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_id, cache_dir=cache_dir, trust_remote_code=True
+        )
         print(f"Verified tokenizer. Vocab size: {tokenizer.vocab_size}")
         return {"status": "cached", "model_id": model_id, "cache_dir": cache_dir}
 
     print(f"Downloading tokenizer for {model_id}...")
-    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True)
     print(f"Tokenizer ready. Vocab size: {tokenizer.vocab_size}")
 
     print(f"Downloading model weights for {model_id} (4-bit NF4)...")
@@ -1333,7 +1361,7 @@ def train_all_kernels(
     else:
         target_kernels = list(CONSCIOUSNESS_ORDER)
     cache_dir = "/models/hub"
-    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     results = {}

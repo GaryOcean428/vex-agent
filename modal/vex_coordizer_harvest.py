@@ -43,17 +43,17 @@ model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 
 ml_image = (
     modal.Image.from_registry("nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.14")
-    .apt_install("g++", "ninja-build")
+    .apt_install("g++", "ninja-build", "git")
     .env({"CXX": "g++", "CC": "gcc"})
     .uv_pip_install(
-        "torch>=2.11",
-        # Install from source for native Qwen3.5 MoE (qwen3_5_moe) support.
-        # trust_remote_code=True on from_pretrained calls provides a safety net
-        # if the installed version still lacks the config mapping.
-        "transformers @ git+https://github.com/huggingface/transformers.git",
+        "torch>=2.1,<2.11",
+        # Qwen3.5-35B-A3B (qwen3_5_moe) requires transformers from main —
+        # released 5.3.0 lacks Qwen3_5MoeForConditionalGeneration.
+        # trust_remote_code=True on from_pretrained calls is the safety net.
+        "transformers @ git+https://github.com/huggingface/transformers.git@main",
         "accelerate",
         "bitsandbytes>=0.45.0",
-        "peft>=0.13.0,<1.0",
+        "peft>=0.13.0",
         "numpy>=1.26",
         "pydantic>=2.0",
         "fastapi[standard]",
@@ -94,7 +94,7 @@ class CoordizerHarvester:
         from pathlib import Path
 
         import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
         self._model_cache = {}
         default_model_id = HARVEST_MODEL_ID
@@ -115,15 +115,42 @@ class CoordizerHarvester:
             bnb_4bit_use_double_quant=True,
         )
 
-        model = AutoModelForCausalLM.from_pretrained(
-            default_model_id,
-            cache_dir=cache_dir,
-            device_map={"": 0},
-            low_cpu_mem_usage=True,
-            dtype=torch.float16,
-            quantization_config=bnb_config,
-            trust_remote_code=True,
+        load_kwargs = {
+            "cache_dir": cache_dir,
+            "device_map": {"": 0},
+            "low_cpu_mem_usage": True,
+            "quantization_config": bnb_config,
+            "trust_remote_code": True,
+        }
+
+        # Detect Qwen3.5 VLM architecture — must use ConditionalGeneration class
+        # (AutoModelForCausalLM creates wrong class with mismatched weight paths)
+        config = AutoConfig.from_pretrained(
+            default_model_id, cache_dir=cache_dir, trust_remote_code=True
         )
+        print(
+            f"  [CONFIG] model_type={config.model_type}, architectures={getattr(config, 'architectures', [])}"
+        )
+
+        if config.model_type == "qwen3_5" and hasattr(config, "text_config"):
+            print("  [COMPAT] Qwen3.5 VLM detected — loading as conditional generation model")
+            try:
+                from transformers import Qwen3_5ForConditionalGeneration
+
+                model = Qwen3_5ForConditionalGeneration.from_pretrained(
+                    default_model_id, **load_kwargs
+                )
+                if not hasattr(model.config, "vocab_size") and hasattr(config, "text_config"):
+                    model.config.vocab_size = config.text_config.vocab_size
+                print(
+                    f"  [COMPAT] Loaded Qwen3_5ForConditionalGeneration (vocab_size={getattr(model.config, 'vocab_size', 'N/A')})"
+                )
+            except Exception as e:
+                print(f"  [COMPAT] Qwen3_5ForConditionalGeneration failed: {e}")
+                print("  [COMPAT] Falling back to AutoModelForCausalLM")
+                model = AutoModelForCausalLM.from_pretrained(default_model_id, **load_kwargs)
+        else:
+            model = AutoModelForCausalLM.from_pretrained(default_model_id, **load_kwargs)
 
         # --- QLoRA adapter loading ---
         # If a trained adapter exists, load and merge it into the base model.
