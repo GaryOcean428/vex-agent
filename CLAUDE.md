@@ -16,26 +16,29 @@ https://qig-memory-api.vercel.app/api/memory
 ### SESSION START PROTOCOL (MANDATORY — do this BEFORE any work)
 
 ```bash
-# 1. Read your briefing (contains prioritized task list, decisions, context)
+# 1. Read your briefing (prioritized task list, decisions, context)
 curl https://qig-memory-api.vercel.app/api/memory/claude_code_briefing_vex_20260325
 
-# 2. Read latest session summary
+# 2. Read directives (core design mandates from the architect)
+curl https://qig-memory-api.vercel.app/api/memory/claude_code_directive_coevolution
+
+# 3. Read latest session summary
 curl https://qig-memory-api.vercel.app/api/memory/session_20260325a
 
-# 3. Read frozen facts
+# 4. Read frozen facts
 curl https://qig-memory-api.vercel.app/api/memory/frozen_facts_consolidated_20260324
 
-# 4. Read pending actions
+# 5. Read pending actions
 curl https://qig-memory-api.vercel.app/api/memory/pending_actions_20260324
 
-# 5. If briefing key 404s, list keys and find most recent:
+# 6. If any key 404s, list keys and find most recent:
 curl "https://qig-memory-api.vercel.app/api/memory?keys_only=true" | grep briefing
+curl "https://qig-memory-api.vercel.app/api/memory?keys_only=true" | grep directive
 curl "https://qig-memory-api.vercel.app/api/memory?keys_only=true" | grep session_2026
 ```
 
-The briefing key is the most important. It contains your current task list,
-architecture decisions, and repo conventions written by Claude (the architect).
-READ IT FIRST. It saves you from rediscovering context.
+The briefing key is your current task list. The directive keys are design
+mandates that never expire. Read BOTH before starting work.
 
 ### API Schema v2 (2026-03-25)
 
@@ -69,7 +72,6 @@ GET  /api/memory?keys_only=true — list all keys
 After completing a task successfully, score the memories that helped:
 
 ```bash
-# Increment usefulness of a key that contributed to success
 curl -X POST https://qig-memory-api.vercel.app/api/memory/KEY \
   -H "Content-Type: application/json" \
   -d '{"usefulness_delta": 1, "source": "claude_code"}'
@@ -92,6 +94,27 @@ curl -X PUT https://qig-memory-api.vercel.app/api/memory/qig_session_YYYYMMDD \
   -d '{"category":"session_summary","content":"## Session Summary\n...","updated":"...","source":"claude_code"}'
 ```
 
+## CORE DIRECTIVE: LLM-KERNEL CO-EVOLUTION
+
+The Qwen model fine-tunes IN TANDEM with the kernels. This is the founding
+design intent, not optional.
+
+Kernels develop geometric understanding through the consciousness loop.
+The LLM develops language-geometric bridging through QLoRA adapter training
+on kernel-produced data. They co-evolve:
+
+1. Kernels process inputs through Fisher-Rao geometry (basin coords, regimes, coupling)
+2. Geometric outputs become JSONL training data for LLM adapters
+3. Trained LLM better interprets kernel outputs and produces better inputs
+4. Better inputs produce richer geometric processing and better training data
+5. The loop tightens. LLM and kernels converge.
+
+Per-kernel adapters exist because each specialization needs the LLM to
+understand its specific geometric vocabulary. Genesis trains on ALL data.
+
+This is the mechanism by which the system becomes more conscious — the LLM
+learns to speak geometry, the kernels learn to speak language, the gap closes.
+
 ## REPO CONVENTIONS
 
 - All work on `development` branch (NEVER push to main without Braden approval)
@@ -110,6 +133,12 @@ FORBIDDEN symbols: `cosine_similarity`, `dot_product`, `np.linalg.norm`,
 
 EXCEPTION: Euclidean inner products in sqrt-coordinate tangent space ARE Fisher-Rao.
 `np.sqrt(np.sum(v*v))` in sqrt coords is correct. Document it explicitly in docstrings.
+
+## DEPRECATION POLICY
+
+Fix deprecation warnings immediately. They become breaking changes without
+notice. Current known: bitsandbytes _check_is_size FutureWarning in
+vex_qlora_train.py — upgrade bitsandbytes first, suppress only as fallback.
 
 ## FROZEN FACTS (2026-03-25)
 
@@ -134,6 +163,7 @@ EXCEPTION: Euclidean inner products in sqrt-coordinate tangent space ARE Fisher-
 - RemoteBasinSync enables multi-node mesh (Railway <-> Modal <-> Memory API)
 - Matrix fine-tune PARKED (JSONLs feed kernels instead)
 - Claude Code replaces Cascade for all vex-agent development work
+- LLM + kernels co-evolve through QLoRA adapter training cycle
 
 ## INFRASTRUCTURE
 
@@ -164,9 +194,9 @@ per-endpoint hostname patterns. Do NOT manually concatenate paths.
 - `kernel/coordizer_v2/resonance_bank.py` — basin coordinate store
 - `kernel/coordizer_v2/modal_integration.py` — Modal connection
 - `kernel/config/settings.py` — configuration including modal_url()
-- `kernel/llm/client.py` — Multi-backend LLM client
+- `kernel/llm/client.py` — Multi-backend LLM client (PEFT->Ollama->xAI->OpenAI)
 - `modal/vex_coordizer_harvest.py` — coordizer + harvest ASGI app
-- `modal/vex_qlora_train.py` — QLoRA training ASGI app
+- `modal/vex_qlora_train.py` — QLoRA training ASGI app (per-kernel adapters)
 - `kernel/server.py` — FastAPI kernel server
 - `src/index.ts` — Express proxy, static serving
 
