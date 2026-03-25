@@ -99,7 +99,8 @@ training_volume = modal.Volume.from_name("vex-training", create_if_missing=True)
 
 train_image = (
     modal.Image.from_registry("nvidia/cuda:13.0.1-devel-ubuntu22.04", add_python="3.12")
-    .env({"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
+    .apt_install("g++", "ninja-build")
+    .env({"CXX": "g++", "CC": "gcc", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     .pip_install(
         "torch>=2.1",
         "transformers>=4.48.0",
@@ -112,10 +113,9 @@ train_image = (
         "pydantic>=2.0",
         "fastapi[standard]",
         "qig-core[torch]>=2.5.0",
+        # Qwen3.5 hybrid architecture: linear attention fast path
+        "causal-conv1d>=1.4.0",
         "flash-linear-attention",
-        # causal-conv1d removed: no prebuilt wheel for torch 2.11+cu13,
-        # source build fails on Modal (clang++ vs g++). Falls back to
-        # standard PyTorch ops — not a blocking dependency.
     )
     .run_commands(
         # Fix bitsandbytes _check_is_size deprecation (upstream bug, all versions through 0.49.2)
