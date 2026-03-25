@@ -69,7 +69,7 @@ class ModalIntegrationConfig:
 
         return cls(
             enabled=modal.enabled,
-            harvest_url=harvest_url,
+            harvest_url=modal_url(harvest_url, "harvest") if harvest_url else "",
             health_url=health_url,
             token_id=modal.token_id,
             token_secret=modal.token_secret,

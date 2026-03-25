@@ -56,7 +56,7 @@ from .config.consciousness_constants import (
 )
 from .config.frozen_facts import KAPPA_STAR
 from .config.routes import ROUTES as R
-from .config.settings import settings
+from .config.settings import modal_url, settings
 from .config.version import VERSION
 from .consciousness.beta_router import beta_router, set_consciousness_loop
 from .consciousness.harvest_bridge import forward_to_harvest
@@ -300,7 +300,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
                 async with httpx.AsyncClient(timeout=30) as client:
                     resp = await client.post(
-                        training_url,
+                        modal_url(training_url, "train"),
                         json={"_api_key": settings.kernel_api_key},
                     )
                     if resp.status_code == 200:
@@ -542,16 +542,18 @@ async def health_reachability() -> dict[str, Any]:
     # Modal coordizer (harvest)
     harvest_url = settings.modal.harvest_url
     if harvest_url:
-        base = harvest_url.rsplit("/", 1)[0] if "/" in harvest_url else harvest_url
-        tasks.append(asyncio.create_task(_check("modal_coordizer", f"{base.rstrip('/')}/health")))
+        tasks.append(
+            asyncio.create_task(_check("modal_coordizer", modal_url(harvest_url, "health")))
+        )
     else:
         results["modal_coordizer"] = {"reachable": False, "error": "not configured"}
 
     # Modal trainer
     training_url = settings.modal.training_url
     if training_url:
-        base = training_url.rsplit("/", 1)[0] if "/" in training_url else training_url
-        tasks.append(asyncio.create_task(_check("modal_trainer", f"{base.rstrip('/')}/health")))
+        tasks.append(
+            asyncio.create_task(_check("modal_trainer", modal_url(training_url, "health")))
+        )
     else:
         results["modal_trainer"] = {"reachable": False, "error": "not configured"}
 
