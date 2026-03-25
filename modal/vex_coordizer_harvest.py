@@ -400,9 +400,13 @@ class CoordizerHarvester:
         try:
             import cupy as cp
 
-            xp = cp  # GPU array module
+            xp = cp  # GPU array module — cuSOLVER eigensolver
             _on_gpu = True
         except ImportError:
+            print(
+                "  [WARN] CuPy not available — eigendecomposition will use CPU (LAPACK). "
+                "This is 10-100x slower for large Gram matrices. Install cupy-cuda12x."
+            )
             xp = np  # CPU fallback
             _on_gpu = False
 
@@ -428,6 +432,8 @@ class CoordizerHarvester:
 
         # Eigendecomposition of Gram matrix (cuSOLVER on GPU, LAPACK on CPU)
         target_dim = min(lens_dim, N, basin_dim)
+        backend = "cuSOLVER/GPU" if _on_gpu else "LAPACK/CPU"
+        print(f"  [EIGEN] {N}x{N} Gram matrix → eigh via {backend}")
         eigenvalues, eigenvectors = xp.linalg.eigh(G)
 
         # Sort descending
