@@ -47,7 +47,10 @@ ml_image = (
     .env({"CXX": "g++", "CC": "gcc"})
     .uv_pip_install(
         "torch>=2.11",
-        "transformers>=4.48.0,<5.0",
+        # Install from source for native Qwen3.5 MoE (qwen3_5_moe) support.
+        # trust_remote_code=True on from_pretrained calls provides a safety net
+        # if the installed version still lacks the config mapping.
+        "transformers @ git+https://github.com/huggingface/transformers.git",
         "accelerate",
         "bitsandbytes>=0.45.0",
         "peft>=0.13.0,<1.0",
@@ -99,7 +102,11 @@ class CoordizerHarvester:
 
         print(f"Loading default model: {default_model_id}")
 
-        tokenizer = AutoTokenizer.from_pretrained(default_model_id, cache_dir=cache_dir)
+        tokenizer = AutoTokenizer.from_pretrained(
+            default_model_id,
+            cache_dir=cache_dir,
+            trust_remote_code=True,
+        )
 
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -115,6 +122,7 @@ class CoordizerHarvester:
             low_cpu_mem_usage=True,
             dtype=torch.float16,
             quantization_config=bnb_config,
+            trust_remote_code=True,
         )
 
         # --- QLoRA adapter loading ---
@@ -562,13 +570,15 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
     model_cache = Path(cache_dir) / f"models--{model_id.replace('/', '--')}"
     if model_cache.exists() and any(model_cache.rglob("*.safetensors")):
         print(f"Model {model_id} already cached at {model_cache}. Skipping download.")
-        tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_id, cache_dir=cache_dir, trust_remote_code=True
+        )
         print(f"Verified tokenizer. Vocab size: {tokenizer.vocab_size}")
         return
 
     print(f"Downloading {model_id} to {cache_dir} (first time — may take 10-20 min)...")
 
-    AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+    AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True)
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
@@ -581,6 +591,7 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
         device_map={"": 0},
         quantization_config=bnb_config,
         low_cpu_mem_usage=True,
+        trust_remote_code=True,
     )
     model_volume.commit()
     print(f"Done. Model cached at {cache_dir} (4-bit NF4, persists across runs)")
