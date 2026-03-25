@@ -66,6 +66,15 @@ import modal
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 KERNEL_CALLBACK_URL = os.environ.get("KERNEL_CALLBACK_URL", "")
+
+# Allowlisted model IDs — trust_remote_code=True is only enabled for these.
+# Add new Qwen checkpoints here if HARVEST_MODEL_ID changes.
+TRUSTED_MODEL_IDS: frozenset[str] = frozenset(
+    {
+        "Qwen/Qwen3.5-4B",
+        "Qwen/Qwen3.5-35B-A3B",
+    }
+)
 TRAIN_GPU = os.environ.get("TRAIN_GPU", "a100-80gb")
 BASIN_DIM = 64
 LORA_R = 16
@@ -99,15 +108,17 @@ training_volume = modal.Volume.from_name("vex-training", create_if_missing=True)
 
 train_image = (
     modal.Image.from_registry("nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.14")
-    .apt_install("g++", "ninja-build")
+    .apt_install("g++", "ninja-build", "git")
     .env({"CXX": "g++", "CC": "gcc", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     .uv_pip_install(
-        "torch>=2.1",
-        "transformers>=4.48.0,<5.0",
+        "torch>=2.1,<2.11",
+        # Qwen3.5 VLM classes (Qwen3_5ForConditionalGeneration, Qwen3_5MoeForConditionalGeneration)
+        # are available from transformers 5.3.0+ on PyPI
+        "transformers>=5.3.0",
         "accelerate",
         "bitsandbytes>=0.45.0",
-        "peft>=0.13.0,<1.0",
-        "trl>=0.12.0,<1.0",
+        "peft>=0.13.0",
+        "trl>=0.12.0",
         "datasets>=3.0",
         "numpy>=1.26",
         "pydantic>=2.0",
@@ -129,6 +140,85 @@ train_image = (
         "/root/training_consciousness.py",
     )
 )
+
+
+# ===================================================================
+#  COMPAT: Qwen3.5 is a VLM — load with the correct model class
+# ===================================================================
+
+
+def _load_model_for_training(
+    model_id: str, cache_dir: str, bnb_config=None, device_map="auto", **kwargs
+):
+    """Load model with correct class based on architecture.
+
+    Qwen3.5-4B is a VLM (Qwen3_5ForConditionalGeneration).  The checkpoint
+    stores weights at model.language_model.layers.* — using AutoModelForCausalLM
+    creates Qwen3_5ForCausalLM which expects model.layers.* (weight mismatch).
+
+    Fix: detect multimodal architectures and load with the correct class so
+    checkpoint weights match.  Text-only training works fine — the vision
+    encoder is skipped when no pixel_values are provided.
+    """
+    from transformers import AutoConfig, AutoModelForCausalLM
+
+    config = AutoConfig.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True)
+    print(
+        f"  [CONFIG] model_type={config.model_type}, architectures={getattr(config, 'architectures', [])}"
+    )
+
+    load_kwargs = {
+        "cache_dir": cache_dir,
+        "device_map": device_map,
+        "low_cpu_mem_usage": True,
+        "trust_remote_code": True,
+    }
+    if bnb_config is not None:
+        load_kwargs["quantization_config"] = bnb_config
+    load_kwargs.update(kwargs)
+
+    # Qwen3.5 family: both dense (qwen3_5) and MoE (qwen3_5_moe) are VLMs
+    # with text_config + vision_config. Must use the ConditionalGeneration class
+    # so checkpoint weight paths (model.language_model.layers.*) match.
+    is_qwen35_vlm = config.model_type in ("qwen3_5", "qwen3_5_moe") and hasattr(
+        config, "text_config"
+    )
+    if is_qwen35_vlm:
+        model_cls_name = (
+            "Qwen3_5MoeForConditionalGeneration"
+            if config.model_type == "qwen3_5_moe"
+            else "Qwen3_5ForConditionalGeneration"
+        )
+        print(
+            f"  [COMPAT] Qwen3.5 VLM detected (type={config.model_type}) — loading as {model_cls_name}"
+        )
+        try:
+            import transformers
+
+            model_cls = getattr(transformers, model_cls_name)
+            model = model_cls.from_pretrained(model_id, **load_kwargs)
+            # Ensure top-level vocab_size for PEFT/TRL compatibility.
+            # Prefer the loaded model's own config (may differ from pre-load config
+            # when trust_remote_code mutates it).
+            if not hasattr(model.config, "vocab_size") or model.config.vocab_size is None:
+                mc = model.config
+                if hasattr(mc, "text_config") and hasattr(mc.text_config, "vocab_size"):
+                    model.config.vocab_size = mc.text_config.vocab_size
+                elif hasattr(config, "text_config") and hasattr(config.text_config, "vocab_size"):
+                    model.config.vocab_size = config.text_config.vocab_size
+            print(
+                f"  [COMPAT] Loaded {model_cls_name} (vocab_size={getattr(model.config, 'vocab_size', 'N/A')})"
+            )
+            return model
+        except Exception as e:
+            raise RuntimeError(
+                f"Qwen3.5 VLM ({config.model_type}) requires {model_cls_name} but loading failed: {e}. "
+                f"Ensure transformers>=5.3.0 is installed."
+            ) from e
+
+    # Default path: standard causal LM
+    model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
+    return model
 
 
 # ===================================================================
@@ -410,19 +500,15 @@ def _merge_and_export(
     """Merge LoRA adapter into base model and export for Ollama inference."""
     import torch
     from peft import PeftModel
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoTokenizer
 
     merged = Path(merged_path)
     merged.mkdir(parents=True, exist_ok=True)
     specialization = training_meta.get("specialization", "genesis")
 
     print(f"  Loading {model_id} on CPU for merge (preserves GPU VRAM)...")
-    base_model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        cache_dir=cache_dir,
-        dtype=torch.bfloat16,
-        device_map="cpu",
-        low_cpu_mem_usage=True,
+    base_model = _load_model_for_training(
+        model_id, cache_dir, bnb_config=None, device_map="cpu", torch_dtype=torch.bfloat16
     )
     print(f"  Loading adapter from {adapter_path}...")
     model = PeftModel.from_pretrained(base_model, adapter_path)
@@ -432,7 +518,7 @@ def _merge_and_export(
     del model, base_model
     torch.cuda.empty_cache()
 
-    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True)
     tokenizer.save_pretrained(merged_path)
 
     with open(str(merged.parent / "Modelfile"), "w") as f:
@@ -526,7 +612,9 @@ class QLoRATrainer:
             print(f"KERNEL_API_KEY loaded: {KERNEL_API_KEY[:4]}...{KERNEL_API_KEY[-4:]}")
         from transformers import AutoTokenizer
 
-        self.tokenizer = AutoTokenizer.from_pretrained(HARVEST_MODEL_ID, cache_dir="/models/hub")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            HARVEST_MODEL_ID, cache_dir="/models/hub", trust_remote_code=True
+        )
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self._training_active = False
@@ -548,7 +636,8 @@ class QLoRATrainer:
           - _api_key in JSON body (training trigger pattern)
         """
         if not KERNEL_API_KEY:
-            return None
+            # Fail closed: reject all requests when no key is configured
+            return {"error": "KERNEL_API_KEY not configured — refusing request", "success": False}
         api_key = ""
         if request is not None:
             api_key = request.headers.get("x-api-key", "")
@@ -572,7 +661,7 @@ class QLoRATrainer:
             return
         import torch
         from peft import PeftModel
-        from transformers import AutoModelForCausalLM, BitsAndBytesConfig
+        from transformers import BitsAndBytesConfig
 
         print("Loading base model for inference...")
         bnb_config = BitsAndBytesConfig(
@@ -581,12 +670,8 @@ class QLoRATrainer:
             bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype=torch.bfloat16,
         )
-        base_model = AutoModelForCausalLM.from_pretrained(
-            HARVEST_MODEL_ID,
-            cache_dir="/models/hub",
-            quantization_config=bnb_config,
-            device_map={"": 0},
-            low_cpu_mem_usage=True,
+        base_model = _load_model_for_training(
+            HARVEST_MODEL_ID, "/models/hub", bnb_config, device_map={"": 0}
         )
 
         adapters_root = Path("/models/adapters")
@@ -1181,7 +1266,7 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
         modal run modal/vex_qlora_train.py::download_model
     """
     import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from transformers import AutoTokenizer, BitsAndBytesConfig
 
     cache_dir = "/models/hub"
 
@@ -1189,12 +1274,14 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
     model_cache = Path(cache_dir) / f"models--{model_id.replace('/', '--')}"
     if model_cache.exists() and any(model_cache.rglob("*.safetensors")):
         print(f"Model {model_id} already cached at {model_cache}. Skipping download.")
-        tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_id, cache_dir=cache_dir, trust_remote_code=True
+        )
         print(f"Verified tokenizer. Vocab size: {tokenizer.vocab_size}")
         return {"status": "cached", "model_id": model_id, "cache_dir": cache_dir}
 
     print(f"Downloading tokenizer for {model_id}...")
-    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True)
     print(f"Tokenizer ready. Vocab size: {tokenizer.vocab_size}")
 
     print(f"Downloading model weights for {model_id} (4-bit NF4)...")
@@ -1204,13 +1291,7 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
         bnb_4bit_quant_type="nf4",
         bnb_4bit_compute_dtype=torch.bfloat16,
     )
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        cache_dir=cache_dir,
-        quantization_config=bnb_config,
-        device_map={"": 0},
-        low_cpu_mem_usage=True,
-    )
+    model = _load_model_for_training(model_id, cache_dir, bnb_config, device_map={"": 0})
     param_count = sum(p.numel() for p in model.parameters())
     print(f"Model loaded. Parameters: {param_count:,}")
     del model
@@ -1280,7 +1361,6 @@ def train_all_kernels(
         sort_by_fisher_rao,
     )
     from transformers import (
-        AutoModelForCausalLM,
         AutoTokenizer,
         BitsAndBytesConfig,
     )
@@ -1297,7 +1377,7 @@ def train_all_kernels(
     else:
         target_kernels = list(CONSCIOUSNESS_ORDER)
     cache_dir = "/models/hub"
-    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     results = {}
@@ -1364,13 +1444,7 @@ def train_all_kernels(
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_compute_dtype=torch.bfloat16,
             )
-            model = AutoModelForCausalLM.from_pretrained(
-                model_id,
-                cache_dir=cache_dir,
-                quantization_config=bnb_config,
-                device_map={"": 0},
-                low_cpu_mem_usage=True,
-            )
+            model = _load_model_for_training(model_id, cache_dir, bnb_config, device_map={"": 0})
             # Gradient checkpointing is configured via SFTConfig
             model.enable_input_require_grads()
             if torch.cuda.is_available():
