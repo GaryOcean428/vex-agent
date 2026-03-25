@@ -85,6 +85,39 @@ _write_lock = asyncio.Lock()
 
 
 # ═══════════════════════════════════════════════════════════════
+#  QUALITY SCORING
+# ═══════════════════════════════════════════════════════════════
+
+
+def compute_conversation_quality(
+    phi: float,
+    contributions: list[dict[str, Any]] | None,
+) -> float:
+    """Quality score [0, 1] from geometric metrics.  No Euclidean ops.
+
+    Cold-start guard: phi < 0.1 → score = 0.0
+    (cold-start conversations shouldn't train adapters)
+
+    Components:
+      - phi_signal: phi / 0.6 (saturates at phi = 0.6)
+      - geometric_ratio: fraction of kernels with geometric_resonances > 0
+      - weight_concentration: primary kernel's synthesis_weight
+
+    Composite: 0.5 * phi_signal + 0.3 * geo_ratio + 0.2 * max_weight
+    """
+    if phi < 0.1:
+        return 0.0
+    if not contributions:
+        return round(min(phi / 0.6, 1.0) * 0.5, 4)
+    phi_signal = min(phi / 0.6, 1.0)
+    geo_count = sum(1 for c in contributions if c.get("geometric_resonances", 0) > 0)
+    geometric_ratio = geo_count / len(contributions)
+    max_weight = max((c.get("synthesis_weight", 0) for c in contributions), default=0)
+    score = 0.5 * phi_signal + 0.3 * geometric_ratio + 0.2 * max_weight
+    return round(float(score), 4)
+
+
+# ═══════════════════════════════════════════════════════════════
 #  ENUMS & DATA CLASSES
 # ═══════════════════════════════════════════════════════════════
 
@@ -320,8 +353,21 @@ async def log_conversation(
     source: str = "chat",
     regime: str = "",
     basin_coords: list[float] | None = None,
+    routed_kernel: str = "",
+    e8_primitive: str = "",
+    response_basin: list[float] | None = None,
+    kernel_contributions: list[dict[str, Any]] | None = None,
+    quality_score: float | None = None,
+    min_quality: float = 0.0,
 ) -> None:
     """Append a chat exchange to conversations.jsonl (on volume)."""
+    if quality_score is not None and quality_score < min_quality:
+        logger.debug(
+            "Quality gate rejected conversation (score=%.3f < min=%.3f)",
+            quality_score,
+            min_quality,
+        )
+        return
     entry = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "user_message": user_message,
@@ -335,6 +381,16 @@ async def log_conversation(
         entry["regime"] = regime
     if basin_coords:
         entry["basin_coords"] = [round(v, 6) for v in basin_coords]
+    if routed_kernel:
+        entry["routed_kernel"] = routed_kernel
+    if e8_primitive:
+        entry["e8_primitive"] = e8_primitive
+    if response_basin:
+        entry["response_basin"] = [round(v, 6) for v in response_basin]
+    if quality_score is not None:
+        entry["quality_score"] = quality_score
+    if kernel_contributions:
+        entry["kernel_contributions"] = kernel_contributions
     try:
         await _append_jsonl(TRAINING_DIR / "conversations.jsonl", entry)
     except Exception as e:
@@ -1598,6 +1654,11 @@ async def training_complete_endpoint(request: Request) -> dict[str, Any]:
     """
     app_state = request.app.state
 
+    # Parse request body for kernel_results
+    body: dict[str, Any] = {}
+    with contextlib.suppress(Exception):
+        body = await request.json()
+
     # Rebuild resonance bank with any new coordized data
     rebuilt = False
     try:
@@ -1615,6 +1676,12 @@ async def training_complete_endpoint(request: Request) -> dict[str, Any]:
         reset_fn()
         logger.info("Auto-training flag reset")
 
+    # Reset conversation-interval training counter to current total
+    update_conv_fn = getattr(app_state, "update_last_trained_conversation", None)
+    if update_conv_fn:
+        update_conv_fn()
+        logger.info("Conversation-interval training counter reset")
+
     # Trigger a harvest cycle so the updated model produces fresh coordizations
     scheduler = getattr(app_state, "harvest_scheduler", None)
     harvest_queued = False
@@ -1625,6 +1692,12 @@ async def training_complete_endpoint(request: Request) -> dict[str, Any]:
             logger.info("Re-harvest triggered after training completion")
         except Exception as e:
             logger.error("Post-training re-harvest failed: %s", e)
+
+    # Pass adapter quality feedback to consciousness loop
+    kernel_results = body.get("kernel_results", {})
+    consciousness = getattr(app_state, "consciousness", None)
+    if consciousness and kernel_results:
+        consciousness.receive_training_feedback(kernel_results)
 
     return {
         "status": "ok",

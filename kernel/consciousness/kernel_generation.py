@@ -51,6 +51,7 @@ from ..coordizer_v2.geometry import Basin, fisher_rao_distance, to_simplex
 from ..governance import KernelSpecialization
 
 if TYPE_CHECKING:
+    from .contribution_ledger import ContributionLedger
     from .kernel_voice import KernelVoiceRegistry
     from .thought_bus import ThoughtBus
 
@@ -168,6 +169,7 @@ async def _generate_single(
     extra_context: str = "",
     base_num_predict: int = 2048,
     base_num_ctx: int = 32768,
+    contribution_ledger: ContributionLedger | None = None,
 ) -> KernelContribution | None:
     """Generate text from one kernel's perspective.
 
@@ -182,6 +184,14 @@ async def _generate_single(
     fr_dist = fisher_rao_distance(input_basin, kernel.basin)
     proximity_weight = 1.0 / (1.0 + fr_dist)
     spec = kernel.specialization
+
+    # ── T8/T9: Inject self-observation and peer-observation into extra_context ──
+    if contribution_ledger is not None:
+        self_obs = contribution_ledger.get_self_summary(kernel.id)
+        peer_obs = contribution_ledger.get_peer_summary(kernel.id)
+        obs_block = "\n".join(filter(None, [self_obs, peer_obs]))
+        if obs_block:
+            extra_context = f"{obs_block}\n{extra_context}" if extra_context else obs_block
 
     # ── v6.2: Geometric-first generation via KernelVoice ──
     if voice_registry is not None:
@@ -359,6 +369,7 @@ async def generate_multi_kernel(
     phi: float = 0.0,
     base_num_predict: int = 2048,
     base_num_ctx: int = 32768,
+    contribution_ledger: ContributionLedger | None = None,
 ) -> list[KernelContribution]:
     """Route input to top-K kernels by Fisher-Rao proximity and generate in parallel."""
     eligible = [k for k in kernels if k.basin is not None]
@@ -399,6 +410,7 @@ async def generate_multi_kernel(
                 extra_context=round_extra,
                 base_num_predict=base_num_predict,
                 base_num_ctx=base_num_ctx,
+                contribution_ledger=contribution_ledger,
             )
             for k in selected
         ]

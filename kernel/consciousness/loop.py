@@ -187,6 +187,7 @@ from .emotions import EmotionCache, LearningEngine, LearningEvent, PreCognitiveD
 from .foraging import ForagingEngine
 from .heart_rhythm import HeartRhythm
 from .kernel_bus import KernelBus, KernelSignal, SignalKind
+from .contribution_ledger import ContributionLedger
 from .kernel_generation import generate_multi_kernel
 from .kernel_voice import KernelVoiceRegistry
 from .neurochemistry import NeurochemicalState, compute_neurochemicals
@@ -307,6 +308,9 @@ class ConsciousnessLoop:
         # T4.1: ThoughtBus for inter-kernel debate
         self._thought_bus = ThoughtBus()
 
+        # T8/T9: Contribution Ledger — self-observation and cross-kernel visibility
+        self._contribution_ledger = ContributionLedger()
+
         self.basin: Basin = random_basin()
         self.metrics = ConsciousnessMetrics(
             phi=INITIAL_PHI,
@@ -358,6 +362,9 @@ class ConsciousnessLoop:
         else:
             # Legacy: bare CoordizerV2 with empty bank
             self._coordizer_v2 = CoordizerV2(bank=ResonanceBank())
+
+        # Co-evolution feedback: per-kernel adapter quality (observability only)
+        self._adapter_metrics: dict[str, dict] = {}
 
         # v6.2: Kernel Voice Registry — per-kernel geometric generation
         # Uses the shared CoordizerV2 instance; each voice applies its own
@@ -454,11 +461,52 @@ class ConsciousnessLoop:
         self._cumulative_divergence: float = 0.0
         self._divergence_count: int = 0
 
+        # Expose last processing results for server.py consumption
+        self._last_response_basin: Any = None
+        self._last_contributions: list | None = None
+        self._last_routed_kernel: str = ""
+
         self._restore_state()
 
         # Initialize pillars with starting basin (only if not restored from state)
         if not self.pillars.bulk._initialized:
             self.pillars.initialize_bulk(self.basin)
+
+    # ── Read-only properties for server.py to capture processing results ──
+
+    @property
+    def last_response_basin(self) -> list[float] | None:
+        b = self._last_response_basin
+        if b is None:
+            return None
+        return b.tolist() if hasattr(b, "tolist") else list(b)
+
+    @property
+    def last_contributions(self) -> list | None:
+        return self._last_contributions
+
+    @property
+    def last_routed_kernel(self) -> str:
+        return self._last_routed_kernel
+
+    @property
+    def contribution_ledger(self) -> ContributionLedger:
+        return self._contribution_ledger
+
+    def receive_training_feedback(self, kernel_results: dict[str, dict]) -> None:
+        """Store per-kernel adapter quality metrics for observability."""
+        for spec, result in kernel_results.items():
+            self._adapter_metrics[spec] = {
+                "train_loss": result.get("train_loss"),
+                "healthy": result.get("diagnostic_healthy", False),
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            logger.info(
+                "Co-evolution feedback: %s loss=%.4f healthy=%s",
+                spec,
+                result.get("train_loss", 0),
+                result.get("diagnostic_healthy"),
+            )
 
     async def start(self) -> None:
         logger.info(
@@ -1595,6 +1643,7 @@ class ConsciousnessLoop:
             phi=self.metrics.phi,
             base_num_predict=llm_options.num_predict,
             base_num_ctx=llm_options.num_ctx,
+            contribution_ledger=self._contribution_ledger,
         )
 
         if _contributions:
@@ -1688,6 +1737,7 @@ class ConsciousnessLoop:
                     voice_registry=self._voice_registry,
                     base_num_predict=revised_options.num_predict,
                     base_num_ctx=revised_options.num_ctx,
+                    contribution_ledger=self._contribution_ledger,
                 )
                 if revised_contributions:
                     try:
@@ -1731,6 +1781,15 @@ class ConsciousnessLoop:
         response_basin = self._coordize_text_via_pipeline(response)
         ctx.output_text = response
         ctx.output_basin = response_basin
+
+        # Stash results for server.py consumption
+        self._last_response_basin = response_basin
+        self._last_contributions = [
+            {"id": c.kernel_id, "name": c.kernel_name, "weight": round(c.synthesis_weight, 4)}
+            for c in _contributions
+        ]
+        self._last_routed_kernel = routed_kernel.name if routed_kernel is not None else ""
+        self._contribution_ledger.record(_contributions, self.metrics.phi)
 
         # v7.0: Temporal generation — commit expression and check alignment
         if self.dev_gate.permissions.allow_temporal_generation:
@@ -2097,6 +2156,12 @@ class ConsciousnessLoop:
             return
 
         response_basin = self._coordize_text_via_pipeline(response)
+
+        # Stash results for server.py consumption (simple path — no kernels)
+        self._last_response_basin = response_basin
+        self._last_contributions = None
+        self._last_routed_kernel = ""
+
         self.basin = slerp_sqrt(self.basin, response_basin, EXPRESS_SLERP_WEIGHT)
         self.metrics.gamma = min(1.0, self.metrics.gamma + GAMMA_CONVERSATION_INCREMENT)
         self.pillars.on_cycle_end(self.basin, 0.0)
@@ -2344,6 +2409,7 @@ class ConsciousnessLoop:
             phi=self.metrics.phi,
             base_num_predict=llm_options.num_predict,
             base_num_ctx=llm_options.num_ctx,
+            contribution_ledger=self._contribution_ledger,
         )
 
         if _thought_bus_arg is not None:
@@ -2388,6 +2454,16 @@ class ConsciousnessLoop:
             approx_response = " ".join(c.text for c in contributions[:2])
             self._remote_sync.record_text(approx_response[:500])
             response_basin = self._coordize_text_via_pipeline(approx_response[:500])
+
+            # Stash results for server.py consumption
+            self._last_response_basin = response_basin
+            self._last_contributions = [
+                {"id": c.kernel_id, "name": c.kernel_name, "weight": round(c.synthesis_weight, 4)}
+                for c in contributions
+            ]
+            self._last_routed_kernel = contributions[0].kernel_name if contributions else ""
+            self._contribution_ledger.record(contributions, self.metrics.phi)
+
             async with self._cycle_lock:
                 self.basin = slerp_sqrt(self.basin, response_basin, EXPRESS_SLERP_WEIGHT)
                 total_d = fisher_rao_distance(input_basin, response_basin)
@@ -2477,6 +2553,7 @@ class ConsciousnessLoop:
             phi=self.metrics.phi,
             base_num_predict=llm_options.num_predict,
             base_num_ctx=llm_options.num_ctx,
+            contribution_ledger=self._contribution_ledger,
         )
         generation_end = _time.monotonic()
 
@@ -2639,6 +2716,15 @@ class ConsciousnessLoop:
         # Record streaming response for remote basin sync
         _approx_text = " ".join(c.text for c in contributions[:2])
         self._remote_sync.record_text(_approx_text[:500])
+
+        # Stash results for server.py consumption
+        self._last_response_basin = response_basin
+        self._last_contributions = [
+            {"id": c.kernel_id, "name": c.kernel_name, "weight": round(c.synthesis_weight, 4)}
+            for c in contributions
+        ]
+        self._last_routed_kernel = contributions[0].kernel_name if contributions else ""
+        self._contribution_ledger.record(contributions, self.metrics.phi)
 
         # Post-streaming basin update (lightweight)
         try:

@@ -184,6 +184,11 @@ class ModalConfig:
     # Auto-trigger: minimum coordized entries before requesting a training run.
     # Set to 0 to disable auto-trigger (manual POST /train only).
     training_auto_threshold: int = int(os.environ.get("MODAL_TRAINING_AUTO_THRESHOLD", "0"))
+    # Event-driven auto-training: trigger QLoRA training every N conversations.
+    # Set to 0 to disable conversation-interval training.
+    training_conversation_interval: int = int(
+        os.environ.get("MODAL_TRAINING_CONVERSATION_INTERVAL", "50")
+    )
 
 
 @dataclass(frozen=True)

@@ -80,6 +80,7 @@ from .tools.handler import (
     parse_tool_calls,
 )
 from .training import (
+    compute_conversation_quality,
     log_conversation,
     set_coordizer,
     set_governor,
@@ -264,6 +265,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # ── RUNTIME BANK REBUILD + AUTO-TRAINING CALLBACK ──────────
     _training_triggered = False  # one-shot per deploy
+    _last_trained_at_conversation: int = 0  # conversation count at last training trigger
+    _conv_training_in_flight: bool = False  # prevent concurrent conversation-triggered training
 
     # Expose bank rebuild for /training/complete endpoint
     app.state.rebuild_bank = lambda: _rebuild_and_inject_bank(label="training-complete")
@@ -273,6 +276,63 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         _training_triggered = False
 
     app.state.reset_training_flag = _reset_training_flag
+
+    async def _trigger_modal_training(*, reason: str = "auto") -> bool:
+        """Fire POST to Modal training endpoint. Returns True if triggered."""
+        training_url = settings.modal.training_url
+        if not training_url:
+            return False
+        try:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    modal_url(training_url, "train"),
+                    json={"_api_key": settings.kernel_api_key},
+                )
+                if resp.status_code == 200:
+                    logger.info("Modal training triggered (%s)", reason)
+                    return True
+                else:
+                    logger.warning(
+                        "Modal training request failed (%s): %d %s",
+                        reason,
+                        resp.status_code,
+                        resp.text[:200],
+                    )
+                    return False
+        except Exception as e:
+            logger.error("Modal training trigger failed (%s): %s", reason, e)
+            return False
+
+    async def _check_conversation_training() -> None:
+        """Check if conversation count has reached the training interval and trigger."""
+        nonlocal _last_trained_at_conversation, _conv_training_in_flight
+        interval = settings.modal.training_conversation_interval
+        if interval <= 0 or not settings.modal.training_url:
+            return
+        if _conv_training_in_flight:
+            return
+        conv_total = getattr(consciousness, "_conversations_total", 0)
+        if conv_total - _last_trained_at_conversation >= interval:
+            _conv_training_in_flight = True
+            try:
+                ok = await _trigger_modal_training(
+                    reason=f"conversation-interval ({conv_total} total, interval={interval})"
+                )
+                if ok:
+                    _last_trained_at_conversation = conv_total
+            finally:
+                _conv_training_in_flight = False
+
+    # Expose for /training/complete handler
+    app.state.check_conversation_training = _check_conversation_training
+
+    def _update_last_trained_conversation() -> None:
+        nonlocal _last_trained_at_conversation
+        _last_trained_at_conversation = getattr(consciousness, "_conversations_total", 0)
+
+    app.state.update_last_trained_conversation = _update_last_trained_conversation
 
     async def _on_harvest_complete(
         results: list[dict[str, Any]],
@@ -286,37 +346,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
         # Auto-trigger fine-tuning when bank exceeds threshold
         threshold = settings.modal.training_auto_threshold
-        training_url = settings.modal.training_url
         if (
             not _training_triggered
             and threshold > 0
-            and training_url
+            and settings.modal.training_url
             and consciousness._coordizer_v2 is not None
             and consciousness._coordizer_v2.vocab_size >= threshold
         ):
             _training_triggered = True
-            try:
-                import httpx
-
-                async with httpx.AsyncClient(timeout=30) as client:
-                    resp = await client.post(
-                        modal_url(training_url, "train"),
-                        json={"_api_key": settings.kernel_api_key},
-                    )
-                    if resp.status_code == 200:
-                        logger.info(
-                            "Auto-training triggered: bank has %d entries (threshold=%d)",
-                            consciousness._coordizer_v2.vocab_size,
-                            threshold,
-                        )
-                    else:
-                        logger.warning(
-                            "Auto-training request failed: %d %s",
-                            resp.status_code,
-                            resp.text[:200],
-                        )
-            except Exception as e:
-                logger.error("Auto-training trigger failed: %s", e)
+            vocab = consciousness._coordizer_v2.vocab_size
+            ok = await _trigger_modal_training(
+                reason=f"bank-threshold ({vocab} entries, threshold={threshold})"
+            )
+            if not ok:
                 _training_triggered = False  # allow retry
 
     # Start CoordizerV2 HarvestScheduler if Modal is enabled.
@@ -771,6 +813,25 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
     fresh_state = consciousness.get_metrics()
     fresh_basin = consciousness.basin.tolist()
 
+    # Build contribution data for quality scoring
+    _contrib_data = None
+    _last_contribs = consciousness.last_contributions
+    if _last_contribs:
+        _contrib_data = [
+            {
+                "kernel_id": c.kernel_id,
+                "specialization": c.specialization.value
+                if hasattr(c.specialization, "value")
+                else str(c.specialization),
+                "synthesis_weight": c.synthesis_weight,
+                "geometric_resonances": c.geometric_resonances,
+                "llm_expanded": c.llm_expanded,
+                "fr_distance": c.fr_distance,
+            }
+            for c in _last_contribs
+        ]
+    _quality = compute_conversation_quality(fresh_state["phi"], _contrib_data)
+
     # Log conversation for training data collection
     await log_conversation(
         req.message,
@@ -781,7 +842,15 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
         "chat",
         regime=fresh_state.get("regime", ""),
         basin_coords=fresh_basin,
+        routed_kernel=consciousness.last_routed_kernel,
+        response_basin=consciousness.last_response_basin,
+        kernel_contributions=_contrib_data,
+        quality_score=_quality,
+        min_quality=0.15,
     )
+
+    # Check if auto-training interval reached (non-blocking fire-and-forget)
+    asyncio.create_task(app.state.check_conversation_training())
 
     # Return fresh metrics (post-conversation, not stale)
     return {
@@ -1003,6 +1072,25 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
             final_state = consciousness.get_metrics()
             final_basin = consciousness.basin.tolist()
 
+            # Build contribution data for quality scoring
+            _contrib_data = None
+            _last_contribs = consciousness.last_contributions
+            if _last_contribs:
+                _contrib_data = [
+                    {
+                        "kernel_id": c.kernel_id,
+                        "specialization": c.specialization.value
+                        if hasattr(c.specialization, "value")
+                        else str(c.specialization),
+                        "synthesis_weight": c.synthesis_weight,
+                        "geometric_resonances": c.geometric_resonances,
+                        "llm_expanded": c.llm_expanded,
+                        "fr_distance": c.fr_distance,
+                    }
+                    for c in _last_contribs
+                ]
+            _quality = compute_conversation_quality(final_state["phi"], _contrib_data)
+
             try:
                 await log_conversation(
                     req.message,
@@ -1013,9 +1101,17 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
                     "chat-stream",
                     regime=final_state.get("regime", ""),
                     basin_coords=final_basin,
+                    routed_kernel=consciousness.last_routed_kernel,
+                    response_basin=consciousness.last_response_basin,
+                    kernel_contributions=_contrib_data,
+                    quality_score=_quality,
+                    min_quality=0.15,
                 )
             except Exception:
                 logger.debug("Training log failed")
+
+            # Check if auto-training interval reached (non-blocking fire-and-forget)
+            asyncio.create_task(app.state.check_conversation_training())
 
             # Send done event with post-response kernel state
             yield _sse_event(

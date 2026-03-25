@@ -49,7 +49,7 @@ ml_image = (
         "torch>=2.11",
         "transformers>=4.48.0",
         "accelerate",
-        "bitsandbytes>=0.43.0",
+        "bitsandbytes>=0.45.0",
         "peft>=0.13.0",
         "numpy>=1.26",
         "pydantic>=2.0",
