@@ -59,6 +59,12 @@ ml_image = (
         "causal-conv1d>=1.4.0",
         "flash-linear-attention",
     )
+    .run_commands(
+        # Fix bitsandbytes _check_is_size deprecation (upstream bug, all versions through 0.49.2)
+        # PyTorch deprecated torch._check_is_size() — replace with torch._check(x >= 0)
+        "sed -i 's/torch\\._check_is_size(blocksize)/torch._check(blocksize >= 0)/g' "
+        "/usr/local/lib/python3.12/site-packages/bitsandbytes/backends/cuda/ops.py || true"
+    )
 )
 
 

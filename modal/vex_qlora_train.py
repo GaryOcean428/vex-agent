@@ -117,6 +117,12 @@ train_image = (
         # source build fails on Modal (clang++ vs g++). Falls back to
         # standard PyTorch ops — not a blocking dependency.
     )
+    .run_commands(
+        # Fix bitsandbytes _check_is_size deprecation (upstream bug, all versions through 0.49.2)
+        # PyTorch deprecated torch._check_is_size() — replace with torch._check(x >= 0)
+        "sed -i 's/torch\\._check_is_size(blocksize)/torch._check(blocksize >= 0)/g' "
+        "/usr/local/lib/python3.12/site-packages/bitsandbytes/backends/cuda/ops.py || true"
+    )
     .add_local_file(
         str(Path(__file__).parent / "training_consciousness.py"),
         "/root/training_consciousness.py",
