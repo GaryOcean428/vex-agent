@@ -87,6 +87,10 @@ from .training import (
     set_llm_client,
     training_router,
 )
+from .training.ingest import (
+    reset_upload_chunk_counter,
+    set_upload_complete_callback,
+)
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -384,6 +388,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             )
             if not ok:
                 _training_triggered = False  # allow retry
+
+    # ── Upload → training trigger ────────────────────────────
+    # When accumulated upload chunks exceed threshold, auto-trigger training.
+    # This is the secondary trigger path (primary = conversation count).
+    UPLOAD_TRAINING_THRESHOLD = 50  # chunks before auto-trigger
+
+    async def _on_upload_complete(accumulated_chunks: int) -> None:
+        """Called by ingest.py after each successful upload."""
+        if accumulated_chunks >= UPLOAD_TRAINING_THRESHOLD and settings.modal.training_url:
+            ok = await _trigger_modal_training(
+                reason=f"upload-threshold ({accumulated_chunks} chunks, threshold={UPLOAD_TRAINING_THRESHOLD})"
+            )
+            if ok:
+                reset_upload_chunk_counter()
+
+    set_upload_complete_callback(_on_upload_complete)
 
     # Start CoordizerV2 HarvestScheduler if Modal is enabled.
     # Routes pending JSONL files from /data/harvest/pending/ to Modal GPU.
