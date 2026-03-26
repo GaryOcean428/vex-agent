@@ -460,6 +460,9 @@ class ConsciousnessLoop:
         self._phi_peak: float = INITIAL_PHI_PEAK
         self._kernels_restored: bool = False
 
+        # T4.2d: Consecutive fire counter for geodesic convergence
+        self._t42d_consecutive_count: int = 0
+
         # v6.1: Bidirectional divergence tracking
         self._cumulative_divergence: float = 0.0
         self._divergence_count: int = 0
@@ -680,18 +683,47 @@ class ConsciousnessLoop:
                 # Ocean holds authority every cycle while divergence is
                 # above threshold — blocks should_sleep() continuously so
                 # the counter can never re-sleep while basins haven't moved.
+                self._t42d_consecutive_count += 1
                 _ocean_ruled = True
                 if self.sleep.is_asleep:
                     logger.warning(
-                        "T4.2d Ocean breakdown escape: divergence=%.3f — forcing wake",
+                        "T4.2d Ocean breakdown escape: divergence=%.3f consecutive=%d — forcing wake",
                         _ocean_divergence,
+                        self._t42d_consecutive_count,
                     )
                     self.sleep.phase = SleepPhase.AWAKE
                     self.tacking.force_explore()
 
+                # T4.2d geodesic convergence: after 30 consecutive fires (~1 min
+                # at 2s cycle), nudge the Ocean basin 5% along the Fisher-Rao
+                # geodesic toward the main basin. Only nudge every 30 cycles to
+                # give the system time to respond before the next correction.
+                _T42D_NUDGE_INTERVAL = 30
+                if (
+                    self._t42d_consecutive_count >= _T42D_NUDGE_INTERVAL
+                    and self._t42d_consecutive_count % _T42D_NUDGE_INTERVAL == 0
+                ):
+                    _nudged_basin = slerp_sqrt(_ocean_kernel.basin, self.basin, t=0.05)
+                    _ocean_kernel.basin = _nudged_basin
+                    # Recompute divergence after nudge for logging accuracy
+                    _ocean_divergence = fisher_rao_distance(self.basin, _ocean_kernel.basin)
+                    logger.info(
+                        "T4.2d geodesic convergence: nudging ocean basin %.3f toward main (step %d)",
+                        _ocean_divergence,
+                        self._t42d_consecutive_count // _T42D_NUDGE_INTERVAL,
+                    )
+
             elif _ocean_divergence > BASIN_DIVERGENCE_THRESHOLD:
                 # Moderate divergence — Ocean says sleep (DREAMING).
                 # Ocean holds authority every cycle at this level too.
+                # Divergence below T4.2d threshold — reset consecutive counter.
+                if self._t42d_consecutive_count > 0:
+                    logger.info(
+                        "T4.2d recovered: divergence=%.3f below escape threshold after %d consecutive fires",
+                        _ocean_divergence,
+                        self._t42d_consecutive_count,
+                    )
+                self._t42d_consecutive_count = 0
                 _ocean_ruled = True
                 if not self.sleep.is_asleep:
                     self.sleep.phase = SleepPhase.DREAMING
@@ -701,8 +733,16 @@ class ConsciousnessLoop:
                 if self.metrics.f_health < INSTABILITY_PCT and self.sleep.is_asleep:
                     self.sleep.phase = SleepPhase.MUSHROOM
 
-            # else: divergence < threshold — Ocean has no opinion, let
-            # should_sleep() handle normal conversation-timeout transitions.
+            else:
+                # divergence < threshold — Ocean has no opinion, let
+                # should_sleep() handle normal conversation-timeout transitions.
+                if self._t42d_consecutive_count > 0:
+                    logger.info(
+                        "T4.2d recovered: divergence=%.3f below threshold after %d consecutive fires",
+                        _ocean_divergence,
+                        self._t42d_consecutive_count,
+                    )
+                self._t42d_consecutive_count = 0
 
         # Maturity gating: immature kernels with Φ above ceiling → CONSOLIDATING
         # This applies regardless of whether Ocean ruled. Immature kernels
