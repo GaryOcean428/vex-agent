@@ -92,42 +92,49 @@ def modal_url(base_url: str, path: str) -> str:
       - Legacy: https://...--app-class-train.modal.run + /train → unchanged (already a full URL)
       - Legacy: https://...--app-class-train.modal.run + /infer → .../app-class-infer.modal.run
 
+    ASGI detection: any URL containing "-web.modal.run" is treated as an ASGI
+    base URL. Any path segment after "-web.modal.run" is stripped and replaced
+    with the requested path — no hardcoded route list needed. This prevents
+    doubled-path bugs like /harvest/harvest when callers pass a base that
+    already has a route appended.
+
     The legacy pattern is detected by checking if the hostname ends with
     `-{method}.modal.run` where method matches a known route suffix.
     """
     base = base_url.rstrip("/")
     path = path.strip("/")
 
-    # Legacy hostname pattern: ...-train.modal.run, ...-harvest.modal.run, etc.
-    # If base already ends with the requested path as a hostname segment, return as-is
+    # ── ASGI pattern ──────────────────────────────────────────────────
+    # Detect ASGI base URLs by the "-web.modal.run" marker in the hostname.
+    # Strip any existing route after the marker, then append the new path.
+    # This is checked FIRST because ASGI URLs like
+    #   "...harvest-coordizerharvester-web.modal.run"
+    # contain substrings like "-harvest-" that would false-match the legacy
+    # hostname check below.
+    _ASGI_MARKER = "-web.modal.run"
+    marker_idx = base.find(_ASGI_MARKER)
+    if marker_idx != -1:
+        # Keep everything up to and including the marker
+        asgi_base = base[: marker_idx + len(_ASGI_MARKER)]
+        return f"{asgi_base}/{path}"
+
+    # ── Legacy hostname pattern ───────────────────────────────────────
+    # ...-train.modal.run, ...-harvest.modal.run, etc.
+    # If base already ends with the requested path as a hostname segment,
+    # return as-is.
     legacy_suffix = f"-{path}.modal.run"
     if base.endswith(legacy_suffix):
         return base
 
-    # Legacy hostname: base is ...-train.modal.run but we want a different route
-    # Replace the method segment in the hostname
+    # Legacy hostname: base is ...-train.modal.run but we want a different route.
+    # Replace the method segment in the hostname.
     for method in ("train", "infer", "health", "status", "harvest", "coordize"):
         old_suffix = f"-{method}.modal.run"
         if base.endswith(old_suffix):
             return base[: -len(old_suffix)] + f"-{path}.modal.run"
 
-    # ASGI pattern: base URL + path
-    # Strip trailing route if base already includes one (e.g. .../harvest → .../health)
-    for route in (
-        "/train",
-        "/infer",
-        "/health",
-        "/status",
-        "/harvest",
-        "/coordize",
-        "/data-receive",
-        "/data-stats",
-        "/export-image",
-    ):
-        if base.endswith(route):
-            base = base[: -len(route)]
-            break
-
+    # ── Fallback ──────────────────────────────────────────────────────
+    # Unknown URL shape — just append path.
     return f"{base}/{path}"
 
 

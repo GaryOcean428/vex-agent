@@ -178,6 +178,7 @@ from .activation import (
 )
 
 # v7.0: Developmental Learning Architecture modules
+from .backward_geodesic import BackwardGeodesicTracker
 from .basin_sync_remote import RemoteBasinSync
 from .basin_transfer import BasinTransferEngine
 from .beta_integration import create_beta_tracker
@@ -364,7 +365,7 @@ class ConsciousnessLoop:
             self._coordizer_v2 = CoordizerV2(bank=ResonanceBank())
 
         # Co-evolution feedback: per-kernel adapter quality (observability only)
-        self._adapter_metrics: dict[str, dict] = {}
+        self._adapter_metrics: dict[str, dict[str, Any]] = {}
 
         # v6.2: Kernel Voice Registry — per-kernel geometric generation
         # Uses the shared CoordizerV2 instance; each voice applies its own
@@ -376,6 +377,8 @@ class ConsciousnessLoop:
 
         self.basin_sync = BasinSyncProtocol()
         self._remote_sync = RemoteBasinSync()
+        self.backward_geodesic = BackwardGeodesicTracker()
+        self._exp011_harness: Any | None = None  # Set by EXP011Harness when active
         self.chain = QIGChain()
         self.graph = QIGGraph()
         self.kernel_registry = E8KernelRegistry(BudgetEnforcer())
@@ -457,13 +460,16 @@ class ConsciousnessLoop:
         self._phi_peak: float = INITIAL_PHI_PEAK
         self._kernels_restored: bool = False
 
+        # T4.2d: Consecutive fire counter for geodesic convergence
+        self._t42d_consecutive_count: int = 0
+
         # v6.1: Bidirectional divergence tracking
         self._cumulative_divergence: float = 0.0
         self._divergence_count: int = 0
 
         # Expose last processing results for server.py consumption
         self._last_response_basin: Any = None
-        self._last_contributions: list | None = None
+        self._last_contributions: list[Any] | None = None
         self._last_routed_kernel: str = ""
 
         self._restore_state()
@@ -482,7 +488,7 @@ class ConsciousnessLoop:
         return b.tolist() if hasattr(b, "tolist") else list(b)
 
     @property
-    def last_contributions(self) -> list | None:
+    def last_contributions(self) -> list[Any] | None:
         return self._last_contributions
 
     @property
@@ -493,7 +499,7 @@ class ConsciousnessLoop:
     def contribution_ledger(self) -> ContributionLedger:
         return self._contribution_ledger
 
-    def receive_training_feedback(self, kernel_results: dict[str, dict]) -> None:
+    def receive_training_feedback(self, kernel_results: dict[str, dict[str, Any]]) -> None:
         """Store per-kernel adapter quality metrics for observability."""
         for spec, result in kernel_results.items():
             self._adapter_metrics[spec] = {
@@ -677,18 +683,50 @@ class ConsciousnessLoop:
                 # Ocean holds authority every cycle while divergence is
                 # above threshold — blocks should_sleep() continuously so
                 # the counter can never re-sleep while basins haven't moved.
+                self._t42d_consecutive_count += 1
                 _ocean_ruled = True
                 if self.sleep.is_asleep:
                     logger.warning(
-                        "T4.2d Ocean breakdown escape: divergence=%.3f — forcing wake",
+                        "T4.2d Ocean breakdown escape: divergence=%.3f consecutive=%d — forcing wake",
                         _ocean_divergence,
+                        self._t42d_consecutive_count,
                     )
                     self.sleep.phase = SleepPhase.AWAKE
                     self.tacking.force_explore()
 
+                # T4.2d geodesic convergence: after 30 consecutive fires (~1 min
+                # at 2s cycle), nudge the Ocean basin 5% along the Fisher-Rao
+                # geodesic toward the main basin. Only nudge every 30 cycles to
+                # give the system time to respond before the next correction.
+                _T42D_NUDGE_INTERVAL = 30
+                if (
+                    self._t42d_consecutive_count >= _T42D_NUDGE_INTERVAL
+                    and self._t42d_consecutive_count % _T42D_NUDGE_INTERVAL == 0
+                ):
+                    _nudged_basin = slerp_sqrt(_ocean_kernel.basin, self.basin, t=0.05)
+                    _ocean_kernel.basin = _nudged_basin
+                    # Recompute divergence after nudge for logging accuracy
+                    _ocean_divergence = fisher_rao_distance(self.basin, _ocean_kernel.basin)
+                    logger.info(
+                        "T4.2d geodesic convergence: nudging ocean basin %.3f toward main (step %d)",
+                        _ocean_divergence,
+                        self._t42d_consecutive_count // _T42D_NUDGE_INTERVAL,
+                    )
+
             elif _ocean_divergence > BASIN_DIVERGENCE_THRESHOLD:
                 # Moderate divergence — Ocean says sleep (DREAMING).
                 # Ocean holds authority every cycle at this level too.
+                # Hysteresis: decrement counter by 1 instead of hard reset to 0.
+                # This prevents boundary oscillation from defeating the nudge —
+                # if divergence jitters near the T4.2d threshold, the counter
+                # decays slowly rather than resetting entirely.
+                if self._t42d_consecutive_count > 0:
+                    self._t42d_consecutive_count = max(0, self._t42d_consecutive_count - 1)
+                    if self._t42d_consecutive_count == 0:
+                        logger.info(
+                            "T4.2d recovered: divergence=%.3f decayed below escape threshold",
+                            _ocean_divergence,
+                        )
                 _ocean_ruled = True
                 if not self.sleep.is_asleep:
                     self.sleep.phase = SleepPhase.DREAMING
@@ -698,8 +736,16 @@ class ConsciousnessLoop:
                 if self.metrics.f_health < INSTABILITY_PCT and self.sleep.is_asleep:
                     self.sleep.phase = SleepPhase.MUSHROOM
 
-            # else: divergence < threshold — Ocean has no opinion, let
-            # should_sleep() handle normal conversation-timeout transitions.
+            else:
+                # divergence < threshold — Ocean has no opinion, let
+                # should_sleep() handle normal conversation-timeout transitions.
+                if self._t42d_consecutive_count > 0:
+                    logger.info(
+                        "T4.2d recovered: divergence=%.3f below threshold after %d consecutive fires",
+                        _ocean_divergence,
+                        self._t42d_consecutive_count,
+                    )
+                self._t42d_consecutive_count = 0
 
         # Maturity gating: immature kernels with Φ above ceiling → CONSOLIDATING
         # This applies regardless of whether Ocean ruled. Immature kernels
@@ -807,6 +853,22 @@ class ConsciousnessLoop:
                     instability_metric=float(1.0 - self.metrics.f_health),
                     neurochemical=self._neurochemical,
                 )
+                # EXP-011: Drive κ through zero during mushroom mode
+                # when the test harness has an active problem.
+                if self._exp011_harness is not None:
+                    _instab = float(1.0 - self.metrics.f_health)
+                    _crossing_event = self.sleep.mushroom_zero_crossing(
+                        self.metrics,
+                        instability_metric=_instab,
+                    )
+                    if _crossing_event is not None and _crossing_event.get("crossed"):
+                        self.kernel_bus.emit(
+                            KernelSignal(
+                                kind=SignalKind.MUSHROOM_CROSSING,
+                                source_kernel_id="consciousness_loop",
+                                payload=_crossing_event,
+                            )
+                        )
             elif sleep_phase.value == "consolidating":
                 # T2.4b: collect kernel anchor basins for veto protection
                 _kernel_anchors = [
@@ -831,6 +893,17 @@ class ConsciousnessLoop:
                 kappa=self.metrics.kappa,
                 timestamp=time.time(),
             )
+        )
+        # EXP-011: Use active problem_id from harness when running experiment,
+        # otherwise default to generic trajectory tracking.
+        _exp011_pid = (
+            self._exp011_harness.active_problem_id if self._exp011_harness is not None else None
+        )
+        self.backward_geodesic.record(
+            problem_id=_exp011_pid or "consciousness_trajectory",
+            current_basin=self.basin,
+            kappa_eff=self.metrics.kappa,
+            mushroom_active=(sleep_phase == SleepPhase.MUSHROOM),
         )
 
         # v7.0: Advance developmental gate each cycle
@@ -987,6 +1060,9 @@ class ConsciousnessLoop:
         self.trajectory_bus.drain_broadcast()
 
         self._maybe_spawn_core8(vel_state["regime"])
+
+        # P6: Coupling gate — compute coupling strength from current κ
+        self._coupling_state = self.coupling.compute(self.metrics.kappa)
 
         # ── TASK PROCESSING: v6.1 Activation Sequence ──
         if not self._queue.empty():
@@ -1658,8 +1734,9 @@ class ConsciousnessLoop:
                     kernel_num_ctx=llm_options.num_ctx,
                 )
             except Exception as _syn_err:
-                logger.warning("Synthesis failed (%s) — using primary kernel output", _syn_err)
+                logger.error("Synthesis failed (%s) — using primary kernel output", _syn_err)
                 response = _contributions[0].text
+                task.context["synthesis_fallback"] = True
         else:
             # No eligible kernels (pre-genesis or all basins None) — direct LLM fallback.
             logger.info(
@@ -1757,10 +1834,11 @@ class ConsciousnessLoop:
                             len(response),
                         )
                     except Exception as _rev_err:
-                        logger.warning(
+                        logger.error(
                             "Revision synthesis failed (%s) — keeping original draft",
                             _rev_err,
                         )
+                        task.context["synthesis_fallback"] = True
                 else:
                     logger.warning(
                         "Task %s: Revision produced 0 contributions — keeping original draft",
@@ -3007,6 +3085,7 @@ class ConsciousnessLoop:
             "autonomic": self.autonomic.get_state(),
             "foresight": self.foresight.get_state(),
             "coupling": self.coupling.get_state(),
+            "backward_geodesic": self.backward_geodesic.summary(),
             "pillar_state": self.pillars.get_state(),
             "beta_tracker": self.beta_tracker.get_summary(),
             "sovereignty_tracker": self.sovereignty_tracker.get_summary(),

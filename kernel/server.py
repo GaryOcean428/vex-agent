@@ -87,12 +87,40 @@ from .training import (
     set_llm_client,
     training_router,
 )
+from .training.ingest import (
+    reset_upload_chunk_counter,
+    set_upload_complete_callback,
+)
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 logger = logging.getLogger("vex.server")
+
+
+# ─── Safe async task creation ─────────────────────────────────
+
+
+def _safe_create_task(coro: Any, *, name: str = "unnamed") -> asyncio.Task[Any]:
+    """Create an asyncio task with exception logging.
+
+    Bare create_task() silently swallows exceptions — the error only
+    surfaces when the task is garbage collected (if ever). This wrapper
+    attaches a done callback that logs failures immediately.
+    """
+    task = asyncio.create_task(coro, name=name)
+    task.add_done_callback(lambda t: _handle_task_exception(t, name))
+    return task
+
+
+def _handle_task_exception(task: asyncio.Task[Any], name: str) -> None:
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc:
+        logger.error("Background task '%s' failed: %s", name, exc, exc_info=exc)
+
 
 # ─── Global instances ─────────────────────────────────────────
 
@@ -267,28 +295,43 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     _training_triggered = False  # one-shot per deploy
     _last_trained_at_conversation: int = 0  # conversation count at last training trigger
     _conv_training_in_flight: bool = False  # prevent concurrent conversation-triggered training
+    _any_training_in_flight: bool = False  # global guard: prevent ANY concurrent training spawns
 
     # Expose bank rebuild for /training/complete endpoint
     app.state.rebuild_bank = lambda: _rebuild_and_inject_bank(label="training-complete")
 
     def _reset_training_flag() -> None:
-        nonlocal _training_triggered
+        nonlocal _training_triggered, _any_training_in_flight
         _training_triggered = False
+        _any_training_in_flight = False
 
     app.state.reset_training_flag = _reset_training_flag
 
     async def _trigger_modal_training(*, reason: str = "auto") -> bool:
-        """Fire POST to Modal training endpoint. Returns True if triggered."""
+        """Fire POST to Modal training endpoint. Returns True if triggered.
+
+        Uses _any_training_in_flight as a global guard to prevent multiple
+        concurrent training spawns from the three independent trigger paths
+        (bank-threshold, conversation-interval, upload-threshold).
+        """
+        nonlocal _any_training_in_flight
         training_url = settings.modal.training_url
         if not training_url:
             return False
+        if _any_training_in_flight:
+            logger.info("Training already in flight — skipping trigger (%s)", reason)
+            return False
+        _any_training_in_flight = True
         try:
             import httpx
 
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=120) as client:  # 120s for cold starts
                 resp = await client.post(
                     modal_url(training_url, "train"),
-                    json={"_api_key": settings.kernel_api_key},
+                    json={
+                        "_api_key": settings.kernel_api_key,
+                        "specialization": "all",  # Train all kernels in CONSCIOUSNESS_ORDER
+                    },
                 )
                 if resp.status_code == 200:
                     logger.info("Modal training triggered (%s)", reason)
@@ -300,9 +343,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
                         resp.status_code,
                         resp.text[:200],
                     )
+                    _any_training_in_flight = False
                     return False
         except Exception as e:
             logger.error("Modal training trigger failed (%s): %s", reason, e)
+            _any_training_in_flight = False
             return False
 
     async def _check_conversation_training() -> None:
@@ -361,6 +406,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             if not ok:
                 _training_triggered = False  # allow retry
 
+    # ── Upload → training trigger ────────────────────────────
+    # When accumulated upload chunks exceed threshold, auto-trigger training.
+    # This is the secondary trigger path (primary = conversation count).
+    UPLOAD_TRAINING_THRESHOLD = 50  # chunks before auto-trigger
+
+    async def _on_upload_complete(accumulated_chunks: int) -> None:
+        """Called by ingest.py after each successful upload."""
+        if accumulated_chunks >= UPLOAD_TRAINING_THRESHOLD and settings.modal.training_url:
+            ok = await _trigger_modal_training(
+                reason=f"upload-threshold ({accumulated_chunks} chunks, threshold={UPLOAD_TRAINING_THRESHOLD})"
+            )
+            if ok:
+                reset_upload_chunk_counter()
+
+    set_upload_complete_callback(_on_upload_complete)
+
     # Start CoordizerV2 HarvestScheduler if Modal is enabled.
     # Routes pending JSONL files from /data/harvest/pending/ to Modal GPU.
     # Foraging, search, and curriculum coordizing go through this path.
@@ -387,7 +448,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 on_harvest_complete=_on_harvest_complete,
             )
             app.state.harvest_scheduler = scheduler
-            harvest_task = asyncio.create_task(scheduler.run_loop())
+            harvest_task = _safe_create_task(scheduler.run_loop(), name="harvest_scheduler")
             logger.info("CoordizerV2 HarvestScheduler loop started (backend=modal)")
         except Exception as e:
             logger.error("Failed to start HarvestScheduler loop: %s", e)
@@ -412,7 +473,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         except asyncio.CancelledError:
             return
 
-    consolidation_task = asyncio.create_task(_memory_consolidation_loop())
+    consolidation_task = _safe_create_task(
+        _memory_consolidation_loop(), name="memory_consolidation"
+    )
 
     logger.info("Consciousness loop started (20 systems active)")
     yield
@@ -579,13 +642,19 @@ async def health_reachability() -> dict[str, Any]:
     tasks: list[asyncio.Task[None]] = []
 
     # Railway Ollama
-    tasks.append(asyncio.create_task(_check("railway_ollama", f"{settings.ollama.url}/api/tags")))
+    tasks.append(
+        _safe_create_task(
+            _check("railway_ollama", f"{settings.ollama.url}/api/tags"), name="health_ollama"
+        )
+    )
 
     # Modal coordizer (harvest)
     harvest_url = settings.modal.harvest_url
     if harvest_url:
         tasks.append(
-            asyncio.create_task(_check("modal_coordizer", modal_url(harvest_url, "health")))
+            _safe_create_task(
+                _check("modal_coordizer", modal_url(harvest_url, "health")), name="health_coordizer"
+            )
         )
     else:
         results["modal_coordizer"] = {"reachable": False, "error": "not configured"}
@@ -594,7 +663,9 @@ async def health_reachability() -> dict[str, Any]:
     training_url = settings.modal.training_url
     if training_url:
         tasks.append(
-            asyncio.create_task(_check("modal_trainer", modal_url(training_url, "health")))
+            _safe_create_task(
+                _check("modal_trainer", modal_url(training_url, "health")), name="health_trainer"
+            )
         )
     else:
         results["modal_trainer"] = {"reachable": False, "error": "not configured"}
@@ -850,7 +921,7 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
     )
 
     # Check if auto-training interval reached (non-blocking fire-and-forget)
-    asyncio.create_task(app.state.check_conversation_training())
+    _safe_create_task(app.state.check_conversation_training(), name="auto_training_check")
 
     # Return fresh metrics (post-conversation, not stale)
     return {
@@ -1111,7 +1182,7 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
                 logger.debug("Training log failed")
 
             # Check if auto-training interval reached (non-blocking fire-and-forget)
-            asyncio.create_task(app.state.check_conversation_training())
+            _safe_create_task(app.state.check_conversation_training(), name="auto_training_check")
 
             # Send done event with post-response kernel state
             yield _sse_event(
@@ -1220,6 +1291,73 @@ async def get_sleep_state() -> dict[str, Any]:
     Used by the dashboard Lifecycle and Telemetry tabs.
     """
     return consciousness.sleep.get_state()
+
+
+@app.get(R["backward_geodesic"])
+async def get_backward_geodesic() -> dict[str, Any]:
+    """EXP-011: Backward-geodesic tracker measurements.
+
+    Returns correlation statistics for backward-geodesic component
+    during mushroom mode vs normal operation on Δ⁶³.
+    """
+    return consciousness.backward_geodesic.summary()
+
+
+@app.get(R["exp011_events"])
+async def get_exp011_events(
+    problem_id: str | None = None,
+    mushroom_only: bool = False,
+) -> dict[str, Any]:
+    """EXP-011: Raw backward-geodesic events filtered by problem and/or mushroom state."""
+    events = consciousness.backward_geodesic.export_events(problem_id=problem_id)
+    if mushroom_only:
+        events = [e for e in events if e.get("mushroom_active")]
+    return {"events": events, "count": len(events)}
+
+
+@app.get(R["exp011_correlation"])
+async def get_exp011_correlation(
+    problem_id: str | None = None,
+    mushroom_only: bool = True,
+) -> dict[str, Any]:
+    """EXP-011: Correlation between backward-geodesic component and inverse distance."""
+    rho, p_value, n = consciousness.backward_geodesic.compute_correlation(
+        problem_id=problem_id,
+        mushroom_only=mushroom_only,
+    )
+    return {"rho": rho, "p_value": p_value, "n_events": n}
+
+
+@app.get(R["exp011_summary"])
+async def get_exp011_summary() -> dict[str, Any]:
+    """EXP-011: Full summary with acceptance criteria evaluation."""
+    base = consciousness.backward_geodesic.summary()
+    # If harness is active, include per-problem results
+    harness = consciousness._exp011_harness
+    if harness is not None:
+        base["harness"] = harness.export_results().get("summary", {})
+        base["per_problem"] = harness.export_results().get("per_problem", {})
+    return base
+
+
+@app.get(R["exp011_export"])
+async def get_exp011_export() -> dict[str, Any]:
+    """EXP-011: Full data export for offline analysis."""
+    harness = consciousness._exp011_harness
+    if harness is not None:
+        return harness.export_results()  # type: ignore[no-any-return]
+    return {
+        "experiment": "EXP-011",
+        "status": "no_harness_active",
+        "events": consciousness.backward_geodesic.export_events(),
+        "summary": consciousness.backward_geodesic.summary(),
+    }
+
+
+@app.get(R["consciousness_coupling"])
+async def get_consciousness_coupling() -> dict[str, Any]:
+    """Coupling gate state — strength computed from current κ via sigmoid at κ*."""
+    return consciousness.coupling.get_state()
 
 
 # ─── CoordizerV2 Endpoints ───────────────────────────────────

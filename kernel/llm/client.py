@@ -525,13 +525,13 @@ class LLMClient:
 
         # Fallback chain: Railway Ollama → xAI → OpenAI
         if settings.ollama.enabled:
-            logger.info("Falling back to Railway Ollama from PEFT")
+            logger.warning("LLM fallback: falling back to Railway Ollama from PEFT")
             return await self._ollama_complete(system_prompt, user_message, opts)
         if settings.xai.api_key:
-            logger.info("Falling back to xAI from PEFT")
+            logger.warning("LLM fallback: falling back to xAI from PEFT")
             return await self._xai_complete(system_prompt, user_message, opts)
         if settings.llm.api_key:
-            logger.info("Falling back to OpenAI from PEFT")
+            logger.warning("LLM fallback: falling back to OpenAI from PEFT")
             return await self._external_complete(system_prompt, user_message, opts)
         return "All LLM backends unavailable"
 
@@ -591,10 +591,10 @@ class LLMClient:
             )
             # Fallback chain: try xAI, then external
             if settings.xai.api_key:
-                logger.info("Falling back to xAI from Ollama")
+                logger.warning("LLM fallback: falling back to xAI from Ollama")
                 return await self._xai_complete(system_prompt, user_message, opts, messages)
             if settings.llm.api_key:
-                logger.info("Falling back to OpenAI from Ollama")
+                logger.warning("LLM fallback: falling back to OpenAI from Ollama")
                 return await self._external_complete(system_prompt, user_message, opts, messages)
             return f"LLM error: {e}"
 
@@ -707,7 +707,7 @@ class LLMClient:
             logger.error("xAI completion failed: %s", e)
             # Fallback to OpenAI external
             if settings.llm.api_key:
-                logger.info("Falling back to OpenAI from xAI")
+                logger.warning("LLM fallback: falling back to OpenAI from xAI")
                 return await self._external_complete(system_prompt, user_message, opts, messages)
             return f"LLM error: {e}"
 

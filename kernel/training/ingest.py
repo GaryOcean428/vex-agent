@@ -83,10 +83,32 @@ except OSError as _probe_err:
 # Async lock for safe concurrent JSONL appends
 _write_lock = asyncio.Lock()
 
+# ── Upload → training trigger callback ────────────────────────
+# Set by server.py during init. Called after successful upload ingestion
+# with the number of chunks written. Allows server.py to decide whether
+# to auto-trigger Modal training based on accumulated upload volume.
+_on_upload_complete: Any | None = None  # async callable(chunks_written: int) -> None
+
+
+def set_upload_complete_callback(fn: Any) -> None:
+    """Register a callback invoked after each successful upload ingestion."""
+    global _on_upload_complete
+    _on_upload_complete = fn
+
+
+# Accumulated upload chunk counter (persists across uploads within a deploy)
+_upload_chunks_since_last_train: int = 0
+
+
+def reset_upload_chunk_counter() -> None:
+    """Reset after training is triggered."""
+    global _upload_chunks_since_last_train
+    _upload_chunks_since_last_train = 0
+
 
 # ═══════════════════════════════════════════════════════════════
 #  QUALITY SCORING
-# ═══════════════════════════════════════════════════════════════
+# ════��════════════���══════════════════════════════════════��══════
 
 
 def compute_conversation_quality(
@@ -1390,6 +1412,21 @@ async def _run_ingestion_job(
                 "finished_at": time.time(),
             }
         )
+
+        # Upload → training trigger: accumulate chunks and notify server
+        global _upload_chunks_since_last_train
+        if result.chunks_written > 0:
+            _upload_chunks_since_last_train += result.chunks_written
+            logger.info(
+                "Upload ingestion complete: %d chunks (%d accumulated since last train)",
+                result.chunks_written,
+                _upload_chunks_since_last_train,
+            )
+            if _on_upload_complete is not None:
+                try:
+                    await _on_upload_complete(_upload_chunks_since_last_train)
+                except Exception as e:
+                    logger.error("Upload-complete callback failed: %s", e)
     except Exception as exc:
         logger.error("Background ingestion failed: %s", exc, exc_info=True)
         _jobs[job_id].update(
@@ -1693,6 +1730,10 @@ async def training_complete_endpoint(request: Request) -> dict[str, Any]:
     if update_conv_fn:
         update_conv_fn()
         logger.info("Conversation-interval training counter reset")
+
+    # Reset upload chunk counter so future uploads can re-trigger
+    reset_upload_chunk_counter()
+    logger.info("Upload chunk counter reset after training completion")
 
     # Trigger a harvest cycle so the updated model produces fresh coordizations
     scheduler = getattr(app_state, "harvest_scheduler", None)

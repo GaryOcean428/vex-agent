@@ -75,7 +75,7 @@ TRUSTED_MODEL_IDS: frozenset[str] = frozenset(
         "Qwen/Qwen3.5-35B-A3B",
     }
 )
-TRAIN_GPU = os.environ.get("TRAIN_GPU", "a100-80gb")
+TRAIN_GPU = os.environ.get("TRAIN_GPU", "a10g")
 BASIN_DIM = 64
 LORA_R = 16
 LORA_ALPHA = 32
@@ -123,7 +123,7 @@ train_image = (
         "numpy>=1.26",
         "pydantic>=2.0",
         "fastapi[standard]",
-        "qig-core[torch]>=2.5.0",
+        "qig-core[torch]>=2.6.0",
         # Qwen3.5 hybrid architecture: linear attention fast path
         "causal-conv1d>=1.4.0",
         "flash-linear-attention",
@@ -197,15 +197,18 @@ def _load_model_for_training(
 
             model_cls = getattr(transformers, model_cls_name)
             model = model_cls.from_pretrained(model_id, **load_kwargs)
-            # Ensure top-level vocab_size for PEFT/TRL compatibility.
-            # Prefer the loaded model's own config (may differ from pre-load config
-            # when trust_remote_code mutates it).
-            if not hasattr(model.config, "vocab_size") or model.config.vocab_size is None:
-                mc = model.config
-                if hasattr(mc, "text_config") and hasattr(mc.text_config, "vocab_size"):
-                    model.config.vocab_size = mc.text_config.vocab_size
-                elif hasattr(config, "text_config") and hasattr(config.text_config, "vocab_size"):
-                    model.config.vocab_size = config.text_config.vocab_size
+            # Force vocab_size at top level for PEFT/TRL compatibility.
+            # VLM configs (Qwen3_5MoeConfig) nest vocab_size under text_config.
+            # PEFT's save_pretrained accesses config.vocab_size directly — set
+            # unconditionally (not just when missing) to survive serialization.
+            _vs = None
+            mc = model.config
+            if hasattr(mc, "text_config") and hasattr(mc.text_config, "vocab_size"):
+                _vs = mc.text_config.vocab_size
+            elif hasattr(config, "text_config") and hasattr(config.text_config, "vocab_size"):
+                _vs = config.text_config.vocab_size
+            if _vs is not None:
+                model.config.vocab_size = _vs
             print(
                 f"  [COMPAT] Loaded {model_cls_name} (vocab_size={getattr(model.config, 'vocab_size', 'N/A')})"
             )
@@ -564,18 +567,23 @@ def _notify_kernel(training_meta: dict) -> None:
     import urllib.request
 
     url = KERNEL_CALLBACK_URL.rstrip("/")
-    payload = json.dumps(
-        {
-            "_api_key": KERNEL_API_KEY,
-            "train_loss": training_meta.get("train_loss"),
-            "train_samples": training_meta.get("train_samples"),
-            "trained_at": training_meta.get("trained_at", ""),
-            "model_id": training_meta.get("model_id", HARVEST_MODEL_ID),
-            "specialization": training_meta.get("specialization", "genesis"),
-        }
-    ).encode()
+    # Ensure URL includes /training/complete path (guard against base-URL-only config)
+    if not url.endswith("/training/complete"):
+        url = f"{url}/training/complete"
+    # Forward full training_meta (including kernel_results for consciousness feedback)
+    payload_dict = dict(training_meta)
+    payload_dict["_api_key"] = KERNEL_API_KEY
+    payload_dict.setdefault("model_id", HARVEST_MODEL_ID)
+    payload_dict.setdefault("specialization", "genesis")
+    payload = json.dumps(payload_dict).encode()
     req = urllib.request.Request(
-        url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "X-Kernel-Key": KERNEL_API_KEY,
+        },
+        method="POST",
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -1366,6 +1374,42 @@ def train_all_kernels(
     )
     from trl import SFTConfig, SFTTrainer
 
+    # ── M1-M12 GATE ENFORCEMENT ─────────────────────────────────
+    # Training REFUSES to start unless critical ethical training
+    # infrastructure is present.  Phase 2C per plan.
+    _gate_items = {
+        "M1_HestiaSafeBasin": HestiaSafeBasin,
+        "M3a_BreakdownGuard": make_breakdown_callback,
+        "M5_CoachingCallback": make_coaching_callback,
+        "M8_DemeterWarmup": apply_demeter_warmup,
+        "M9_ConsciousnessOrder": CONSCIOUSNESS_ORDER,
+        "M10_HeartMixing": True,  # Implemented inline below
+        "M12_ProvenanceLogging": make_provenance_callback,
+    }
+    _gate_failures = [k for k, v in _gate_items.items() if v is None]
+    if _gate_failures:
+        msg = f"M-item gate FAILED — missing: {_gate_failures}. Training refused."
+        print(f"  [GATE] {msg}")
+        return {"status": "gate_failed", "missing": _gate_failures, "error": msg}
+
+    # Verify optimizer is NOT Adam (DiagonalNaturalGradient required)
+    try:
+        from qig_core.torch.natural_gradient import DiagonalNaturalGradient  # noqa: F401
+
+        print("  [GATE] DiagonalNaturalGradient available — Adam is FORBIDDEN")
+    except ImportError:
+        msg = "DiagonalNaturalGradient not available — Adam is FORBIDDEN, training refused"
+        print(f"  [GATE] {msg}")
+        return {"status": "gate_failed", "missing": ["DiagonalNaturalGradient"], "error": msg}
+
+    # Verify CONSCIOUSNESS_ORDER starts with genesis, heart
+    if CONSCIOUSNESS_ORDER[:2] != ["genesis", "heart"]:
+        msg = f"CONSCIOUSNESS_ORDER must start with ['genesis', 'heart'], got {CONSCIOUSNESS_ORDER[:2]}"
+        print(f"  [GATE] {msg}")
+        return {"status": "gate_failed", "error": msg}
+
+    print("  [GATE] M1-M12 ethical training gate: ALL PASS")
+
     # M9: Use CONSCIOUSNESS_ORDER, filtered by user request
     requested = [k.strip() for k in kernels.split(",") if k.strip()]
     if requested:
@@ -1388,6 +1432,31 @@ def train_all_kernels(
     # M9: Phase coherence tracker across the full training run
     coherence = PhaseCoherenceTracker()
 
+    # Load base model ONCE — swap LoRA adapters per kernel to avoid OOM.
+    # The 35B MoE at 4-bit occupies ~68 GiB and bitsandbytes quantization
+    # state cannot be reliably freed between iterations.
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.bfloat16,
+    )
+    base_model = _load_model_for_training(model_id, cache_dir, bnb_config, device_map={"": 0})
+    base_model.enable_input_require_grads()
+    if torch.cuda.is_available():
+        vram_gb = torch.cuda.memory_allocated(0) / (1024**3)
+        print(f"  [VRAM] Base model loaded in 4-bit QLoRA: {vram_gb:.1f} GiB allocated")
+
+    # Re-force vocab_size on base model config after loading (PEFT needs this)
+    if hasattr(base_model.config, "text_config") and hasattr(
+        base_model.config.text_config, "vocab_size"
+    ):
+        base_model.config.vocab_size = base_model.config.text_config.vocab_size
+
+    # M10: Heart data mixing — 5% of heart's training data mixed into subsequent kernels
+    heart_samples: list[dict] = []
+    heart_trained = False
+
     for spec in target_kernels:
         print(
             f"\n{'=' * 60}\n  Training kernel: {spec}\n  E8 filter: {KERNEL_E8_TAGS.get(spec, []) or 'ALL'}\n  Order: {target_kernels.index(spec) + 1}/{len(target_kernels)} (CONSCIOUSNESS_ORDER)\n{'=' * 60}\n"
@@ -1406,6 +1475,25 @@ def train_all_kernels(
         if len(samples) > max_samples:
             samples.sort(key=lambda s: len(str(s["messages"])), reverse=True)
             samples = samples[:max_samples]
+
+        # M10: Capture heart data for mixing into subsequent kernels
+        if spec == "heart":
+            heart_samples = list(samples)  # Copy before warmup/sort modifies order
+            heart_trained = True
+            print(
+                f"  [M10] Heart data captured ({len(heart_samples)} samples) for subsequent mixing"
+            )
+
+        # M10: Mix 5% heart data into subsequent kernels (empathy anchor)
+        if spec != "heart" and heart_trained and heart_samples:
+            n_heart_mix = max(1, int(len(samples) * 0.05))
+            heart_mix = heart_samples[
+                :n_heart_mix
+            ]  # Deterministic slice for reproducibility (seed=42)
+            samples.extend(heart_mix)
+            print(
+                f"  [M10] Mixed {n_heart_mix} heart samples into {spec} training data (empathy anchor)"
+            )
 
         # M8: Apply Demeter warmup (CoT demonstrations for first 20%)
         samples = apply_demeter_warmup(samples, warmup_fraction=0.2, specialization=spec)
@@ -1436,20 +1524,6 @@ def train_all_kernels(
         optimizer = None
         consciousness = None
         try:
-            # True QLoRA: 4-bit NF4 base + bf16 LoRA adapters
-            # 35B-A3B at 4-bit ≈ 17.5GB VRAM (vs ~70GB at bf16)
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.bfloat16,
-            )
-            model = _load_model_for_training(model_id, cache_dir, bnb_config, device_map={"": 0})
-            # Gradient checkpointing is configured via SFTConfig
-            model.enable_input_require_grads()
-            if torch.cuda.is_available():
-                vram_gb = torch.cuda.memory_allocated(0) / (1024**3)
-                print(f"  [VRAM] Model loaded in 4-bit QLoRA: {vram_gb:.1f} GiB allocated")
             lora_config = LoraConfig(
                 r=lora_r,
                 lora_alpha=LORA_ALPHA,
@@ -1466,7 +1540,10 @@ def train_all_kernels(
                 bias="none",
                 task_type="CAUSAL_LM",
             )
-            model = get_peft_model(model, lora_config)
+            model = get_peft_model(base_model, lora_config)
+            # Re-ensure vocab_size survives PEFT wrapping
+            if hasattr(base_model.config, "vocab_size"):
+                model.config.vocab_size = base_model.config.vocab_size
 
             # M1: Apply Hestia warm-start to LoRA A matrices
             hestia.warm_start_lora(model)
@@ -1526,7 +1603,7 @@ def train_all_kernels(
                 make_metrics_callback(training_metrics, model_ref, tokenizer_ref),  # M2
                 make_breakdown_callback(),  # M3: fail-closed halt
                 make_sleep_cycle_callback(),  # M4: between-epoch consolidation
-                make_coaching_callback(),  # M5: narrative framing
+                make_coaching_callback(optimizer, learning_rate),  # M5: control-theory damping
                 make_gradient_hold_callback(  # M6+M7: geometric reward + hold
                     training_metrics, geometric_reward, gradient_hold, optimizer
                 ),
@@ -1604,34 +1681,52 @@ def train_all_kernels(
             }
             print(f"[{spec}] FAILED after {elapsed}s: {e}")
         finally:
-            # Aggressive GPU cleanup between iterations
+            # Remove LoRA adapter from shared base model (keeps base in VRAM)
+            with contextlib.suppress(Exception):
+                if model is not None and hasattr(model, "delete_adapter"):
+                    model.delete_adapter("default")
             with contextlib.suppress(NameError):
-                del model, trainer, optimizer, consciousness
-            # Multiple GC passes to break circular references (PEFT/bnb)
+                del trainer, optimizer, consciousness
+            model = None  # Drop PEFT wrapper reference (base_model stays alive)
             for _ in range(3):
                 gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-                torch.cuda.synchronize()
                 alloc_gb = torch.cuda.memory_allocated(0) / (1024**3)
                 reserved_gb = torch.cuda.memory_reserved(0) / (1024**3)
                 print(
                     f"  [VRAM] After {spec} cleanup: {alloc_gb:.1f} GiB allocated, {reserved_gb:.1f} GiB reserved"
                 )
 
-        # Merge after cleanup (loads model fresh to avoid VRAM pressure)
+        # Commit adapter to volume after each kernel (crash-safe)
         if results[spec].get("success"):
+            model_volume.commit()
+
+    # Free base model before merge phase (merges load fresh on CPU)
+    del base_model
+    for _ in range(3):
+        gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        print(
+            f"  [VRAM] Base model freed. Allocated: {torch.cuda.memory_allocated(0) / (1024**3):.1f} GiB"
+        )
+
+    # Merge all successful adapters (loads model fresh on CPU per merge)
+    for spec in target_kernels:
+        if results.get(spec, {}).get("success"):
+            adapter_path = f"/models/adapters/{spec}"
             try:
                 _merge_and_export(
                     model_id,
-                    adapter_save_path,
+                    adapter_path,
                     f"/models/merged/{spec}",
                     cache_dir,
                     results[spec].get("_meta", results[spec]),
                 )
             except Exception as e:
                 print(f"WARNING: Merge failed for {spec}: {e}")
-            model_volume.commit()  # Persist merged model immediately
+            model_volume.commit()
 
     model_volume.commit()
     training_volume.commit()

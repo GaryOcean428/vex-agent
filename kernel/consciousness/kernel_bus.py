@@ -31,6 +31,7 @@ class SignalKind(StrEnum):
     GAIN_UPDATED = "gain_updated"
     PRESSURE_DETECTED = "pressure_detected"
     COUPLING_RECEIVED = "coupling_received"
+    MUSHROOM_CROSSING = "mushroom_crossing"  # EXP-011: κ sign change
 
 
 @dataclass

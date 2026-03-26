@@ -24,6 +24,7 @@ import logging
 import time
 from collections import deque
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -31,7 +32,7 @@ from numpy.typing import NDArray
 try:
     from scipy import stats as _stats
 except ImportError:  # minimal-runtime environments (e.g. Railway w/o scipy)
-    _stats = None  # type: ignore[assignment]
+    _stats = None
 
 from ..coordizer_v2.geometry import (
     Basin,
@@ -58,7 +59,7 @@ class BackwardGeodesicEvent:
     velocity_norm: float
     mushroom_active: bool  # True when κ < 0
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "timestamp_ms": self.timestamp_ms,
             "problem_id": self.problem_id,
@@ -252,7 +253,7 @@ class BackwardGeodesicTracker:
 
         return float(np.mean(backward)), float(p_one_sided), len(events)
 
-    def summary(self, problem_id: str | None = None) -> dict:
+    def summary(self, problem_id: str | None = None) -> dict[str, Any]:
         """Aggregate summary for EXP-011 analysis."""
 
         rho_m, p_m, n_m = self.compute_correlation(problem_id=problem_id, mushroom_only=True)
@@ -287,7 +288,7 @@ class BackwardGeodesicTracker:
             )
             self._prev_basins.pop(problem_id, None)
 
-    def export_events(self, problem_id: str | None = None) -> list[dict]:
+    def export_events(self, problem_id: str | None = None) -> list[dict[str, Any]]:
         """Export events for offline analysis."""
         events = self.get_events(problem_id=problem_id)
         return [e.to_dict() for e in events]
@@ -297,4 +298,4 @@ def _shannon_entropy(p: Basin) -> float:
     """Normalized Shannon entropy of a simplex point."""
     safe = np.clip(p, 1e-12, None)
     h = -float(np.sum(safe * np.log(safe)))
-    return h / np.log(len(p))
+    return h / np.log(len(p))  # type: ignore[no-any-return]

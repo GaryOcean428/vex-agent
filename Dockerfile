@@ -52,7 +52,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # ── Python kernel dependencies (uv) ──────────────────────────────
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 COPY kernel/ ./kernel/
 RUN pip install --no-cache-dir uv==0.10.12 && uv pip install --system --no-cache .
 

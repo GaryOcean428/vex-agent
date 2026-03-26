@@ -253,7 +253,7 @@ class Harvester:
 
         for tid in result.resonance_fingerprints:
             try:
-                result.basin_strings[tid] = tokenizer.decode([tid])
+                result.basin_strings[tid] = str(tokenizer.decode([tid]))
             except Exception:
                 result.basin_strings[tid] = f"<token_{tid}>"
 

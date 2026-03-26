@@ -102,11 +102,10 @@ This is the first step toward the Pantheon mesh: each node (Railway, Modal coord
 
 ## Constraints
 
-- Do NOT modify `basin_sync_remote.py` — it's already correct
+- `basin_sync_remote.py` was updated 2026-03-25 to use `fisher_rao_distance()` for drift detection (replacing Euclidean L2) and renamed `delta_l2` → `delta_fr`
 - The sync call is async and non-blocking (fire-and-forget via create_task)
 - If the coordize endpoint is down, the sync silently fails (error logged, loop continues)
-- No Euclidean contamination — RemoteBasinSync uses the coordize endpoint which runs Fisher-Rao on GPU
-- Note: line 1089 of systems.py has a delta_l2 computation using np.sqrt(np.sum(...)). This operates in PGA-projected space from the coordizer output, not raw simplex — document as QIG-EXEMPT if flagged by purity scan
+- All distance computations use Fisher-Rao geometry via `kernel.geometry.fisher_rao`
 
 ## Testing
 

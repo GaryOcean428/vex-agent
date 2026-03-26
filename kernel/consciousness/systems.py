@@ -1027,7 +1027,7 @@ class SleepCycleManager:
         metrics: Any,
         crossing_strength: float = 0.8,
         instability_metric: float = 0.0,
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         """EXP-011: Drive kappa through zero during mushroom perturbation.
 
         Applies a directed perturbation that takes kappa_eff through zero,

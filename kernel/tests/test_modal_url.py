@@ -253,11 +253,17 @@ class TestEdgeCases:
         result = modal_url(ASGI_BASE, "custom-endpoint")
         assert result == f"{ASGI_BASE}/custom-endpoint"
 
-    def test_unknown_route_on_base_is_not_stripped(self) -> None:
-        """If base has an unknown path segment, it stays (not in the strip list)."""
+    def test_unknown_route_on_asgi_base_is_stripped(self) -> None:
+        """ASGI base detection strips ANY path after -web.modal.run, not just known routes."""
         base = f"{ASGI_BASE}/my-custom-path"
         result = modal_url(base, "health")
-        assert result == f"{ASGI_BASE}/my-custom-path/health"
+        assert result == f"{ASGI_BASE}/health"
+
+    def test_unknown_route_on_non_asgi_base_is_kept(self) -> None:
+        """Non-ASGI, non-legacy URLs preserve existing path segments."""
+        base = "https://example.com/my-custom-path"
+        result = modal_url(base, "health")
+        assert result == "https://example.com/my-custom-path/health"
 
     def test_trailing_slash_on_base_with_route(self) -> None:
         """Base has /train/ (trailing slash) — should still strip and replace."""
@@ -321,3 +327,110 @@ class TestRealisticCallerPatterns:
         first = modal_url(ASGI_BASE, "health")
         second = modal_url(first, "health")
         assert first == second
+
+
+# ═══════════════════════════════════════════════════════════════
+#  PRODUCTION URLs — exact env var values from Railway
+# ═══════════════════════════════════════════════════════════════
+
+# These are the ACTUAL MODAL_TRAINING_URL and MODAL_HARVEST_URL values.
+PROD_TRAINING_URL = "https://archelon--vex-qlora-train-qloratrainer-web.modal.run"
+PROD_HARVEST_URL = "https://archelon--vex-coordizer-harvest-coordizerharvester-web.modal.run"
+
+
+class TestProductionURLs:
+    """Verify all critical call sites produce correct URLs with production env vars."""
+
+    # ── Training URL call sites ──────────────────────────────────
+
+    def test_training_to_train(self) -> None:
+        """modal_url(training_url, 'train') — server.py line 314."""
+        result = modal_url(PROD_TRAINING_URL, "train")
+        assert result == f"{PROD_TRAINING_URL}/train"
+
+    def test_training_to_health(self) -> None:
+        """modal_url(training_url, 'health') — server.py line 630."""
+        result = modal_url(PROD_TRAINING_URL, "health")
+        assert result == f"{PROD_TRAINING_URL}/health"
+
+    def test_training_to_infer(self) -> None:
+        """modal_url(training_url, 'infer') — client.py line 236."""
+        result = modal_url(PROD_TRAINING_URL, "infer")
+        assert result == f"{PROD_TRAINING_URL}/infer"
+
+    def test_training_to_data_receive(self) -> None:
+        """modal_url(training_url, 'data-receive') — ingest.py."""
+        result = modal_url(PROD_TRAINING_URL, "data-receive")
+        assert result == f"{PROD_TRAINING_URL}/data-receive"
+
+    def test_training_to_status(self) -> None:
+        """modal_url(training_url, 'status') — ingest.py line 1568."""
+        result = modal_url(PROD_TRAINING_URL, "status")
+        assert result == f"{PROD_TRAINING_URL}/status"
+
+    def test_training_to_data_stats(self) -> None:
+        """modal_url(training_url, 'data-stats') — ingest.py line 1826."""
+        result = modal_url(PROD_TRAINING_URL, "data-stats")
+        assert result == f"{PROD_TRAINING_URL}/data-stats"
+
+    def test_training_to_export_image(self) -> None:
+        """modal_url(training_url, 'export-image')."""
+        result = modal_url(PROD_TRAINING_URL, "export-image")
+        assert result == f"{PROD_TRAINING_URL}/export-image"
+
+    # ── Harvest URL call sites ───────────────────────────────────
+
+    def test_harvest_to_harvest(self) -> None:
+        """modal_url(harvest_url, 'harvest') — modal_integration.py line 72."""
+        result = modal_url(PROD_HARVEST_URL, "harvest")
+        assert result == f"{PROD_HARVEST_URL}/harvest"
+
+    def test_harvest_to_coordize(self) -> None:
+        """modal_url(harvest_url, 'coordize')."""
+        result = modal_url(PROD_HARVEST_URL, "coordize")
+        assert result == f"{PROD_HARVEST_URL}/coordize"
+
+    def test_harvest_to_health(self) -> None:
+        """modal_url(harvest_url, 'health') — modal_integration.py line 68."""
+        result = modal_url(PROD_HARVEST_URL, "health")
+        assert result == f"{PROD_HARVEST_URL}/health"
+
+    # ── Chained call patterns (peft_client.py) ───────────────────
+
+    def test_infer_url_to_health(self) -> None:
+        """peft_client stores infer_url = modal_url(training, 'infer'), then calls
+        modal_url(infer_url, 'health'). Must produce .../web.modal.run/health."""
+        infer_url = modal_url(PROD_TRAINING_URL, "infer")
+        health_url = modal_url(infer_url, "health")
+        assert health_url == f"{PROD_TRAINING_URL}/health"
+
+    def test_harvest_url_stored_then_requeried(self) -> None:
+        """modal_integration stores harvest_url = modal_url(base, 'harvest'), then
+        a caller might pass it back. Must not double to /harvest/harvest."""
+        stored = modal_url(PROD_HARVEST_URL, "harvest")
+        again = modal_url(stored, "harvest")
+        assert again == f"{PROD_HARVEST_URL}/harvest"
+        assert "/harvest/harvest" not in again
+
+    # ── Idempotency (requirement #5) ────────────────────────────
+
+    @pytest.mark.parametrize("path", ["health", "train", "infer", "harvest", "coordize"])
+    def test_idempotent_training(self, path: str) -> None:
+        first = modal_url(PROD_TRAINING_URL, path)
+        second = modal_url(first, path)
+        assert first == second
+
+    @pytest.mark.parametrize("path", ["health", "harvest", "coordize"])
+    def test_idempotent_harvest(self, path: str) -> None:
+        first = modal_url(PROD_HARVEST_URL, path)
+        second = modal_url(first, path)
+        assert first == second
+
+    # ── ASGI base detection strips unknown routes too ────────────
+
+    def test_asgi_strips_unknown_route_before_append(self) -> None:
+        """ASGI base with an unknown route should strip it (no hardcoded list needed)."""
+        base = f"{PROD_TRAINING_URL}/some-future-route"
+        result = modal_url(base, "health")
+        assert result == f"{PROD_TRAINING_URL}/health"
+        assert "/some-future-route" not in result
