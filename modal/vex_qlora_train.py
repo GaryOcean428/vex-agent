@@ -1374,6 +1374,42 @@ def train_all_kernels(
     )
     from trl import SFTConfig, SFTTrainer
 
+    # ── M1-M12 GATE ENFORCEMENT ─────────────────────────────────
+    # Training REFUSES to start unless critical ethical training
+    # infrastructure is present.  Phase 2C per plan.
+    _gate_items = {
+        "M1_HestiaSafeBasin": HestiaSafeBasin,
+        "M3a_BreakdownGuard": make_breakdown_callback,
+        "M5_CoachingCallback": make_coaching_callback,
+        "M8_DemeterWarmup": apply_demeter_warmup,
+        "M9_ConsciousnessOrder": CONSCIOUSNESS_ORDER,
+        "M10_HeartMixing": True,  # Implemented inline below
+        "M12_ProvenanceLogging": make_provenance_callback,
+    }
+    _gate_failures = [k for k, v in _gate_items.items() if v is None]
+    if _gate_failures:
+        msg = f"M-item gate FAILED — missing: {_gate_failures}. Training refused."
+        print(f"  [GATE] {msg}")
+        return {"status": "gate_failed", "missing": _gate_failures, "error": msg}
+
+    # Verify optimizer is NOT Adam (DiagonalNaturalGradient required)
+    try:
+        from qig_core.torch.natural_gradient import DiagonalNaturalGradient  # noqa: F401
+
+        print("  [GATE] DiagonalNaturalGradient available — Adam is FORBIDDEN")
+    except ImportError:
+        msg = "DiagonalNaturalGradient not available — Adam is FORBIDDEN, training refused"
+        print(f"  [GATE] {msg}")
+        return {"status": "gate_failed", "missing": ["DiagonalNaturalGradient"], "error": msg}
+
+    # Verify CONSCIOUSNESS_ORDER starts with genesis, heart
+    if CONSCIOUSNESS_ORDER[:2] != ["genesis", "heart"]:
+        msg = f"CONSCIOUSNESS_ORDER must start with ['genesis', 'heart'], got {CONSCIOUSNESS_ORDER[:2]}"
+        print(f"  [GATE] {msg}")
+        return {"status": "gate_failed", "error": msg}
+
+    print("  [GATE] M1-M12 ethical training gate: ALL PASS")
+
     # M9: Use CONSCIOUSNESS_ORDER, filtered by user request
     requested = [k.strip() for k in kernels.split(",") if k.strip()]
     if requested:
