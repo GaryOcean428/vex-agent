@@ -21,7 +21,7 @@ BATCH_SIZE = 50  # texts per request (keep reasonable for 35B model)
 MIN_CONTEXTS = 1  # accept tokens seen even once (we want broad coverage)
 
 
-def main():
+def main() -> None:
     with open(CORPUS_PATH) as f:
         all_texts = json.load(f)
 
@@ -32,8 +32,8 @@ def main():
     batches = [all_texts[i : i + BATCH_SIZE] for i in range(0, len(all_texts), BATCH_SIZE)]
     print(f"Batches: {len(batches)} × {BATCH_SIZE}")
 
-    all_results = []
-    total_elapsed = 0
+    all_results: list[dict[str, object]] = []
+    total_elapsed: float = 0
 
     for i, batch in enumerate(batches):
         print(f"\n--- Batch {i + 1}/{len(batches)} ({len(batch)} texts) ---")
@@ -122,7 +122,9 @@ def main():
 
     # Aggregate basin coordinates across batches (average on simplex via sqrt-space)
     basin_arrays = [
-        np.array(r["basin_coords"]) for r in all_results if len(r["basin_coords"]) == 64
+        np.array(r["basin_coords"])
+        for r in all_results
+        if isinstance(r["basin_coords"], list) and len(r["basin_coords"]) == 64
     ]
     if basin_arrays:
         # Fréchet mean approximation in sqrt-space

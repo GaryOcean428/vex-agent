@@ -112,6 +112,11 @@ async function main(): Promise<void> {
     app.get(path, async (_req: Request, res: Response) => {
       try {
         const resp = await fetch(`${KERNEL_URL}${path}`);
+        if (!resp.ok) {
+          const text = await resp.text();
+          res.status(resp.status).json({ error: text });
+          return;
+        }
         const data = await resp.json();
         res.json(data);
       } catch (err) {
@@ -130,6 +135,11 @@ async function main(): Promise<void> {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(req.body),
         });
+        if (!resp.ok) {
+          const text = await resp.text();
+          res.status(resp.status).json({ error: text });
+          return;
+        }
         const data = await resp.json();
         res.json(data);
       } catch (err) {

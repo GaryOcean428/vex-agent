@@ -212,7 +212,7 @@ GENERAL_TEXTS = [
 # ---------------------------------------------------------------------------
 
 
-def main():
+def main() -> None:
     # --- Protocol paragraphs ---
     protocol_paragraphs = extract_protocol_paragraphs(PROTOCOL_PATH)
     print(f"Protocol paragraphs extracted: {len(protocol_paragraphs)}")

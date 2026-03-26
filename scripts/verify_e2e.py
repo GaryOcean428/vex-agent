@@ -224,7 +224,7 @@ def run_verification(base_url: str, api_key: str, skip_training: bool = False) -
     return passed == total
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="VEX E2E Verification")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="Kernel server base URL")
     parser.add_argument("--api-key", default="", help="Kernel API key (X-Kernel-Key header)")
