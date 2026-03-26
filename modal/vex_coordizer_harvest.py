@@ -404,8 +404,8 @@ class CoordizerHarvester:
             _on_gpu = True
         except ImportError:
             print(
-                "  [WARN] CuPy not available — eigendecomposition will use CPU (LAPACK). "
-                "This is 10-100x slower for large Gram matrices. Install cupy-cuda12x."
+                "  [EIGEN] CuPy not available — will use CPU fallback chain "
+                "(scipy → numpy). Install cupy-cuda12x for GPU acceleration."
             )
             xp = np  # CPU fallback
             _on_gpu = False
@@ -430,11 +430,49 @@ class CoordizerHarvester:
         # Dual Gram matrix (N x N) — this is the big matmul (N,V)×(V,N)
         G = centered @ centered.T  # (N, N)
 
-        # Eigendecomposition of Gram matrix (cuSOLVER on GPU, LAPACK on CPU)
+        # Eigendecomposition with 3-tier fallback: CuPy GPU → scipy → numpy
         target_dim = min(lens_dim, N, basin_dim)
-        backend = "cuSOLVER/GPU" if _on_gpu else "LAPACK/CPU"
-        print(f"  [EIGEN] {N}x{N} Gram matrix → eigh via {backend}")
-        eigenvalues, eigenvectors = xp.linalg.eigh(G)
+
+        eigenvalues = eigenvectors = None
+        if _on_gpu:
+            try:
+                print(f"  [EIGEN] {N}x{N} Gram matrix → eigh via cuSOLVER/GPU")
+                eigenvalues, eigenvectors = cp.linalg.eigh(G)
+            except Exception as e:
+                print(f"  [EIGEN] GPU eigh failed, falling back to scipy: {e}")
+                # Transfer back to CPU numpy for fallback
+                G = cp.asnumpy(G)
+                centered = cp.asnumpy(centered)
+                global_mean = cp.asnumpy(global_mean)
+                _on_gpu = False
+
+        if eigenvalues is None:
+            # Size threshold: ≤64×64 go straight to numpy (no scipy overhead)
+            if N <= 64:
+                print(f"  [EIGEN] {N}x{N} Gram matrix → eigh via numpy/CPU (small matrix)")
+                G_np = G if isinstance(G, np.ndarray) else np.asarray(G)
+                eigenvalues, eigenvectors = np.linalg.eigh(G_np)
+            else:
+                # Try scipy sparse middle tier
+                try:
+                    from scipy.linalg import eigh as scipy_eigh
+
+                    print(f"  [EIGEN] {N}x{N} Gram matrix → eigh via scipy/CPU")
+                    G_np = G if isinstance(G, np.ndarray) else np.asarray(G)
+                    eigenvalues, eigenvectors = scipy_eigh(G_np)
+                    eigenvalues = np.asarray(eigenvalues)
+                    eigenvectors = np.asarray(eigenvectors)
+                except Exception as e2:
+                    print(f"  [EIGEN] scipy eigh failed, falling back to numpy: {e2}")
+                    G_np = G if isinstance(G, np.ndarray) else np.asarray(G)
+                    eigenvalues, eigenvectors = np.linalg.eigh(G_np)
+
+        # Ensure numpy arrays for downstream (even if CuPy produced them)
+        if _on_gpu:
+            pass  # Keep on GPU for sorting below
+        else:
+            eigenvalues = np.asarray(eigenvalues)
+            eigenvectors = np.asarray(eigenvectors)
 
         # Sort descending
         idx = xp.argsort(eigenvalues)[::-1]
