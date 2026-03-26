@@ -1,7 +1,7 @@
 """
 Modal GPU Function — CoordizerV2 Harvest + PGA Compress
 
-Runs Qwen3.5-4B (default) or Qwen3.5-35B-A3B (MoE) in NF4 on A10G GPU.
+Runs Qwen3.5-35B-A3B (MoE, default) or Qwen3.5-4B in NF4 on A100 GPU.
 Computes full V-dimensional probability distributions AND runs PGA
 compress on-GPU, returning only 64D basin coords + 32D lens coords.
 
@@ -31,7 +31,7 @@ import modal
 
 # --- Configuration --------------------------------------------------------
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
-HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "a10g")
+HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "a100")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 BASIN_DIM = 64  # frozen
 LENS_DIM = 32  # from eigenvalue analysis
@@ -52,7 +52,7 @@ model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 ml_image = (
     modal.Image.from_registry("nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.14")
     .apt_install("g++", "ninja-build", "git")
-    .env({"CXX": "g++", "CC": "gcc"})
+    .env({"CXX": "g++", "CC": "gcc", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     .uv_pip_install(
         "torch>=2.1,<2.11",
         # Qwen3.5 VLM classes (Qwen3_5ForConditionalGeneration, Qwen3_5MoeForConditionalGeneration)
