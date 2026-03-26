@@ -295,25 +295,37 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     _training_triggered = False  # one-shot per deploy
     _last_trained_at_conversation: int = 0  # conversation count at last training trigger
     _conv_training_in_flight: bool = False  # prevent concurrent conversation-triggered training
+    _any_training_in_flight: bool = False  # global guard: prevent ANY concurrent training spawns
 
     # Expose bank rebuild for /training/complete endpoint
     app.state.rebuild_bank = lambda: _rebuild_and_inject_bank(label="training-complete")
 
     def _reset_training_flag() -> None:
-        nonlocal _training_triggered
+        nonlocal _training_triggered, _any_training_in_flight
         _training_triggered = False
+        _any_training_in_flight = False
 
     app.state.reset_training_flag = _reset_training_flag
 
     async def _trigger_modal_training(*, reason: str = "auto") -> bool:
-        """Fire POST to Modal training endpoint. Returns True if triggered."""
+        """Fire POST to Modal training endpoint. Returns True if triggered.
+
+        Uses _any_training_in_flight as a global guard to prevent multiple
+        concurrent training spawns from the three independent trigger paths
+        (bank-threshold, conversation-interval, upload-threshold).
+        """
+        nonlocal _any_training_in_flight
         training_url = settings.modal.training_url
         if not training_url:
             return False
+        if _any_training_in_flight:
+            logger.info("Training already in flight — skipping trigger (%s)", reason)
+            return False
+        _any_training_in_flight = True
         try:
             import httpx
 
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=120) as client:  # 120s for cold starts
                 resp = await client.post(
                     modal_url(training_url, "train"),
                     json={"_api_key": settings.kernel_api_key},
@@ -328,9 +340,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
                         resp.status_code,
                         resp.text[:200],
                     )
+                    _any_training_in_flight = False
                     return False
         except Exception as e:
             logger.error("Modal training trigger failed (%s): %s", reason, e)
+            _any_training_in_flight = False
             return False
 
     async def _check_conversation_training() -> None:

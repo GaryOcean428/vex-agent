@@ -67,6 +67,7 @@ ml_image = (
         "pydantic>=2.0",
         "fastapi[standard]",
         "qig-core>=2.6.0",
+        "scipy>=1.10",
         # Qwen3.5 hybrid architecture: linear attention fast path
         "causal-conv1d>=1.4.0",
         "flash-linear-attention",
@@ -444,6 +445,7 @@ class CoordizerHarvester:
                 G = cp.asnumpy(G)
                 centered = cp.asnumpy(centered)
                 global_mean = cp.asnumpy(global_mean)
+                xp = np  # Fix stale reference — downstream ops must use numpy
                 _on_gpu = False
 
         if eigenvalues is None:
@@ -500,6 +502,9 @@ class CoordizerHarvester:
         total = basin_coords.sum()
         if total > 1e-10:
             basin_coords /= total
+        else:
+            # Degenerate PGA projection — fall back to uniform simplex point
+            basin_coords = np.full(basin_dim, 1.0 / basin_dim)
 
         return {
             "basin_coords": basin_coords.tolist(),

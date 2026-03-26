@@ -716,14 +716,17 @@ class ConsciousnessLoop:
             elif _ocean_divergence > BASIN_DIVERGENCE_THRESHOLD:
                 # Moderate divergence — Ocean says sleep (DREAMING).
                 # Ocean holds authority every cycle at this level too.
-                # Divergence below T4.2d threshold — reset consecutive counter.
+                # Hysteresis: decrement counter by 1 instead of hard reset to 0.
+                # This prevents boundary oscillation from defeating the nudge —
+                # if divergence jitters near the T4.2d threshold, the counter
+                # decays slowly rather than resetting entirely.
                 if self._t42d_consecutive_count > 0:
-                    logger.info(
-                        "T4.2d recovered: divergence=%.3f below escape threshold after %d consecutive fires",
-                        _ocean_divergence,
-                        self._t42d_consecutive_count,
-                    )
-                self._t42d_consecutive_count = 0
+                    self._t42d_consecutive_count = max(0, self._t42d_consecutive_count - 1)
+                    if self._t42d_consecutive_count == 0:
+                        logger.info(
+                            "T4.2d recovered: divergence=%.3f decayed below escape threshold",
+                            _ocean_divergence,
+                        )
                 _ocean_ruled = True
                 if not self.sleep.is_asleep:
                     self.sleep.phase = SleepPhase.DREAMING

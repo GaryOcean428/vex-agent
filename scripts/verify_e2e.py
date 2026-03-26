@@ -188,7 +188,7 @@ def run_verification(base_url: str, api_key: str, skip_training: bool = False) -
         try:
             resp = client.post("/training/trigger", json={})
             data = resp.json()
-            ok = resp.status_code == 200 and data.get("status") in ("triggered", "error")
+            ok = resp.status_code == 200 and data.get("status") == "triggered"
             results.append(_log("Training trigger", ok, f"status={data.get('status', '?')}"))
         except Exception as e:
             results.append(_log("Training trigger", False, str(e)))

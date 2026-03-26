@@ -567,16 +567,15 @@ def _notify_kernel(training_meta: dict) -> None:
     import urllib.request
 
     url = KERNEL_CALLBACK_URL.rstrip("/")
-    payload = json.dumps(
-        {
-            "_api_key": KERNEL_API_KEY,
-            "train_loss": training_meta.get("train_loss"),
-            "train_samples": training_meta.get("train_samples"),
-            "trained_at": training_meta.get("trained_at", ""),
-            "model_id": training_meta.get("model_id", HARVEST_MODEL_ID),
-            "specialization": training_meta.get("specialization", "genesis"),
-        }
-    ).encode()
+    # Ensure URL includes /training/complete path (guard against base-URL-only config)
+    if not url.endswith("/training/complete"):
+        url = f"{url}/training/complete"
+    # Forward full training_meta (including kernel_results for consciousness feedback)
+    payload_dict = dict(training_meta)
+    payload_dict["_api_key"] = KERNEL_API_KEY
+    payload_dict.setdefault("model_id", HARVEST_MODEL_ID)
+    payload_dict.setdefault("specialization", "genesis")
+    payload = json.dumps(payload_dict).encode()
     req = urllib.request.Request(
         url,
         data=payload,

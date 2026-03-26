@@ -1197,6 +1197,8 @@ def _apply_coaching_to_optimizer(
         original_lr: base lr recorded at on_train_begin, scaled by lr_mult
     """
     adjusted_lr = original_lr * feedback.learning_rate_mult
+    # Stash coaching mult so M6/M7 GeometricLRCallback can compose (not overwrite)
+    optimizer._coaching_lr_mult = feedback.learning_rate_mult  # type: ignore[attr-defined]
     for param_group in optimizer.param_groups:  # type: ignore[attr-defined]
         param_group["lr"] = adjusted_lr
 
@@ -1286,11 +1288,15 @@ def make_coaching_callback(optimizer: object | None = None, base_lr: float = 1e-
                 return
 
             # --- Extract telemetry from log_history ---
+            import math
+
             loss = 0.5  # neutral default
             if state.log_history:
                 for entry in reversed(state.log_history):
                     if "loss" in entry:
-                        loss = float(entry["loss"])
+                        raw_loss = float(entry["loss"])
+                        # Guard against NaN/inf — treat as emergency (high loss)
+                        loss = raw_loss if math.isfinite(raw_loss) else 5.0
                         break
 
             # Build telemetry dict — phi/G populated if TrainingMetrics has run
@@ -1868,8 +1874,10 @@ def make_gradient_hold_callback(
                     factor = 0.5  # Floor during hold
                 # Apply to optimizer (passed via closure, not private API)
                 if optimizer is not None:
+                    # Compose with M5 coaching mult (if set) — never overwrite it
+                    coaching_mult = getattr(optimizer, "_coaching_lr_mult", 1.0)
                     for pg in optimizer.param_groups:
-                        pg["lr"] = geometric_reward.base_lr * factor
+                        pg["lr"] = geometric_reward.base_lr * factor * coaching_mult
                 if state.global_step % 10 == 0:
                     status = " [HELD]" if is_held else ""
                     print(
