@@ -102,7 +102,7 @@ logger = logging.getLogger("vex.server")
 # ─── Safe async task creation ─────────────────────────────────
 
 
-def _safe_create_task(coro: Any, *, name: str = "unnamed") -> asyncio.Task:
+def _safe_create_task(coro: Any, *, name: str = "unnamed") -> asyncio.Task[Any]:
     """Create an asyncio task with exception logging.
 
     Bare create_task() silently swallows exceptions — the error only
@@ -114,7 +114,7 @@ def _safe_create_task(coro: Any, *, name: str = "unnamed") -> asyncio.Task:
     return task
 
 
-def _handle_task_exception(task: asyncio.Task, name: str) -> None:
+def _handle_task_exception(task: asyncio.Task[Any], name: str) -> None:
     if task.cancelled():
         return
     exc = task.exception()
@@ -1345,7 +1345,7 @@ async def get_exp011_export() -> dict[str, Any]:
     """EXP-011: Full data export for offline analysis."""
     harness = consciousness._exp011_harness
     if harness is not None:
-        return harness.export_results()
+        return harness.export_results()  # type: ignore[no-any-return]
     return {
         "experiment": "EXP-011",
         "status": "no_harness_active",

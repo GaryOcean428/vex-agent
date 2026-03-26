@@ -30,7 +30,7 @@ import numpy as np
 try:
     from scipy import stats as _stats
 except ImportError:
-    _stats = None  # type: ignore[assignment]
+    _stats = None
 
 from ..coordizer_v2.geometry import Basin, to_simplex
 

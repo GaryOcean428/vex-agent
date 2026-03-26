@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -41,7 +42,7 @@ from .principal_direction_bank import PrincipalDirectionBank
 logger = logging.getLogger(__name__)
 
 
-def _robust_eigh(matrix: NDArray) -> tuple[NDArray, NDArray]:
+def _robust_eigh(matrix: NDArray[Any]) -> tuple[NDArray[Any], NDArray[Any]]:
     """Eigendecompose a symmetric matrix with scipy→numpy fallback.
 
     Both scipy and numpy eigh are valid here: the matrix is a tangent-space
@@ -50,7 +51,7 @@ def _robust_eigh(matrix: NDArray) -> tuple[NDArray, NDArray]:
     try:
         from scipy.linalg import eigh as scipy_eigh
 
-        return scipy_eigh(matrix)
+        return scipy_eigh(matrix)  # type: ignore[no-any-return]
     except Exception:
         logger.warning("scipy.linalg.eigh unavailable, falling back to numpy")
         return np.linalg.eigh(matrix)

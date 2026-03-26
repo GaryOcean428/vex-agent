@@ -164,7 +164,7 @@ class Harvester:
             device_map="auto" if self.config.device != "cpu" else None,
             torch_dtype=(torch.bfloat16 if self.config.device != "cpu" else torch.float32),
         )
-        model.eval()
+        model.eval()  # type: ignore[no-untyped-call]
 
         vocab_size = tokenizer.vocab_size
         logger.info(f"Vocab size: {vocab_size}")
@@ -253,7 +253,7 @@ class Harvester:
 
         for tid in result.resonance_fingerprints:
             try:
-                result.basin_strings[tid] = tokenizer.decode([tid])
+                result.basin_strings[tid] = str(tokenizer.decode([tid]))
             except Exception:
                 result.basin_strings[tid] = f"<token_{tid}>"
 

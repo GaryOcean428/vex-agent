@@ -365,7 +365,7 @@ class ConsciousnessLoop:
             self._coordizer_v2 = CoordizerV2(bank=ResonanceBank())
 
         # Co-evolution feedback: per-kernel adapter quality (observability only)
-        self._adapter_metrics: dict[str, dict] = {}
+        self._adapter_metrics: dict[str, dict[str, Any]] = {}
 
         # v6.2: Kernel Voice Registry — per-kernel geometric generation
         # Uses the shared CoordizerV2 instance; each voice applies its own
@@ -469,7 +469,7 @@ class ConsciousnessLoop:
 
         # Expose last processing results for server.py consumption
         self._last_response_basin: Any = None
-        self._last_contributions: list | None = None
+        self._last_contributions: list[Any] | None = None
         self._last_routed_kernel: str = ""
 
         self._restore_state()
@@ -488,7 +488,7 @@ class ConsciousnessLoop:
         return b.tolist() if hasattr(b, "tolist") else list(b)
 
     @property
-    def last_contributions(self) -> list | None:
+    def last_contributions(self) -> list[Any] | None:
         return self._last_contributions
 
     @property
@@ -499,7 +499,7 @@ class ConsciousnessLoop:
     def contribution_ledger(self) -> ContributionLedger:
         return self._contribution_ledger
 
-    def receive_training_feedback(self, kernel_results: dict[str, dict]) -> None:
+    def receive_training_feedback(self, kernel_results: dict[str, dict[str, Any]]) -> None:
         """Store per-kernel adapter quality metrics for observability."""
         for spec, result in kernel_results.items():
             self._adapter_metrics[spec] = {
