@@ -164,7 +164,7 @@ class Harvester:
             device_map="auto" if self.config.device != "cpu" else None,
             torch_dtype=(torch.bfloat16 if self.config.device != "cpu" else torch.float32),
         )
-        model.eval()  # type: ignore[no-untyped-call]
+        model.eval()
 
         vocab_size = tokenizer.vocab_size
         logger.info(f"Vocab size: {vocab_size}")
