@@ -75,7 +75,7 @@ TRUSTED_MODEL_IDS: frozenset[str] = frozenset(
         "Qwen/Qwen3.5-35B-A3B",
     }
 )
-TRAIN_GPU = os.environ.get("TRAIN_GPU", "a100-80gb")
+TRAIN_GPU = os.environ.get("TRAIN_GPU", "a10g")
 BASIN_DIM = 64
 LORA_R = 16
 LORA_ALPHA = 32

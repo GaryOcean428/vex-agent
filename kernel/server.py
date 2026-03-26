@@ -328,7 +328,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             async with httpx.AsyncClient(timeout=120) as client:  # 120s for cold starts
                 resp = await client.post(
                     modal_url(training_url, "train"),
-                    json={"_api_key": settings.kernel_api_key},
+                    json={
+                        "_api_key": settings.kernel_api_key,
+                        "specialization": "all",  # Train all kernels in CONSCIOUSNESS_ORDER
+                    },
                 )
                 if resp.status_code == 200:
                     logger.info("Modal training triggered (%s)", reason)

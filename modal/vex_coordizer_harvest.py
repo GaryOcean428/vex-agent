@@ -1,7 +1,7 @@
 """
 Modal GPU Function — CoordizerV2 Harvest + PGA Compress
 
-Runs Qwen3.5-35B-A3B (MoE, 35B total / 3B active) in NF4 on A100 GPU (~18GB VRAM).
+Runs Qwen3.5-4B (default) or Qwen3.5-35B-A3B (MoE) in NF4 on A10G GPU.
 Computes full V-dimensional probability distributions AND runs PGA
 compress on-GPU, returning only 64D basin coords + 32D lens coords.
 
@@ -31,7 +31,7 @@ import modal
 
 # --- Configuration --------------------------------------------------------
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
-HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "a100-80gb")
+HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "a10g")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 BASIN_DIM = 64  # frozen
 LENS_DIM = 32  # from eigenvalue analysis

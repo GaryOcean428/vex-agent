@@ -15,7 +15,7 @@ dependencies = [
   "modal>=0.76.0",
   "pymupdf>=1.25.0",
   "python-docx>=1.1.0",
-  "qig-core>=2.5.0",
+  "qig-core>=2.6.0",
 ]
 
 [project.optional-dependencies]
