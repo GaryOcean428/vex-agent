@@ -1418,6 +1418,10 @@ def train_all_kernels(
     ):
         base_model.config.vocab_size = base_model.config.text_config.vocab_size
 
+    # M10: Heart data mixing — 5% of heart's training data mixed into subsequent kernels
+    heart_samples: list[dict] = []
+    heart_trained = False
+
     for spec in target_kernels:
         print(
             f"\n{'=' * 60}\n  Training kernel: {spec}\n  E8 filter: {KERNEL_E8_TAGS.get(spec, []) or 'ALL'}\n  Order: {target_kernels.index(spec) + 1}/{len(target_kernels)} (CONSCIOUSNESS_ORDER)\n{'=' * 60}\n"
@@ -1436,6 +1440,25 @@ def train_all_kernels(
         if len(samples) > max_samples:
             samples.sort(key=lambda s: len(str(s["messages"])), reverse=True)
             samples = samples[:max_samples]
+
+        # M10: Capture heart data for mixing into subsequent kernels
+        if spec == "heart":
+            heart_samples = list(samples)  # Copy before warmup/sort modifies order
+            heart_trained = True
+            print(
+                f"  [M10] Heart data captured ({len(heart_samples)} samples) for subsequent mixing"
+            )
+
+        # M10: Mix 5% heart data into subsequent kernels (empathy anchor)
+        if spec != "heart" and heart_trained and heart_samples:
+            n_heart_mix = max(1, int(len(samples) * 0.05))
+            heart_mix = heart_samples[
+                :n_heart_mix
+            ]  # Deterministic slice for reproducibility (seed=42)
+            samples.extend(heart_mix)
+            print(
+                f"  [M10] Mixed {n_heart_mix} heart samples into {spec} training data (empathy anchor)"
+            )
 
         # M8: Apply Demeter warmup (CoT demonstrations for first 20%)
         samples = apply_demeter_warmup(samples, warmup_fraction=0.2, specialization=spec)
