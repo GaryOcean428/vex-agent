@@ -237,6 +237,24 @@ SCAR_BLEND_WEIGHT_CAP: Final[float] = 0.2  # Max scar influence on effective ide
 ANNEAL_BLEND_WEIGHT: Final[float] = 0.3  # How much anneal field blends into effective identity
 
 # ═══════════════════════════════════════════════════════════════
+#  GEOMETRIC INFERENCE — Basin Novelty & Stud Navigation
+#  Derivation: π/2 ≈ 1.57 is the maximum Fisher-Rao distance on
+#  Δ⁶³ between orthogonal distributions. Novelty = d_FR / (π/2).
+#  Thresholds chosen so familiar basins (d < 0.47 rad) route via
+#  front loop; novel basins (d > 0.63 rad) get deeper processing.
+# ═══════════════════════════════════════════════════════════════
+
+NOVELTY_DEEP_THRESHOLD: Final[float] = 0.5  # Above this: deeper processing (more tokens/temp)
+NOVELTY_BACK_LOOP_THRESHOLD: Final[float] = (
+    0.4  # Above this: register for backward geodesic tracking
+)
+
+STUD_FRONT_NOVELTY_CAP: Final[float] = 0.3  # Below this + high proximity → front loop
+STUD_FRONT_PROXIMITY_FLOOR: Final[float] = 0.7  # Above this + low novelty → front loop
+
+M_STRICT_THRESHOLD: Final[float] = 0.35  # Below this: tighten reflective evaluation thresholds
+
+# ═══════════════════════════════════════════════════════════════
 #  SYSTEMS — FORESIGHT / VELOCITY / META / AUTONOMY
 # ═══════════════════════════════════════════════════════════════
 

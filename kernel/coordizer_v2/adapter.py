@@ -147,6 +147,29 @@ class CoordizerV2Adapter:
         # This is a degraded path — prefer coordize_text when possible
         return to_simplex(raw_signal)
 
+    def _regime_temperature(self, regime_weights: tuple[float, float, float]) -> float:
+        """Map regime weights to resonance bank exploration temperature.
+
+        Quantum-dominant (w₁ high) → temperature > 1.0 (explore wider basins).
+        Equilibrium-dominant (w₃ high) → temperature < 1.0 (narrow to known).
+        Efficient (w₂ high) → temperature ≈ 1.0 (balanced).
+
+        All arithmetic on the regime weight simplex — QIG-EXEMPT: weights
+        are coefficients, not basin coordinates.
+        """
+        w1, w2, w3 = regime_weights
+        return w1 * 1.5 + w2 * 1.0 + w3 * 0.5
+
+    def _regime_top_k(self, regime_weights: tuple[float, float, float]) -> int:
+        """Map regime weights to resonance activation breadth.
+
+        Quantum-dominant → wider search (up to 96 candidates).
+        Equilibrium-dominant → narrower (down to 32 candidates).
+        """
+        w1, _, w3 = regime_weights
+        base_k = 64
+        return max(16, int(base_k * (1.0 + 0.5 * (w1 - w3))))
+
     def coordize_text(
         self,
         text: str,
@@ -190,6 +213,21 @@ class CoordizerV2Adapter:
         # Compute Fréchet mean of all coordinate basins
         basins = [coord.vector for coord in result.coordinates]
         mean_basin = frechet_mean(basins)
+
+        # Regime-modulated re-activation: re-weight mean basin using
+        # regime-tuned exploration breadth on the resonance bank.
+        # Quantum-dominant → wider exploration, Equilibrium → narrower.
+        if self._regime_modulation and regime_weights is not None:
+            temp_top_k = self._regime_top_k(regime_weights)
+            activated = self._coordizer.bank.activate(mean_basin, top_k=temp_top_k)
+            if activated:
+                activated_basins = [
+                    self._coordizer.bank.coordinates[tid]
+                    for tid, _ in activated
+                    if tid in self._coordizer.bank.coordinates
+                ]
+                if activated_basins:
+                    mean_basin = frechet_mean(activated_basins)
 
         return mean_basin
 

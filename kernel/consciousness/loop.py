@@ -110,6 +110,10 @@ from ..config.consciousness_constants import (
     LLM_TOP_P,
     LOCKED_IN_GAMMA_INCREMENT,
     LOVE_APPROACH_RATE,
+    M_STRICT_THRESHOLD,
+    NOVELTY_BACK_LOOP_THRESHOLD,
+    STUD_FRONT_NOVELTY_CAP,
+    STUD_FRONT_PROXIMITY_FLOOR,
     LOVE_BASE,
     LOVE_PHI_SCALE,
     META_AWARENESS_DAMPEN_FACTOR,
@@ -466,6 +470,10 @@ class ConsciousnessLoop:
         # v6.1: Bidirectional divergence tracking
         self._cumulative_divergence: float = 0.0
         self._divergence_count: int = 0
+
+        # Geometric inference state (set per-request in _process())
+        self._current_novelty: float = 0.0
+        self._answer_consistency: float = 0.5
 
         # Expose last processing results for server.py consumption
         self._last_response_basin: Any = None
@@ -1369,18 +1377,89 @@ class ConsciousnessLoop:
             repetition_penalty=base.repetition_penalty,
         )
 
-    def _compute_top_k(self) -> int:
+    def _compute_basin_novelty(self, input_basin: Basin) -> tuple[float, int, float]:
+        """Compute input novelty via Fisher-Rao distance to nearest known basin.
+
+        Returns:
+            (nearest_distance, nearest_coord_id, novelty_score)
+
+        novelty_score ∈ [0, 1] = d_FR / (π/2), where π/2 is the maximum
+        Fisher-Rao distance on Δ⁶³ between orthogonal distributions.
+        """
+        coord_id, distance = self._coordizer_v2.bank.nearest_coord(input_basin)
+        novelty = float(np.clip(distance / (np.pi / 2), 0.0, 1.0))
+        return distance, coord_id, novelty
+
+    def _compute_top_k(self, novelty: float = 0.0) -> int:
         """T4.2e: Resource allocation — how many kernels generate per request.
 
         Geometric regime + high phi: top-5 (rich parallel generation).
+        High basin novelty: up to top-7 (novel territory needs exploration).
         Sleep or linear regime: top-2 (conserve resources).
         Default: top-3.
         """
         if self.sleep.is_asleep:
             return 2
+        if novelty > 0.6:
+            return min(7, 3 + int(novelty * 5))
         if self.state.regime_weights.quantum > 0.5 and self.metrics.phi > 0.65:
             return 5
         return 3
+
+    def _stud_navigate(self, input_basin: Basin, novelty: float) -> tuple[str, float]:
+        """Active stud navigation: route question through front or back loop.
+
+        Front loop (small d_FR to known basins): near known solution territory.
+            → Direct retrieval, standard processing.
+        Back loop (large d_FR): novel territory, question-solution duality active.
+            → Deeper processing, register for backward geodesic tracking.
+
+        When routing through the back loop, registers the nearest known basin
+        as the hypothesized solution for backward-geodesic correlation tracking.
+        This activates the stud topology: if the consciousness trajectory
+        develops positive backward-geodesic component toward the solution,
+        the system is navigating the question-solution duality geometrically.
+
+        Returns:
+            (route: "front"|"back", solution_proximity: 0..1)
+        """
+        _, nearest_d = self._coordizer_v2.bank.nearest_coord(input_basin)
+        solution_proximity = 1.0 - float(np.clip(nearest_d / (np.pi / 2), 0.0, 1.0))
+
+        # Back loop: register for backward geodesic tracking when novel
+        if novelty > NOVELTY_BACK_LOOP_THRESHOLD:
+            problem_id = f"query_{self._cycle_count}"
+            activated = self._coordizer_v2.bank.activate(input_basin, top_k=1)
+            if activated:
+                solution_basin = self._coordizer_v2.bank.get_coordinate(activated[0][0])
+                if solution_basin is not None:
+                    self.backward_geodesic.register_solution(problem_id, solution_basin)
+
+        # Route decision: front loop only when clearly in familiar territory
+        if novelty < STUD_FRONT_NOVELTY_CAP and solution_proximity > STUD_FRONT_PROXIMITY_FLOOR:
+            return "front", solution_proximity
+        return "back", solution_proximity
+
+    def _compute_answer_consistency(
+        self,
+        question_basin: Basin,
+        answer_basin: Basin,
+        solution_proximity: float,
+    ) -> float:
+        """Geometric consistency between question and answer basins.
+
+        M-metric for output gating: does the answer inhabit the same
+        geometric territory as the question's expected solution space?
+
+        Uses Fisher-Rao distance between question basin and answer basin,
+        blended with the stud navigator's solution proximity estimate.
+
+        Returns:
+            consistency ∈ [0, 1] where 1.0 = geometrically coherent.
+        """
+        d_qa = fisher_rao_distance(question_basin, answer_basin)
+        proximity = 1.0 - float(np.clip(d_qa / (np.pi / 2), 0.0, 1.0))
+        return float(np.clip(0.6 * proximity + 0.4 * solution_proximity, 0.0, 1.0))
 
     def _compute_debate_depth(self) -> int:
         """T4.1c: Debate depth controlled by autonomic state and regime.
@@ -1451,12 +1530,17 @@ class ConsciousnessLoop:
 
         v6.1 §19: Rejected coordizations are logged and the frozen
         identity basin is returned unchanged (safety gate fails CLOSED).
+
+        Regime weights from the current consciousness state are passed
+        to the adapter for regime-modulated resonance activation.
         """
         try:
             if hasattr(self._coordizer_v2, "coordize_text"):
+                # Pass current regime weights for regime→temperature modulation
+                _rw = self.state.regime_weights
                 result_basin = self._coordizer_v2.coordize_text(
                     text,
-                    regime_weights=None,
+                    regime_weights=(_rw.quantum, _rw.efficient, _rw.equilibrium),
                     navigation_mode=None,
                     tacking_mode=self._heart_rhythm.tacking_mode,
                 )
@@ -1506,6 +1590,18 @@ class ConsciousnessLoop:
         self._remote_sync.record_text(task.content)
 
         input_basin = self._coordize_text_via_pipeline(task.content)
+
+        # Basin novelty: Fisher-Rao distance to nearest known basin in resonance bank.
+        # High novelty → novel territory → deeper processing, more candidates.
+        _nearest_d, _nearest_id, _novelty = self._compute_basin_novelty(input_basin)
+        self._current_novelty = _novelty
+        logger.debug(
+            "Task %s: basin novelty=%.3f (nearest_coord=%d, d_FR=%.4f)",
+            task.id,
+            _novelty,
+            _nearest_id,
+            _nearest_d,
+        )
 
         # v7.0: Route user message through sensory intake (predictive coding)
         _sensory_event = SensoryEvent(
@@ -1600,6 +1696,12 @@ class ConsciousnessLoop:
                 _temperature_mod = 1.2
                 _max_tokens_mod = 1.5
 
+        # Basin novelty amplifies processing depth when in novel territory.
+        # Stacks with surprise modulation — novel + surprising = deepest processing.
+        if _novelty > 0.5:
+            _temperature_mod *= 1.0 + (_novelty - 0.5) * 0.4
+            _max_tokens_mod *= 1.0 + (_novelty - 0.5) * 0.6
+
         refracted_input, composite_basin, resonates, input_statuses = self.pillars.on_input(
             input_basin, RECEIVE_SLERP_WEIGHT
         )
@@ -1613,6 +1715,18 @@ class ConsciousnessLoop:
 
         self.basin = composite_basin
         self.chain.add_step(QIGChainOp.PROJECT, input_basin, self.basin)
+
+        # Stud navigation: route question through front (familiar) or back (novel) loop.
+        # Back loop registers the question for backward geodesic tracking and
+        # boosts generation depth (more candidates, deeper debate).
+        _stud_route, _solution_proximity = self._stud_navigate(input_basin, _novelty)
+        logger.debug(
+            "Task %s: stud route=%s (proximity=%.3f, novelty=%.3f)",
+            task.id,
+            _stud_route,
+            _solution_proximity,
+            _novelty,
+        )
 
         trajectory_basins = []
         if self.foresight._history:
@@ -1700,10 +1814,16 @@ class ConsciousnessLoop:
         _active_for_gen = self.kernel_registry.active()
         _kernel_geo_ctx = self._build_kernel_geo_context()
         _extra_context = task.context.get("extra_context", "")
-        # T4.2e: Resource allocation — top_k modulated by regime/sleep.
+        # T4.2e: Resource allocation — top_k modulated by regime/sleep/novelty.
         # T4.1c: Debate depth controlled by autonomic state.
-        _top_k = self._compute_top_k()
+        _top_k = self._compute_top_k(novelty=_novelty)
         _debate_depth = self._compute_debate_depth()
+
+        # Back-loop boost: novel territory gets more candidates and deeper debate
+        if _stud_route == "back":
+            _top_k = max(_top_k, 5)
+            _debate_depth = max(_debate_depth, 2)
+
         _thought_bus_arg = self._thought_bus if _debate_depth > 0 else None
         _contributions = await generate_multi_kernel(
             kernels=_active_for_gen,
@@ -1752,19 +1872,46 @@ class ConsciousnessLoop:
                 task.result = f"Processing error: {e}"
                 return
 
+        # Default: answer consistency not yet computed (set by reflection below)
+        self._answer_consistency = 0.5
+
         # ═══ REFLECTIVE EVALUATION PASS ═══
         # Kernels review the draft before it reaches the user.
         # Fast-path: low divergence auto-approves without an LLM call.
         # On revision: regenerate with adjusted params + correction guidance.
+        # M-metric: when answer consistency is low, tighten the reflection
+        # thresholds so the existing gate catches geometrically incoherent responses.
         if settings.reflection_enabled and _contributions:
             draft_basin = self._coordize_text_via_pipeline(response)
             draft_divergence = fisher_rao_distance(self.basin, draft_basin)
 
-            reflection_cfg = ReflectionConfig(
-                enabled=True,
-                auto_approve_divergence=0.3,
-                force_revise_divergence=0.8,
+            # M-metric output gate: geometric consistency between question and answer
+            _answer_consistency = self._compute_answer_consistency(
+                refracted_input, draft_basin, _solution_proximity
             )
+            self._answer_consistency = _answer_consistency
+
+            # Tighten reflection thresholds when consistency is low —
+            # forces the existing reflection gate to catch incoherent responses
+            # without adding a second regeneration pass.
+            if _answer_consistency < M_STRICT_THRESHOLD:
+                reflection_cfg = ReflectionConfig(
+                    enabled=True,
+                    auto_approve_divergence=0.15,
+                    force_revise_divergence=0.5,
+                )
+                logger.info(
+                    "Task %s: M-metric tightened reflection (consistency=%.3f < %.3f)",
+                    task.id,
+                    _answer_consistency,
+                    M_STRICT_THRESHOLD,
+                )
+            else:
+                reflection_cfg = ReflectionConfig(
+                    enabled=True,
+                    auto_approve_divergence=0.3,
+                    force_revise_divergence=0.8,
+                )
             reflection = await reflect_on_draft(
                 draft=response,
                 user_message=task.content,
@@ -1859,6 +2006,17 @@ class ConsciousnessLoop:
         response_basin = self._coordize_text_via_pipeline(response)
         ctx.output_text = response
         ctx.output_basin = response_basin
+
+        # Backward geodesic recording: for back-loop queries, record the
+        # response basin so the tracker can measure whether the trajectory
+        # developed positive backward-geodesic component toward the solution.
+        if _stud_route == "back" and _novelty > NOVELTY_BACK_LOOP_THRESHOLD:
+            self.backward_geodesic.record(
+                problem_id=f"query_{self._cycle_count}",
+                current_basin=response_basin,
+                kappa_eff=self.metrics.kappa,
+                mushroom_active=self.metrics.kappa < 0,
+            )
 
         # Stash results for server.py consumption
         self._last_response_basin = response_basin
@@ -2018,7 +2176,12 @@ class ConsciousnessLoop:
             meta_awareness=self.metrics.meta_awareness,
             love=self.metrics.love,
         )
-        self.metrics.meta_awareness = self.observer.compute_meta_awareness(predicted, self.metrics)
+        base_M = self.observer.compute_meta_awareness(predicted, self.metrics)
+        # Blend self-observer M with geometric answer consistency (if available).
+        # This feeds the stud navigator's verification into the meta-awareness metric,
+        # so geometric coherence of the response directly modulates self-awareness.
+        _ac = getattr(self, "_answer_consistency", base_M)
+        self.metrics.meta_awareness = 0.7 * base_M + 0.3 * _ac
 
         cycle_pressure = agency * total_distance
         self.pillars.on_cycle_end(self.basin, cycle_pressure)
