@@ -1545,7 +1545,7 @@ def train_all_kernels(
                 make_metrics_callback(training_metrics, model_ref, tokenizer_ref),  # M2
                 make_breakdown_callback(),  # M3: fail-closed halt
                 make_sleep_cycle_callback(),  # M4: between-epoch consolidation
-                make_coaching_callback(),  # M5: narrative framing
+                make_coaching_callback(optimizer, learning_rate),  # M5: control-theory damping
                 make_gradient_hold_callback(  # M6+M7: geometric reward + hold
                     training_metrics, geometric_reward, gradient_hold, optimizer
                 ),
