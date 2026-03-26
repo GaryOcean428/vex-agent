@@ -1681,6 +1681,8 @@ dependencies = [
     { name = "python-multipart" },
     { name = "qig-core" },
     { name = "redis" },
+    { name = "requests" },
+    { name = "scipy" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1720,8 +1722,10 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "qig-core", specifier = ">=2.6.0" },
     { name = "redis", specifier = ">=5.0.0" },
+    { name = "requests", specifier = ">=2.32.0" },
     { name = "requests", marker = "extra == 'harvest'" },
     { name = "ruff", marker = "extra == 'lint'", specifier = ">=0.9.0" },
+    { name = "scipy", specifier = ">=1.10.0" },
     { name = "scipy", marker = "extra == 'harvest'" },
     { name = "torch", marker = "extra == 'harvest'" },
     { name = "transformers", marker = "extra == 'harvest'" },
