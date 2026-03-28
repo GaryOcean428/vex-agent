@@ -32,6 +32,27 @@ import modal
 # --- Configuration --------------------------------------------------------
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
 HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "a100")
+
+# GPU-model compatibility guard: 35B MoE needs ≥40GB VRAM (80GB recommended).
+# HARVEST_GPU_TYPE is evaluated at deploy time from local env, NOT Modal secrets.
+# Always set locally before `modal deploy`:
+#   HARVEST_GPU_TYPE=a100-80gb modal deploy modal/vex_coordizer_harvest.py
+_MODEL_GPU_FLOOR = {"Qwen/Qwen3.5-35B-A3B": "a100", "Qwen/Qwen3.5-4B": "a10g"}
+_GPU_VRAM_ORDER = ["t4", "l4", "a10g", "a100", "a100-80gb", "h100"]
+_floor = _MODEL_GPU_FLOOR.get(HARVEST_MODEL_ID, "a10g")
+if (
+    HARVEST_GPU_TYPE in _GPU_VRAM_ORDER
+    and _floor in _GPU_VRAM_ORDER
+    and _GPU_VRAM_ORDER.index(HARVEST_GPU_TYPE) < _GPU_VRAM_ORDER.index(_floor)
+):
+    import warnings
+
+    warnings.warn(
+        f"[GPU-GUARD] HARVEST_GPU_TYPE={HARVEST_GPU_TYPE} is too small for "
+        f"{HARVEST_MODEL_ID} (minimum: {_floor}). Inference will OOM. "
+        f"Set HARVEST_GPU_TYPE={_floor} or larger.",
+        stacklevel=1,
+    )
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 BASIN_DIM = 64  # frozen
 LENS_DIM = 32  # from eigenvalue analysis
