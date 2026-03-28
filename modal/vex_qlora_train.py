@@ -77,7 +77,7 @@ def _json_default(obj: object) -> object:
 
 
 # --- Configuration --------------------------------------------------------
-HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
+HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-35B-A3B")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 KERNEL_CALLBACK_URL = os.environ.get("KERNEL_CALLBACK_URL", "")
 

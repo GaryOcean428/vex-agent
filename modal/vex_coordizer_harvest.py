@@ -1,8 +1,8 @@
 """
 Modal GPU Function — CoordizerV2 Harvest + PGA Compress
 
-Runs Qwen3.5-4B (default) or larger Qwen models (set via HARVEST_MODEL_ID
-env var, e.g. Qwen/Qwen3.5-35B-A3B) in NF4 on A100 GPU.
+Runs Qwen3.5-35B-A3B MoE (default) in NF4 on A100-80GB GPU.
+Override HARVEST_MODEL_ID env var to use a different model (e.g. Qwen/Qwen3.5-4B for dev).
 Computes full V-dimensional probability distributions AND runs PGA
 compress on-GPU, returning only 64D basin coords + 32D lens coords.
 
@@ -25,9 +25,9 @@ Model persistence:
     QLoRA adapter loaded from /models/adapters/harvest-qlora if available.
     This model is the harvest substrate — it evolves with every training run.
 
-Note: HARVEST_MODEL_ID defaults to "Qwen/Qwen3.5-4B" in code as a safe
-fallback. For production harvesting on 35B-A3B, set the Modal secret
-`model` key HARVEST_MODEL_ID=Qwen/Qwen3.5-35B-A3B.
+Note: HARVEST_MODEL_ID defaults to "Qwen/Qwen3.5-35B-A3B" (production).
+Override via Modal secret `model` key HARVEST_MODEL_ID=Qwen/Qwen3.5-4B
+for dev/testing on smaller GPUs.
 """
 
 import os
@@ -35,8 +35,8 @@ import os
 import modal
 
 # --- Configuration --------------------------------------------------------
-HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
-HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "a100")
+HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-35B-A3B")
+HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "a100-80gb")
 
 # GPU-model compatibility guard: 35B MoE needs ≥40GB VRAM (80GB recommended).
 # HARVEST_GPU_TYPE is evaluated at deploy time from local env, NOT Modal secrets.
@@ -122,9 +122,9 @@ class CoordizerHarvester:
     @modal.enter()
     def load_model(self):
         if KERNEL_API_KEY:
-            print(f"KERNEL_API_KEY loaded: {KERNEL_API_KEY[:4]}...{KERNEL_API_KEY[-4:]}")
+            print("KERNEL_API_KEY: SET")
         else:
-            print("WARNING: KERNEL_API_KEY not set — harvest endpoint is unauthenticated.")
+            print("WARNING: KERNEL_API_KEY: NOT SET — harvest endpoint is unauthenticated.")
 
         import json
         from pathlib import Path
