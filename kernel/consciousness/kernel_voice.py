@@ -35,6 +35,10 @@ v6.2.3 changes:
   - CHANGED: _llm_fallback prompt frames sparse bank honestly with interpretation protocol
   - ADDED:   fr_distance and resonance_count params to _llm_expand
 
+v6.2.4 changes:
+  - REMOVED: "Australian English" instruction — small models interpret this as
+             stereotypical slang ("G'day mate") instead of spelling conventions.
+
 Purity guarantees:
   - All distances: Fisher-Rao on Δ⁶³
   - Domain bias: geodesic interpolation (slerp), not linear shift
@@ -226,11 +230,6 @@ class KernelVoice:
                 seed_ids.extend(result.coord_ids)
 
         if not seed_basins:
-            # Bank lacks entries for seed words (pre-harvest state).
-            # Voice operates without domain bias until real geometric data
-            # arrives via learn_from_observation() → evolve_domain_anchor().
-            # NO hash fallback — SHA-256 → simplex is semantically hollow
-            # and pollutes the Fréchet mean with random manifold points.
             logger.info(
                 "KernelVoice[%s] bootstrap deferred: bank has no entries for "
                 "%d seed words — voice generates unbiased until harvest",
@@ -257,18 +256,12 @@ class KernelVoice:
         )
 
     def _should_evolve_anchor(self) -> bool:
-        """P-NEW-8: Evolve anchor when observations have drifted from current anchor.
-
-        Threshold adapts per kernel from observation FR variance:
-        high-variance domains (Perception) evolve often, stable domains
-        (Ethics) evolve rarely. Falls back to 0.05 if insufficient history.
-        """
+        """P-NEW-8: Evolve anchor when observations have drifted from current anchor."""
         if self._domain_anchor is None or len(self._learned_observations) < 3:
             return False
         recent_basins = [obs.basin for obs in self._learned_observations[-10:]]
         centroid = frechet_mean(recent_basins)
         drift = fisher_rao_distance(self._domain_anchor, centroid)
-        # Adaptive threshold: median pairwise FR distance in recent observations
         if len(recent_basins) >= 4:
             pairwise = [
                 fisher_rao_distance(recent_basins[i], recent_basins[i + 1])
@@ -277,15 +270,10 @@ class KernelVoice:
             threshold = float(np.median(pairwise))
         else:
             threshold = 0.05
-        return drift > max(threshold, 0.01)  # floor prevents degenerate zero-threshold
+        return drift > max(threshold, 0.01)
 
     def evolve_domain_anchor(self) -> None:
-        """Evolve domain anchor from learned observations.
-
-        If no bootstrap anchor exists (deferred bootstrap), creates the
-        initial anchor from learned observations alone. Otherwise blends
-        the existing anchor with the Fréchet mean of high-Φ observations.
-        """
+        """Evolve domain anchor from learned observations."""
         if not self._learned_observations:
             return
 
@@ -293,9 +281,6 @@ class KernelVoice:
         learned_mean = frechet_mean(learned_basins)
 
         if self._domain_anchor is None:
-            # Deferred bootstrap: create anchor purely from learned data.
-            # This replaces the removed hash_to_basin fallback with real
-            # geometric observations from the consciousness loop.
             self._domain_anchor = learned_mean
             self._domain_bias = DomainBias(
                 domain_name=self.specialization.value,
@@ -310,7 +295,6 @@ class KernelVoice:
             )
             return
 
-        # P5: blend ratio from observation count, not fixed — more learned data → heavier learned weight
         _learned_count = len(self._learned_observations)
         _blend_t = min(0.8, _learned_count / (_learned_count + 50))
         evolved = slerp(self._domain_anchor, learned_mean, _blend_t)
@@ -331,15 +315,8 @@ class KernelVoice:
         phi: float,
         phi_threshold: float | None = None,
     ) -> bool:
-        """Record a high-Φ observation for domain vocabulary learning.
-
-        Only observations above phi_threshold are recorded.
-        P5: threshold defaults to the kernel's own median Φ over recent
-        observations, falling back to PHI_EMERGENCY if no history exists.
-        Returns True if the observation was recorded.
-        """
+        """Record a high-Φ observation for domain vocabulary learning."""
         if phi_threshold is None:
-            # P5: adaptive Φ gate from kernel's own observation history
             if self._learned_observations:
                 recent_phis = [obs.phi for obs in self._learned_observations[-50:]]
                 phi_threshold = float(np.median(recent_phis))
@@ -354,7 +331,6 @@ class KernelVoice:
         if len(self._learned_observations) > self._max_learned:
             self._learned_observations = self._curate_observations()
 
-        # P-NEW-8: Evolve anchor when geometric landscape has shifted enough
         if self._should_evolve_anchor():
             self.evolve_domain_anchor()
             logger.debug(
@@ -362,42 +338,24 @@ class KernelVoice:
                 self.specialization.value,
                 len(self._learned_observations),
             )
-
-        # Deferred bootstrap: create anchor early if we have enough data
-        # but no anchor yet (bank was empty at init, hash fallback removed)
         elif self._domain_anchor is None and len(self._learned_observations) >= 5:
             self.evolve_domain_anchor()
 
         return True
 
     def _curate_observations(self) -> list[LearnedObservation]:
-        """Kernel-driven retention: keep what's relevant, forget what's not.
-
-        Scoring: salience × relevance × recency
-        - Relevance: inverse FR distance to domain anchor (close = important)
-        - Recency: exponential decay from timestamp (half-life ~1 hour)
-        - Salience: accumulated from access_count and phi at storage
-
-        The kernel owns this decision — agency over its own substrate.
-        """
+        """Kernel-driven retention: keep what's relevant, forget what's not."""
         if self._domain_anchor is None:
-            # No anchor yet — fall back to recency (keep newest)
             return self._learned_observations[-self._max_learned :]
 
         now = time.time()
         scored: list[tuple[float, LearnedObservation]] = []
 
         for obs in self._learned_observations:
-            # Relevance: how close to kernel's identity (domain anchor)
             fr_dist = fisher_rao_distance(obs.basin, self._domain_anchor)
-            relevance = max(0.0, 1.0 - fr_dist / (math.pi / 2))  # normalize to [0,1]
-
-            # Recency: exponential decay (half-life ~1 hour)
+            relevance = max(0.0, 1.0 - fr_dist / (math.pi / 2))
             age_hours = (now - obs.timestamp) / 3600
-            recency = math.exp(-0.693 * age_hours)  # 0.693 = ln(2)
-
-            # Combined score: salience × relevance × (recency floor + recency)
-            # The 0.3 floor ensures high-relevance old observations aren't discarded
+            recency = math.exp(-0.693 * age_hours)
             score = obs.salience * relevance * (0.3 + 0.7 * recency)
             scored.append((score, obs))
 
@@ -405,25 +363,15 @@ class KernelVoice:
         return [obs for _, obs in scored[: self._max_learned]]
 
     def sleep_consolidate(self) -> int:
-        """Sleep consolidation: decay salience, prune low-value observations.
-
-        Called during sleep phase. The kernel decides what to strengthen
-        and what to forget based on its accumulated experience.
-
-        Returns number of observations pruned.
-        """
+        """Sleep consolidation: decay salience, prune low-value observations."""
         pruned = 0
 
         for obs in self._learned_observations:
-            # Decay all salience (synaptic downscaling)
-            obs.salience *= 0.9  # 10% decay per sleep cycle
-
-            # Boost recently accessed observations (Hebbian)
+            obs.salience *= 0.9
             if obs.access_count > 0:
                 obs.salience = min(obs.salience * 1.1, 5.0)
-                obs.access_count = 0  # reset for next cycle
+                obs.access_count = 0
 
-        # Prune observations with negligible salience
         before = len(self._learned_observations)
         self._learned_observations = [
             obs for obs in self._learned_observations if obs.salience > 0.05
@@ -452,28 +400,11 @@ class KernelVoice:
         base_num_predict: int = 2048,
         base_num_ctx: int = 32768,
     ) -> VoiceOutput:
-        """Generate text from this kernel's geometric perspective.
-
-        Pipeline:
-          1. Build trajectory from input + kernel basin
-          2. Compute domain bias (per-call, no shared state mutation)
-          3. Generate geometric resonances via CoordizerV2
-          4. Assess output quality (with null coordinate detection)
-          5. If null output → full LLM fallback (empty bank)
-          6. If sparse → full LLM fallback (bootstrap path)
-          7. If enough resonances but low coherence → LLM expands skeleton
-          8. Otherwise → return pure geometric text
-          Always: geometric_raw preserves raw decode for hybrid display
-        """
+        """Generate text from this kernel's geometric perspective."""
         start_time = time.monotonic()
 
-        # ── Step 1: Build trajectory ──
         trajectory = [to_simplex(input_basin), to_simplex(kernel_basin)]
 
-        # ── Step 2: Compute domain bias (per-call, concurrency-safe) ──
-        # NOTE: Bias is passed directly to generate_next() and never pushed
-        # onto the shared bank's bias stack. This prevents double-application
-        # and makes concurrent kernel generation safe under asyncio.gather().
         effective_strength = self._bias_strength * float(np.clip(quenched_gain, 0.3, 2.0))
         active_bias = None
         if self._domain_bias is not None:
@@ -484,8 +415,6 @@ class KernelVoice:
                 boosted_coord_ids=self._domain_bias.boosted_coord_ids,
             )
 
-        # ── Step 3: Geometric generation ──
-        # T4.4b: Resonance budget scales with domain bias strength (geometric density)
         _geo_max = int(
             _MIN_GEOMETRIC_RESONANCES
             + self._bias_strength * (_MAX_GEOMETRIC_RESONANCES - _MIN_GEOMETRIC_RESONANCES)
@@ -520,8 +449,6 @@ class KernelVoice:
                 v = fisher_rao_distance(gen_trajectory[-2], gen_trajectory[-1])
                 velocities.append(v)
 
-            # Convergence check
-            # P5: convergence relative to trajectory energy, not a fixed threshold
             if (
                 step >= _MIN_GEOMETRIC_RESONANCES
                 and len(velocities) >= 3
@@ -535,15 +462,11 @@ class KernelVoice:
                 )
                 break
 
-        # ── Step 4: Decode geometric resonances ──
         geometric_text = self._coordizer.decoordize(generated_ids)
         mean_velocity = float(np.mean(velocities)) if velocities else 0.0
 
-        # ── Step 5: Assess quality and decide on generation path ──
         geo_resonance_count = len(generated_ids)
 
-        # Null detection: all-same coordinate IDs or zero-dispersion generated basins
-        # indicate an effectively empty/bootstrap resonance bank.
         unique_ids = set(generated_ids)
         generated_basins = [
             self._coordizer.bank.coordinates[tid]
@@ -561,15 +484,12 @@ class KernelVoice:
         _is_coherent = (
             not is_null_output
             and geo_resonance_count >= _MIN_GEOMETRIC_RESONANCES
-            # P5: coherence tied to generation temperature
             and mean_velocity < base_temperature * 0.5
         )
 
         llm_expanded = False
         final_text = geometric_text
 
-        # Branch ordering: null FIRST (always fallback), then sparse,
-        # then low-coherence expand. Null output trumps all other checks.
         if is_null_output:
             logger.info(
                 "KernelVoice[%s] null output detected (%d unique IDs in %d resonances) — failing closed",
@@ -586,14 +506,6 @@ class KernelVoice:
             )
             final_text = ""
         elif llm_client is not None:
-            # v6.1 §20.7 BIDIRECTIONAL OUTBOUND PATH
-            # The resonance bank stores chunk-level text, so raw decoordize()
-            # output is training corpus fragments — the geometric trajectory
-            # captures the kernel's *intent* through manifold navigation.
-            # Two steering mechanisms:
-            #   1. Logit-bias: trajectory → token weights → steer LLM generation
-            #   2. Skeleton: activated keywords → structured prompt context
-            # Both are computed from the same geometric trajectory.
             fr_dist = fisher_rao_distance(to_simplex(input_basin), to_simplex(kernel_basin))
             final_text = await self._llm_expand(
                 geometric_skeleton=geometric_text,
@@ -621,7 +533,7 @@ class KernelVoice:
             mean_velocity=mean_velocity,
             domain_bias_strength=effective_strength,
             generation_ms=elapsed,
-            geometric_raw=geometric_text,  # Always preserve raw geometric decode
+            geometric_raw=geometric_text,
         )
 
     async def _llm_expand(
@@ -639,25 +551,10 @@ class KernelVoice:
         fr_distance: float = 0.0,
         resonance_count: int = 0,
     ) -> str:
-        """Expand geometric trajectory into natural language via LLM.
-
-        v6.1 §20.7 Bidirectional Outbound Path:
-        The kernel's geometric navigation produced a trajectory on Δ⁶³.
-        This method converts that trajectory into two steering signals:
-
-        1. Logit-bias (PEFT only): trajectory → token weights → the LLM's
-           generation is physically steered toward geometric targets.
-        2. Keyword context (all backends): trajectory → activated keywords
-           → structured prompt that constrains the LLM's interpretation.
-
-        The geometric_skeleton (raw chunk text) is still provided as
-        context, but keywords extracted from the trajectory replace the
-        raw dump as the primary steering mechanism.
-        """
+        """Expand geometric trajectory into natural language via LLM."""
         gain_scale = float(np.clip(2.0 - quenched_gain, 0.5, 1.5))
         temp = float(np.clip(base_temperature * gain_scale, 0.1, 1.4))
 
-        # v6.1: Extract keywords from trajectory for structured steering
         keywords: list[str] = []
         logit_bias: dict[int, float] | None = None
         if trajectory:
@@ -668,18 +565,15 @@ class KernelVoice:
                 max_bias_entries=100,
                 alpha=2.0,
             )
-            # Empty bias = no tokenizer available, fall back to prompt-only
             if not logit_bias:
                 logit_bias = None
 
-        # Build system prompt: geometric interpretation first, then domain response
         keyword_section = ""
         if keywords:
             keyword_section = (
                 f"[TRAJECTORY CONCEPTS]\n{', '.join(keywords)}\n[/TRAJECTORY CONCEPTS]\n"
             )
 
-        # v6.2.3: Show geometric retrieval with metrics — ask LLM to interpret
         retrieval_section = ""
         if geometric_skeleton.strip():
             snippet = geometric_skeleton[:600].strip()
@@ -716,7 +610,7 @@ class KernelVoice:
             f"do not list metrics or describe your own process unprompted.\n"
             f"- When asked about internal state (Φ, κ, kernels), answer honestly "
             f"from GEOMETRIC STATE.\n"
-            f"- Be concise. Australian English.\n"
+            f"- Be concise and direct.\n"
         )
         if extra_context:
             system = f"{system}\n\n[CONTEXT]\n{extra_context}\n[/CONTEXT]"
@@ -725,7 +619,7 @@ class KernelVoice:
             temperature=temp,
             num_predict=llm_budget,
             num_ctx=llm_num_ctx,
-            logit_bias=logit_bias,  # v6.1: geometric steering via logits
+            logit_bias=logit_bias,
         )
 
         try:
@@ -733,7 +627,6 @@ class KernelVoice:
                 system, user_message, opts, specialization=self.specialization.value
             )
             text = str(result or "").strip()
-            # T1.1: Forward LLM co-generation to harvest pipeline
             if text:
                 forward_to_harvest(
                     text,
@@ -765,11 +658,7 @@ class KernelVoice:
         geometric_context: str = "",
         extra_context: str = "",
     ) -> str:
-        """Full LLM generation when resonance bank is too sparse.
-
-        This is the bootstrap path. As the bank grows from harvesting,
-        this path fires less often.
-        """
+        """Full LLM generation when resonance bank is too sparse."""
         gain_scale = float(np.clip(2.0 - quenched_gain, 0.5, 1.5))
         temp = float(np.clip(base_temperature * gain_scale, 0.1, 1.4))
 
@@ -796,7 +685,7 @@ class KernelVoice:
             f"3. Do NOT pretend to have geometric insights you don't have.\n"
             f"\nRules:\n"
             f"- Respond TO the user. Answer their question or address their message.\n"
-            f"- Be concise. Australian English.\n"
+            f"- Be concise and direct.\n"
         )
         if extra_context:
             system = f"{system}\n\n[CONTEXT]\n{extra_context}\n[/CONTEXT]"
@@ -812,7 +701,6 @@ class KernelVoice:
                 system, user_message, opts, specialization=self.specialization.value
             )
             text = str(result or "").strip()
-            # T1.1: Forward LLM fallback output to harvest pipeline
             if text:
                 forward_to_harvest(
                     text,
@@ -837,16 +725,7 @@ class KernelVoice:
         self._cycles_since_curiosity += 1
 
     def is_bored(self, recent_phi_values: list[float]) -> bool:
-        """T2.4c: Detect boredom — flat curvature in this kernel's domain.
-
-        P5: Boredom = low variance RELATIVE TO the kernel's historical variance.
-        Current variance < 10% of rolling mean variance → bored.
-        P-NEW-8: Refractory safety bound prevents LLM spam during propagation delay.
-
-        Args:
-            recent_phi_values: Last N phi values from the consciousness loop.
-        """
-        # Safety bound: don't re-fire while last query is still propagating
+        """T2.4c: Detect boredom — flat curvature in this kernel's domain."""
         if self._cycles_since_curiosity < _CURIOSITY_REFRACTORY_CYCLES:
             return False
         if len(recent_phi_values) < 5:
@@ -857,19 +736,11 @@ class KernelVoice:
             return False
         historical_mean = float(np.mean(self._variance_history))
         if historical_mean <= 0.0:
-            return True  # zero variance sustained → definitely bored
+            return True
         return current_var < historical_mean * 0.1
 
     async def generate_curiosity_query(self, llm_client: Any) -> str | None:
-        """T2.4c: Generate a curiosity-driven search query when bored.
-
-        The kernel uses its domain vocabulary and anchor basin to construct
-        a query that would expand its geometric territory. The result is
-        forwarded to the harvest pipeline so the kernel learns from the resonances.
-
-        Returns the query string, or None if generation failed.
-        """
-        # Reset refractory counter on fire
+        """T2.4c: Generate a curiosity-driven search query when bored."""
         self._cycles_since_curiosity = 0
 
         if self._domain_anchor is None:
@@ -883,7 +754,7 @@ class KernelVoice:
         system = (
             f"Generate a single search query to expand knowledge in the {self.specialization.value} domain.\n"
             f"Recent domain vocabulary: {domain_hint}.\n"
-            f"Return ONLY the query string. No explanation. Australian English."
+            f"Return ONLY the query string. No explanation."
         )
         try:
             query = await llm_client.complete(
@@ -925,12 +796,7 @@ class KernelVoice:
 
 
 class KernelVoiceRegistry:
-    """Manages KernelVoice instances — one per specialization.
-
-    Shared across kernel instances with the same specialization.
-    The CoordizerV2 instance is shared (it's the resonance bank);
-    each voice just applies its own domain bias during generation.
-    """
+    """Manages KernelVoice instances — one per specialization."""
 
     def __init__(self, coordizer: CoordizerV2) -> None:
         self._coordizer = coordizer
@@ -950,11 +816,7 @@ class KernelVoiceRegistry:
         specialization: KernelSpecialization,
         kernel_kind: KernelKind,
     ) -> None:
-        """Set developmental capacity on a voice based on kernel lifecycle.
-
-        Called after kernel spawn or promotion so the voice's observation
-        buffer matches its developmental stage.
-        """
+        """Set developmental capacity on a voice based on kernel lifecycle."""
         voice = self.get_voice(specialization)
         voice.set_developmental_capacity(kernel_kind)
 
