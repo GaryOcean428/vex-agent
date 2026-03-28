@@ -1,5 +1,4 @@
-"""
-Send corpus through Modal /coordize to get Δ⁶³ basin coordinates.
+"""Send corpus through Modal /coordize to get Δ⁶³ basin coordinates.
 
 Splits corpus into batches and sends to the 35B model on A100.
 Saves raw harvest results + compressed basin bank.
@@ -13,9 +12,12 @@ import time
 import numpy as np
 import requests
 
-MODAL_URL = "https://archelon--vex-coordizer-harvest-coordizerharvester-web.modal.run"
+MODAL_URL = os.environ.get(
+    "MODAL_URL",
+    "https://archelon--vex-coordizer-harvest-coordizerharvester-web.modal.run",
+)
 API_KEY = os.environ.get("KERNEL_API_KEY", "")
-CORPUS_PATH = "scripts/harvest_corpus.json"
+CORPUS_PATH = os.path.join(os.path.dirname(__file__), "harvest_corpus.json")
 OUTPUT_DIR = "harvest_data"
 BATCH_SIZE = 50  # texts per request (keep reasonable for 35B model)
 MIN_CONTEXTS = 1  # accept tokens seen even once (we want broad coverage)
@@ -83,8 +85,10 @@ def main() -> None:
                 f"  harvest: {meta.get('n_resonances_harvested', '?')} resonances from {meta.get('total_tokens_processed', '?')} tokens"
             )
             if curvature:
+                _curv_mean = curvature.get("mean")
+                _curv_mean_str = f"{_curv_mean:.4f}" if isinstance(_curv_mean, (int, float)) else "?"
                 print(
-                    f"  curvature: mean={curvature.get('mean', '?'):.4f}, high={curvature.get('high_curvature_count', '?')}, low={curvature.get('low_curvature_count', '?')}"
+                    f"  curvature: mean={_curv_mean_str}, high={curvature.get('high_curvature_count', '?')}, low={curvature.get('low_curvature_count', '?')}"
                 )
 
             all_results.append(

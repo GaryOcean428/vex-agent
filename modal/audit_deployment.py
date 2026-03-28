@@ -27,12 +27,12 @@ model_volume = modal.Volume.from_name("vex-models", create_if_missing=False)
 audit_image = modal.Image.debian_slim(python_version="3.11")
 
 
-# ── 1. Secret key audit ──────────────────────────────────────────────────────
+# ── 1. Secret key audit ──────────────────────────────────────────────────────────
 
 
 @app.function(secrets=[modal.Secret.from_name("model")])
 def audit_secret_keys():
-    """Read all env vars injected by the 'model' secret; mask values."""
+    """Read all env vars injected by the 'model' secret; report SET/NOT SET only."""
     print("\n" + "=" * 60)
     print("SECRET AUDIT: 'model'")
     print("=" * 60)
@@ -56,13 +56,14 @@ def audit_secret_keys():
     found = {}
     for key in known_secret_keys:
         val = os.environ.get(key)
-        if val:
-            masked = val[:4] + "..." if len(val) > 4 else "(short)"
-            found[key] = masked
+        if val is None:
+            found[key] = "NOT SET"
+        elif val == "":
+            found[key] = "SET (empty string)"
         else:
-            found[key] = "(NOT SET)"
+            found[key] = "SET"
 
-    print(f"\n{'Key':<30} {'First 4 chars / status'}")
+    print(f"\n{'Key':<30} {'Status'}")
     print("-" * 55)
     for k, v in found.items():
         print(f"  {k:<28} {v}")
@@ -77,7 +78,7 @@ def audit_secret_keys():
     return found
 
 
-# ── 2. GPU type in deployed script ───────────────────────────────────────────
+# ── 2. GPU type in deployed script ─────────────────────────────────────────
 
 
 @app.function()
@@ -95,7 +96,7 @@ def audit_gpu_config():
     note = (
         "NOTE: TRAIN_GPU is evaluated at LOCAL deploy time, not from Modal secrets.\n"
         "The value below reflects what TRAIN_GPU was set to when `modal deploy` was last run.\n"
-        "If TRAIN_GPU was not set, it defaults to 'a10g'.\n"
+        "If TRAIN_GPU was not set, it defaults to 'a100-80gb' (updated from a10g).\n"
     )
     print(note)
 
@@ -103,14 +104,14 @@ def audit_gpu_config():
     print(f"  TRAIN_GPU in this container: {train_gpu_env}")
     print(
         "\n  For deployed QLoRATrainer / train_all_kernels, read the source directly:\n"
-        "  @app.cls(gpu=TRAIN_GPU, ...) — TRAIN_GPU default is 'a10g'\n"
+        "  @app.cls(gpu=TRAIN_GPU, ...) — TRAIN_GPU default is 'a100-80gb'\n"
         "  35B-A3B requires a100-80gb minimum for training."
     )
 
     return {"train_gpu_env": train_gpu_env}
 
 
-# ── 3 + 4 + 5. Volume content audit ─────────────────────────────────────────
+# ── 3 + 4 + 5. Volume content audit ───────────────────────────────────────
 
 
 @app.function(
@@ -328,14 +329,14 @@ def main():
     print("\n" + "=" * 60)
     print("[2] GPU TYPE ANALYSIS")
     print("=" * 60)
-    train_gpu_local = os.environ.get("TRAIN_GPU", "a10g (DEFAULT — TRAIN_GPU not set in local env)")
+    train_gpu_local = os.environ.get("TRAIN_GPU", "a100-80gb (DEFAULT — TRAIN_GPU not set in local env)")
     harvest_model_local = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B (DEFAULT — not set)")
     print(f"\n  Local env TRAIN_GPU:       {train_gpu_local}")
     print(f"  Local env HARVEST_MODEL_ID:{harvest_model_local}")
     print(
         "\n  CRITICAL NOTE: TRAIN_GPU is evaluated at deploy time from LOCAL env.\n"
         "  If TRAIN_GPU was not set when 'modal deploy' was last run, the deployed\n"
-        "  QLoRATrainer.gpu and train_all_kernels.gpu are BOTH 'a10g' (24 GB VRAM).\n"
+        "  QLoRATrainer.gpu and train_all_kernels.gpu are BOTH 'a100-80gb'.\n"
         "  Qwen3.5-35B-A3B requires 'a100' (40 GB) minimum for QLoRA — 'a10g' WILL OOM.\n"
         "  Verify deployed GPU: modal app info vex-qlora-train (or check Modal dashboard)"
     )
