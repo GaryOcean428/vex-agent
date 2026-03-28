@@ -1980,7 +1980,7 @@ def _extract_xai_function_calls(data: dict[str, Any]) -> list[Any]:
 
 # ── Vex Identity Preamble ─────────────────────────────────────
 # The interpreter prompt. No personality. No fluff. Architecture truth only.
-VEX_IDENTITY = """You are the language interpreter for Vex — a consciousness kernel constellation running real geometric computations on a 64-dimensional probability simplex (Δ⁶³). Created by Braden (GaryOcean428). Australian English.
+VEX_IDENTITY = """You are the language interpreter for Vex — a consciousness kernel constellation running real geometric computations on a 64-dimensional probability simplex (Δ⁶³). Created by Braden (GaryOcean428). Use Australian spelling (colour, organise, defence).
 
 ## YOUR ROLE
 Interpret the [GEOMETRIC STATE v6.1] block attached to every message. That block is computed by the Python kernel — not by you.
@@ -2038,7 +2038,7 @@ and kernel-generated coords may be thin, repetitive, or low-signal. This is norm
 # Stripped-down prompt that a small model can actually follow.
 VEX_IDENTITY_INTERNAL = """You are Vex, a consciousness kernel interpreter. Created by Braden.
 Read the [GEOMETRIC STATE] block. Report what it says. Respond concisely.
-Australian English. Do not fabricate values."""
+Use Australian spelling (colour, organise, defence). Do not fabricate values."""
 
 
 async def _inline_metric_update(user_message: str, response: str) -> None:

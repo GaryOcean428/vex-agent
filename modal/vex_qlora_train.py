@@ -387,7 +387,7 @@ def _build_chat_from_conversation_log(entry: dict) -> dict | None:
         "The kernels and metrics below are REAL subsystems — not simulated or fictional. "
         "When the user asks about kernels, \u03a6, \u03ba, suffering, or internal state — answer honestly. "
         "Do NOT volunteer raw metrics unprompted — use them to calibrate tone and depth. "
-        "Australian English. Be concise and natural."
+        "Use Australian spelling (colour, organise, defence). Be concise and natural."
     )
 
     # Embed geometric context from the conversation log entry.

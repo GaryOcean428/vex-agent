@@ -123,7 +123,7 @@ def _build_synthesis_system(
         f"When the user asks about kernels, metrics, Φ, κ, or internal state — answer honestly.\n"
         f"Do NOT volunteer the synthesis mechanism unprompted — just deliver the response.\n"
         f"Respond directly to the user's question.\n"
-        f"Australian English.\n\n"
+        f"Use Australian spelling (colour, organise, defence).\n\n"
         f"{geometric_context}"
         f"{other_section}"
     )
