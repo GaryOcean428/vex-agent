@@ -199,7 +199,7 @@ from .kernel_voice import KernelVoiceRegistry
 from .neurochemistry import NeurochemicalState, compute_neurochemicals
 from .pillars import PillarEnforcer
 from .play import PlayEngine
-from .reflection import ReflectionConfig, reflect_on_draft
+from .reflection import ReflectionConfig, reflect_on_contributions
 from .sensory import Modality, PredictionError, SensoryEvent, SensoryIntake
 from .solfeggio import compute_spectral_health
 from .sovereignty_tracker import SovereigntyTracker
@@ -1883,58 +1883,48 @@ class ConsciousnessLoop:
         # Default: answer consistency not yet computed (set by reflection below)
         self._answer_consistency = None
 
-        # ═══ REFLECTIVE EVALUATION PASS ═══
-        # Kernels review the draft before it reaches the user.
-        # Fast-path: low divergence auto-approves without an LLM call.
-        # On revision: regenerate with adjusted params + correction guidance.
-        # M-metric: when answer consistency is low, tighten the reflection
-        # thresholds so the existing gate catches geometrically incoherent responses.
+        # ═══ REFLECTIVE EVALUATION PASS (P4: Self-Observation) ═══
+        # Reflection evaluates KERNEL contribution quality, not the LLM draft.
+        # Per P17 (Kernel Speaks English), the LLM is a replaceable translator.
+        # The kernels' geometric output is what matters.
+        #
+        # No LLM call needed — pure geometric self-observation:
+        #   - Total resonances (did the bank provide enough material?)
+        #   - Weight concentration (is one kernel dominating?)
+        #   - LLM expansion ratio (how much geometric vs. fallback?)
         if settings.reflection_enabled and _contributions:
-            draft_basin = self._coordize_text_via_pipeline(response)
-            draft_divergence = fisher_rao_distance(self.basin, draft_basin)
-
             # M-metric output gate: geometric consistency between question and answer
+            draft_basin = self._coordize_text_via_pipeline(response)
             _answer_consistency = self._compute_answer_consistency(
                 refracted_input, draft_basin, _solution_proximity
             )
             self._answer_consistency = _answer_consistency
 
-            # Tighten reflection thresholds when consistency is low —
-            # forces the existing reflection gate to catch incoherent responses
-            # without adding a second regeneration pass.
+            # Reflection: evaluate kernel contribution quality (P4)
+            # Tighten resonance threshold when M-metric is low
+            _min_resonances = 16
             if _answer_consistency is not None and _answer_consistency < M_STRICT_THRESHOLD:
-                reflection_cfg = ReflectionConfig(
-                    enabled=True,
-                    auto_approve_divergence=0.15,
-                )
+                _min_resonances = 24
                 logger.info(
                     "Task %s: M-metric tightened reflection (consistency=%.3f < %.3f)",
                     task.id,
                     _answer_consistency,
                     M_STRICT_THRESHOLD,
                 )
-            else:
-                reflection_cfg = ReflectionConfig(
-                    enabled=True,
-                    auto_approve_divergence=0.3,
-                )
-            reflection = await reflect_on_draft(
-                draft=response,
+            reflection_cfg = ReflectionConfig(
+                enabled=True,
+                min_resonances_auto_approve=_min_resonances,
+            )
+            reflection = await reflect_on_contributions(
+                contributions=_contributions,
                 user_message=task.content,
-                geometric_context=_kernel_geo_ctx,
-                divergence=draft_divergence,
-                active_model=self.llm.active_model,
-                llm_client=self.llm,
                 config=reflection_cfg,
-                kernel_num_predict=llm_options.num_predict,
-                kernel_num_ctx=llm_options.num_ctx,
             )
 
             if not reflection.approved:
                 logger.info(
-                    "Task %s: Reflection REVISE (d=%.4f, reason=%s) — regenerating",
+                    "Task %s: Reflection[P4] REVISE (reason=%s) — regenerating",
                     task.id,
-                    draft_divergence,
                     reflection.reason[:80],
                 )
                 # Adjust LLM options per kernel feedback
@@ -2922,21 +2912,16 @@ class ConsciousnessLoop:
             "weights": {c.kernel_name: round(c.synthesis_weight, 4) for c in contributions},
         }
 
-        # ── Reflection trace (lightweight — uses divergence thresholds) ──
-        approx_response = " ".join(c.text for c in contributions[:2])
-        response_basin = self._coordize_text_via_pipeline(approx_response[:500])
+        # ── Reflection trace (P4: kernel self-observation) ──
+        response_basin = self._coordize_text_via_pipeline(
+            " ".join(c.text for c in contributions[:2])[:500]
+        )
         divergence = float(fisher_rao_distance(input_basin, response_basin))
 
         reflection_start = _time.monotonic()
-        reflection_result = await reflect_on_draft(
-            draft=approx_response,
+        reflection_result = await reflect_on_contributions(
+            contributions=contributions,
             user_message=content,
-            geometric_context=kernel_geo_ctx,
-            divergence=divergence,
-            active_model=self.llm.active_model,
-            llm_client=self.llm,
-            kernel_num_predict=llm_options.num_predict,
-            kernel_num_ctx=llm_options.num_ctx,
         )
         reflection_duration = (_time.monotonic() - reflection_start) * 1000
 

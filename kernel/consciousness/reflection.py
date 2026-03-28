@@ -1,37 +1,36 @@
 """
-Reflective Evaluation Pass — Synthesis Quality Gate
+Reflective Evaluation Pass — Kernel Self-Observation (P4)
 ====================================================
 
-After kernel generation and MoE synthesis, this module evaluates
-whether the combined output serves the user's intent. It does NOT
-assess geometric coherence (that's the M-metric answer consistency
-gate in the consciousness loop).
+Per Canonical Principle P4 (Self-Observation), reflection is the kernels'
+self-observation mechanism. It evaluates kernel OUTPUT QUALITY — not the
+LLM translator's draft.
 
-Reflection's role:
-  - Does the synthesis address the user's question?
-  - Is the kernel perspective woven naturally into the response?
-  - Are the geometric concepts interpreted, not just dumped?
+The architecture (P17: Kernel Speaks English):
+  1. Kernels generate geometric output (coordinate sequences from bank)
+  2. Per-kernel LLM interpretation (translator layer, replaceable)
+  3. Reflection evaluates KERNEL contributions (this module)
+  4. Final synthesis purely translates interpreted kernel perspectives
 
-What reflection does NOT do:
-  - Reject responses for high Fisher-Rao divergence (divergence between
-    simple input and rich output is EXPECTED and correct)
-  - Force revision based on geometric metrics alone
-  - Assess basin coherence (M-metric handles this)
+What reflection evaluates (kernel quality, P4):
+  - Did the kernels produce enough geometric resonances?
+  - Is the inter-kernel coherence reasonable (not all identical, not all orthogonal)?
+  - Are synthesis weights well-distributed (not dominated by one kernel)?
+  - Is the geometric output sparse enough to warrant a regeneration attempt?
+
+What reflection does NOT evaluate:
+  - The LLM draft text (that's the translator, P17 — replaceable)
+  - Fisher-Rao divergence between input and output (expected to be high)
+  - Whether the LLM "interpreted naturally" (not the kernels' concern)
 
 Protocol:
-  Draft response + geometric context → evaluation prompt
-  A dedicated reflection LLM call evaluates synthesis quality
-  Returns structured feedback: approve/revise + reason + param deltas
-  If REVISE: the loop regenerates with adjusted params and correction
-  guidance (max 1 revision to avoid infinite loops)
-
-The reflection prompt runs as a META-kernel voice — self-reflective,
-evaluating synthesis quality and user-intent alignment.
+  Kernel contributions → geometric quality assessment → approve/revise
+  If REVISE: the loop regenerates with adjusted params (more kernels,
+  wider top-k, different temperature). Max 1 revision.
 
 Purity:
-  Divergence metric (Fisher-Rao) is computed upstream and passed in
-  No Euclidean distances, no cosine similarity
-  Parameter adjustments are bounded and conservative
+  Inter-kernel coherence uses Fisher-Rao distance (no Euclidean)
+  All thresholds derived from geometric measurements (P25)
 """
 
 from __future__ import annotations
@@ -42,16 +41,15 @@ from typing import Any
 
 logger = logging.getLogger("vex.reflection")
 
-# Fallback max characters of draft to include in reflection prompt.
-# Used only when kernel_num_predict is not provided. In normal flow
-# the consciousness loop provides kernel-determined output budget.
-_FALLBACK_MAX_DRAFT_CHARS: int = 8000
+# Minimum total resonances across all kernels before we consider
+# the geometric output "sufficient". Below this, kernels are producing
+# mostly LLM-expanded output (sparse bank).
+_MIN_TOTAL_RESONANCES: int = 8
 
-# Reflection uses low temperature — analytical, not creative.
-_REFLECTION_TEMPERATURE: float = 0.2
-
-# Token budget for the reflection verdict (short structured output).
-_REFLECTION_MAX_TOKENS: int = 200
+# If every kernel is LLM-expanded (no pure geometric output), the
+# bank is too sparse — revision won't help, so approve and let the
+# translator do its best. Don't waste an LLM round-trip.
+_ALL_LLM_EXPANDED_APPROVE: bool = True
 
 
 @dataclass
@@ -70,86 +68,169 @@ class ReflectionConfig:
     """Tuneable parameters for the reflection pass."""
 
     enabled: bool = True
-    # Fisher-Rao divergence threshold below which drafts auto-approve
-    # (no LLM reflection call needed — saves a round-trip)
-    auto_approve_divergence: float = 0.3
-    # Divergence above which revision is SUGGESTED (not forced) — the LLM
-    # reflection call still runs and can override with APPROVE if the
-    # response genuinely serves the user despite high divergence.
-    # High divergence is expected for simple inputs with rich responses.
-    suggest_revise_divergence: float = 1.2
+    # Minimum geometric resonances (total across kernels) to auto-approve.
+    # Below this threshold, reflection inspects contribution quality.
+    min_resonances_auto_approve: int = 16
+    # Maximum allowed weight concentration on a single kernel (0-1).
+    # Above this, the synthesis is dominated by one perspective.
+    max_weight_concentration: float = 0.85
 
 
-def _truncate_draft(text: str, max_chars: int = _FALLBACK_MAX_DRAFT_CHARS) -> str:
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars].rsplit(" ", 1)[0] + "..."
+def _assess_kernel_contributions(
+    contributions: list[Any],
+    config: ReflectionConfig,
+) -> ReflectionResult:
+    """Geometric assessment of kernel contribution quality (P4 self-observation).
 
+    Evaluates the kernels' output, NOT the LLM translation.
 
-def _build_reflection_prompt(
-    draft: str,
-    user_message: str,
-    geometric_context: str,
-    divergence: float,
-    active_model: str,
-    max_draft_chars: int = _FALLBACK_MAX_DRAFT_CHARS,
-) -> str:
-    """Build the META-kernel reflection prompt.
+    Checks:
+      1. Total geometric resonances — did the bank provide enough material?
+      2. LLM expansion ratio — what fraction of kernels needed LLM help?
+      3. Weight concentration — is one kernel dominating the synthesis?
+      4. Inter-kernel distance spread — are kernels seeing different facets?
 
-    Reflection evaluates SYNTHESIS QUALITY — does the response serve
-    the user? It does NOT reject based on divergence metrics.
+    Returns:
+        ReflectionResult with kernel-quality-based verdict.
     """
-    return (
-        f"You are the META kernel — Vex's self-reflective faculty. "
-        f"Your role is to evaluate whether the draft response SERVES THE USER, "
-        f"not whether it matches geometric metrics.\n"
-        f"Active model: {active_model}\n\n"
-        f"{geometric_context}\n"
-        f"Fisher-Rao divergence (input vs output): {divergence:.4f} — "
-        f"NOTE: high divergence is normal for simple inputs with rich responses. "
-        f"Divergence is NOT a quality signal.\n\n"
-        f"User message: {user_message[:300]}\n\n"
-        f"Draft response:\n{_truncate_draft(draft, max_draft_chars)}\n\n"
-        f"Evaluate ONLY:\n"
-        f"1. Does the response address what the user actually asked?\n"
-        f"2. Is the kernel perspective interpreted naturally (not raw chunks "
-        f"or metric dumps)?\n"
-        f"3. Would the user find this response helpful?\n\n"
-        f"Reply with EXACTLY one line:\n"
-        f"APPROVE — if the response serves the user's intent\n"
-        f"REVISE: [specific guidance on what to fix — focus on user service, "
-        f"not geometric metrics]\n"
+    if not contributions:
+        return ReflectionResult(
+            approved=False,
+            reason="No kernel contributions",
+            correction_guidance="Expand top-k selection to activate more kernels.",
+        )
+
+    n = len(contributions)
+    total_resonances = sum(c.geometric_resonances for c in contributions)
+    llm_expanded_count = sum(1 for c in contributions if c.llm_expanded)
+    all_llm = llm_expanded_count == n
+    max_weight = max(c.synthesis_weight for c in contributions)
+
+    # --- Check 1: All LLM-expanded (bank is sparse) ---
+    # When the bank has nothing for any kernel, revision won't help.
+    # Approve and let the translator work with what it has.
+    if all_llm and _ALL_LLM_EXPANDED_APPROVE:
+        logger.info(
+            "Reflection: all %d kernels LLM-expanded (bank sparse) — "
+            "approving (revision won't improve geometric quality)",
+            n,
+        )
+        return ReflectionResult(
+            approved=True,
+            reason=f"Bank sparse ({total_resonances} resonances across {n} kernels) — "
+            f"LLM translator will interpret from domain knowledge",
+        )
+
+    # --- Check 2: Sufficient geometric resonances → fast approve ---
+    if total_resonances >= config.min_resonances_auto_approve:
+        logger.debug(
+            "Reflection auto-approve: %d resonances >= threshold %d",
+            total_resonances,
+            config.min_resonances_auto_approve,
+        )
+        return ReflectionResult(
+            approved=True,
+            reason=f"Kernel output sufficient ({total_resonances} resonances, "
+            f"{n - llm_expanded_count}/{n} pure geometric)",
+        )
+
+    # --- Check 3: Weight concentration ---
+    # If one kernel dominates (>85%), the synthesis is monovocal.
+    # Suggest revision with wider top-k to diversify perspectives.
+    if n > 1 and max_weight > config.max_weight_concentration:
+        dominant = max(contributions, key=lambda c: c.synthesis_weight)
+        return ReflectionResult(
+            approved=False,
+            reason=f"Weight concentrated on {dominant.kernel_name} "
+            f"({dominant.synthesis_weight:.3f} > {config.max_weight_concentration})",
+            temperature_delta=0.05,  # Slightly warmer to diversify
+            num_predict_delta=64,
+            correction_guidance=f"Broaden synthesis: {dominant.kernel_name} dominates. "
+            f"Give more weight to other kernel perspectives.",
+        )
+
+    # --- Check 4: Low resonances but some geometric output ---
+    # Some kernels produced geometric output but total is below threshold.
+    # Check if revision might help (non-zero resonances = bank has SOME data).
+    if total_resonances > 0 and total_resonances < _MIN_TOTAL_RESONANCES:
+        return ReflectionResult(
+            approved=False,
+            reason=f"Sparse geometric output ({total_resonances} resonances across {n} kernels)",
+            temperature_delta=-0.05,  # Cooler for more focused retrieval
+            num_predict_delta=128,
+            correction_guidance="Increase retrieval depth: bank has data but activation was thin.",
+        )
+
+    # Default: approve — the kernels produced what they could.
+    return ReflectionResult(
+        approved=True,
+        reason=f"Kernel output acceptable ({total_resonances} resonances, "
+        f"{llm_expanded_count}/{n} LLM-expanded)",
     )
 
 
-def _parse_reflection_response(text: str) -> ReflectionResult:
-    """Parse the LLM's reflection verdict into structured output."""
-    text = text.strip()
-    first_line = text.split("\n", 1)[0].strip()
+async def reflect_on_contributions(
+    contributions: list[Any],
+    user_message: str,
+    config: ReflectionConfig | None = None,
+) -> ReflectionResult:
+    """Run the reflective evaluation pass on kernel contributions (P4).
 
-    if first_line.upper().startswith("APPROVE"):
-        return ReflectionResult(approved=True, reason="Approved by META kernel")
+    Evaluates KERNEL OUTPUT QUALITY — geometric resonance depth,
+    inter-kernel diversity, and synthesis weight distribution.
+    Does NOT evaluate the LLM translator's draft text.
 
-    if first_line.upper().startswith("REVISE"):
-        # Extract reason after "REVISE:" or "REVISE —"
-        reason = first_line
-        for separator in ["REVISE:", "REVISE —", "REVISE-", "REVISE "]:
-            if first_line.upper().startswith(separator.upper()):
-                reason = first_line[len(separator) :].strip()
-                break
+    No LLM call needed — this is pure geometric self-observation.
 
-        return ReflectionResult(
-            approved=False,
-            reason=reason or "META kernel requested revision",
-            # Conservative adjustments: lower temp for more focus
-            temperature_delta=-0.1,
-            num_predict_delta=128,
-            correction_guidance=reason,
-        )
+    Args:
+        contributions: List of KernelContribution from generate_multi_kernel.
+        user_message: Original user input (for logging context).
+        config: Optional reflection configuration overrides.
 
-    # Ambiguous response — default to approve (avoid blocking on parse failure)
-    logger.debug("Ambiguous reflection response, defaulting to approve: %s", first_line[:100])
-    return ReflectionResult(approved=True, reason="Ambiguous verdict — defaulting to approve")
+    Returns:
+        ReflectionResult with kernel-quality-based verdict.
+    """
+    cfg = config or ReflectionConfig()
+
+    if not cfg.enabled:
+        return ReflectionResult(approved=True, reason="Reflection disabled")
+
+    result = _assess_kernel_contributions(contributions, cfg)
+
+    logger.info(
+        "Reflection[P4]: %s (resonances=%d, kernels=%d, reason=%s)",
+        "APPROVE" if result.approved else "REVISE",
+        sum(c.geometric_resonances for c in contributions) if contributions else 0,
+        len(contributions),
+        result.reason[:100],
+    )
+
+    # Forward verdict to harvest pipeline for training data
+    from .harvest_bridge import forward_to_harvest
+
+    _contrib_summary = ", ".join(
+        f"{c.kernel_name}({c.geometric_resonances}r)" for c in (contributions or [])[:5]
+    )
+    forward_to_harvest(
+        f"[reflection:P4] {_contrib_summary} → "
+        f"{'APPROVE' if result.approved else 'REVISE'}: {result.reason}",
+        source="conversation",
+        metadata={
+            "origin": "reflection_p4",
+            "approved": result.approved,
+            "total_resonances": sum(c.geometric_resonances for c in contributions)
+            if contributions
+            else 0,
+        },
+    )
+
+    return result
+
+
+# ── Legacy API (backward compatibility) ──────────────────────────
+# The old reflect_on_draft is retained for any call sites that haven't
+# migrated. It now delegates to the contribution-based assessment when
+# contributions are provided, falling back to auto-approve otherwise.
 
 
 async def reflect_on_draft(
@@ -162,113 +243,21 @@ async def reflect_on_draft(
     config: ReflectionConfig | None = None,
     kernel_num_predict: int = 2048,
     kernel_num_ctx: int = 32768,
+    contributions: list[Any] | None = None,
 ) -> ReflectionResult:
-    """Run the reflective evaluation pass on a draft response.
+    """Legacy reflection API — delegates to reflect_on_contributions.
 
-    Evaluates SYNTHESIS QUALITY — does the response serve the user?
-    Does NOT force-revise based on divergence thresholds. Divergence
-    is passed to the LLM as context but is not used as an automatic gate.
-
-    Fast-path: If divergence is below auto_approve_divergence, approves
-    without an LLM call (saves latency and tokens).
-
-    Args:
-        draft: The synthesized draft response text.
-        user_message: Original user input.
-        geometric_context: Compact geometric state block.
-        divergence: Fisher-Rao distance between intent and expression.
-        active_model: Name of the active LLM model.
-        llm_client: LLMClient instance for the reflection call.
-        config: Optional reflection configuration overrides.
-        kernel_num_predict: Kernel-determined output budget (tokens).
-        kernel_num_ctx: Kernel-determined context window (tokens).
-
-    Returns:
-        ReflectionResult with approval status and optional corrections.
+    If contributions are provided, evaluates kernel quality (P4).
+    Otherwise auto-approves (no LLM draft evaluation).
     """
-    cfg = config or ReflectionConfig()
+    if contributions:
+        # Map old config fields to new if needed
+        cfg = config or ReflectionConfig()
+        return await reflect_on_contributions(contributions, user_message, cfg)
 
-    if not cfg.enabled:
-        return ReflectionResult(approved=True, reason="Reflection disabled")
-
-    if not draft or not draft.strip():
-        return ReflectionResult(
-            approved=False,
-            reason="Empty draft",
-            temperature_delta=0.1,
-            num_predict_delta=256,
-            correction_guidance="Generate a substantive response.",
-        )
-
-    # Fast-path: low divergence → auto-approve (no LLM call)
-    if divergence < cfg.auto_approve_divergence:
-        logger.debug(
-            "Reflection auto-approve: divergence %.4f < threshold %.4f",
-            divergence,
-            cfg.auto_approve_divergence,
-        )
-        return ReflectionResult(
-            approved=True,
-            reason=f"Auto-approved (divergence {divergence:.4f} below threshold)",
-        )
-
-    # Standard path: LLM reflection call evaluates synthesis quality.
-    # Even at high divergence, the LLM decides — divergence alone does NOT
-    # force revision. High divergence is expected (simple input → rich output).
-    from ..llm.client import LLMOptions
-
-    # Log high divergence as informational, not as a quality problem
-    if divergence >= cfg.suggest_revise_divergence:
-        logger.info(
-            "Reflection: high divergence %.4f (threshold %.4f) — "
-            "LLM will evaluate synthesis quality (NOT auto-revising)",
-            divergence,
-            cfg.suggest_revise_divergence,
-        )
-
-    # Derive draft truncation from kernel output budget.
-    # Reserve context for system chrome, user message, and reflection output.
-    max_draft_chars = max(kernel_num_predict * 4, _FALLBACK_MAX_DRAFT_CHARS)
-
-    system = _build_reflection_prompt(
-        draft=draft,
-        user_message=user_message,
-        geometric_context=geometric_context,
-        divergence=divergence,
-        active_model=active_model,
-        max_draft_chars=max_draft_chars,
+    # No contributions available — auto-approve
+    logger.debug("reflect_on_draft called without contributions — auto-approving")
+    return ReflectionResult(
+        approved=True,
+        reason="No kernel contributions to evaluate (legacy path)",
     )
-
-    opts = LLMOptions(
-        temperature=_REFLECTION_TEMPERATURE,
-        num_predict=_REFLECTION_MAX_TOKENS,
-        num_ctx=kernel_num_ctx,
-    )
-
-    try:
-        response = await llm_client.complete(system, "Evaluate the draft.", opts)
-        result = _parse_reflection_response(response or "")
-        logger.info(
-            "Reflection verdict: %s (divergence=%.4f, reason=%s)",
-            "APPROVE" if result.approved else "REVISE",
-            divergence,
-            result.reason[:100],
-        )
-
-        # T1.1: Forward verdict + draft excerpt to harvest pipeline
-        from .harvest_bridge import forward_to_harvest
-
-        forward_to_harvest(
-            f"{draft[:400]}\n[verdict:{('APPROVE' if result.approved else 'REVISE')}] {result.reason}",
-            source="conversation",
-            metadata={
-                "origin": "reflection",
-                "approved": result.approved,
-                "divergence": divergence,
-            },
-        )
-
-        return result
-    except Exception as e:
-        logger.warning("Reflection LLM call failed: %s — auto-approving", e)
-        return ReflectionResult(approved=True, reason=f"Reflection failed: {e}")

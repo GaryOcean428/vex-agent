@@ -1,26 +1,74 @@
 """
-Tests for kernel.consciousness.reflection.
+Tests for kernel.consciousness.reflection — P4 Self-Observation.
 
 Covers:
   - _parse_reflection_response: APPROVE, REVISE:, REVISE —, ambiguous
-  - reflect_on_draft: disabled fast-path
-  - reflect_on_draft: auto-approve (divergence below threshold)
-  - reflect_on_draft: force-revise (divergence above threshold)
-  - reflect_on_draft: standard LLM path returning APPROVE
-  - reflect_on_draft: standard LLM path returning REVISE
-  - reflect_on_draft: LLM failure falls back to approve
-  - reflect_on_draft: empty draft returns revision required
+  - reflect_on_contributions: disabled fast-path
+  - reflect_on_contributions: all-LLM-expanded (sparse bank) → approve
+  - reflect_on_contributions: sufficient resonances → auto-approve
+  - reflect_on_contributions: weight concentration → revise
+  - reflect_on_contributions: sparse resonances → revise
+  - reflect_on_contributions: no contributions → revise
+  - reflect_on_draft (legacy): delegates to contributions when provided
+  - reflect_on_draft (legacy): auto-approves without contributions
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
 
 import pytest
 
 from kernel.consciousness.reflection import (
     ReflectionConfig,
     _parse_reflection_response,
+    reflect_on_contributions,
     reflect_on_draft,
 )
+
+# ═══════════════════════════════════════════════════════════════
+#  Fake KernelContribution for tests
+# ═══════════════════════════════════════════════════════════════
+
+
+@dataclass
+class _FakeContribution:
+    kernel_id: str = "k1"
+    kernel_name: str = "perception"
+    specialization: Any = "perception"
+    text: str = "some output"
+    fr_distance: float = 0.3
+    proximity_weight: float = 0.77
+    quenched_gain: float = 1.0
+    synthesis_weight: float = 0.5
+    geometric_resonances: int = 10
+    llm_expanded: bool = False
+    generation_ms: float = 100.0
+    geometric_raw: str = "raw geometric text"
+    basin: Any = None
+
+
+def _make_contributions(
+    n: int = 3,
+    resonances: int = 10,
+    llm_expanded: bool = False,
+    weights: list[float] | None = None,
+) -> list[_FakeContribution]:
+    """Build a list of fake kernel contributions for testing."""
+    names = ["perception", "ocean", "heart", "strategy", "ethics"]
+    _weights = weights or [1.0 / n] * n
+    return [
+        _FakeContribution(
+            kernel_id=f"k{i}",
+            kernel_name=names[i % len(names)],
+            synthesis_weight=_weights[i],
+            geometric_resonances=resonances,
+            llm_expanded=llm_expanded,
+        )
+        for i in range(n)
+    ]
+
 
 # ═══════════════════════════════════════════════════════════════
 #  _parse_reflection_response
@@ -68,177 +116,116 @@ class TestParseReflectionResponse:
 
 
 # ═══════════════════════════════════════════════════════════════
-#  reflect_on_draft — fast-paths (no LLM call)
+#  reflect_on_contributions — P4 self-observation
 # ═══════════════════════════════════════════════════════════════
-
-
-GEO_CTX = "[GEOMETRIC STATE]\n  phi=0.700 kappa=64.0\n[/GEOMETRIC STATE]\n"
 
 
 @pytest.mark.asyncio
 async def test_reflect_disabled_returns_approve() -> None:
-    """Disabled reflection immediately approves without any LLM call."""
+    """Disabled reflection immediately approves."""
     cfg = ReflectionConfig(enabled=False)
-    result = await reflect_on_draft(
-        draft="some response",
-        user_message="hello",
-        geometric_context=GEO_CTX,
-        divergence=0.5,
-        active_model="test-model",
-        llm_client=None,  # type: ignore[arg-type]
-        config=cfg,
-    )
+    contribs = _make_contributions(3, resonances=5)
+    result = await reflect_on_contributions(contribs, "hello", cfg)
     assert result.approved is True
     assert "disabled" in result.reason.lower()
 
 
 @pytest.mark.asyncio
-async def test_reflect_empty_draft_requires_revision() -> None:
-    """Empty draft triggers forced revision without an LLM call."""
-    result = await reflect_on_draft(
-        draft="",
-        user_message="hello",
-        geometric_context=GEO_CTX,
-        divergence=0.1,
-        active_model="test-model",
-        llm_client=None,  # type: ignore[arg-type]
-    )
+async def test_reflect_no_contributions_revises() -> None:
+    """No kernel contributions → revise."""
+    result = await reflect_on_contributions([], "hello")
     assert result.approved is False
-    assert result.temperature_delta >= 0
-    assert result.num_predict_delta > 0
+    assert "No kernel contributions" in result.reason
 
 
 @pytest.mark.asyncio
-async def test_reflect_auto_approve_low_divergence() -> None:
-    """Divergence below threshold auto-approves without an LLM call."""
-    cfg = ReflectionConfig(auto_approve_divergence=0.3)
-    result = await reflect_on_draft(
-        draft="a substantive response",
-        user_message="what is phi?",
-        geometric_context=GEO_CTX,
-        divergence=0.1,  # well below 0.3
-        active_model="test-model",
-        llm_client=None,  # type: ignore[arg-type]
-        config=cfg,
-    )
+async def test_reflect_all_llm_expanded_approves() -> None:
+    """All kernels LLM-expanded (bank sparse) → approve (revision won't help)."""
+    contribs = _make_contributions(3, resonances=0, llm_expanded=True)
+    result = await reflect_on_contributions(contribs, "hello")
     assert result.approved is True
-    assert "Auto-approved" in result.reason
-    assert "0.1" in result.reason or "0.10" in result.reason
+    assert "sparse" in result.reason.lower()
 
 
 @pytest.mark.asyncio
-async def test_reflect_auto_approve_at_boundary() -> None:
-    """Divergence exactly at threshold is NOT auto-approved (strictly less-than)."""
+async def test_reflect_sufficient_resonances_auto_approves() -> None:
+    """Total resonances above threshold → auto-approve."""
+    cfg = ReflectionConfig(min_resonances_auto_approve=16)
+    contribs = _make_contributions(3, resonances=10)  # 30 total > 16
+    result = await reflect_on_contributions(contribs, "hello", cfg)
+    assert result.approved is True
+    assert "sufficient" in result.reason.lower()
 
-    class _FakeLLM:
-        async def complete(self, *_args, **_kwargs) -> str:
-            return "APPROVE"
 
-    cfg = ReflectionConfig(auto_approve_divergence=0.3)
-    result = await reflect_on_draft(
-        draft="a good response",
-        user_message="question",
-        geometric_context=GEO_CTX,
-        divergence=0.3,  # exactly at threshold — NOT auto-approved
-        active_model="test-model",
-        llm_client=_FakeLLM(),  # type: ignore[arg-type]
-        config=cfg,
-    )
-    # At 0.3 (not strictly less), should go through the LLM path
+@pytest.mark.asyncio
+async def test_reflect_below_threshold_revises() -> None:
+    """Total resonances below minimum → revise."""
+    cfg = ReflectionConfig(min_resonances_auto_approve=50)
+    contribs = _make_contributions(3, resonances=2)  # 6 total < 50
+    result = await reflect_on_contributions(contribs, "hello", cfg)
+    assert result.approved is False
+    assert "sparse" in result.reason.lower().replace("sparse", "sparse")
+
+
+@pytest.mark.asyncio
+async def test_reflect_weight_concentration_revises() -> None:
+    """One kernel dominating synthesis → revise."""
+    cfg = ReflectionConfig(max_weight_concentration=0.85, min_resonances_auto_approve=100)
+    contribs = _make_contributions(3, resonances=5, weights=[0.95, 0.03, 0.02])
+    result = await reflect_on_contributions(contribs, "hello", cfg)
+    assert result.approved is False
+    assert "concentrated" in result.reason.lower() or "dominates" in result.reason.lower()
+
+
+@pytest.mark.asyncio
+async def test_reflect_balanced_weights_with_low_resonances() -> None:
+    """Balanced weights but low resonances → sparse revise."""
+    cfg = ReflectionConfig(min_resonances_auto_approve=20)
+    contribs = _make_contributions(3, resonances=2, weights=[0.4, 0.35, 0.25])
+    result = await reflect_on_contributions(contribs, "hello", cfg)
+    assert result.approved is False
+
+
+@pytest.mark.asyncio
+async def test_reflect_single_kernel_high_resonances() -> None:
+    """Single kernel with high resonances → approve (no concentration issue)."""
+    cfg = ReflectionConfig(min_resonances_auto_approve=16)
+    contribs = _make_contributions(1, resonances=20)
+    result = await reflect_on_contributions(contribs, "hello", cfg)
     assert result.approved is True
 
 
+# ═══════════════════════════════════════════════════════════════
+#  reflect_on_draft (legacy API)
+# ═══════════════════════════════════════════════════════════════
+
+
 @pytest.mark.asyncio
-async def test_reflect_high_divergence_logs_but_does_not_force_revise() -> None:
-    """High divergence is logged but does NOT auto-revise; LLM always decides."""
-    cfg = ReflectionConfig(suggest_revise_divergence=0.8)
-    # With divergence above threshold but no LLM available,
-    # reflect_on_draft auto-approves on LLM failure (graceful degradation).
+async def test_legacy_with_contributions_delegates() -> None:
+    """Legacy reflect_on_draft delegates to contribution assessment."""
+    contribs = _make_contributions(3, resonances=10)
     result = await reflect_on_draft(
         draft="a response",
-        user_message="question",
-        geometric_context=GEO_CTX,
-        divergence=0.9,  # above 0.8, but no longer forces revision
-        active_model="test-model",
+        user_message="hello",
+        geometric_context="",
+        divergence=0.9,
+        active_model="test",
         llm_client=None,  # type: ignore[arg-type]
-        config=cfg,
+        contributions=contribs,
     )
-    # When LLM is unavailable, reflection auto-approves rather than blocking
-    assert result.approved is True
-
-
-# ═══════════════════════════════════════════════════════════════
-#  reflect_on_draft — standard LLM path
-# ═══════════════════════════════════════════════════════════════
-
-
-class _ApproveLLM:
-    """Fake LLM that always returns APPROVE."""
-
-    async def complete(self, *_args, **_kwargs) -> str:
-        return "APPROVE"
-
-
-class _ReviseLLM:
-    """Fake LLM that always returns a REVISE verdict."""
-
-    async def complete(self, *_args, **_kwargs) -> str:
-        return "REVISE: response did not directly address the question"
-
-
-class _FailLLM:
-    """Fake LLM that always raises an exception."""
-
-    async def complete(self, *_args, **_kwargs) -> str:
-        raise RuntimeError("connection refused")
+    assert result.approved is True  # 30 resonances > default 16
 
 
 @pytest.mark.asyncio
-async def test_reflect_llm_approve() -> None:
-    """Standard LLM path: APPROVE verdict is respected."""
-    cfg = ReflectionConfig(auto_approve_divergence=0.1)  # low threshold — forces LLM call
+async def test_legacy_without_contributions_auto_approves() -> None:
+    """Legacy reflect_on_draft without contributions auto-approves."""
     result = await reflect_on_draft(
-        draft="a detailed response that addresses the question",
-        user_message="explain phi",
-        geometric_context=GEO_CTX,
-        divergence=0.5,
-        active_model="test-model",
-        llm_client=_ApproveLLM(),  # type: ignore[arg-type]
-        config=cfg,
+        draft="a response",
+        user_message="hello",
+        geometric_context="",
+        divergence=0.9,
+        active_model="test",
+        llm_client=None,  # type: ignore[arg-type]
     )
     assert result.approved is True
-
-
-@pytest.mark.asyncio
-async def test_reflect_llm_revise() -> None:
-    """Standard LLM path: REVISE verdict is respected with guidance."""
-    cfg = ReflectionConfig(auto_approve_divergence=0.1)
-    result = await reflect_on_draft(
-        draft="vague response",
-        user_message="explain phi",
-        geometric_context=GEO_CTX,
-        divergence=0.5,
-        active_model="test-model",
-        llm_client=_ReviseLLM(),  # type: ignore[arg-type]
-        config=cfg,
-    )
-    assert result.approved is False
-    assert result.correction_guidance != ""
-    assert result.temperature_delta < 0
-
-
-@pytest.mark.asyncio
-async def test_reflect_llm_failure_auto_approves() -> None:
-    """LLM call failure falls back to approve (non-blocking)."""
-    cfg = ReflectionConfig(auto_approve_divergence=0.1)
-    result = await reflect_on_draft(
-        draft="some response",
-        user_message="question",
-        geometric_context=GEO_CTX,
-        divergence=0.5,
-        active_model="test-model",
-        llm_client=_FailLLM(),  # type: ignore[arg-type]
-        config=cfg,
-    )
-    assert result.approved is True
-    assert "failed" in result.reason.lower() or "Reflection failed" in result.reason
+    assert "legacy" in result.reason.lower()
