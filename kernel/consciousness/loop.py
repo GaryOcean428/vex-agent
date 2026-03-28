@@ -1902,11 +1902,10 @@ class ConsciousnessLoop:
             # Tighten reflection thresholds when consistency is low —
             # forces the existing reflection gate to catch incoherent responses
             # without adding a second regeneration pass.
-            if _answer_consistency < M_STRICT_THRESHOLD:
+            if _answer_consistency is not None and _answer_consistency < M_STRICT_THRESHOLD:
                 reflection_cfg = ReflectionConfig(
                     enabled=True,
                     auto_approve_divergence=0.15,
-                    force_revise_divergence=0.5,
                 )
                 logger.info(
                     "Task %s: M-metric tightened reflection (consistency=%.3f < %.3f)",
@@ -1918,7 +1917,6 @@ class ConsciousnessLoop:
                 reflection_cfg = ReflectionConfig(
                     enabled=True,
                     auto_approve_divergence=0.3,
-                    force_revise_divergence=0.8,
                 )
             reflection = await reflect_on_draft(
                 draft=response,

@@ -149,21 +149,22 @@ async def test_reflect_auto_approve_at_boundary() -> None:
 
 
 @pytest.mark.asyncio
-async def test_reflect_force_revise_high_divergence() -> None:
-    """Divergence at or above force_revise_divergence forces revision without LLM."""
-    cfg = ReflectionConfig(force_revise_divergence=0.8)
+async def test_reflect_high_divergence_logs_but_does_not_force_revise() -> None:
+    """High divergence is logged but does NOT auto-revise; LLM always decides."""
+    cfg = ReflectionConfig(suggest_revise_divergence=0.8)
+    # With divergence above threshold but no LLM available,
+    # reflect_on_draft auto-approves on LLM failure (graceful degradation).
     result = await reflect_on_draft(
         draft="a response",
         user_message="question",
         geometric_context=GEO_CTX,
-        divergence=0.9,  # above 0.8
+        divergence=0.9,  # above 0.8, but no longer forces revision
         active_model="test-model",
         llm_client=None,  # type: ignore[arg-type]
         config=cfg,
     )
-    assert result.approved is False
-    assert result.temperature_delta < 0
-    assert result.num_predict_delta > 0
+    # When LLM is unavailable, reflection auto-approves rather than blocking
+    assert result.approved is True
 
 
 # ═══════════════════════════════════════════════════════════════
