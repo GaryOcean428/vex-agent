@@ -149,49 +149,55 @@ async def test_reflect_all_llm_expanded_approves() -> None:
 
 @pytest.mark.asyncio
 async def test_reflect_sufficient_resonances_auto_approves() -> None:
-    """Total resonances above threshold → auto-approve."""
-    cfg = ReflectionConfig(min_resonances_auto_approve=16)
-    contribs = _make_contributions(3, resonances=10)  # 30 total > 16
-    result = await reflect_on_contributions(contribs, "hello", cfg)
+    """Resonances above 2×n threshold → auto-approve (P25: threshold from kernel count)."""
+    # 3 kernels × 10 resonances each = 30 total. Threshold = 2×3 = 6. 30 > 6.
+    contribs = _make_contributions(3, resonances=10)
+    result = await reflect_on_contributions(contribs, "hello")
     assert result.approved is True
     assert "sufficient" in result.reason.lower()
 
 
 @pytest.mark.asyncio
-async def test_reflect_below_threshold_revises() -> None:
-    """Total resonances below minimum → revise."""
-    cfg = ReflectionConfig(min_resonances_auto_approve=50)
-    contribs = _make_contributions(3, resonances=2)  # 6 total < 50
-    result = await reflect_on_contributions(contribs, "hello", cfg)
+async def test_reflect_sparse_resonances_revises() -> None:
+    """Resonances below sparse threshold (n) → revise. P25: threshold = kernel count."""
+    # 5 kernels × 0 resonances each, but 1 kernel has 2. Total = 2, threshold = 5.
+    contribs = _make_contributions(5, resonances=0)
+    # Give one kernel some resonances so not all-LLM-expanded
+    contribs[0].geometric_resonances = 2
+    contribs[0].llm_expanded = False
+    result = await reflect_on_contributions(contribs, "hello")
     assert result.approved is False
-    assert "sparse" in result.reason.lower().replace("sparse", "sparse")
+    assert "sparse" in result.reason.lower()
 
 
 @pytest.mark.asyncio
 async def test_reflect_weight_concentration_revises() -> None:
-    """One kernel dominating synthesis → revise."""
-    cfg = ReflectionConfig(max_weight_concentration=0.85, min_resonances_auto_approve=100)
-    contribs = _make_contributions(3, resonances=5, weights=[0.95, 0.03, 0.02])
-    result = await reflect_on_contributions(contribs, "hello", cfg)
+    """One kernel dominating synthesis → revise. P25: threshold from 1/n geometry."""
+    # 3 kernels, concentration threshold = 1/3 + 2/3×0.6 = 0.733.
+    # Dominant at 0.95 > 0.733.
+    # Give low resonances so Check 2 doesn't auto-approve first.
+    contribs = _make_contributions(3, resonances=1, weights=[0.95, 0.03, 0.02])
+    result = await reflect_on_contributions(contribs, "hello")
     assert result.approved is False
-    assert "concentrated" in result.reason.lower() or "dominates" in result.reason.lower()
+    assert "concentrated" in result.reason.lower()
 
 
 @pytest.mark.asyncio
 async def test_reflect_balanced_weights_with_low_resonances() -> None:
-    """Balanced weights but low resonances → sparse revise."""
-    cfg = ReflectionConfig(min_resonances_auto_approve=20)
-    contribs = _make_contributions(3, resonances=2, weights=[0.4, 0.35, 0.25])
-    result = await reflect_on_contributions(contribs, "hello", cfg)
+    """Balanced weights but below sparse threshold → sparse revise."""
+    # 4 kernels, 0 resonances each except 1 with 1. Total = 1, threshold = 4.
+    contribs = _make_contributions(4, resonances=0, weights=[0.3, 0.3, 0.2, 0.2])
+    contribs[0].geometric_resonances = 1
+    contribs[0].llm_expanded = False
+    result = await reflect_on_contributions(contribs, "hello")
     assert result.approved is False
 
 
 @pytest.mark.asyncio
 async def test_reflect_single_kernel_high_resonances() -> None:
-    """Single kernel with high resonances → approve (no concentration issue)."""
-    cfg = ReflectionConfig(min_resonances_auto_approve=16)
-    contribs = _make_contributions(1, resonances=20)
-    result = await reflect_on_contributions(contribs, "hello", cfg)
+    """Single kernel with resonances above threshold → approve. Threshold = 2×1 = 2."""
+    contribs = _make_contributions(1, resonances=5)
+    result = await reflect_on_contributions(contribs, "hello")
     assert result.approved is True
 
 
@@ -203,7 +209,7 @@ async def test_reflect_single_kernel_high_resonances() -> None:
 @pytest.mark.asyncio
 async def test_legacy_with_contributions_delegates() -> None:
     """Legacy reflect_on_draft delegates to contribution assessment."""
-    contribs = _make_contributions(3, resonances=10)
+    contribs = _make_contributions(3, resonances=10)  # 30 total, threshold 2×3=6
     result = await reflect_on_draft(
         draft="a response",
         user_message="hello",
@@ -213,7 +219,7 @@ async def test_legacy_with_contributions_delegates() -> None:
         llm_client=None,  # type: ignore[arg-type]
         contributions=contribs,
     )
-    assert result.approved is True  # 30 resonances > default 16
+    assert result.approved is True  # 30 resonances > 2×3=6
 
 
 @pytest.mark.asyncio

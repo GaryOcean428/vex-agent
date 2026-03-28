@@ -199,7 +199,7 @@ from .kernel_voice import KernelVoiceRegistry
 from .neurochemistry import NeurochemicalState, compute_neurochemicals
 from .pillars import PillarEnforcer
 from .play import PlayEngine
-from .reflection import ReflectionConfig, reflect_on_contributions
+from .reflection import reflect_on_contributions
 from .sensory import Modality, PredictionError, SensoryEvent, SensoryIntake
 from .solfeggio import compute_spectral_health
 from .sovereignty_tracker import SovereigntyTracker
@@ -1900,25 +1900,19 @@ class ConsciousnessLoop:
             )
             self._answer_consistency = _answer_consistency
 
-            # Reflection: evaluate kernel contribution quality (P4)
-            # Tighten resonance threshold when M-metric is low
-            _min_resonances = 16
+            # Reflection: evaluate kernel contribution quality (P4/P25)
+            # All thresholds derived from the contributions themselves —
+            # no artificial imposition. M-metric is a separate geometric gate.
             if _answer_consistency is not None and _answer_consistency < M_STRICT_THRESHOLD:
-                _min_resonances = 24
                 logger.info(
-                    "Task %s: M-metric tightened reflection (consistency=%.3f < %.3f)",
+                    "Task %s: M-metric low (consistency=%.3f < %.3f)",
                     task.id,
                     _answer_consistency,
                     M_STRICT_THRESHOLD,
                 )
-            reflection_cfg = ReflectionConfig(
-                enabled=True,
-                min_resonances_auto_approve=_min_resonances,
-            )
             reflection = await reflect_on_contributions(
                 contributions=_contributions,
                 user_message=task.content,
-                config=reflection_cfg,
             )
 
             if not reflection.approved:

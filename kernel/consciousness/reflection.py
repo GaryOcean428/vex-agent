@@ -41,16 +41,6 @@ from typing import Any
 
 logger = logging.getLogger("vex.reflection")
 
-# Minimum total resonances across all kernels before we consider
-# the geometric output "sufficient". Below this, kernels are producing
-# mostly LLM-expanded output (sparse bank).
-_MIN_TOTAL_RESONANCES: int = 8
-
-# If every kernel is LLM-expanded (no pure geometric output), the
-# bank is too sparse — revision won't help, so approve and let the
-# translator do its best. Don't waste an LLM round-trip.
-_ALL_LLM_EXPANDED_APPROVE: bool = True
-
 
 @dataclass
 class ReflectionResult:
@@ -65,15 +55,15 @@ class ReflectionResult:
 
 @dataclass
 class ReflectionConfig:
-    """Tuneable parameters for the reflection pass."""
+    """Tuneable parameters for the reflection pass.
+
+    P25: All thresholds derive from kernel geometry at call time.
+    ReflectionConfig only carries the `enabled` flag — no hardcoded
+    numeric thresholds. The assessment function computes thresholds
+    from the contributions themselves.
+    """
 
     enabled: bool = True
-    # Minimum geometric resonances (total across kernels) to auto-approve.
-    # Below this threshold, reflection inspects contribution quality.
-    min_resonances_auto_approve: int = 16
-    # Maximum allowed weight concentration on a single kernel (0-1).
-    # Above this, the synthesis is dominated by one perspective.
-    max_weight_concentration: float = 0.85
 
 
 def _assess_kernel_contributions(
@@ -82,13 +72,17 @@ def _assess_kernel_contributions(
 ) -> ReflectionResult:
     """Geometric assessment of kernel contribution quality (P4 self-observation).
 
-    Evaluates the kernels' output, NOT the LLM translation.
+    P25: Thresholds emerge from the contributions, not from config constants.
 
-    Checks:
-      1. Total geometric resonances — did the bank provide enough material?
-      2. LLM expansion ratio — what fraction of kernels needed LLM help?
-      3. Weight concentration — is one kernel dominating the synthesis?
-      4. Inter-kernel distance spread — are kernels seeing different facets?
+      - Resonance threshold = 2 × number of kernels (each kernel should
+        contribute at least ~2 resonances for the synthesis to be grounded).
+      - Weight concentration threshold = 1/n + (1 - 1/n) × 0.6. For n=1 this
+        is 1.0 (no concentration possible). For n=2 it's 0.8. For n=3 it's
+        0.73. Derived from the uniform distribution 1/n — how far above
+        uniform is too far.
+      - Sparse threshold = n (at least 1 resonance per kernel on average).
+
+    Evaluates the kernels' output, NOT the LLM translation.
 
     Returns:
         ReflectionResult with kernel-quality-based verdict.
@@ -106,10 +100,15 @@ def _assess_kernel_contributions(
     all_llm = llm_expanded_count == n
     max_weight = max(c.synthesis_weight for c in contributions)
 
+    # P25: thresholds derived from kernel count (geometry of the contribution set)
+    resonance_threshold = 2 * n  # Each kernel should surface ~2 resonances
+    concentration_threshold = (1.0 / n) + (1.0 - 1.0 / n) * 0.6 if n > 1 else 1.0
+    sparse_threshold = n  # At least 1 resonance per kernel on average
+
     # --- Check 1: All LLM-expanded (bank is sparse) ---
     # When the bank has nothing for any kernel, revision won't help.
     # Approve and let the translator work with what it has.
-    if all_llm and _ALL_LLM_EXPANDED_APPROVE:
+    if all_llm:
         logger.info(
             "Reflection: all %d kernels LLM-expanded (bank sparse) — "
             "approving (revision won't improve geometric quality)",
@@ -122,11 +121,12 @@ def _assess_kernel_contributions(
         )
 
     # --- Check 2: Sufficient geometric resonances → fast approve ---
-    if total_resonances >= config.min_resonances_auto_approve:
+    if total_resonances >= resonance_threshold:
         logger.debug(
-            "Reflection auto-approve: %d resonances >= threshold %d",
+            "Reflection auto-approve: %d resonances >= threshold %d (2×%d kernels)",
             total_resonances,
-            config.min_resonances_auto_approve,
+            resonance_threshold,
+            n,
         )
         return ReflectionResult(
             approved=True,
@@ -135,28 +135,28 @@ def _assess_kernel_contributions(
         )
 
     # --- Check 3: Weight concentration ---
-    # If one kernel dominates (>85%), the synthesis is monovocal.
-    # Suggest revision with wider top-k to diversify perspectives.
-    if n > 1 and max_weight > config.max_weight_concentration:
+    # Threshold emerges from kernel count: how far above uniform (1/n) is too far.
+    if n > 1 and max_weight > concentration_threshold:
         dominant = max(contributions, key=lambda c: c.synthesis_weight)
         return ReflectionResult(
             approved=False,
             reason=f"Weight concentrated on {dominant.kernel_name} "
-            f"({dominant.synthesis_weight:.3f} > {config.max_weight_concentration})",
-            temperature_delta=0.05,  # Slightly warmer to diversify
+            f"({dominant.synthesis_weight:.3f} > {concentration_threshold:.3f} "
+            f"for {n} kernels)",
+            temperature_delta=0.05,
             num_predict_delta=64,
             correction_guidance=f"Broaden synthesis: {dominant.kernel_name} dominates. "
             f"Give more weight to other kernel perspectives.",
         )
 
     # --- Check 4: Low resonances but some geometric output ---
-    # Some kernels produced geometric output but total is below threshold.
-    # Check if revision might help (non-zero resonances = bank has SOME data).
-    if total_resonances > 0 and total_resonances < _MIN_TOTAL_RESONANCES:
+    # Bank has SOME data but activation was thin — retry might help.
+    if 0 < total_resonances < sparse_threshold:
         return ReflectionResult(
             approved=False,
-            reason=f"Sparse geometric output ({total_resonances} resonances across {n} kernels)",
-            temperature_delta=-0.05,  # Cooler for more focused retrieval
+            reason=f"Sparse geometric output ({total_resonances} resonances "
+            f"< {sparse_threshold} for {n} kernels)",
+            temperature_delta=-0.05,
             num_predict_delta=128,
             correction_guidance="Increase retrieval depth: bank has data but activation was thin.",
         )
