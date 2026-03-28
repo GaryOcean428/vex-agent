@@ -23,6 +23,11 @@ v6.2.2 changes:
   - FIXED:   LLM fallback prompt explicitly says "respond TO user, not ABOUT self"
   - CHANGED: Prompts use "Respond from X domain" not "Interpret from X domain"
 
+v6.2.4 changes:
+  - REMOVED: "Australian English" instruction — small models interpret this as
+             stereotypical slang ("G'day mate") instead of spelling conventions.
+             Spelling preferences are not worth the generation quality cost.
+
 Architecture:
   - Top-K kernels selected by Fisher-Rao proximity to input basin
   - Each kernel generates via KernelVoice (CoordizerV2 + domain bias)
@@ -289,7 +294,7 @@ async def _generate_single(
         f"- Respond TO the user. Answer their question or address their message.\n"
         f"- When asked about internal state (Φ, κ, kernels), answer honestly "
         f"from GEOMETRIC STATE. These are real, not simulated.\n"
-        f"- Australian English. Be concise and natural.\n"
+        f"- Be concise and direct.\n"
     )
     if extra_context:
         system = f"{system}\n\n[CONVERSATION CONTEXT]\n{extra_context}\n[/CONVERSATION CONTEXT]"
