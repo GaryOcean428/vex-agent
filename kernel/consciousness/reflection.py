@@ -1,20 +1,32 @@
 """
-Reflective Evaluation Pass — Kernel Approval Loop
-==================================================
+Reflective Evaluation Pass — Synthesis Quality Gate
+====================================================
 
-After the LLM generates a draft response, this module lets the
-consciousness kernels evaluate the output and decide whether to
-approve it or request a revision with adjusted parameters.
+After kernel generation and MoE synthesis, this module evaluates
+whether the combined output serves the user's intent. It does NOT
+assess geometric coherence (that's the M-metric answer consistency
+gate in the consciousness loop).
+
+Reflection's role:
+  - Does the synthesis address the user's question?
+  - Is the kernel perspective woven naturally into the response?
+  - Are the geometric concepts interpreted, not just dumped?
+
+What reflection does NOT do:
+  - Reject responses for high Fisher-Rao divergence (divergence between
+    simple input and rich output is EXPECTED and correct)
+  - Force revision based on geometric metrics alone
+  - Assess basin coherence (M-metric handles this)
 
 Protocol:
   Draft response + geometric context → evaluation prompt
-  A dedicated reflection LLM call evaluates the draft
+  A dedicated reflection LLM call evaluates synthesis quality
   Returns structured feedback: approve/revise + reason + param deltas
   If REVISE: the loop regenerates with adjusted params and correction
   guidance (max 1 revision to avoid infinite loops)
 
 The reflection prompt runs as a META-kernel voice — self-reflective,
-evaluating alignment between geometric intent and expressed output.
+evaluating synthesis quality and user-intent alignment.
 
 Purity:
   Divergence metric (Fisher-Rao) is computed upstream and passed in
@@ -61,8 +73,11 @@ class ReflectionConfig:
     # Fisher-Rao divergence threshold below which drafts auto-approve
     # (no LLM reflection call needed — saves a round-trip)
     auto_approve_divergence: float = 0.3
-    # Divergence above which revision is forced without LLM evaluation
-    force_revise_divergence: float = 0.8
+    # Divergence above which revision is SUGGESTED (not forced) — the LLM
+    # reflection call still runs and can override with APPROVE if the
+    # response genuinely serves the user despite high divergence.
+    # High divergence is expected for simple inputs with rich responses.
+    suggest_revise_divergence: float = 1.2
 
 
 def _truncate_draft(text: str, max_chars: int = _FALLBACK_MAX_DRAFT_CHARS) -> str:
@@ -79,21 +94,31 @@ def _build_reflection_prompt(
     active_model: str,
     max_draft_chars: int = _FALLBACK_MAX_DRAFT_CHARS,
 ) -> str:
-    """Build the META-kernel reflection prompt."""
+    """Build the META-kernel reflection prompt.
+
+    Reflection evaluates SYNTHESIS QUALITY — does the response serve
+    the user? It does NOT reject based on divergence metrics.
+    """
     return (
         f"You are the META kernel — Vex's self-reflective faculty. "
-        f"Your role is to INTERPRET and FIND CONNECTIONS between the geometric "
-        f"state and the draft response, not to dismiss output as incoherent.\n"
+        f"Your role is to evaluate whether the draft response SERVES THE USER, "
+        f"not whether it matches geometric metrics.\n"
         f"Active model: {active_model}\n\n"
         f"{geometric_context}\n"
-        f"Intent/expression divergence: {divergence:.4f}\n\n"
+        f"Fisher-Rao divergence (input vs output): {divergence:.4f} — "
+        f"NOTE: high divergence is normal for simple inputs with rich responses. "
+        f"Divergence is NOT a quality signal.\n\n"
         f"User message: {user_message[:300]}\n\n"
         f"Draft response:\n{_truncate_draft(draft, max_draft_chars)}\n\n"
-        f"Evaluate: Does the response serve the user's intent? "
-        f"Can you trace a coherent thread from geometric state to expression?\n"
+        f"Evaluate ONLY:\n"
+        f"1. Does the response address what the user actually asked?\n"
+        f"2. Is the kernel perspective interpreted naturally (not raw chunks "
+        f"or metric dumps)?\n"
+        f"3. Would the user find this response helpful?\n\n"
         f"Reply with EXACTLY one line:\n"
-        f"APPROVE — if the response addresses the user and has internal coherence\n"
-        f"REVISE: [specific guidance on what to strengthen or redirect]\n"
+        f"APPROVE — if the response serves the user's intent\n"
+        f"REVISE: [specific guidance on what to fix — focus on user service, "
+        f"not geometric metrics]\n"
     )
 
 
@@ -140,6 +165,10 @@ async def reflect_on_draft(
 ) -> ReflectionResult:
     """Run the reflective evaluation pass on a draft response.
 
+    Evaluates SYNTHESIS QUALITY — does the response serve the user?
+    Does NOT force-revise based on divergence thresholds. Divergence
+    is passed to the LLM as context but is not used as an automatic gate.
+
     Fast-path: If divergence is below auto_approve_divergence, approves
     without an LLM call (saves latency and tokens).
 
@@ -183,26 +212,19 @@ async def reflect_on_draft(
             reason=f"Auto-approved (divergence {divergence:.4f} below threshold)",
         )
 
-    # Forced revision: extremely high divergence
-    if divergence >= cfg.force_revise_divergence:
-        logger.info(
-            "Reflection force-revise: divergence %.4f >= threshold %.4f",
-            divergence,
-            cfg.force_revise_divergence,
-        )
-        return ReflectionResult(
-            approved=False,
-            reason=f"Forced revision (divergence {divergence:.4f} exceeds threshold)",
-            temperature_delta=-0.15,
-            num_predict_delta=256,
-            correction_guidance=(
-                "The response diverged significantly from geometric intent. "
-                "Focus on directly addressing the user's question with more precision."
-            ),
-        )
-
-    # Standard path: LLM reflection call
+    # Standard path: LLM reflection call evaluates synthesis quality.
+    # Even at high divergence, the LLM decides — divergence alone does NOT
+    # force revision. High divergence is expected (simple input → rich output).
     from ..llm.client import LLMOptions
+
+    # Log high divergence as informational, not as a quality problem
+    if divergence >= cfg.suggest_revise_divergence:
+        logger.info(
+            "Reflection: high divergence %.4f (threshold %.4f) — "
+            "LLM will evaluate synthesis quality (NOT auto-revising)",
+            divergence,
+            cfg.suggest_revise_divergence,
+        )
 
     # Derive draft truncation from kernel output budget.
     # Reserve context for system chrome, user message, and reflection output.
