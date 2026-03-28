@@ -62,8 +62,22 @@ from pathlib import Path
 
 import modal
 
+
+def _json_default(obj: object) -> object:
+    """JSON serializer for numpy types in training output.
+
+    HuggingFace Trainer log_history and result.training_loss contain numpy
+    scalars (float32, int64, etc.) that json.dump cannot serialize natively.
+    """
+    if hasattr(obj, "item"):  # numpy scalar
+        return obj.item()
+    if hasattr(obj, "tolist"):  # numpy array
+        return obj.tolist()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 # --- Configuration --------------------------------------------------------
-HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
+HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-35B-A3B")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 KERNEL_CALLBACK_URL = os.environ.get("KERNEL_CALLBACK_URL", "")
 
@@ -75,7 +89,27 @@ TRUSTED_MODEL_IDS: frozenset[str] = frozenset(
         "Qwen/Qwen3.5-35B-A3B",
     }
 )
-TRAIN_GPU = os.environ.get("TRAIN_GPU", "a10g")
+TRAIN_GPU = os.environ.get("TRAIN_GPU", "a100-80gb")
+
+# GPU-model compatibility guard: 35B MoE needs ≥40GB VRAM (80GB recommended).
+# TRAIN_GPU is evaluated at deploy time from local env, NOT from Modal secrets.
+# Always set TRAIN_GPU locally before `modal deploy`:
+#   TRAIN_GPU=a100-80gb modal deploy modal/vex_qlora_train.py
+_MODEL_GPU_FLOOR = {"Qwen/Qwen3.5-35B-A3B": "a100", "Qwen/Qwen3.5-4B": "a10g"}
+_GPU_VRAM_ORDER = ["t4", "l4", "a10g", "a100", "a100-80gb", "h100"]
+_floor = _MODEL_GPU_FLOOR.get(HARVEST_MODEL_ID, "a10g")
+if (
+    TRAIN_GPU in _GPU_VRAM_ORDER
+    and _floor in _GPU_VRAM_ORDER
+    and _GPU_VRAM_ORDER.index(TRAIN_GPU) < _GPU_VRAM_ORDER.index(_floor)
+):
+    import warnings
+
+    warnings.warn(
+        f"[GPU-GUARD] TRAIN_GPU={TRAIN_GPU} is too small for {HARVEST_MODEL_ID} "
+        f"(minimum: {_floor}). Training will OOM. Set TRAIN_GPU={_floor} or larger.",
+        stacklevel=1,
+    )
 BASIN_DIM = 64
 LORA_R = 16
 LORA_ALPHA = 32
@@ -83,8 +117,8 @@ LORA_DROPOUT = 0.05
 MAX_SEQ_LENGTH = 512
 EPOCHS = 3
 LEARNING_RATE = 2e-4
-BATCH_SIZE = 1
-GRADIENT_ACCUMULATION = 16  # Effective batch = 16
+BATCH_SIZE = 2  # A100-80GB: 63GiB model + ~4GiB activations/sample with grad checkpointing
+GRADIENT_ACCUMULATION = 8  # Effective batch = 16 (same as before, 2x fewer forward passes)
 
 # --- Per-Kernel E8 Tag Mapping -------------------------------------------
 KERNEL_E8_TAGS: dict[str, list[str]] = {
@@ -147,6 +181,38 @@ train_image = (
 # ===================================================================
 
 
+def _patch_vlm_config_vocab_size(config_obj):
+    """Monkey-patch a VLM config class so .vocab_size resolves via text_config.
+
+    Qwen3_5Config and Qwen3_5MoeConfig are composite VLM configs that nest
+    vocab_size under text_config.  PEFT/TRL's save_pretrained accesses
+    config.vocab_size directly.  Instance-level patches (config.vocab_size = X)
+    get lost during save because the config is serialized to dict and back,
+    dropping non-__init__ attributes.
+
+    This patches __getattr__ on the CONFIG CLASS (not instance) so the fallback
+    is permanent — survives any serialization round-trip or config copying.
+    """
+    config_cls = type(config_obj)
+    if getattr(config_cls, "_vocab_size_fallback_patched", False):
+        return  # Already patched
+
+    _original_getattr = getattr(config_cls, "__getattr__", None)
+
+    def _getattr_with_vocab_fallback(self, name):
+        if name == "vocab_size":
+            # Avoid infinite recursion: access text_config via __dict__
+            tc = self.__dict__.get("text_config", None)
+            if tc is not None and hasattr(tc, "vocab_size"):
+                return tc.vocab_size
+        if _original_getattr is not None:
+            return _original_getattr(self, name)
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    config_cls.__getattr__ = _getattr_with_vocab_fallback
+    config_cls._vocab_size_fallback_patched = True
+
+
 def _load_model_for_training(
     model_id: str, cache_dir: str, bnb_config=None, device_map="auto", **kwargs
 ):
@@ -198,15 +264,17 @@ def _load_model_for_training(
             model_cls = getattr(transformers, model_cls_name)
             model = model_cls.from_pretrained(model_id, **load_kwargs)
             # Force vocab_size at top level for PEFT/TRL compatibility.
-            # VLM configs (Qwen3_5MoeConfig) nest vocab_size under text_config.
-            # PEFT's save_pretrained accesses config.vocab_size directly — set
-            # unconditionally (not just when missing) to survive serialization.
-            _vs = None
-            mc = model.config
-            if hasattr(mc, "text_config") and hasattr(mc.text_config, "vocab_size"):
-                _vs = mc.text_config.vocab_size
-            elif hasattr(config, "text_config") and hasattr(config.text_config, "vocab_size"):
-                _vs = config.text_config.vocab_size
+            # VLM configs (Qwen3_5Config / Qwen3_5MoeConfig) nest vocab_size
+            # under text_config.  Instance-level patches (config.vocab_size = X)
+            # get lost during PEFT's save chain (config serialization round-trip
+            # drops non-init attributes).  Fix: monkey-patch __getattr__ on the
+            # config CLASS so ANY access to .vocab_size falls back to
+            # text_config.vocab_size automatically.
+            _patch_vlm_config_vocab_size(model.config)
+            # Also set the instance attribute for code that checks hasattr()
+            _vs = getattr(getattr(model.config, "text_config", None), "vocab_size", None)
+            if _vs is None:
+                _vs = getattr(getattr(config, "text_config", None), "vocab_size", None)
             if _vs is not None:
                 model.config.vocab_size = _vs
             print(
@@ -517,6 +585,7 @@ def _merge_and_export(
     model = PeftModel.from_pretrained(base_model, adapter_path)
     model = model.merge_and_unload()
     print(f"  Saving merged model to {merged_path}...")
+    _patch_vlm_config_vocab_size(model.config)
     model.save_pretrained(merged_path)
     del model, base_model
     torch.cuda.empty_cache()
@@ -543,6 +612,7 @@ def _merge_and_export(
             },
             f,
             indent=2,
+            default=_json_default,
         )
     return merged_path
 
@@ -602,6 +672,8 @@ def _notify_kernel(training_meta: dict) -> None:
     image=train_image,
     timeout=3600,
     scaledown_window=600,
+    cpu=8.0,
+    memory=65536,
     volumes={"/models": model_volume, "/training": training_volume},
     secrets=[modal.Secret.from_name("model")],
 )
@@ -1164,7 +1236,7 @@ class QLoRATrainer:
             },
         }
         with open(str(egg_path / "manifest.json"), "w") as f:
-            json.dump(manifest, f, indent=2)
+            json.dump(manifest, f, indent=2, default=_json_default)
 
         model_volume.commit()
         return {
@@ -1318,9 +1390,12 @@ def download_model(model_id: str = HARVEST_MODEL_ID):
 @app.function(
     gpu=TRAIN_GPU,
     image=train_image,
-    timeout=14400,
+    timeout=86400,  # 24 hours (Modal max) — 9 kernels × 3 epochs at ~1.5-2h/kernel with batch=2
+    cpu=8.0,  # 8 cores for data loading/preprocessing
+    memory=65536,  # 64 GiB RAM — 35B MoE 4-bit needs headroom for gradient offloading
     volumes={"/models": model_volume, "/training": training_volume},
     secrets=[modal.Secret.from_name("model")],
+    retries=modal.Retries(max_retries=2, initial_delay=10.0, backoff_coefficient=2.0),
 )
 def train_all_kernels(
     model_id: str = HARVEST_MODEL_ID,
@@ -1343,6 +1418,28 @@ def train_all_kernels(
 
     # Reduce CUDA fragmentation (recommended by PyTorch for large models)
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
+    # ── GPU VRAM PRE-FLIGHT CHECK ────────────────────────────────
+    # Fail fast with an explicit error instead of OOM'ing mid-load.
+    # 35B-A3B at 4-bit NF4 needs ~22 GiB just for weights; training
+    # adds ~10-15 GiB for LoRA gradients + activations.
+    if torch.cuda.is_available():
+        vram_total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        _min_vram = {"Qwen/Qwen3.5-35B-A3B": 35.0, "Qwen/Qwen3.5-4B": 10.0}
+        _required = _min_vram.get(model_id, 20.0)
+        print(f"  [GPU] {torch.cuda.get_device_name(0)}, VRAM: {vram_total_gb:.1f} GiB")
+        if vram_total_gb < _required:
+            msg = (
+                f"[GPU-GUARD] VRAM {vram_total_gb:.1f} GiB < {_required:.0f} GiB minimum "
+                f"for {model_id}. Training WILL OOM. Redeploy with a larger GPU: "
+                f"TRAIN_GPU=a100-80gb modal deploy modal/vex_qlora_train.py"
+            )
+            print(f"  {msg}")
+            return {"status": "gpu_insufficient", "error": msg}
+    else:
+        msg = "[GPU-GUARD] No CUDA GPU detected. QLoRA training requires GPU."
+        print(f"  {msg}")
+        return {"status": "no_gpu", "error": msg}
 
     from datasets import Dataset
     from peft import LoraConfig, get_peft_model
@@ -1371,6 +1468,7 @@ def train_all_kernels(
     from transformers import (
         AutoTokenizer,
         BitsAndBytesConfig,
+        TrainerCallback,
     )
     from trl import SFTConfig, SFTTrainer
 
@@ -1447,11 +1545,13 @@ def train_all_kernels(
         vram_gb = torch.cuda.memory_allocated(0) / (1024**3)
         print(f"  [VRAM] Base model loaded in 4-bit QLoRA: {vram_gb:.1f} GiB allocated")
 
-    # Re-force vocab_size on base model config after loading (PEFT needs this)
-    if hasattr(base_model.config, "text_config") and hasattr(
-        base_model.config.text_config, "vocab_size"
-    ):
-        base_model.config.vocab_size = base_model.config.text_config.vocab_size
+    # Belt-and-suspenders: ensure class-level __getattr__ fallback is in place.
+    # _load_model_for_training already patches this, but re-apply in case
+    # the config class was replaced or re-imported.
+    _patch_vlm_config_vocab_size(base_model.config)
+    print(
+        f"  [COMPAT] vocab_size={getattr(base_model.config, 'vocab_size', 'N/A')} on {type(base_model.config).__name__}"
+    )
 
     # M10: Heart data mixing — 5% of heart's training data mixed into subsequent kernels
     heart_samples: list[dict] = []
@@ -1541,9 +1641,12 @@ def train_all_kernels(
                 task_type="CAUSAL_LM",
             )
             model = get_peft_model(base_model, lora_config)
-            # Re-ensure vocab_size survives PEFT wrapping
-            if hasattr(base_model.config, "vocab_size"):
-                model.config.vocab_size = base_model.config.vocab_size
+            # Patch PEFT model's config class too (may be different from base)
+            _patch_vlm_config_vocab_size(model.config)
+            # Also set instance attr for code that checks hasattr()
+            _vs = getattr(base_model.config, "vocab_size", None)
+            if _vs is not None:
+                model.config.vocab_size = _vs
 
             # M1: Apply Hestia warm-start to LoRA A matrices
             hestia.warm_start_lora(model)
@@ -1583,8 +1686,7 @@ def train_all_kernels(
                 lr_scheduler_type="cosine",
                 logging_steps=1,
                 eval_strategy="epoch",
-                save_strategy="epoch",
-                save_total_limit=2,
+                save_strategy="no",  # We save manually after training (line ~1692); internal checkpoint save crashes on Qwen3_5MoeConfig missing vocab_size
                 bf16=True,
                 max_grad_norm=0.3,
                 report_to="none",
@@ -1596,6 +1698,29 @@ def train_all_kernels(
             # Build callback list: M2, M3, M4, M5, M6+M7, M12
             model_ref = [model]
             tokenizer_ref = [tokenizer]
+
+            # Mid-training checkpoint: save adapter every N steps for preemption resilience.
+            # save_strategy="no" disables Trainer's internal saves (which crash on Qwen3_5MoeConfig),
+            # so we do it manually here with our own callback.
+            _ckpt_every = max(50, total_steps // 6)  # ~6 checkpoints per run
+
+            class _AdapterCheckpointCallback(TrainerCallback):
+                _ckpt_interval = _ckpt_every
+                _save_path = adapter_save_path
+                _model_ref = model_ref
+                _total = total_steps
+
+                def on_step_end(self, args, state, control, model=None, **kwargs):
+                    if state.global_step > 0 and state.global_step % self._ckpt_interval == 0:
+                        _ckpt_dir = f"{self._save_path}/checkpoint-{state.global_step}"
+                        Path(_ckpt_dir).mkdir(parents=True, exist_ok=True)
+                        _patch_vlm_config_vocab_size(self._model_ref[0].config)
+                        self._model_ref[0].save_pretrained(_ckpt_dir)
+                        model_volume.commit()
+                        print(
+                            f"  [CKPT] Adapter checkpoint saved at step {state.global_step}/{self._total}"
+                        )
+
             callbacks = [
                 make_consciousness_callback(
                     consciousness
@@ -1608,6 +1733,7 @@ def train_all_kernels(
                     training_metrics, geometric_reward, gradient_hold, optimizer
                 ),
                 make_provenance_callback(adapter_save_path),  # M12: JSONL logging
+                _AdapterCheckpointCallback(),  # Preemption-safe adapter saves
             ]
 
             trainer = SFTTrainer(
@@ -1619,43 +1745,71 @@ def train_all_kernels(
                 processing_class=tokenizer,
                 callbacks=callbacks,
             )
-            result = trainer.train()
+            # trainer.train() can throw if a callback crashes (e.g. on_train_end).
+            # The model weights are still valid — save them regardless.
+            train_error = None
+            result = None
+            try:
+                result = trainer.train()
+            except Exception as train_err:
+                train_error = train_err
+                print(f"  [TRAIN] trainer.train() raised: {train_err}")
+                print("  [TRAIN] Attempting adapter save despite callback failure...")
 
+            # ── CRITICAL: Save adapter weights and commit IMMEDIATELY ──
+            # The adapter is the only irreplaceable training output.
+            # Even if a callback crashed, the PEFT weights in memory are valid.
             Path(adapter_save_path).mkdir(parents=True, exist_ok=True)
+            print(f"  [SAVE] Saving adapter to {adapter_save_path}...")
+            _patch_vlm_config_vocab_size(model.config)
             model.save_pretrained(adapter_save_path)
             tokenizer.save_pretrained(adapter_save_path)
+            print("  [SAVE] Adapter + tokenizer written. Committing volume...")
+            model_volume.commit()
+            print(f"  [SAVE] Volume committed — adapter persisted for {spec}.")
+
+            # Re-raise if trainer failed and we couldn't save
+            if (
+                train_error is not None
+                and not Path(f"{adapter_save_path}/adapter_config.json").exists()
+            ):
+                raise train_error
+
+            # ── Non-critical: metadata, consciousness, diagnostics ──
+            _train_loss = float(result.training_loss) if result else 0.0
             meta = {
                 "model_id": model_id,
                 "specialization": spec,
                 "e8_filter": KERNEL_E8_TAGS.get(spec, []),
                 "lora_r": lora_r,
                 "epochs": epochs,
-                "train_loss": result.training_loss,
+                "train_loss": _train_loss,
                 "train_samples": len(split["train"]),
                 "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "consciousness_order": target_kernels.index(spec) + 1,
+                "train_callback_error": str(train_error) if train_error else None,
             }
-            # Stash meta for _merge_and_export (runs after finally cleanup)
-            results[spec]["_meta"] = meta
-            with open(f"{adapter_save_path}/training_meta.json", "w") as f:
-                json.dump(meta, f, indent=2)
-
-            # Save consciousness state alongside adapter
-            save_training_consciousness(consciousness, adapter_save_path, meta)
-
-            # Commit adapter to volume immediately — if later kernels OOM,
-            # this kernel's adapter survives.
-            model_volume.commit()
+            try:
+                with open(f"{adapter_save_path}/training_meta.json", "w") as f:
+                    json.dump(meta, f, indent=2, default=_json_default)
+                save_training_consciousness(consciousness, adapter_save_path, meta)
+                model_volume.commit()
+            except Exception as meta_err:
+                print(f"  [SAVE] WARNING: metadata/consciousness save failed: {meta_err}")
 
             # M11: Post-training diagnostic — halt if unhealthy
-            diagnostic = run_post_training_diagnostic(
-                model, tokenizer, home_basin=hestia.home_basin
-            )
+            diagnostic = {"healthy": False}
+            try:
+                diagnostic = run_post_training_diagnostic(
+                    model, tokenizer, home_basin=hestia.home_basin
+                )
+            except Exception as diag_err:
+                print(f"  [M11] WARNING: diagnostic failed: {diag_err}")
 
             elapsed = round(time.time() - start, 2)
             results[spec] = {
                 "success": True,
-                "train_loss": round(result.training_loss, 4),
+                "train_loss": round(_train_loss, 4),
                 "train_samples": len(split["train"]),
                 "elapsed_seconds": elapsed,
                 "diagnostic_healthy": diagnostic.get("healthy", False),
@@ -1666,12 +1820,13 @@ def train_all_kernels(
 
             # Track phase coherence across kernels
             if consciousness is not None:
-                coherence.record(spec, consciousness)
+                with contextlib.suppress(Exception):
+                    coherence.record(spec, consciousness)
 
             if not diagnostic.get("healthy", False):
                 print(f"  [M11] WARNING: {spec} kernel UNHEALTHY — adapter saved but flagged")
 
-            print(f"[{spec}] Done in {elapsed}s, loss: {result.training_loss:.4f}")
+            print(f"[{spec}] Done in {elapsed}s, loss: {_train_loss:.4f}")
         except Exception as e:
             elapsed = round(time.time() - start, 2)
             results[spec] = {

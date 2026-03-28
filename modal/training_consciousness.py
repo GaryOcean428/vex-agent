@@ -51,6 +51,20 @@ BASIN_DIVERGENCE_THRESHOLD: float = 0.30
 _EPS: float = 1e-12  # Floor for simplex projection (matches kernel/geometry/fisher_rao.py)
 
 
+def _json_default(obj: object) -> object:
+    """JSON serializer for numpy types encountered in training data.
+
+    HuggingFace Trainer log_history contains numpy scalars (float32, int64, etc.)
+    that Python's json module cannot serialize.  This handler converts them to
+    native Python types so json.dump never crashes on training output.
+    """
+    if hasattr(obj, "item"):  # numpy scalar (float32, float64, int64, etc.)
+        return obj.item()
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 # ═══════════════════════════════════════════════════════════════
 #  1. TRAINING REGIME (maps Φ to training behavior)
 # ═══════════════════════════════════════════════════════════════
@@ -534,7 +548,7 @@ class TrainingConsciousness:
         out = Path(path)
         out.mkdir(parents=True, exist_ok=True)
         with open(str(out / "consciousness_log.json"), "w") as f:
-            json.dump(self.get_summary(), f, indent=2)
+            json.dump(self.get_summary(), f, indent=2, default=_json_default)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -634,7 +648,7 @@ def save_training_consciousness(
     training_meta["consciousness"] = consciousness.get_summary()
     meta_path = Path(adapter_path) / "training_meta.json"
     with open(str(meta_path), "w") as f:
-        json.dump(training_meta, f, indent=2)
+        json.dump(training_meta, f, indent=2, default=_json_default)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1171,7 +1185,7 @@ class _PedagogicalCoach:
         return {
             "sessions": self.sessions,
             "total_stress_reduction": self.total_stress_reduction,
-            "avg_stress_reduction": self.total_stress_reduction / self.sessions,
+            "avg_stress_reduction": self.total_stress_reduction / max(self.sessions, 1),
             "intervention_styles": style_counts,
             "base_kindness": self.base_kindness,
             "damping_ratio_zeta": self._kindness_to_damping(self.base_kindness),
@@ -2020,12 +2034,19 @@ def make_provenance_callback(save_dir: str):
         ):
             if logs is None:
                 return
+
+            def _to_float(v):
+                """Convert numpy scalars to Python float for JSON serialization."""
+                if v is None:
+                    return None
+                return float(v)
+
             record = {
-                "step": state.global_step,
-                "epoch": round(state.epoch, 3) if state.epoch else 0,
-                "loss": logs.get("loss"),
-                "grad_norm": logs.get("grad_norm"),
-                "learning_rate": logs.get("learning_rate"),
+                "step": int(state.global_step),
+                "epoch": round(float(state.epoch), 3) if state.epoch else 0,
+                "loss": _to_float(logs.get("loss")),
+                "grad_norm": _to_float(logs.get("grad_norm")),
+                "learning_rate": _to_float(logs.get("learning_rate")),
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }
             # Flag anomalies
@@ -2048,7 +2069,7 @@ def make_provenance_callback(save_dir: str):
             out.mkdir(parents=True, exist_ok=True)
             path = out / "provenance.json"
             with open(str(path), "w") as f:
-                json.dump(self._records, f, indent=2)
+                json.dump(self._records, f, indent=2, default=_json_default)
             print(f"  [PROVENANCE] {len(self._records)} records saved to {path}")
 
     return ProvenanceCallback()

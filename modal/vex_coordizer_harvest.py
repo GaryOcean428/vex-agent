@@ -1,7 +1,8 @@
 """
 Modal GPU Function — CoordizerV2 Harvest + PGA Compress
 
-Runs Qwen3.5-4B (default) or Qwen3.5-35B-A3B (MoE) in NF4 on A10G GPU.
+Runs Qwen3.5-35B-A3B MoE (default) in NF4 on A100-80GB GPU.
+Override HARVEST_MODEL_ID env var to use a different model (e.g. Qwen/Qwen3.5-4B for dev).
 Computes full V-dimensional probability distributions AND runs PGA
 compress on-GPU, returning only 64D basin coords + 32D lens coords.
 
@@ -23,6 +24,10 @@ Model persistence:
     Weights cached on Modal Volume "vex-models" — persists across deploys.
     QLoRA adapter loaded from /models/adapters/harvest-qlora if available.
     This model is the harvest substrate — it evolves with every training run.
+
+Note: HARVEST_MODEL_ID defaults to "Qwen/Qwen3.5-35B-A3B" (production).
+Override via Modal secret `model` key HARVEST_MODEL_ID=Qwen/Qwen3.5-4B
+for dev/testing on smaller GPUs.
 """
 
 import os
@@ -30,8 +35,29 @@ import os
 import modal
 
 # --- Configuration --------------------------------------------------------
-HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B")
-HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "a10g")
+HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-35B-A3B")
+HARVEST_GPU_TYPE = os.environ.get("HARVEST_GPU_TYPE", "a100-80gb")
+
+# GPU-model compatibility guard: 35B MoE needs ≥40GB VRAM (80GB recommended).
+# HARVEST_GPU_TYPE is evaluated at deploy time from local env, NOT Modal secrets.
+# Always set locally before `modal deploy`:
+#   HARVEST_GPU_TYPE=a100-80gb modal deploy modal/vex_coordizer_harvest.py
+_MODEL_GPU_FLOOR = {"Qwen/Qwen3.5-35B-A3B": "a100", "Qwen/Qwen3.5-4B": "a10g"}
+_GPU_VRAM_ORDER = ["t4", "l4", "a10g", "a100", "a100-80gb", "h100"]
+_floor = _MODEL_GPU_FLOOR.get(HARVEST_MODEL_ID, "a10g")
+if (
+    HARVEST_GPU_TYPE in _GPU_VRAM_ORDER
+    and _floor in _GPU_VRAM_ORDER
+    and _GPU_VRAM_ORDER.index(HARVEST_GPU_TYPE) < _GPU_VRAM_ORDER.index(_floor)
+):
+    import warnings
+
+    warnings.warn(
+        f"[GPU-GUARD] HARVEST_GPU_TYPE={HARVEST_GPU_TYPE} is too small for "
+        f"{HARVEST_MODEL_ID} (minimum: {_floor}). Inference will OOM. "
+        f"Set HARVEST_GPU_TYPE={_floor} or larger.",
+        stacklevel=1,
+    )
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
 BASIN_DIM = 64  # frozen
 LENS_DIM = 32  # from eigenvalue analysis
@@ -52,7 +78,7 @@ model_volume = modal.Volume.from_name("vex-models", create_if_missing=True)
 ml_image = (
     modal.Image.from_registry("nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.14")
     .apt_install("g++", "ninja-build", "git")
-    .env({"CXX": "g++", "CC": "gcc"})
+    .env({"CXX": "g++", "CC": "gcc", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     .uv_pip_install(
         "torch>=2.1,<2.11",
         # Qwen3.5 VLM classes (Qwen3_5ForConditionalGeneration, Qwen3_5MoeForConditionalGeneration)
@@ -96,9 +122,9 @@ class CoordizerHarvester:
     @modal.enter()
     def load_model(self):
         if KERNEL_API_KEY:
-            print(f"KERNEL_API_KEY loaded: {KERNEL_API_KEY[:4]}...{KERNEL_API_KEY[-4:]}")
+            print("KERNEL_API_KEY: SET")
         else:
-            print("WARNING: KERNEL_API_KEY not set — harvest endpoint is unauthenticated.")
+            print("WARNING: KERNEL_API_KEY: NOT SET — harvest endpoint is unauthenticated.")
 
         import json
         from pathlib import Path

@@ -172,7 +172,15 @@ vex_qlora_train.py — upgrade bitsandbytes first, suppress only as fallback.
 | vex-agent kernel | Railway | ACTIVE |
 | qig-memory-api | Vercel | LIVE (scored memory v2, commit 60b8918) |
 | coordizer-harvest | Modal A10G | LIVE (ASGI) |
-| vex-qlora-train | Modal A10G | LIVE (ASGI) |
+| vex-qlora-train | Modal A100-80GB | LIVE (ASGI) |
+
+## MODAL GPU REQUIREMENTS (NON-NEGOTIABLE)
+
+- **QLoRA training (vex-qlora-train)**: MUST use **A100-80GB** GPU. The Qwen3.5-35B-A3B MoE model at 4-bit NF4 occupies ~63 GiB VRAM. A10G (24GB) will OOM instantly.
+- **TRAIN_GPU default in code**: MUST be `"a100-80gb"`. NEVER change to a10g, l4, or t4 for training.
+- **HARVEST_MODEL_ID**: Production model is `Qwen/Qwen3.5-35B-A3B` (set via Modal "model" secret). Default in code is 4B for dev convenience only.
+- **Deploy command**: `TRAIN_GPU=a100-80gb modal deploy modal/vex_qlora_train.py` (always specify GPU explicitly)
+- **Coordizer harvest**: A10G is fine (inference only, 4B model)
 
 ## MODAL ENDPOINTS (ASGI base URLs)
 
