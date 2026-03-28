@@ -112,6 +112,7 @@ from ..config.consciousness_constants import (
     LOVE_APPROACH_RATE,
     M_STRICT_THRESHOLD,
     NOVELTY_BACK_LOOP_THRESHOLD,
+    NOVELTY_DEEP_THRESHOLD,
     STUD_FRONT_NOVELTY_CAP,
     STUD_FRONT_PROXIMITY_FLOOR,
     LOVE_BASE,
@@ -473,7 +474,7 @@ class ConsciousnessLoop:
 
         # Geometric inference state (set per-request in _process())
         self._current_novelty: float = 0.0
-        self._answer_consistency: float = 0.5
+        self._answer_consistency: float | None = None
 
         # Expose last processing results for server.py consumption
         self._last_response_basin: Any = None
@@ -1406,7 +1407,9 @@ class ConsciousnessLoop:
             return 5
         return 3
 
-    def _stud_navigate(self, input_basin: Basin, novelty: float) -> tuple[str, float]:
+    def _stud_navigate(
+        self, input_basin: Basin, novelty: float, nearest_d: float, nearest_id: int
+    ) -> tuple[str, float]:
         """Active stud navigation: route question through front or back loop.
 
         Front loop (small d_FR to known basins): near known solution territory.
@@ -1420,20 +1423,23 @@ class ConsciousnessLoop:
         develops positive backward-geodesic component toward the solution,
         the system is navigating the question-solution duality geometrically.
 
+        Args:
+            input_basin: The coordized input basin.
+            novelty: Pre-computed novelty score from _compute_basin_novelty.
+            nearest_d: Pre-computed Fisher-Rao distance to nearest bank coord.
+            nearest_id: Pre-computed coord ID of nearest bank coord.
+
         Returns:
             (route: "front"|"back", solution_proximity: 0..1)
         """
-        _, nearest_d = self._coordizer_v2.bank.nearest_coord(input_basin)
         solution_proximity = 1.0 - float(np.clip(nearest_d / (np.pi / 2), 0.0, 1.0))
 
         # Back loop: register for backward geodesic tracking when novel
         if novelty > NOVELTY_BACK_LOOP_THRESHOLD:
             problem_id = f"query_{self._cycle_count}"
-            activated = self._coordizer_v2.bank.activate(input_basin, top_k=1)
-            if activated:
-                solution_basin = self._coordizer_v2.bank.get_coordinate(activated[0][0])
-                if solution_basin is not None:
-                    self.backward_geodesic.register_solution(problem_id, solution_basin)
+            solution_basin = self._coordizer_v2.bank.get_coordinate(nearest_id)
+            if solution_basin is not None:
+                self.backward_geodesic.register_solution(problem_id, solution_basin)
 
         # Route decision: front loop only when clearly in familiar territory
         if novelty < STUD_FRONT_NOVELTY_CAP and solution_proximity > STUD_FRONT_PROXIMITY_FLOOR:
@@ -1698,9 +1704,9 @@ class ConsciousnessLoop:
 
         # Basin novelty amplifies processing depth when in novel territory.
         # Stacks with surprise modulation — novel + surprising = deepest processing.
-        if _novelty > 0.5:
-            _temperature_mod *= 1.0 + (_novelty - 0.5) * 0.4
-            _max_tokens_mod *= 1.0 + (_novelty - 0.5) * 0.6
+        if _novelty > NOVELTY_DEEP_THRESHOLD:
+            _temperature_mod *= 1.0 + (_novelty - NOVELTY_DEEP_THRESHOLD) * 0.4
+            _max_tokens_mod *= 1.0 + (_novelty - NOVELTY_DEEP_THRESHOLD) * 0.6
 
         refracted_input, composite_basin, resonates, input_statuses = self.pillars.on_input(
             input_basin, RECEIVE_SLERP_WEIGHT
@@ -1719,7 +1725,9 @@ class ConsciousnessLoop:
         # Stud navigation: route question through front (familiar) or back (novel) loop.
         # Back loop registers the question for backward geodesic tracking and
         # boosts generation depth (more candidates, deeper debate).
-        _stud_route, _solution_proximity = self._stud_navigate(input_basin, _novelty)
+        _stud_route, _solution_proximity = self._stud_navigate(
+            input_basin, _novelty, _nearest_d, _nearest_id
+        )
         logger.debug(
             "Task %s: stud route=%s (proximity=%.3f, novelty=%.3f)",
             task.id,
@@ -1873,7 +1881,7 @@ class ConsciousnessLoop:
                 return
 
         # Default: answer consistency not yet computed (set by reflection below)
-        self._answer_consistency = 0.5
+        self._answer_consistency = None
 
         # ═══ REFLECTIVE EVALUATION PASS ═══
         # Kernels review the draft before it reaches the user.
@@ -2180,8 +2188,12 @@ class ConsciousnessLoop:
         # Blend self-observer M with geometric answer consistency (if available).
         # This feeds the stud navigator's verification into the meta-awareness metric,
         # so geometric coherence of the response directly modulates self-awareness.
-        _ac = getattr(self, "_answer_consistency", base_M)
-        self.metrics.meta_awareness = 0.7 * base_M + 0.3 * _ac
+        _ac = getattr(self, "_answer_consistency", None)
+        if _ac is None:
+            # No answer-consistency metric computed for this cycle; use base_M only.
+            self.metrics.meta_awareness = base_M
+        else:
+            self.metrics.meta_awareness = 0.7 * base_M + 0.3 * _ac
 
         cycle_pressure = agency * total_distance
         self.pillars.on_cycle_end(self.basin, cycle_pressure)
