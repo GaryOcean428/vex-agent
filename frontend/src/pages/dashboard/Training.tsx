@@ -57,6 +57,17 @@ export default function Training() {
   const [modalData, setModalData] = useState<{ total_files?: number; total_records?: number; files?: { path: string; records: number; size_kb: number; modified_at: string }[] } | null>(null);
   const [modalDataLoading, setModalDataLoading] = useState(false);
 
+  // Cancel training
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelResult, setCancelResult] = useState<{ cancelled?: boolean; reason?: string; error?: string } | null>(null);
+
+  // Archive management
+  const [archiveFiles, setArchiveFiles] = useState<{ name: string; archived_at: string; reason: string; size_kb: number }[]>([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveAction, setArchiveAction] = useState<string | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -257,6 +268,85 @@ export default function Training() {
   // Fetch Modal data stats on mount
   useEffect(() => { fetchModalData(); }, [fetchModalData]);
 
+  // Fetch archive list
+  const fetchArchive = useCallback(async () => {
+    setArchiveLoading(true);
+    try {
+      const resp = await fetch(API.trainingArchive);
+      if (resp.ok) {
+        const data = await resp.json();
+        setArchiveFiles(data.files ?? []);
+      }
+    } catch { /* best-effort */ } finally {
+      setArchiveLoading(false);
+    }
+  }, []);
+  useEffect(() => { fetchArchive(); }, [fetchArchive]);
+
+  // Cancel training handler
+  const handleCancel = useCallback(async () => {
+    if (!confirm("Stop training? Completed kernel adapters will be saved.")) return;
+    setCancelling(true);
+    setCancelResult(null);
+    try {
+      const resp = await fetch(API.trainingCancel, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const data = await resp.json();
+      setCancelResult(data);
+    } catch (err) {
+      setCancelResult({ error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setCancelling(false);
+    }
+  }, []);
+
+  // Archive a file
+  const handleArchiveFile = useCallback(async (filename: string) => {
+    const reason = prompt("Reason for archiving (optional):", "") ?? "";
+    setArchiveAction(filename);
+    try {
+      const resp = await fetch(API.trainingArchive, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files: [filename], reason }),
+      });
+      if (resp.ok) { refetch(); fetchArchive(); }
+    } catch { /* best-effort */ } finally {
+      setArchiveAction(null);
+    }
+  }, [refetch, fetchArchive]);
+
+  // Restore a file from archive
+  const handleRestore = useCallback(async (filename: string) => {
+    setArchiveAction(filename);
+    try {
+      const resp = await fetch(API.trainingRestore, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files: [filename] }),
+      });
+      if (resp.ok) { refetch(); fetchArchive(); }
+    } catch { /* best-effort */ } finally {
+      setArchiveAction(null);
+    }
+  }, [refetch, fetchArchive]);
+
+  // Permanently delete an archived file
+  const handleDeleteArchived = useCallback(async (filename: string) => {
+    setArchiveAction(filename);
+    try {
+      const resp = await fetch(API.trainingArchive, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files: [filename], confirm: true }),
+      });
+      if (resp.ok) { fetchArchive(); }
+    } catch { /* best-effort */ } finally {
+      setArchiveAction(null);
+      setDeleteTarget(null);
+      setDeleteConfirmText("");
+    }
+  }, [fetchArchive]);
+
   const completedCount = jobs.filter((j) => j.status === "done").length;
   const errorCount = jobs.filter((j) => j.status === "error").length;
   const activeCount = jobs.filter(
@@ -347,15 +437,33 @@ export default function Training() {
                     {Object.entries(f.e8_tags).map(([k, v]) => `${k}:${v}`).join(" ")}
                   </div>
                 </div>
-                <div
-                  style={{
-                    fontSize: "10px",
-                    color: "var(--text-secondary)",
-                    fontFamily: "var(--mono)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {new Date(f.uploaded_at).toLocaleDateString()}
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      color: "var(--text-secondary)",
+                      fontFamily: "var(--mono)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {new Date(f.uploaded_at).toLocaleDateString()}
+                  </span>
+                  <button
+                    onClick={() => handleArchiveFile(`curriculum/${f.filename}`)}
+                    disabled={archiveAction === f.filename}
+                    title="Archive this file"
+                    style={{
+                      background: "none",
+                      border: "1px solid var(--border)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "2px 6px",
+                      color: "var(--text-secondary)",
+                      fontSize: "10px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Archive
+                  </button>
                 </div>
               </div>
             ))}
@@ -856,7 +964,33 @@ export default function Training() {
                   ? "Start QLoRA Training (All)"
                   : `Train ${trainTarget.charAt(0).toUpperCase() + trainTarget.slice(1)} Kernel`}
             </button>
+            {modalStatus?.health?.training_active && (
+              <button
+                onClick={handleCancel}
+                disabled={cancelling}
+                style={{
+                  background: "var(--error)",
+                  border: "none",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "10px 20px",
+                  color: "white",
+                  fontWeight: 600,
+                  cursor: cancelling ? "not-allowed" : "pointer",
+                  opacity: cancelling ? 0.5 : 1,
+                  fontSize: "14px",
+                }}
+              >
+                {cancelling ? "Stopping..." : "Stop Training"}
+              </button>
+            )}
           </div>
+          {cancelResult && (
+            <div style={{ marginTop: "8px", fontSize: "13px", color: cancelResult.cancelled ? "var(--alive)" : "var(--error)" }}>
+              {cancelResult.cancelled
+                ? `Training stop requested — ${cancelResult.reason}`
+                : cancelResult.error ?? "Cancel failed"}
+            </div>
+          )}
           {trainingResult && (
             <div
               style={{
@@ -951,6 +1085,120 @@ export default function Training() {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Training Archive (P15: fail-closed safety) */}
+      <div className="dash-section">
+        <div className="dash-section-title">Training Archive</div>
+        <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
+          Quarantined training data. Archived files are excluded from future training runs.
+          Restore to re-include, or delete permanently.
+        </div>
+        {archiveLoading ? (
+          <div style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Loading archive...</div>
+        ) : archiveFiles.length === 0 ? (
+          <div className="dash-card" style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
+            No archived files
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            {archiveFiles.map((f) => (
+              <div
+                key={f.name}
+                className="dash-card"
+                style={{ padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: "12px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {f.name}
+                  </div>
+                  <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }}>
+                    {f.size_kb}KB · {f.reason || "no reason"} · {new Date(f.archived_at).toLocaleDateString()}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+                  <button
+                    onClick={() => handleRestore(f.name)}
+                    disabled={archiveAction === f.name}
+                    style={{
+                      background: "var(--surface-3)",
+                      border: "1px solid var(--border)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "4px 10px",
+                      color: "var(--text)",
+                      fontSize: "11px",
+                      cursor: archiveAction === f.name ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Restore
+                  </button>
+                  {deleteTarget === f.name ? (
+                    <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                      <input
+                        type="text"
+                        placeholder='Type "DELETE"'
+                        value={deleteConfirmText}
+                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                        style={{
+                          width: "90px",
+                          padding: "3px 6px",
+                          fontSize: "11px",
+                          background: "var(--surface-3)",
+                          border: "1px solid var(--error)",
+                          borderRadius: "var(--radius-sm)",
+                          color: "var(--text)",
+                        }}
+                      />
+                      <button
+                        onClick={() => handleDeleteArchived(f.name)}
+                        disabled={deleteConfirmText !== "DELETE" || archiveAction === f.name}
+                        style={{
+                          background: deleteConfirmText === "DELETE" ? "var(--error)" : "var(--surface-3)",
+                          border: "none",
+                          borderRadius: "var(--radius-sm)",
+                          padding: "4px 8px",
+                          color: "white",
+                          fontSize: "11px",
+                          cursor: deleteConfirmText === "DELETE" ? "pointer" : "not-allowed",
+                          opacity: deleteConfirmText === "DELETE" ? 1 : 0.4,
+                        }}
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        onClick={() => { setDeleteTarget(null); setDeleteConfirmText(""); }}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "var(--text-secondary)",
+                          fontSize: "11px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setDeleteTarget(f.name)}
+                      style={{
+                        background: "none",
+                        border: "1px solid var(--error)",
+                        borderRadius: "var(--radius-sm)",
+                        padding: "4px 10px",
+                        color: "var(--error)",
+                        fontSize: "11px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
