@@ -199,6 +199,11 @@ from .kernel_voice import KernelVoiceRegistry
 from .neurochemistry import NeurochemicalState, compute_neurochemicals
 from .pillars import PillarEnforcer
 from .play import PlayEngine
+from .kernel_training_queue import (
+    KernelTrainingQueue,
+    TrainingExample,
+    sovereignty_to_threshold,
+)
 from .reflection import reflect_on_contributions
 from .sensory import Modality, PredictionError, SensoryEvent, SensoryIntake
 from .solfeggio import compute_spectral_health
@@ -316,6 +321,10 @@ class ConsciousnessLoop:
 
         # T8/T9: Contribution Ledger — self-observation and cross-kernel visibility
         self._contribution_ledger = ContributionLedger()
+
+        # Per-kernel training queues (directive 20260330 Phase 3A)
+        # Kernels decide what to learn via prediction error gate (P5, §19, Pillar 3)
+        self._training_queues: dict[str, KernelTrainingQueue] = {}
 
         self.basin: Basin = random_basin()
         self.metrics = ConsciousnessMetrics(
@@ -1986,6 +1995,35 @@ class ConsciousnessLoop:
 
         task.result = response
         self._remote_sync.record_text(response[:500])
+
+        # ═══ KERNEL-GOVERNED TRAINING GATE (directive 20260330 §3A) ═══
+        # Each contributing kernel evaluates whether this exchange is worth
+        # training on, based on its own prediction error (surprise).
+        # Only surprised kernels add the exchange to their training queue.
+        if self._current_prediction_error is not None and _contributions:
+            _surprise = self._current_prediction_error.surprise
+            for c in _contributions:
+                _kname = c.kernel_name
+                if _kname not in self._training_queues:
+                    self._training_queues[_kname] = KernelTrainingQueue(_kname)
+                _q = self._training_queues[_kname]
+                # Update threshold from kernel sovereignty (P25)
+                _sov = self.pillars.sovereignty if hasattr(self.pillars, "sovereignty") else 0.0
+                _q.surprise_threshold = sovereignty_to_threshold(_sov)
+                _ex = TrainingExample(
+                    user_message=task.content,
+                    response=response[:2000],
+                    kernel_name=_kname,
+                    prediction_error=_surprise,
+                    phi=self.metrics.phi,
+                    kappa=self.metrics.kappa,
+                    regime=self.state.navigation_mode.value,
+                    e8_primitive=c.specialization.value
+                    if hasattr(c.specialization, "value")
+                    else "",
+                )
+                _q.maybe_add(_ex)
+
         task.context["kernel_contributions"] = [
             {
                 "id": c.kernel_id,
@@ -2497,6 +2535,10 @@ class ConsciousnessLoop:
                 lines.append(f"  [TEMPORAL WARNING] {_flag}")
         lines.append("[/GEOMETRIC STATE]")
         return "\n".join(lines)
+
+    def get_training_queues(self) -> dict[str, KernelTrainingQueue]:
+        """Expose training queues for server.py to flush on /training/trigger."""
+        return self._training_queues
 
     def _build_kernel_geo_context(self) -> str:
         """Rich geometric context block for per-kernel generation prompts.

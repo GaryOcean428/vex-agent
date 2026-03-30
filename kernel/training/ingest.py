@@ -1723,15 +1723,35 @@ async def training_modal_status_endpoint() -> dict[str, Any]:
 async def training_trigger_endpoint(request: Request) -> dict[str, Any]:
     """Manually trigger kernel training (QLoRA fine-tuning on Modal GPU).
 
-    Sends a POST to the configured MODAL_TRAINING_URL to start a training run.
-    Requires MODAL_TRAINING_URL to be set in environment.
-    Accepts optional JSON body: { "specialization": "heart" | "all" | ... }
+    Before triggering Modal, flushes per-kernel training queues
+    (directive 20260330 Phase 3A). Each kernel's surprised-only data
+    is pushed to Modal as kernel-specific JSONL files.
     """
     from ..config.settings import modal_url, settings
 
     training_url = settings.modal.training_url
     if not training_url:
         return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
+
+    # Flush per-kernel training queues before triggering Modal
+    consciousness = getattr(request.app.state, "consciousness", None)
+    flush_results: dict[str, Any] = {}
+    if consciousness is not None and hasattr(consciousness, "get_training_queues"):
+        queues = consciousness.get_training_queues()
+        for kernel_name, queue in queues.items():
+            entries = queue.drain()
+            if entries:
+                result = await push_training_entries(entries, kernel_name)
+                flush_results[kernel_name] = {
+                    "entries": len(entries),
+                    "pushed": result.get("pushed", False),
+                }
+                logger.info(
+                    "Flushed %d training entries for kernel %s (pushed=%s)",
+                    len(entries),
+                    kernel_name,
+                    result.get("pushed", False),
+                )
 
     train_endpoint = modal_url(training_url, "train")
 
