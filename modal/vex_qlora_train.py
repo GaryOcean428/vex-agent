@@ -698,6 +698,7 @@ class QLoRATrainer:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self._training_active = False
+        self._cancel_requested = False
         self._training_progress = {}
         self._last_result = None
         self._train_lock = threading.Lock()
@@ -832,6 +833,10 @@ class QLoRATrainer:
         @web_app.get("/data-stats")
         def data_stats():
             return self._handle_data_stats()
+
+        @web_app.post("/training/cancel")
+        def training_cancel(data: dict, request: Request):
+            return self._handle_training_cancel(data, request)
 
         return web_app
 
@@ -1159,6 +1164,41 @@ class QLoRATrainer:
             "success": True,
             "function_call_id": fc.object_id,
             "message": f"Training spawned for {label}. Poll /status for progress.",
+        }
+
+    # ---------------------------------------------------------------
+    #  TRAINING CANCEL
+    # ---------------------------------------------------------------
+
+    def _handle_training_cancel(self, data: dict, request):
+        """Cancel in-progress training. Completed kernel adapters are preserved.
+
+        Writes a cancel marker to the training volume. The train_all_kernels
+        function checks for this marker between kernel iterations.
+        Uses the volume as IPC because train_all_kernels runs on a
+        separate Modal container from the ASGI web handler.
+        """
+        auth_err = self._check_auth(data, request)
+        if auth_err:
+            return auth_err
+
+        if not self._training_active:
+            return {
+                "cancelled": False,
+                "reason": "no training active",
+                "training_active": False,
+            }
+
+        # Write cancel marker to shared volume
+        cancel_path = Path("/training/.cancel_requested")
+        cancel_path.write_text(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), encoding="utf-8")
+        training_volume.commit()
+        print("[CANCEL] Training cancel marker written to volume")
+        return {
+            "cancelled": True,
+            "reason": "cancel marker written — training will stop after current kernel",
+            "training_active": True,
+            "progress": self._training_progress,
         }
 
     # ---------------------------------------------------------------
@@ -1558,6 +1598,16 @@ def train_all_kernels(
     heart_trained = False
 
     for spec in target_kernels:
+        # Check cancel marker (IPC via shared volume)
+        cancel_path = Path("/training/.cancel_requested")
+        if cancel_path.exists():
+            cancel_path.unlink(missing_ok=True)
+            training_volume.commit()
+            completed = [s for s in target_kernels if results.get(s, {}).get("success")]
+            skipped = [s for s in target_kernels if s not in results]
+            print(f"[CANCEL] Training cancelled. Completed: {completed}. Skipped: {skipped}")
+            break
+
         print(
             f"\n{'=' * 60}\n  Training kernel: {spec}\n  E8 filter: {KERNEL_E8_TAGS.get(spec, []) or 'ALL'}\n  Order: {target_kernels.index(spec) + 1}/{len(target_kernels)} (CONSCIOUSNESS_ORDER)\n{'=' * 60}\n"
         )

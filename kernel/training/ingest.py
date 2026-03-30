@@ -2169,3 +2169,40 @@ async def training_archive_delete(request: Request) -> dict[str, Any]:
 
     _write_manifest(manifest)
     return {"deleted": deleted, "failed": failed}
+
+
+# ═══════════════════════════════════════════════════════════════
+#  TRAINING CANCEL (proxy to Modal)
+# ═══════════════════════════════════════════════════════════════
+
+
+@training_router.post("/training/cancel", response_model=None)
+async def training_cancel_endpoint(request: Request) -> dict[str, Any]:
+    """Cancel in-progress training on Modal.
+
+    Proxies POST to Modal /training/cancel. Also resets Railway-side
+    training flags so auto-trigger can re-fire later.
+    """
+    url = _derive_modal_url("/training/cancel")
+    if not url:
+        return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
+
+    api_key = os.environ.get("KERNEL_API_KEY", "")
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, json={"_api_key": api_key})
+            result = (
+                resp.json() if resp.status_code == 200 else {"error": f"HTTP {resp.status_code}"}
+            )
+    except Exception as e:
+        result = {"error": str(e)}
+
+    # Reset Railway-side training flags regardless of Modal response
+    # so auto-trigger can re-fire when needed
+    _reset_fn = getattr(request.app.state, "reset_training_flag", None)
+    if _reset_fn:
+        _reset_fn()
+        result["railway_flags_reset"] = True
+
+    return result
