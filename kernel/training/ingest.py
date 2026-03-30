@@ -418,6 +418,102 @@ async def log_conversation(
     except Exception as e:
         logger.warning("Failed to log conversation: %s", e)
 
+    # Co-evolution: batch conversation entries for Modal push (§27)
+    _conv_batch_append(entry)
+    # Fire-and-forget flush check (non-blocking)
+    asyncio.create_task(flush_conversation_batch())
+
+
+# ── Conversation Batch → Modal Push (Co-Evolution §27) ──────────
+
+
+_conv_batch: list[dict] = []
+_conv_batch_lock = asyncio.Lock()
+_conv_batch_last_flush: float = 0.0
+_CONV_BATCH_SIZE = 10  # Flush after this many entries
+_CONV_BATCH_INTERVAL = 60.0  # Or after this many seconds
+_CONV_BATCH_MAX = 100  # Drop oldest entries if buffer exceeds this
+
+
+def _conv_batch_append(entry: dict) -> None:
+    """Append a conversation entry to the batch buffer.
+
+    Non-async, fire-and-forget. The flush is triggered by size/time
+    threshold in the async flush function.
+    """
+    _conv_batch.append(entry)
+    if len(_conv_batch) > _CONV_BATCH_MAX:
+        dropped = len(_conv_batch) - _CONV_BATCH_MAX
+        del _conv_batch[:dropped]
+        logger.warning("Conversation batch overflow — dropped %d oldest entries", dropped)
+
+
+async def flush_conversation_batch(*, force: bool = False) -> dict[str, Any]:
+    """Push buffered conversation entries to Modal /data-receive.
+
+    Called automatically when batch reaches _CONV_BATCH_SIZE or
+    _CONV_BATCH_INTERVAL seconds since last flush. Also called
+    on server shutdown and from /training/sync.
+
+    Returns push result dict or empty dict if nothing to flush.
+    """
+    global _conv_batch_last_flush
+
+    async with _conv_batch_lock:
+        if not _conv_batch:
+            return {}
+
+        now = time.time()
+        should_flush = (
+            force
+            or len(_conv_batch) >= _CONV_BATCH_SIZE
+            or (now - _conv_batch_last_flush) >= _CONV_BATCH_INTERVAL
+        )
+        if not should_flush:
+            return {}
+
+        # Take all entries and clear the buffer
+        entries = list(_conv_batch)
+        _conv_batch.clear()
+        _conv_batch_last_flush = now
+
+    # Push outside the lock
+    url = _derive_modal_url("/data-receive")
+    if not url:
+        logger.debug("Conversation batch: no MODAL_TRAINING_URL, skipping push")
+        return {"pushed": False, "reason": "MODAL_TRAINING_URL not configured"}
+
+    api_key = os.environ.get("KERNEL_API_KEY", "")
+    timestamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
+    filename = f"conv_batch_{timestamp}.jsonl"
+
+    payload = {
+        "_api_key": api_key,
+        "filename": filename,
+        "records": entries,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, json=payload)
+            if resp.status_code == 200:
+                result = resp.json()
+                logger.info(
+                    "Pushed %d conversation entries to Modal (%s)",
+                    result.get("records_written", 0),
+                    filename,
+                )
+                return {"pushed": True, **result}
+            logger.warning(
+                "Modal data_receive returned %d for conversation batch: %s",
+                resp.status_code,
+                resp.text[:200],
+            )
+            return {"pushed": False, "error": f"HTTP {resp.status_code}"}
+    except Exception:
+        logger.exception("Failed to push conversation batch to Modal")
+        return {"pushed": False, "error": "push failed"}
+
 
 async def _log_feedback(conversation_id: str, rating: int, comment: str) -> None:
     """Append user feedback to feedback.jsonl."""
@@ -1765,9 +1861,13 @@ async def training_sync_endpoint() -> dict[str, Any]:
     """Bulk-sync all local training data to Modal volume.
 
     Reads every JSONL file from the local training directory and pushes
-    each to Modal's /data-receive endpoint. Use from the dashboard's
-    "Sync Training Data" button for a full re-sync.
+    each to Modal's /data-receive endpoint. Also flushes any buffered
+    conversation entries. Use from the dashboard's "Sync Training Data"
+    button for a full re-sync.
     """
+    # Flush buffered conversation entries first (co-evolution §27)
+    await flush_conversation_batch(force=True)
+
     url = _derive_modal_url("/data-receive")
     if not url:
         return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}

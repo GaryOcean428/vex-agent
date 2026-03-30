@@ -3,6 +3,7 @@
 from .ingest import (
     compute_conversation_quality,
     export_coordized_format,
+    flush_conversation_batch,
     log_conversation,
     set_coordizer,
     set_governor,
@@ -13,6 +14,7 @@ from .ingest import (
 __all__ = [
     "training_router",
     "log_conversation",
+    "flush_conversation_batch",
     "compute_conversation_quality",
     "set_llm_client",
     "set_governor",
