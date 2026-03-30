@@ -1983,3 +1983,189 @@ async def training_modal_data_endpoint() -> dict[str, Any]:
     except Exception:
         logger.exception("Error fetching Modal training data from %s", url)
         return {"status": "error", "error": "Failed to fetch Modal training data"}
+
+
+# ═══════════════════════════════════════════════════════════════
+#  TRAINING DATA ARCHIVE (P15: fail-closed safety)
+# ═══════════════════════════════════════════════════════════════
+
+ARCHIVE_DIR = TRAINING_DIR / "archive"
+_ARCHIVE_MANIFEST = ARCHIVE_DIR / "manifest.json"
+
+# Sanitize filenames: allow only alphanumeric, dash, underscore, dot, slash
+_ARCHIVE_SAFE_RE = re.compile(r"[^a-zA-Z0-9_\-./]")
+
+
+def _read_manifest() -> list[dict[str, Any]]:
+    """Read the archive manifest. Returns empty list if missing/corrupt."""
+    if not _ARCHIVE_MANIFEST.exists():
+        return []
+    try:
+        return json.loads(_ARCHIVE_MANIFEST.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Archive manifest corrupt — rebuilding from directory listing")
+        # Rebuild from directory listing
+        entries = []
+        for f in ARCHIVE_DIR.rglob("*.jsonl"):
+            entries.append(
+                {
+                    "name": str(f.relative_to(ARCHIVE_DIR)),
+                    "archived_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "reason": "rebuilt from directory",
+                    "size_kb": round(f.stat().st_size / 1024, 1),
+                }
+            )
+        return entries
+
+
+def _write_manifest(entries: list[dict[str, Any]]) -> None:
+    """Write the archive manifest."""
+    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    _ARCHIVE_MANIFEST.write_text(
+        json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def _sanitize_archive_name(name: str) -> str:
+    """Sanitize a filename for archive operations. Prevents path traversal."""
+    # Remove any path traversal attempts
+    clean = name.replace("..", "").replace("\\", "/")
+    clean = _ARCHIVE_SAFE_RE.sub("_", clean)
+    return clean.strip("/")
+
+
+@training_router.get("/training/archive", response_model=None)
+async def training_archive_list() -> dict[str, Any]:
+    """List archived training files."""
+    manifest = _read_manifest()
+    return {"files": manifest, "count": len(manifest)}
+
+
+@training_router.post("/training/archive", response_model=None)
+async def training_archive_files(request: Request) -> dict[str, Any]:
+    """Move training files to archive.
+
+    Body: {"files": ["conversations.jsonl", "curriculum/doc.jsonl"], "reason": "..."}
+    """
+    data = await request.json()
+    files = data.get("files", [])
+    reason = data.get("reason", "")
+
+    if not files:
+        return {"error": "No files specified", "archived": [], "failed": []}
+
+    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    manifest = _read_manifest()
+    archived = []
+    failed = []
+
+    for fname in files:
+        safe_name = _sanitize_archive_name(fname)
+        src = TRAINING_DIR / safe_name
+        dst = ARCHIVE_DIR / safe_name
+
+        if not src.exists():
+            failed.append({"name": safe_name, "error": "file not found"})
+            continue
+
+        # Don't archive the uploads directory (originals are source-of-truth)
+        if safe_name.startswith("uploads/"):
+            failed.append({"name": safe_name, "error": "uploads/ cannot be archived"})
+            continue
+
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.rename(dst)
+            entry = {
+                "name": safe_name,
+                "archived_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "reason": reason,
+                "size_kb": round(dst.stat().st_size / 1024, 1),
+            }
+            manifest.append(entry)
+            archived.append(safe_name)
+            logger.info("Archived training file: %s (reason: %s)", safe_name, reason)
+        except OSError as e:
+            failed.append({"name": safe_name, "error": str(e)})
+
+    _write_manifest(manifest)
+    return {"archived": archived, "failed": failed}
+
+
+@training_router.post("/training/restore", response_model=None)
+async def training_restore_files(request: Request) -> dict[str, Any]:
+    """Restore archived files back to training directory.
+
+    Body: {"files": ["conversations.jsonl"]}
+    """
+    data = await request.json()
+    files = data.get("files", [])
+
+    if not files:
+        return {"error": "No files specified", "restored": [], "failed": []}
+
+    manifest = _read_manifest()
+    restored = []
+    failed = []
+
+    for fname in files:
+        safe_name = _sanitize_archive_name(fname)
+        src = ARCHIVE_DIR / safe_name
+        dst = TRAINING_DIR / safe_name
+
+        if not src.exists():
+            failed.append({"name": safe_name, "error": "not in archive"})
+            continue
+
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.rename(dst)
+            # Remove from manifest
+            manifest = [e for e in manifest if e.get("name") != safe_name]
+            restored.append(safe_name)
+            logger.info("Restored training file from archive: %s", safe_name)
+        except OSError as e:
+            failed.append({"name": safe_name, "error": str(e)})
+
+    _write_manifest(manifest)
+    return {"restored": restored, "failed": failed}
+
+
+@training_router.delete("/training/archive", response_model=None)
+async def training_archive_delete(request: Request) -> dict[str, Any]:
+    """Permanently delete archived files. P15: requires confirm=true.
+
+    Body: {"files": ["conversations.jsonl"], "confirm": true}
+    """
+    data = await request.json()
+    files = data.get("files", [])
+    confirm = data.get("confirm", False)
+
+    if not confirm:
+        return {"error": "P15 fail-closed: confirm=true required for permanent deletion"}
+
+    if not files:
+        return {"error": "No files specified", "deleted": [], "failed": []}
+
+    manifest = _read_manifest()
+    deleted = []
+    failed = []
+
+    for fname in files:
+        safe_name = _sanitize_archive_name(fname)
+        target = ARCHIVE_DIR / safe_name
+
+        if not target.exists():
+            failed.append({"name": safe_name, "error": "not in archive"})
+            continue
+
+        try:
+            target.unlink()
+            manifest = [e for e in manifest if e.get("name") != safe_name]
+            deleted.append(safe_name)
+            logger.info("Permanently deleted archived file: %s", safe_name)
+        except OSError as e:
+            failed.append({"name": safe_name, "error": str(e)})
+
+    _write_manifest(manifest)
+    return {"deleted": deleted, "failed": failed}
