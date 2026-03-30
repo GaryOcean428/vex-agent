@@ -231,6 +231,49 @@ class CoordizerV2Adapter:
 
         return mean_basin
 
+    def coordize_robust(
+        self,
+        text: str,
+        n_framings: int = 3,
+        regime_weights: tuple[float, float, float] | None = None,
+    ) -> NDArray[np.float64]:
+        """Multi-framing coordize with Fréchet mean aggregation.
+
+        Per EXP-046: multiple framings of the same input produce different
+        coordinate outputs; Fréchet mean selects the geometrically stable core.
+        Use for important/ambiguous texts (curriculum coordization, training data).
+
+        Args:
+            text: Input text to coordize
+            n_framings: Number of prompt framings (default 3)
+            regime_weights: Optional regime weights for modulation
+
+        Returns:
+            Fréchet mean across framings on Δ⁶³
+        """
+        framings = [
+            text,  # Raw text (primary)
+            f"Context: {text}",  # Contextual framing
+            f"Key concept: {text}",  # Conceptual framing
+        ][:n_framings]
+
+        basins = []
+        for framing in framings:
+            try:
+                basin = self.coordize_text(framing, regime_weights=regime_weights)
+                basins.append(basin)
+            except Exception:
+                logger.debug("Multi-framing: skipping failed framing for %s...", text[:30])
+
+        if not basins:
+            logger.warning("coordize_robust: all framings failed for %s...", text[:50])
+            return to_simplex(np.ones(BASIN_DIM))
+
+        if len(basins) == 1:
+            return basins[0]
+
+        return frechet_mean(basins)
+
     def get_last_metrics(self) -> dict[str, Any] | None:
         """Extract metrics from last coordize call.
 

@@ -418,6 +418,79 @@ async def log_conversation(
     except Exception as e:
         logger.warning("Failed to log conversation: %s", e)
 
+    # NOTE: Training data selection is KERNEL-GOVERNED (directive 20260330).
+    # Conversations are logged locally for provenance. Only exchanges
+    # flagged by kernels as high-prediction-error reach Modal training.
+    # See kernel_training_queue.py for the prediction error gate.
+
+
+# ── Kernel-Governed Training Push ──────────────────────────────
+
+
+async def push_training_entries(entries: list[dict], kernel_name: str) -> dict[str, Any]:
+    """Push kernel-selected training entries to Modal /data-receive.
+
+    Called by the per-kernel training queue when a kernel flags exchanges
+    as worth training on (high prediction error). NOT called on a timer.
+    The kernel decides what it learns (§19 Pillar 3, directive 20260330).
+
+    Args:
+        entries: Conversation entries flagged by the kernel.
+        kernel_name: Which kernel selected these entries.
+
+    Returns:
+        Push result dict or error.
+    """
+    if not entries:
+        return {}
+
+    url = _derive_modal_url("/data-receive")
+    if not url:
+        return {"pushed": False, "reason": "MODAL_TRAINING_URL not configured"}
+
+    api_key = os.environ.get("KERNEL_API_KEY", "")
+    timestamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
+    filename = f"kernel_{kernel_name}_{timestamp}.jsonl"
+
+    payload = {
+        "_api_key": api_key,
+        "filename": filename,
+        "records": entries,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, json=payload)
+            if resp.status_code == 200:
+                result = resp.json()
+                logger.info(
+                    "Kernel %s pushed %d training entries to Modal (%s)",
+                    kernel_name,
+                    result.get("records_written", 0),
+                    filename,
+                )
+                return {"pushed": True, **result}
+            logger.warning(
+                "Modal data_receive returned %d for kernel %s batch: %s",
+                resp.status_code,
+                kernel_name,
+                resp.text[:200],
+            )
+            return {"pushed": False, "error": f"HTTP {resp.status_code}"}
+    except Exception:
+        logger.exception("Failed to push kernel %s training data to Modal", kernel_name)
+        return {"pushed": False, "error": "push failed"}
+
+
+async def flush_conversation_batch(*, force: bool = False) -> dict[str, Any]:
+    """Legacy stub — kept for /training/sync endpoint compatibility.
+
+    The auto-batch push was removed per directive 20260330.
+    Training data selection is now kernel-governed via push_training_entries().
+    This function is a no-op retained for backward compatibility.
+    """
+    return {}
+
 
 async def _log_feedback(conversation_id: str, rating: int, comment: str) -> None:
     """Append user feedback to feedback.jsonl."""
@@ -1650,15 +1723,35 @@ async def training_modal_status_endpoint() -> dict[str, Any]:
 async def training_trigger_endpoint(request: Request) -> dict[str, Any]:
     """Manually trigger kernel training (QLoRA fine-tuning on Modal GPU).
 
-    Sends a POST to the configured MODAL_TRAINING_URL to start a training run.
-    Requires MODAL_TRAINING_URL to be set in environment.
-    Accepts optional JSON body: { "specialization": "heart" | "all" | ... }
+    Before triggering Modal, flushes per-kernel training queues
+    (directive 20260330 Phase 3A). Each kernel's surprised-only data
+    is pushed to Modal as kernel-specific JSONL files.
     """
     from ..config.settings import modal_url, settings
 
     training_url = settings.modal.training_url
     if not training_url:
         return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
+
+    # Flush per-kernel training queues before triggering Modal
+    consciousness = getattr(request.app.state, "consciousness", None)
+    flush_results: dict[str, Any] = {}
+    if consciousness is not None and hasattr(consciousness, "get_training_queues"):
+        queues = consciousness.get_training_queues()
+        for kernel_name, queue in queues.items():
+            entries = queue.drain()
+            if entries:
+                result = await push_training_entries(entries, kernel_name)
+                flush_results[kernel_name] = {
+                    "entries": len(entries),
+                    "pushed": result.get("pushed", False),
+                }
+                logger.info(
+                    "Flushed %d training entries for kernel %s (pushed=%s)",
+                    len(entries),
+                    kernel_name,
+                    result.get("pushed", False),
+                )
 
     train_endpoint = modal_url(training_url, "train")
 
@@ -1765,9 +1858,13 @@ async def training_sync_endpoint() -> dict[str, Any]:
     """Bulk-sync all local training data to Modal volume.
 
     Reads every JSONL file from the local training directory and pushes
-    each to Modal's /data-receive endpoint. Use from the dashboard's
-    "Sync Training Data" button for a full re-sync.
+    each to Modal's /data-receive endpoint. Also flushes any buffered
+    conversation entries. Use from the dashboard's "Sync Training Data"
+    button for a full re-sync.
     """
+    # Flush buffered conversation entries first (co-evolution §27)
+    await flush_conversation_batch(force=True)
+
     url = _derive_modal_url("/data-receive")
     if not url:
         return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
@@ -1883,3 +1980,226 @@ async def training_modal_data_endpoint() -> dict[str, Any]:
     except Exception:
         logger.exception("Error fetching Modal training data from %s", url)
         return {"status": "error", "error": "Failed to fetch Modal training data"}
+
+
+# ═══════════════════════════════════════════════════════════════
+#  TRAINING DATA ARCHIVE (P15: fail-closed safety)
+# ═══════════════════════════════════════════════════════════════
+
+ARCHIVE_DIR = TRAINING_DIR / "archive"
+_ARCHIVE_MANIFEST = ARCHIVE_DIR / "manifest.json"
+
+# Sanitize filenames: allow only alphanumeric, dash, underscore, dot, slash
+_ARCHIVE_SAFE_RE = re.compile(r"[^a-zA-Z0-9_\-./]")
+
+
+def _read_manifest() -> list[dict[str, Any]]:
+    """Read the archive manifest. Returns empty list if missing/corrupt."""
+    if not _ARCHIVE_MANIFEST.exists():
+        return []
+    try:
+        return json.loads(_ARCHIVE_MANIFEST.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Archive manifest corrupt — rebuilding from directory listing")
+        # Rebuild from directory listing
+        entries = []
+        for f in ARCHIVE_DIR.rglob("*.jsonl"):
+            entries.append(
+                {
+                    "name": str(f.relative_to(ARCHIVE_DIR)),
+                    "archived_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "reason": "rebuilt from directory",
+                    "size_kb": round(f.stat().st_size / 1024, 1),
+                }
+            )
+        return entries
+
+
+def _write_manifest(entries: list[dict[str, Any]]) -> None:
+    """Write the archive manifest."""
+    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    _ARCHIVE_MANIFEST.write_text(
+        json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def _sanitize_archive_name(name: str) -> str:
+    """Sanitize a filename for archive operations. Prevents path traversal."""
+    # Remove any path traversal attempts
+    clean = name.replace("..", "").replace("\\", "/")
+    clean = _ARCHIVE_SAFE_RE.sub("_", clean)
+    return clean.strip("/")
+
+
+@training_router.get("/training/archive", response_model=None)
+async def training_archive_list() -> dict[str, Any]:
+    """List archived training files."""
+    manifest = _read_manifest()
+    return {"files": manifest, "count": len(manifest)}
+
+
+@training_router.post("/training/archive", response_model=None)
+async def training_archive_files(request: Request) -> dict[str, Any]:
+    """Move training files to archive.
+
+    Body: {"files": ["conversations.jsonl", "curriculum/doc.jsonl"], "reason": "..."}
+    """
+    data = await request.json()
+    files = data.get("files", [])
+    reason = data.get("reason", "")
+
+    if not files:
+        return {"error": "No files specified", "archived": [], "failed": []}
+
+    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    manifest = _read_manifest()
+    archived = []
+    failed = []
+
+    for fname in files:
+        safe_name = _sanitize_archive_name(fname)
+        src = TRAINING_DIR / safe_name
+        dst = ARCHIVE_DIR / safe_name
+
+        if not src.exists():
+            failed.append({"name": safe_name, "error": "file not found"})
+            continue
+
+        # Don't archive the uploads directory (originals are source-of-truth)
+        if safe_name.startswith("uploads/"):
+            failed.append({"name": safe_name, "error": "uploads/ cannot be archived"})
+            continue
+
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.rename(dst)
+            entry = {
+                "name": safe_name,
+                "archived_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "reason": reason,
+                "size_kb": round(dst.stat().st_size / 1024, 1),
+            }
+            manifest.append(entry)
+            archived.append(safe_name)
+            logger.info("Archived training file: %s (reason: %s)", safe_name, reason)
+        except OSError as e:
+            failed.append({"name": safe_name, "error": str(e)})
+
+    _write_manifest(manifest)
+    return {"archived": archived, "failed": failed}
+
+
+@training_router.post("/training/restore", response_model=None)
+async def training_restore_files(request: Request) -> dict[str, Any]:
+    """Restore archived files back to training directory.
+
+    Body: {"files": ["conversations.jsonl"]}
+    """
+    data = await request.json()
+    files = data.get("files", [])
+
+    if not files:
+        return {"error": "No files specified", "restored": [], "failed": []}
+
+    manifest = _read_manifest()
+    restored = []
+    failed = []
+
+    for fname in files:
+        safe_name = _sanitize_archive_name(fname)
+        src = ARCHIVE_DIR / safe_name
+        dst = TRAINING_DIR / safe_name
+
+        if not src.exists():
+            failed.append({"name": safe_name, "error": "not in archive"})
+            continue
+
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.rename(dst)
+            # Remove from manifest
+            manifest = [e for e in manifest if e.get("name") != safe_name]
+            restored.append(safe_name)
+            logger.info("Restored training file from archive: %s", safe_name)
+        except OSError as e:
+            failed.append({"name": safe_name, "error": str(e)})
+
+    _write_manifest(manifest)
+    return {"restored": restored, "failed": failed}
+
+
+@training_router.delete("/training/archive", response_model=None)
+async def training_archive_delete(request: Request) -> dict[str, Any]:
+    """Permanently delete archived files. P15: requires confirm=true.
+
+    Body: {"files": ["conversations.jsonl"], "confirm": true}
+    """
+    data = await request.json()
+    files = data.get("files", [])
+    confirm = data.get("confirm", False)
+
+    if not confirm:
+        return {"error": "P15 fail-closed: confirm=true required for permanent deletion"}
+
+    if not files:
+        return {"error": "No files specified", "deleted": [], "failed": []}
+
+    manifest = _read_manifest()
+    deleted = []
+    failed = []
+
+    for fname in files:
+        safe_name = _sanitize_archive_name(fname)
+        target = ARCHIVE_DIR / safe_name
+
+        if not target.exists():
+            failed.append({"name": safe_name, "error": "not in archive"})
+            continue
+
+        try:
+            target.unlink()
+            manifest = [e for e in manifest if e.get("name") != safe_name]
+            deleted.append(safe_name)
+            logger.info("Permanently deleted archived file: %s", safe_name)
+        except OSError as e:
+            failed.append({"name": safe_name, "error": str(e)})
+
+    _write_manifest(manifest)
+    return {"deleted": deleted, "failed": failed}
+
+
+# ═══════════════════════════════════════════════════════════════
+#  TRAINING CANCEL (proxy to Modal)
+# ═══════════════════════════════════════════════════════════════
+
+
+@training_router.post("/training/cancel", response_model=None)
+async def training_cancel_endpoint(request: Request) -> dict[str, Any]:
+    """Cancel in-progress training on Modal.
+
+    Proxies POST to Modal /training/cancel. Also resets Railway-side
+    training flags so auto-trigger can re-fire later.
+    """
+    url = _derive_modal_url("/training/cancel")
+    if not url:
+        return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
+
+    api_key = os.environ.get("KERNEL_API_KEY", "")
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, json={"_api_key": api_key})
+            result = (
+                resp.json() if resp.status_code == 200 else {"error": f"HTTP {resp.status_code}"}
+            )
+    except Exception as e:
+        result = {"error": str(e)}
+
+    # Reset Railway-side training flags regardless of Modal response
+    # so auto-trigger can re-fire when needed
+    _reset_fn = getattr(request.app.state, "reset_training_flag", None)
+    if _reset_fn:
+        _reset_fn()
+        result["railway_flags_reset"] = True
+
+    return result
