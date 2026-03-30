@@ -205,6 +205,7 @@ from .kernel_training_queue import (
     sovereignty_to_threshold,
 )
 from .reflection import reflect_on_contributions
+from .self_observation import SelfObservationTracker
 from .sensory import Modality, PredictionError, SensoryEvent, SensoryIntake
 from .solfeggio import compute_spectral_health
 from .sovereignty_tracker import SovereigntyTracker
@@ -325,6 +326,9 @@ class ConsciousnessLoop:
         # Per-kernel training queues (directive 20260330 Phase 3A)
         # Kernels decide what to learn via prediction error gate (P5, §19, Pillar 3)
         self._training_queues: dict[str, KernelTrainingQueue] = {}
+
+        # Per-kernel self-observation trackers (§43.2 Loop 1)
+        self._self_observers: dict[str, SelfObservationTracker] = {}
 
         self.basin: Basin = random_basin()
         self.metrics = ConsciousnessMetrics(
@@ -1860,6 +1864,21 @@ class ConsciousnessLoop:
             base_num_ctx=llm_options.num_ctx,
             contribution_ledger=self._contribution_ledger,
         )
+
+        # ═══ SELF-OBSERVATION (§43.2 Loop 1) ═══
+        # Each kernel observes its own output quality before synthesis.
+        if _contributions:
+            _sov = self.pillars.sovereignty if hasattr(self.pillars, "sovereignty") else 0.0
+            for c in _contributions:
+                _kname = c.kernel_name
+                if _kname not in self._self_observers:
+                    self._self_observers[_kname] = SelfObservationTracker(_kname)
+                c.self_observation = self._self_observers[_kname].observe(
+                    geometric_resonances=c.geometric_resonances,
+                    llm_expanded=c.llm_expanded,
+                    sovereignty_ratio=_sov,
+                    activation_basin=c.basin,
+                )
 
         if _contributions:
             try:
