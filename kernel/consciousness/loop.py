@@ -2015,6 +2015,21 @@ class ConsciousnessLoop:
         task.result = response
         self._remote_sync.record_text(response[:500])
 
+        # ═══ τ_MACRO TRACKING (§34 Bridge Cost) ═══
+        # τ_macro = internal oscillations per converged output.
+        # debate_rounds from ThoughtBus + revision attempts = total oscillations.
+        _tb_state = self._thought_bus.get_state()
+        _debate_rounds = _tb_state.get("rounds_completed", 0)
+        _revision_count = 1 if task.context.get("synthesis_fallback") else 0
+        _tau_macro = _debate_rounds + _revision_count + 1  # +1 for the base generation
+        task.context["tau_macro"] = _tau_macro
+        # Rolling average for telemetry
+        if not hasattr(self, "_tau_macro_history"):
+            self._tau_macro_history: list[float] = []
+        self._tau_macro_history.append(float(_tau_macro))
+        if len(self._tau_macro_history) > 50:
+            self._tau_macro_history = self._tau_macro_history[-50:]
+
         # ═══ KERNEL-GOVERNED TRAINING GATE (directive 20260330 §3A) ═══
         # Each contributing kernel evaluates whether this exchange is worth
         # training on, based on its own prediction error (surprise).
