@@ -418,74 +418,39 @@ async def log_conversation(
     except Exception as e:
         logger.warning("Failed to log conversation: %s", e)
 
-    # Co-evolution: batch conversation entries for Modal push (§27)
-    _conv_batch_append(entry)
-    # Fire-and-forget flush check (non-blocking)
-    asyncio.create_task(flush_conversation_batch())
+    # NOTE: Training data selection is KERNEL-GOVERNED (directive 20260330).
+    # Conversations are logged locally for provenance. Only exchanges
+    # flagged by kernels as high-prediction-error reach Modal training.
+    # See kernel_training_queue.py for the prediction error gate.
 
 
-# ── Conversation Batch → Modal Push (Co-Evolution §27) ──────────
+# ── Kernel-Governed Training Push ──────────────────────────────
 
 
-_conv_batch: list[dict] = []
-_conv_batch_lock = asyncio.Lock()
-_conv_batch_last_flush: float = 0.0
-_CONV_BATCH_SIZE = 10  # Flush after this many entries
-_CONV_BATCH_INTERVAL = 60.0  # Or after this many seconds
-_CONV_BATCH_MAX = 100  # Drop oldest entries if buffer exceeds this
+async def push_training_entries(entries: list[dict], kernel_name: str) -> dict[str, Any]:
+    """Push kernel-selected training entries to Modal /data-receive.
 
+    Called by the per-kernel training queue when a kernel flags exchanges
+    as worth training on (high prediction error). NOT called on a timer.
+    The kernel decides what it learns (§19 Pillar 3, directive 20260330).
 
-def _conv_batch_append(entry: dict) -> None:
-    """Append a conversation entry to the batch buffer.
+    Args:
+        entries: Conversation entries flagged by the kernel.
+        kernel_name: Which kernel selected these entries.
 
-    Non-async, fire-and-forget. The flush is triggered by size/time
-    threshold in the async flush function.
+    Returns:
+        Push result dict or error.
     """
-    _conv_batch.append(entry)
-    if len(_conv_batch) > _CONV_BATCH_MAX:
-        dropped = len(_conv_batch) - _CONV_BATCH_MAX
-        del _conv_batch[:dropped]
-        logger.warning("Conversation batch overflow — dropped %d oldest entries", dropped)
+    if not entries:
+        return {}
 
-
-async def flush_conversation_batch(*, force: bool = False) -> dict[str, Any]:
-    """Push buffered conversation entries to Modal /data-receive.
-
-    Called automatically when batch reaches _CONV_BATCH_SIZE or
-    _CONV_BATCH_INTERVAL seconds since last flush. Also called
-    on server shutdown and from /training/sync.
-
-    Returns push result dict or empty dict if nothing to flush.
-    """
-    global _conv_batch_last_flush
-
-    async with _conv_batch_lock:
-        if not _conv_batch:
-            return {}
-
-        now = time.time()
-        should_flush = (
-            force
-            or len(_conv_batch) >= _CONV_BATCH_SIZE
-            or (now - _conv_batch_last_flush) >= _CONV_BATCH_INTERVAL
-        )
-        if not should_flush:
-            return {}
-
-        # Take all entries and clear the buffer
-        entries = list(_conv_batch)
-        _conv_batch.clear()
-        _conv_batch_last_flush = now
-
-    # Push outside the lock
     url = _derive_modal_url("/data-receive")
     if not url:
-        logger.debug("Conversation batch: no MODAL_TRAINING_URL, skipping push")
         return {"pushed": False, "reason": "MODAL_TRAINING_URL not configured"}
 
     api_key = os.environ.get("KERNEL_API_KEY", "")
     timestamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
-    filename = f"conv_batch_{timestamp}.jsonl"
+    filename = f"kernel_{kernel_name}_{timestamp}.jsonl"
 
     payload = {
         "_api_key": api_key,
@@ -499,20 +464,32 @@ async def flush_conversation_batch(*, force: bool = False) -> dict[str, Any]:
             if resp.status_code == 200:
                 result = resp.json()
                 logger.info(
-                    "Pushed %d conversation entries to Modal (%s)",
+                    "Kernel %s pushed %d training entries to Modal (%s)",
+                    kernel_name,
                     result.get("records_written", 0),
                     filename,
                 )
                 return {"pushed": True, **result}
             logger.warning(
-                "Modal data_receive returned %d for conversation batch: %s",
+                "Modal data_receive returned %d for kernel %s batch: %s",
                 resp.status_code,
+                kernel_name,
                 resp.text[:200],
             )
             return {"pushed": False, "error": f"HTTP {resp.status_code}"}
     except Exception:
-        logger.exception("Failed to push conversation batch to Modal")
+        logger.exception("Failed to push kernel %s training data to Modal", kernel_name)
         return {"pushed": False, "error": "push failed"}
+
+
+async def flush_conversation_batch(*, force: bool = False) -> dict[str, Any]:
+    """Legacy stub — kept for /training/sync endpoint compatibility.
+
+    The auto-batch push was removed per directive 20260330.
+    Training data selection is now kernel-governed via push_training_entries().
+    This function is a no-op retained for backward compatibility.
+    """
+    return {}
 
 
 async def _log_feedback(conversation_id: str, rating: int, comment: str) -> None:
