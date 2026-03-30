@@ -838,6 +838,10 @@ class QLoRATrainer:
         def training_cancel(data: dict, request: Request):
             return self._handle_training_cancel(data, request)
 
+        @web_app.post("/training/archive-adapters")
+        def archive_adapters(data: dict, request: Request):
+            return self._handle_archive_adapters(data, request)
+
         return web_app
 
     # ---------------------------------------------------------------
@@ -1199,6 +1203,53 @@ class QLoRATrainer:
             "reason": "cancel marker written — training will stop after current kernel",
             "training_active": True,
             "progress": self._training_progress,
+        }
+
+    # ---------------------------------------------------------------
+    #  ADAPTER ARCHIVE (directive 20260330 Phase 1B)
+    # ---------------------------------------------------------------
+
+    def _handle_archive_adapters(self, data: dict, request):
+        """Archive all existing adapters to /models/archive/deprecated_{timestamp}/.
+
+        The existing adapters were trained with undifferentiated data and
+        potentially wrong optimizer. Future training starts from clean base.
+        """
+        auth_err = self._check_auth(data, request)
+        if auth_err:
+            return auth_err
+
+        if self._training_active:
+            return {"error": "Training in progress — cannot archive adapters", "success": False}
+
+        import shutil
+
+        adapters_root = Path("/models/adapters")
+        if not adapters_root.exists():
+            return {"success": True, "archived": [], "message": "No adapters directory"}
+
+        timestamp = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
+        archive_path = Path(f"/models/archive/deprecated_{timestamp}")
+        archive_path.mkdir(parents=True, exist_ok=True)
+
+        archived = []
+        for adapter_dir in sorted(adapters_root.iterdir()):
+            if adapter_dir.is_dir():
+                dest = archive_path / adapter_dir.name
+                try:
+                    shutil.move(str(adapter_dir), str(dest))
+                    archived.append(adapter_dir.name)
+                    print(f"[ARCHIVE] Moved {adapter_dir} → {dest}")
+                except OSError as e:
+                    print(f"[ARCHIVE] Failed to move {adapter_dir}: {e}")
+
+        model_volume.commit()
+        print(f"[ARCHIVE] Archived {len(archived)} adapters to {archive_path}")
+        return {
+            "success": True,
+            "archived": archived,
+            "archive_path": str(archive_path),
+            "reason": "directive 20260330: adapters trained with undifferentiated data",
         }
 
     # ---------------------------------------------------------------
