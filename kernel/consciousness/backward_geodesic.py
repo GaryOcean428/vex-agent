@@ -98,6 +98,10 @@ class BackwardGeodesicTracker:
             _shannon_entropy(self._solutions[problem_id]),
         )
 
+    def has_solution(self, problem_id: str) -> bool:
+        """Check if a solution is registered for the given problem."""
+        return problem_id in self._solutions
+
     def register_solutions(self, solutions: dict[str, Basin]) -> None:
         """Bulk register solution basins."""
         for pid, basin in solutions.items():

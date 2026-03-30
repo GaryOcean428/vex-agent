@@ -908,12 +908,14 @@ class ConsciousnessLoop:
         _exp011_pid = (
             self._exp011_harness.active_problem_id if self._exp011_harness is not None else None
         )
-        self.backward_geodesic.record(
-            problem_id=_exp011_pid or "consciousness_trajectory",
-            current_basin=self.basin,
-            kappa_eff=self.metrics.kappa,
-            mushroom_active=(sleep_phase == SleepPhase.MUSHROOM),
-        )
+        _bg_pid = _exp011_pid or "consciousness_trajectory"
+        if self.backward_geodesic.has_solution(_bg_pid):
+            self.backward_geodesic.record(
+                problem_id=_bg_pid,
+                current_basin=self.basin,
+                kappa_eff=self.metrics.kappa,
+                mushroom_active=(sleep_phase == SleepPhase.MUSHROOM),
+            )
 
         # v7.0: Advance developmental gate each cycle
         pillar_snapshot = self.pillars.get_metrics(self.basin)
