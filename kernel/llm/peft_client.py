@@ -189,8 +189,9 @@ class PeftInferenceClient:
             )
             elapsed_ms = (time.monotonic() - start) * 1000
 
-            # Modal returns 303 during container scale-up — transient, retry once
-            if resp.status_code in (303, 502, 503):
+            # Transient status codes — Modal scale-up (303), overloaded (429, 502, 503)
+            _TRANSIENT_CODES = (303, 429, 502, 503)
+            if resp.status_code in _TRANSIENT_CODES:
                 logger.info(
                     "PEFT transient %d for %s — retrying once (%.0fms)",
                     resp.status_code,
@@ -215,7 +216,7 @@ class PeftInferenceClient:
                     error_text,
                 )
                 # Only mark unavailable for persistent errors (not transient)
-                if resp.status_code not in (303, 429, 502, 503):
+                if resp.status_code not in _TRANSIENT_CODES:
                     self._available = False
                 return PeftInferenceResult(
                     text="",
