@@ -1369,12 +1369,16 @@ export default function Training() {
       </div>
 
       {/* Adapter Archives — restore previous adapter sets */}
-      {adapterArchives.length > 0 && (
-        <div className="dash-section">
-          <div className="dash-section-title">Adapter Archives</div>
-          <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
-            Previous adapter sets. Restore to bring back trained adapters.
+      <div className="dash-section">
+        <div className="dash-section-title">Adapter Archives</div>
+        <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
+          Previous adapter sets. Restore to bring back trained adapters.
+        </div>
+        {adapterArchives.length === 0 ? (
+          <div className="dash-card" style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
+            No adapter archives found
           </div>
+        ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             {adapterArchives.map((arch) => (
               <div
@@ -1401,8 +1405,8 @@ export default function Training() {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Training Archive (P15: fail-closed safety) */}
       <div className="dash-section">

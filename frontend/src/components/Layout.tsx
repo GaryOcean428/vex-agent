@@ -1,5 +1,4 @@
-import type { PointerEvent } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useHealth } from '../hooks/index.ts';
 import { CommandPalette } from './CommandPalette.tsx';
@@ -40,29 +39,22 @@ export default function Layout() {
   const location = useLocation();
   const isDashboard = location.pathname.startsWith('/dashboard');
 
-  // --- Nav rail: hover-expand + click-to-pin (desktop) ---
-  const [navExpanded, setNavExpanded] = useState(false);
+  // --- Nav rail: click-to-toggle (desktop) ---
+  const [navExpanded, setNavExpanded] = useState(() => {
+    try { return localStorage.getItem(NAV_PINNED_KEY) === 'true'; } catch { return false; }
+  });
   const [navPinned, setNavPinned] = useState(() => {
     try { return localStorage.getItem(NAV_PINNED_KEY) === 'true'; } catch { return false; }
   });
-  const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleNavPointerEnter = useCallback((e: PointerEvent) => {
-    if (e.pointerType !== 'mouse') return;
-    hoverTimeout.current = setTimeout(() => setNavExpanded(true), 200);
-  }, []);
-
-  const handleNavPointerLeave = useCallback((e: PointerEvent) => {
-    if (e.pointerType !== 'mouse') return;
-    if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
-    if (!navPinned) setNavExpanded(false);
-  }, [navPinned]);
+  // No hover expand — click only (toggle via pin button)
+  const handleNavPointerEnter = useCallback(() => {}, []);
+  const handleNavPointerLeave = useCallback(() => {}, []);
 
   const togglePin = useCallback(() => {
     setNavPinned(prev => {
       const next = !prev;
       try { localStorage.setItem(NAV_PINNED_KEY, String(next)); } catch { /* noop */ }
-      if (next) setNavExpanded(true);
+      setNavExpanded(next);
       return next;
     });
   }, []);
