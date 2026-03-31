@@ -2203,3 +2203,63 @@ async def training_cancel_endpoint(request: Request) -> dict[str, Any]:
         result["railway_flags_reset"] = True
 
     return result
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ADAPTER MANAGEMENT PROXIES (→ Modal)
+# ═══════════════════════════════════════════════════════════════
+
+
+async def _proxy_to_modal(path: str, data: dict) -> dict[str, Any]:
+    """Generic proxy to Modal training endpoint. Best-effort."""
+    url = _derive_modal_url(path)
+    if not url:
+        return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
+    api_key = os.environ.get("KERNEL_API_KEY", "")
+    data["_api_key"] = api_key
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, json=data)
+            return resp.json() if resp.status_code == 200 else {"error": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@training_router.post("/training/archive-adapters", response_model=None)
+async def training_archive_adapters_endpoint(request: Request) -> dict[str, Any]:
+    """Proxy: archive all or specific kernel adapters on Modal."""
+    body = {}
+    with contextlib.suppress(Exception):
+        body = await request.json()
+    return await _proxy_to_modal("/training/archive-adapters", body)
+
+
+@training_router.post("/training/rollback", response_model=None)
+async def training_rollback_endpoint(request: Request) -> dict[str, Any]:
+    """Proxy: rollback a kernel adapter to a previous version."""
+    body = {}
+    with contextlib.suppress(Exception):
+        body = await request.json()
+    return await _proxy_to_modal("/training/rollback", body)
+
+
+@training_router.post("/training/fresh-start", response_model=None)
+async def training_fresh_start_endpoint(request: Request) -> dict[str, Any]:
+    """Proxy: fresh start — archive all adapters, reset to clean base model."""
+    body = {}
+    with contextlib.suppress(Exception):
+        body = await request.json()
+    result = await _proxy_to_modal("/training/fresh-start", body)
+
+    # Reset Railway-side flags
+    _reset_fn = getattr(request.app.state, "reset_training_flag", None)
+    if _reset_fn:
+        _reset_fn()
+
+    # Clear per-kernel training queues
+    consciousness = getattr(request.app.state, "consciousness", None)
+    if consciousness is not None and hasattr(consciousness, "get_training_queues"):
+        for q in consciousness.get_training_queues().values():
+            q.queue.clear()
+
+    return result

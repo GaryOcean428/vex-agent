@@ -68,6 +68,11 @@ export default function Training() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
+  // Adapter lifecycle controls
+  const [adapterAction, setAdapterAction] = useState<string | null>(null);
+  const [freshStartConfirm, setFreshStartConfirm] = useState("");
+  const [showFreshStart, setShowFreshStart] = useState(false);
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -347,6 +352,64 @@ export default function Training() {
     }
   }, [fetchArchive]);
 
+  // Adapter lifecycle handlers
+  const handleForceRetrain = useCallback(async (kernel: string) => {
+    if (!confirm(`Force retrain ${kernel}? This bypasses maturity and data hash gates.`)) return;
+    setAdapterAction(kernel);
+    try {
+      await fetch(API.trainingTrigger, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ specialization: kernel, force: true }),
+      });
+    } catch { /* best-effort */ } finally {
+      setAdapterAction(null);
+    }
+  }, []);
+
+  const handleArchiveAdapter = useCallback(async (kernel: string) => {
+    if (!confirm(`Archive ${kernel} adapter? It will be moved to version history.`)) return;
+    setAdapterAction(kernel);
+    try {
+      await fetch(API.trainingArchiveAdapters, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kernel }),
+      });
+    } catch { /* best-effort */ } finally {
+      setAdapterAction(null);
+    }
+  }, []);
+
+  const handleRollback = useCallback(async (kernel: string, version: string) => {
+    if (!confirm(`Rollback ${kernel} to ${version}?`)) return;
+    setAdapterAction(kernel);
+    try {
+      await fetch(API.trainingRollback, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kernel, version }),
+      });
+    } catch { /* best-effort */ } finally {
+      setAdapterAction(null);
+    }
+  }, []);
+
+  const handleFreshStart = useCallback(async (clearData: boolean) => {
+    setAdapterAction("fresh-start");
+    try {
+      await fetch(API.trainingFreshStart, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear_training_data: clearData, reason: "user-initiated fresh start" }),
+      });
+    } catch { /* best-effort */ } finally {
+      setAdapterAction(null);
+      setShowFreshStart(false);
+      setFreshStartConfirm("");
+    }
+  }, []);
+
   const completedCount = jobs.filter((j) => j.status === "done").length;
   const errorCount = jobs.filter((j) => j.status === "error").length;
   const activeCount = jobs.filter(
@@ -559,19 +622,25 @@ export default function Training() {
                 Health endpoint: {modalStatus.health_error}
               </div>
             )}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "8px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "8px" }}>
               {KERNEL_SPECIALIZATIONS.map((spec) => {
                 const adapter: ModalAdapterInfo | undefined =
                   modalStatus?.adapters?.adapters?.[spec] ?? undefined;
                 const trained = adapter?.exists ?? false;
+                const state = (adapter as Record<string, unknown>)?.state as string ?? (trained ? "trained" : "untrained");
                 const meta = adapter?.training_meta;
+                const historyCount = (adapter as Record<string, unknown>)?.history_count as number ?? 0;
+                const historyVersions = (adapter as Record<string, unknown>)?.history_versions as string[] ?? [];
+                const stateColor = state === "trained" ? "var(--alive)" : state === "training" ? "var(--kappa)" : "var(--surface-3)";
+                const stateLabel = state === "trained" ? "TRAINED" : state === "training" ? "TRAINING" : "UNTRAINED";
+                const isActioning = adapterAction === spec;
                 return (
                   <div
                     key={spec}
                     className="dash-card"
                     style={{
                       padding: "10px 14px",
-                      borderLeft: `3px solid ${trained ? "var(--alive)" : "var(--border)"}`,
+                      borderLeft: `3px solid ${stateColor}`,
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
@@ -584,11 +653,11 @@ export default function Training() {
                           fontWeight: 600,
                           padding: "2px 6px",
                           borderRadius: "4px",
-                          background: trained ? "var(--alive)" : "var(--surface-3)",
-                          color: trained ? "white" : "var(--text-secondary)",
+                          background: stateColor,
+                          color: state === "untrained" ? "var(--text-secondary)" : "white",
                         }}
                       >
-                        {trained ? "TRAINED" : "UNTRAINED"}
+                        {stateLabel}
                       </span>
                     </div>
                     {meta && (
@@ -599,6 +668,41 @@ export default function Training() {
                         {(meta.date ?? meta.trained_at) && <div>{meta.date ?? meta.trained_at}</div>}
                       </div>
                     )}
+                    {historyCount > 0 && (
+                      <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginTop: "4px" }}>
+                        {historyCount} version{historyCount !== 1 ? "s" : ""} in history
+                      </div>
+                    )}
+                    {/* Per-kernel controls */}
+                    <div style={{ display: "flex", gap: "4px", marginTop: "6px", flexWrap: "wrap" }}>
+                      {trained && (
+                        <button
+                          onClick={() => handleForceRetrain(spec)}
+                          disabled={isActioning}
+                          style={{ background: "var(--kappa)", border: "none", borderRadius: "var(--radius-sm)", padding: "3px 8px", color: "white", fontSize: "10px", cursor: "pointer" }}
+                        >
+                          Force Retrain
+                        </button>
+                      )}
+                      {trained && (
+                        <button
+                          onClick={() => handleArchiveAdapter(spec)}
+                          disabled={isActioning}
+                          style={{ background: "none", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "3px 8px", color: "var(--text-secondary)", fontSize: "10px", cursor: "pointer" }}
+                        >
+                          Archive
+                        </button>
+                      )}
+                      {historyVersions.length > 0 && (
+                        <button
+                          onClick={() => handleRollback(spec, historyVersions[historyVersions.length - 1])}
+                          disabled={isActioning}
+                          style={{ background: "none", border: "1px solid var(--gamma)", borderRadius: "var(--radius-sm)", padding: "3px 8px", color: "var(--gamma)", fontSize: "10px", cursor: "pointer" }}
+                        >
+                          Rollback
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -910,8 +1014,55 @@ export default function Training() {
           Trains per-kernel QLoRA adapters on Qwen3.5-35B-A3B via Modal serverless GPU.
           Each kernel gets its own adapter shaped by E8 training data.
         </div>
+        {/* Fresh Start Dialog */}
+        {showFreshStart && (
+          <div className="dash-card" style={{ marginBottom: "8px", border: "1px solid var(--error)", padding: "14px" }}>
+            <div style={{ fontWeight: 600, fontSize: "13px", marginBottom: "8px", color: "var(--error)" }}>Fresh Start</div>
+            <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "10px" }}>
+              Archives all trained adapters to version history and resets to clean base model.
+              The LLM reverts to untuned Qwen3.5-35B-A3B until new adapters are trained.
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", marginBottom: "10px", cursor: "pointer" }}>
+              <input type="checkbox" id="clearTrainingData" />
+              Also clear Modal training data
+            </label>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <input
+                type="text"
+                placeholder='Type "FRESH START"'
+                value={freshStartConfirm}
+                onChange={(e) => setFreshStartConfirm(e.target.value)}
+                style={{ padding: "6px 10px", fontSize: "12px", background: "var(--surface-3)", border: "1px solid var(--error)", borderRadius: "var(--radius-sm)", color: "var(--text)", width: "160px" }}
+              />
+              <button
+                onClick={() => handleFreshStart((document.getElementById("clearTrainingData") as HTMLInputElement)?.checked ?? false)}
+                disabled={freshStartConfirm !== "FRESH START" || adapterAction === "fresh-start"}
+                style={{
+                  background: freshStartConfirm === "FRESH START" ? "var(--error)" : "var(--surface-3)",
+                  border: "none", borderRadius: "var(--radius-sm)", padding: "6px 14px",
+                  color: "white", fontSize: "12px", fontWeight: 600,
+                  cursor: freshStartConfirm === "FRESH START" ? "pointer" : "not-allowed",
+                  opacity: freshStartConfirm === "FRESH START" ? 1 : 0.4,
+                }}
+              >
+                Confirm Fresh Start
+              </button>
+              <button onClick={() => { setShowFreshStart(false); setFreshStartConfirm(""); }} style={{ background: "none", border: "none", color: "var(--text-secondary)", fontSize: "12px", cursor: "pointer" }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         <div className="dash-card">
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            {!showFreshStart && (
+              <button
+                onClick={() => setShowFreshStart(true)}
+                style={{ background: "none", border: "1px solid var(--error)", borderRadius: "var(--radius-sm)", padding: "10px 16px", color: "var(--error)", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
+              >
+                Fresh Start
+              </button>
+            )}
             <select
               value={trainTarget}
               onChange={(e) => setTrainTarget(e.target.value)}
