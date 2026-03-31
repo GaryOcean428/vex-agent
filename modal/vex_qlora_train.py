@@ -95,8 +95,11 @@ def _read_training_state() -> dict:
     if not _TRAINING_ACTIVE_MARKER.exists():
         return {"active": False}
     try:
-        return {"active": True, **json.loads(_TRAINING_ACTIVE_MARKER.read_text(encoding="utf-8"))}
-    except (json.JSONDecodeError, OSError):
+        data = json.loads(_TRAINING_ACTIVE_MARKER.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return {"active": True, **data}
+        return {"active": True}
+    except (json.JSONDecodeError, OSError, TypeError):
         return {"active": True}
 
 
@@ -2069,6 +2072,9 @@ def train_all_kernels(
     print(f"{'=' * 60}")
 
     # Clear training-active marker (IPC for web handler)
+    # Note: if the function crashes, the marker persists. The cancel endpoint
+    # can still clear it, and the marker includes a timestamp so Railway
+    # can detect stale markers (>4h = likely dead training).
     _clear_training_active()
     training_volume.commit()
 

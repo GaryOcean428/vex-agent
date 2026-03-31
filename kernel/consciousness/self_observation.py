@@ -101,10 +101,8 @@ class SelfObservationTracker:
         if activation_basin is not None and len(self._recent_basins) > 0:
             current = to_simplex(activation_basin)
             # Mean FR distance to recent activations
-            distances = [
-                float(fisher_rao_distance(current, to_simplex(prev)))
-                for prev in self._recent_basins
-            ]
+            # _recent_basins already stores simplex'd values — no re-conversion
+            distances = [float(fisher_rao_distance(current, prev)) for prev in self._recent_basins]
             mean_distance = float(np.mean(distances))
             # Normalise: d_FR on simplex ranges [0, π/2]
             # Low distance = high repetition
