@@ -32,6 +32,7 @@ Returns:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -188,6 +189,23 @@ class PeftInferenceClient:
             )
             elapsed_ms = (time.monotonic() - start) * 1000
 
+            # Modal returns 303 during container scale-up — transient, retry once
+            if resp.status_code in (303, 502, 503):
+                logger.info(
+                    "PEFT transient %d for %s — retrying once (%.0fms)",
+                    resp.status_code,
+                    specialization,
+                    elapsed_ms,
+                )
+                await asyncio.sleep(2.0)
+                start = time.monotonic()
+                resp = await self._http.post(
+                    self._infer_url,
+                    json=request_body,
+                    headers=headers,
+                )
+                elapsed_ms = (time.monotonic() - start) * 1000
+
             if resp.status_code != 200:
                 error_text = resp.text[:200]
                 logger.warning(
@@ -196,7 +214,9 @@ class PeftInferenceClient:
                     specialization,
                     error_text,
                 )
-                self._available = False
+                # Only mark unavailable for persistent errors (not transient)
+                if resp.status_code not in (303, 429, 502, 503):
+                    self._available = False
                 return PeftInferenceResult(
                     text="",
                     specialization=specialization,
