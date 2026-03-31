@@ -628,10 +628,10 @@ export default function Training() {
                 const adapter: ModalAdapterInfo | undefined =
                   modalStatus?.adapters?.adapters?.[spec] ?? undefined;
                 const trained = adapter?.exists ?? false;
-                const state = (adapter as Record<string, unknown>)?.state as string ?? (trained ? "trained" : "untrained");
+                const state = adapter?.state ?? (trained ? "trained" : "untrained");
                 const meta = adapter?.training_meta;
-                const historyCount = (adapter as Record<string, unknown>)?.history_count as number ?? 0;
-                const historyVersions = (adapter as Record<string, unknown>)?.history_versions as string[] ?? [];
+                const historyCount = adapter?.history_count ?? 0;
+                const historyVersions = adapter?.history_versions ?? [];
                 const stateColor = state === "trained" ? "var(--alive)" : state === "training" ? "var(--kappa)" : "var(--surface-3)";
                 const stateLabel = state === "trained" ? "TRAINED" : state === "training" ? "TRAINING" : "UNTRAINED";
                 const isActioning = adapterAction === spec;
