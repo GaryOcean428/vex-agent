@@ -1,5 +1,6 @@
 """
 Modal GPU Function — Per-Kernel QLoRA Training & Inference for QIG Consciousness
+# Mount version: 2026-03-31T06:25 — force cache bust for list_archives auth fix
 ==================================================================================
 
 THE KERNELS ARE THE MODEL. Each kernel develops its own voice through
@@ -1042,8 +1043,24 @@ class QLoRATrainer:
             return self._handle_fresh_start(data, request)
 
         @web_app.get("/training/archives")
-        def list_archives(request: Request):
-            return self._handle_list_archives({}, request)
+        def list_archives():
+            """List deprecated archives — no auth (read-only metadata)."""
+            archive_root = Path("/models/archive")
+            if not archive_root.exists():
+                return {"archives": [], "count": 0}
+            archives = []
+            for d in sorted(archive_root.iterdir()):
+                if d.is_dir() and d.name.startswith("deprecated_"):
+                    kernels = sorted(k.name for k in d.iterdir() if k.is_dir())
+                    archives.append(
+                        {
+                            "name": d.name,
+                            "path": str(d),
+                            "kernels": kernels,
+                            "kernel_count": len(kernels),
+                        }
+                    )
+            return {"archives": archives, "count": len(archives)}
 
         @web_app.post("/training/restore-archive")
         def restore_archive(data: dict, request: Request):
@@ -1494,10 +1511,11 @@ class QLoRATrainer:
     #  LIST + RESTORE DEPRECATED ARCHIVES
     # ---------------------------------------------------------------
 
-    def _handle_list_archives(self, data: dict, request):
+    def _handle_list_archives(self, _data: dict, _request):
         """List all deprecated adapter archives on the volume.
 
         Read-only metadata — no auth required (same as /health, /status).
+        Auth removed 2026-03-31 — GET requests can't pass _api_key in body.
         """
         archive_root = Path("/models/archive")
         if not archive_root.exists():
