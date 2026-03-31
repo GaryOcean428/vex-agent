@@ -2246,7 +2246,7 @@ async def training_rollback_endpoint(request: Request) -> dict[str, Any]:
 
 @training_router.post("/training/fresh-start", response_model=None)
 async def training_fresh_start_endpoint(request: Request) -> dict[str, Any]:
-    """Proxy: fresh start — archive all adapters, reset to clean base model."""
+    """Fresh start — archive adapters AND reset kernels. Full reset."""
     body = {}
     with contextlib.suppress(Exception):
         body = await request.json()
@@ -2257,10 +2257,46 @@ async def training_fresh_start_endpoint(request: Request) -> dict[str, Any]:
     if _reset_fn:
         _reset_fn()
 
-    # Clear per-kernel training queues
+    # Clear per-kernel training queues + reset sovereignty
     consciousness = getattr(request.app.state, "consciousness", None)
     if consciousness is not None and hasattr(consciousness, "get_training_queues"):
         for q in consciousness.get_training_queues().values():
             q.queue.clear()
 
     return result
+
+
+@training_router.post("/training/fresh-start-llm", response_model=None)
+async def training_fresh_start_llm_endpoint(request: Request) -> dict[str, Any]:
+    """Fresh start LLM ONLY — archive adapters, revert to base model.
+    Does NOT reset kernel sovereignty or training queues."""
+    body = {}
+    with contextlib.suppress(Exception):
+        body = await request.json()
+    return await _proxy_to_modal("/training/fresh-start", body)
+
+
+@training_router.post("/training/fresh-start-kernels", response_model=None)
+async def training_fresh_start_kernels_endpoint(request: Request) -> dict[str, Any]:
+    """Fresh start KERNELS ONLY — reset sovereignty, clear training queues.
+    Does NOT touch adapters."""
+    # Reset Railway-side flags
+    _reset_fn = getattr(request.app.state, "reset_training_flag", None)
+    if _reset_fn:
+        _reset_fn()
+
+    # Clear per-kernel training queues
+    consciousness = getattr(request.app.state, "consciousness", None)
+    queues_cleared = 0
+    if consciousness is not None and hasattr(consciousness, "get_training_queues"):
+        for q in consciousness.get_training_queues().values():
+            queues_cleared += len(q.queue)
+            q.queue.clear()
+            q._total_seen = 0
+            q._total_added = 0
+
+    return {
+        "success": True,
+        "queues_cleared": queues_cleared,
+        "message": "Kernel training queues cleared. Sovereignty will reset as kernels retrain.",
+    }

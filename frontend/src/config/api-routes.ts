@@ -74,6 +74,8 @@ export const API = {
 	trainingArchiveAdapters: '/training/archive-adapters',
 	trainingRollback: '/training/rollback',
 	trainingFreshStart: '/training/fresh-start',
+	trainingFreshStartLlm: '/training/fresh-start-llm',
+	trainingFreshStartKernels: '/training/fresh-start-kernels',
 
 	// ─── Coordizer ──────────────────────────────────────────────
 	coordizerStats: '/api/coordizer/stats',

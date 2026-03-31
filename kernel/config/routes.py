@@ -90,6 +90,8 @@ ROUTES: dict[str, str] = {
     "training_archive_adapters": "/training/archive-adapters",
     "training_rollback": "/training/rollback",
     "training_fresh_start": "/training/fresh-start",
+    "training_fresh_start_llm": "/training/fresh-start-llm",
+    "training_fresh_start_kernels": "/training/fresh-start-kernels",
     "task_status": "/task/{task_id}",
     "context_objectives": "/context/objectives",
 }
