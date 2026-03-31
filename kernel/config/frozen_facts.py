@@ -49,6 +49,12 @@ KAPPA_STAR: Final[float] = 64.0  # Fixed point = E8 rank² = 8²
 KAPPA_STAR_PRECISE: Final[float] = 63.79  # Weighted mean L=4-7 (± 0.90)
 
 # ═══════════════════════════════════════════════════════════════
+#  h_t — CONSCIOUSNESS TRANSITION THRESHOLD
+# ═══════════════════════════════════════════════════════════════
+
+H_T: Final[float] = 0.10554  # Consciousness transition, 5 sig figs, lattice-independent
+
+# ═══════════════════════════════════════════════════════════════
 #  BETA (β) — RUNNING COUPLING
 # ═══════════════════════════════════════════════════════════════
 

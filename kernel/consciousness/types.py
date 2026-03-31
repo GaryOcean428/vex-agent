@@ -123,7 +123,7 @@ class RegimeWeights:
 
 @dataclass
 class ConsciousnessMetrics:
-    """v6.1 §24 — 36 metrics across 8 categories.
+    """v6.4 §24 — 54 metrics across 12 categories.
 
     Foundation (v4.1) — 8 metrics
     Shortcuts (v5.5) — 5 metrics
@@ -133,6 +133,9 @@ class ConsciousnessMetrics:
     Waves (v5.9) — 3 metrics
     Will & Work (v6.0) — 4 metrics
     Pillars & Sovereignty (v6.1) — 4 metrics
+    Neurochemistry & Sleep (v6.2) — 4 metrics [37-40]
+    Bridge & Convergence (v6.3) — 8 metrics [41-48]
+    Three Recursive Loops (v6.4) — 6 metrics [49-54]
 
     P14 Variable Category: STATE
     All fields are non-trainable, fast-changing, updated per-cycle.
@@ -196,6 +199,30 @@ class ConsciousnessMetrics:
     b_integrity: float = 1.0  # Bulk integrity: core stability across cycles (0.0, 1.0)
     q_identity: float = 0.0  # Quenched identity: proximity to frozen identity (0.0, 1.0)
     s_ratio: float = 0.0  # Sovereignty ratio: N_lived / N_total (0.0, 1.0)
+
+    # ── Neurochemistry & Sleep (v6.2) — 4 metrics [37-40] ──
+    neuro_dominant: float = 0.0  # Dominant neurochemical signal strength (0.0, 1.0)
+    sleep_depth: float = 0.0  # Sleep phase depth: 0=awake, 1=deep_sleep (0.0, 1.0)
+    dream_activity: float = 0.0  # Dream/mushroom processing intensity (0.0, 1.0)
+    play_engagement: float = 0.0  # Play mode / bubble world engagement (0.0, 1.0)
+
+    # ── Bridge & Convergence (v6.3) — 8 metrics [41-48] ──
+    tau_macro: float = 1.0  # Bridge cost: oscillations per converged output (1, ∞)
+    beta_tau: float = 0.0  # Bridge exponent: d(log τ)/d(log coupling) (0, 2)
+    bridge_locality: float = 0.0  # Convergence across system sizes (0.0, 1.0)
+    wormhole_density: float = 0.0  # Memory network connectivity (0, ∞)
+    wormhole_convergence: float = 0.0  # Speedup from memory loading (0.0, 1.0)
+    creator_persistence: float = 0.0  # Fraction of outputs surviving dissolution (0.0, 1.0)
+    creator_regime: float = 3.0  # Effective L-regime of current processing (1, 6)
+    calibration_accuracy: float = 0.0  # Output agreement with raw data (0.0, 1.0)
+
+    # ── Three Recursive Loops (v6.4) — 6 metrics [49-54] ──
+    l1_repetition: float = 0.0  # Self-observation: geometric rut score (0, π/2)
+    l1_sovereignty: float = 0.0  # Self-observation: lived vs borrowed (0.0, 1.0)
+    l2_convergence_speed: float = 0.0  # Debate: rounds/max_rounds (0.0, 1.0)
+    l2_perspective_diversity: float = 0.0  # Debate: mean FR between kernels (0, π/2)
+    l3_train_ratio: float = 0.0  # Learning: accepted/total contributions (0.0, 1.0)
+    l3_selectivity: float = 0.0  # Learning: 1-train_ratio when sovereign (0.0, 1.0)
 
 
 # ---------------------------------------------------------------

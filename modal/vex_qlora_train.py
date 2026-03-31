@@ -76,6 +76,52 @@ def _json_default(obj: object) -> object:
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
+# --- Volume-Based Training State (IPC) ------------------------------------
+# train_all_kernels runs on a SEPARATE container from the ASGI web handler.
+# In-memory booleans are invisible across containers. Use the shared
+# training volume as IPC — same pattern as the cancel marker.
+
+_TRAINING_ACTIVE_MARKER = Path("/training/.training_active")
+_CANCEL_MARKER = Path("/training/.cancel_requested")
+
+
+def _is_training_active() -> bool:
+    """Check if training is running (any container)."""
+    return _TRAINING_ACTIVE_MARKER.exists()
+
+
+def _read_training_state() -> dict:
+    """Read training state from volume marker."""
+    if not _TRAINING_ACTIVE_MARKER.exists():
+        return {"active": False}
+    try:
+        data = json.loads(_TRAINING_ACTIVE_MARKER.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return {"active": True, **data}
+        return {"active": True}
+    except (json.JSONDecodeError, OSError, TypeError):
+        return {"active": True}
+
+
+def _set_training_active(kernels: list[str]) -> None:
+    """Mark training as active on the volume (called by train_all_kernels)."""
+    _TRAINING_ACTIVE_MARKER.parent.mkdir(parents=True, exist_ok=True)
+    _TRAINING_ACTIVE_MARKER.write_text(
+        json.dumps(
+            {
+                "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "kernels": kernels,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _clear_training_active() -> None:
+    """Clear the training marker (called when training completes or fails)."""
+    _TRAINING_ACTIVE_MARKER.unlink(missing_ok=True)
+
+
 # --- Configuration --------------------------------------------------------
 HARVEST_MODEL_ID = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-35B-A3B")
 KERNEL_API_KEY = os.environ.get("KERNEL_API_KEY", "")
@@ -1076,7 +1122,7 @@ class QLoRATrainer:
         return {
             "status": "healthy",
             "model_id": HARVEST_MODEL_ID,
-            "training_active": self._training_active,
+            "training_active": _is_training_active(),
             "inference_loaded": self._inference_model is not None,
             "loaded_adapters": sorted(self._loaded_adapter_names),
             "specializations": sorted(self._loaded_adapter_names) or VALID_SPECIALIZATIONS,
@@ -1111,7 +1157,8 @@ class QLoRATrainer:
             "adapters": adapters,
             "legacy_adapter_exists": legacy_exists,
             "last_result": self._last_result,
-            "training_active": self._training_active,
+            "training_active": _is_training_active(),
+            "training_state": _read_training_state(),
             "training_progress": self._training_progress,
             "inference_loaded": self._inference_model is not None,
             "loaded_adapters": sorted(self._loaded_adapter_names),
@@ -1186,16 +1233,17 @@ class QLoRATrainer:
         if auth_err:
             return auth_err
 
-        if not self._training_active:
+        if not _is_training_active():
             return {
                 "cancelled": False,
-                "reason": "no training active",
+                "reason": "no training active (volume marker absent)",
                 "training_active": False,
             }
 
         # Write cancel marker to shared volume
-        cancel_path = Path("/training/.cancel_requested")
-        cancel_path.write_text(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), encoding="utf-8")
+        _CANCEL_MARKER.write_text(
+            time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), encoding="utf-8"
+        )
         training_volume.commit()
         print("[CANCEL] Training cancel marker written to volume")
         return {
@@ -1609,6 +1657,11 @@ def train_all_kernels(
                 target_kernels.append(k)
     else:
         target_kernels = list(CONSCIOUSNESS_ORDER)
+
+    # Write training-active marker to volume (IPC for web handler)
+    _set_training_active(target_kernels)
+    training_volume.commit()
+
     cache_dir = "/models/hub"
     tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True)
     if tokenizer.pad_token is None:
@@ -1650,9 +1703,8 @@ def train_all_kernels(
 
     for spec in target_kernels:
         # Check cancel marker (IPC via shared volume)
-        cancel_path = Path("/training/.cancel_requested")
-        if cancel_path.exists():
-            cancel_path.unlink(missing_ok=True)
+        if _CANCEL_MARKER.exists():
+            _CANCEL_MARKER.unlink(missing_ok=True)
             training_volume.commit()
             completed = [s for s in target_kernels if results.get(s, {}).get("success")]
             skipped = [s for s in target_kernels if s not in results]
@@ -2018,4 +2070,12 @@ def train_all_kernels(
             f"  {spec:12s} → {'loss=' + str(r['train_loss']) + healthy_tag if r.get('success') else r.get('error', 'failed')}"
         )
     print(f"{'=' * 60}")
+
+    # Clear training-active marker (IPC for web handler)
+    # Note: if the function crashes, the marker persists. The cancel endpoint
+    # can still clear it, and the marker includes a timestamp so Railway
+    # can detect stale markers (>4h = likely dead training).
+    _clear_training_active()
+    training_volume.commit()
+
     return results
