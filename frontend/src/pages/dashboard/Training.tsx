@@ -74,6 +74,9 @@ export default function Training() {
   const [showFreshStart, setShowFreshStart] = useState(false);
   const [clearTrainingData, setClearTrainingData] = useState(false);
 
+  // Adapter archives (deprecated backups)
+  const [adapterArchives, setAdapterArchives] = useState<{ name: string; kernels: string[]; kernel_count: number }[]>([]);
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -458,6 +461,33 @@ export default function Training() {
       });
     } catch { /* best-effort */ }
   }, []);
+
+  // Fetch adapter archives
+  const fetchAdapterArchives = useCallback(async () => {
+    try {
+      const resp = await fetch(API.trainingListArchives);
+      if (resp.ok) {
+        const data = await resp.json();
+        setAdapterArchives(data.archives ?? []);
+      }
+    } catch { /* best-effort */ }
+  }, []);
+  useEffect(() => { fetchAdapterArchives(); }, [fetchAdapterArchives]);
+
+  const handleRestoreArchive = useCallback(async (archiveName: string) => {
+    if (!confirm(`Restore all adapters from ${archiveName}? Current active adapters will be versioned first.`)) return;
+    setAdapterAction("restore");
+    try {
+      await fetch(API.trainingRestoreArchive, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archive: archiveName }),
+      });
+      fetchAdapterArchives();
+    } catch { /* best-effort */ } finally {
+      setAdapterAction(null);
+    }
+  }, [fetchAdapterArchives]);
 
   const completedCount = jobs.filter((j) => j.status === "done").length;
   const errorCount = jobs.filter((j) => j.status === "error").length;
@@ -1337,6 +1367,42 @@ export default function Training() {
           </div>
         </div>
       </div>
+
+      {/* Adapter Archives — restore previous adapter sets */}
+      {adapterArchives.length > 0 && (
+        <div className="dash-section">
+          <div className="dash-section-title">Adapter Archives</div>
+          <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
+            Previous adapter sets. Restore to bring back trained adapters.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            {adapterArchives.map((arch) => (
+              <div
+                key={arch.name}
+                className="dash-card"
+                style={{ padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+              >
+                <div>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: "12px", fontWeight: 600 }}>{arch.name}</div>
+                  <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }}>
+                    {arch.kernel_count} kernels: {arch.kernels.join(", ")}
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleRestoreArchive(arch.name)}
+                  disabled={adapterAction === "restore"}
+                  style={{
+                    background: "var(--alive)", border: "none", borderRadius: "var(--radius-sm)",
+                    padding: "6px 14px", color: "white", fontWeight: 600, fontSize: "12px", cursor: "pointer",
+                  }}
+                >
+                  Restore
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Training Archive (P15: fail-closed safety) */}
       <div className="dash-section">
