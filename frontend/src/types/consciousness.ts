@@ -697,6 +697,9 @@ export interface TrainingUploadResponse {
 /** Per-kernel adapter metadata from Modal /status endpoint. */
 export interface ModalAdapterInfo {
   exists: boolean;
+  state?: string;
+  history_count?: number;
+  history_versions?: string[];
   adapter_config?: Record<string, unknown>;
   training_meta?: {
     epochs?: number;
