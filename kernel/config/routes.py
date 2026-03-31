@@ -87,6 +87,9 @@ ROUTES: dict[str, str] = {
     "training_archive": "/training/archive",
     "training_restore": "/training/restore",
     "training_cancel": "/training/cancel",
+    "training_archive_adapters": "/training/archive-adapters",
+    "training_rollback": "/training/rollback",
+    "training_fresh_start": "/training/fresh-start",
     "task_status": "/task/{task_id}",
     "context_objectives": "/context/objectives",
 }
