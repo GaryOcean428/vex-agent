@@ -92,6 +92,8 @@ ROUTES: dict[str, str] = {
     "training_fresh_start": "/training/fresh-start",
     "training_fresh_start_llm": "/training/fresh-start-llm",
     "training_fresh_start_kernels": "/training/fresh-start-kernels",
+    "training_list_archives": "/training/archives",
+    "training_restore_archive": "/training/restore-archive",
     "task_status": "/task/{task_id}",
     "context_objectives": "/context/objectives",
 }

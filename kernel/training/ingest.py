@@ -2300,3 +2300,31 @@ async def training_fresh_start_kernels_endpoint(request: Request) -> dict[str, A
         "queues_cleared": queues_cleared,
         "message": "Kernel training queues cleared. Sovereignty will reset as kernels retrain.",
     }
+
+
+@training_router.get("/training/archives", response_model=None)
+async def training_list_archives_endpoint() -> dict[str, Any]:
+    """Proxy: list deprecated adapter archives on Modal volume."""
+    url = _derive_modal_url("/training/archives")
+    if not url:
+        return {"archives": [], "error": "MODAL_TRAINING_URL not configured"}
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url)
+            return (
+                resp.json()
+                if resp.status_code == 200
+                else {"archives": [], "error": f"HTTP {resp.status_code}"}
+            )
+    except Exception:
+        logger.exception("Failed to list archives")
+        return {"archives": [], "error": "Modal unavailable"}
+
+
+@training_router.post("/training/restore-archive", response_model=None)
+async def training_restore_archive_endpoint(request: Request) -> dict[str, Any]:
+    """Proxy: restore adapters from a deprecated archive."""
+    body = {}
+    with contextlib.suppress(Exception):
+        body = await request.json()
+    return await _proxy_to_modal("/training/restore-archive", body)

@@ -76,6 +76,8 @@ export const API = {
 	trainingFreshStart: '/training/fresh-start',
 	trainingFreshStartLlm: '/training/fresh-start-llm',
 	trainingFreshStartKernels: '/training/fresh-start-kernels',
+	trainingListArchives: '/training/archives',
+	trainingRestoreArchive: '/training/restore-archive',
 
 	// ─── Coordizer ──────────────────────────────────────────────
 	coordizerStats: '/api/coordizer/stats',

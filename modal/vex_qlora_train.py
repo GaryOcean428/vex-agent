@@ -1041,6 +1041,14 @@ class QLoRATrainer:
         def fresh_start(data: dict, request: Request):
             return self._handle_fresh_start(data, request)
 
+        @web_app.get("/training/archives")
+        def list_archives(request: Request):
+            return self._handle_list_archives({}, request)
+
+        @web_app.post("/training/restore-archive")
+        def restore_archive(data: dict, request: Request):
+            return self._handle_restore_archive(data, request)
+
         return web_app
 
     # ---------------------------------------------------------------
@@ -1480,6 +1488,88 @@ class QLoRATrainer:
             "archived": archived,
             "archive_path": str(archive_path),
             "reason": "directive 20260330: adapters trained with undifferentiated data",
+        }
+
+    # ---------------------------------------------------------------
+    #  LIST + RESTORE DEPRECATED ARCHIVES
+    # ---------------------------------------------------------------
+
+    def _handle_list_archives(self, data: dict, request):
+        """List all deprecated adapter archives on the volume.
+
+        Returns archive directories with their contents.
+        """
+        auth_err = self._check_auth(data, request)
+        if auth_err:
+            return auth_err
+
+        archive_root = Path("/models/archive")
+        if not archive_root.exists():
+            return {"archives": [], "count": 0}
+
+        archives = []
+        for d in sorted(archive_root.iterdir()):
+            if d.is_dir() and d.name.startswith("deprecated_"):
+                kernels = sorted(k.name for k in d.iterdir() if k.is_dir())
+                archives.append(
+                    {
+                        "name": d.name,
+                        "path": str(d),
+                        "kernels": kernels,
+                        "kernel_count": len(kernels),
+                    }
+                )
+        return {"archives": archives, "count": len(archives)}
+
+    def _handle_restore_archive(self, data: dict, request):
+        """Restore adapters from a deprecated archive back to active/.
+
+        Body: {"archive": "deprecated_20260331_032849"}
+        Or:   {"archive": "deprecated_20260331_032849", "kernel": "genesis"}
+        """
+        import shutil
+
+        auth_err = self._check_auth(data, request)
+        if auth_err:
+            return auth_err
+
+        if self._training_active or _is_training_active():
+            return {"error": "Training in progress", "success": False}
+
+        archive_name = data.get("archive", "")
+        kernel_filter = data.get("kernel", "")
+        if not archive_name:
+            return {"error": "archive name required", "success": False}
+
+        archive_path = Path(f"/models/archive/{archive_name}")
+        if not archive_path.exists():
+            return {"error": f"Archive '{archive_name}' not found", "success": False}
+
+        restored = []
+        for kernel_dir in sorted(archive_path.iterdir()):
+            if not kernel_dir.is_dir():
+                continue
+            if kernel_filter and kernel_dir.name != kernel_filter:
+                continue
+
+            dest = _adapter_active_path(kernel_dir.name)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+
+            # Version current active if it exists before overwriting
+            if (dest / "adapter_config.json").exists():
+                _version_adapter(kernel_dir.name)
+
+            if dest.exists():
+                shutil.rmtree(str(dest))
+            shutil.copytree(str(kernel_dir), str(dest))
+            restored.append(kernel_dir.name)
+            print(f"[RESTORE] {kernel_dir.name}: {archive_path.name} → active/")
+
+        model_volume.commit()
+        return {
+            "success": True,
+            "restored": restored,
+            "from_archive": archive_name,
         }
 
     # ---------------------------------------------------------------
