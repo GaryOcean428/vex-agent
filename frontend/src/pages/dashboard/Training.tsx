@@ -964,7 +964,7 @@ export default function Training() {
                   ? "Start QLoRA Training (All)"
                   : `Train ${trainTarget.charAt(0).toUpperCase() + trainTarget.slice(1)} Kernel`}
             </button>
-            {modalStatus?.health?.training_active && (
+            {(modalStatus?.health?.training_active || trainingResult?.status === "triggered") && (
               <button
                 onClick={handleCancel}
                 disabled={cancelling}
