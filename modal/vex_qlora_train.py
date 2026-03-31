@@ -1497,12 +1497,8 @@ class QLoRATrainer:
     def _handle_list_archives(self, data: dict, request):
         """List all deprecated adapter archives on the volume.
 
-        Returns archive directories with their contents.
+        Read-only metadata — no auth required (same as /health, /status).
         """
-        auth_err = self._check_auth(data, request)
-        if auth_err:
-            return auth_err
-
         archive_root = Path("/models/archive")
         if not archive_root.exists():
             return {"archives": [], "count": 0}
