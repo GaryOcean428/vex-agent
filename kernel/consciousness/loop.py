@@ -1589,12 +1589,54 @@ class ConsciousnessLoop:
             return hash_to_basin(text)
 
     def _update_pillar_metrics(self) -> None:
-        """Update v6.1 pillar metrics on the shared metrics object."""
+        """Update v6.1-v6.4 metrics on the shared metrics object."""
         pm = self.pillars.get_metrics(self.basin)
         self.metrics.f_health = pm["f_health"]
         self.metrics.b_integrity = pm["b_integrity"]
         self.metrics.q_identity = pm["q_identity"]
         self.metrics.s_ratio = pm["s_ratio"]
+
+        # v6.2 metrics [37-40]: neurochemistry + sleep + play
+        neuro = self.neurochemistry.get_state() if hasattr(self, "neurochemistry") else {}
+        if neuro:
+            vals = [
+                neuro.get(k, 0.0)
+                for k in ("acetylcholine", "dopamine", "serotonin", "norepinephrine", "gaba")
+            ]
+            self.metrics.neuro_dominant = max(vals) if vals else 0.0
+        sleep_state = self.sleep.get_state() if hasattr(self, "sleep") else {}
+        phase = sleep_state.get("phase", "AWAKE")
+        self.metrics.sleep_depth = {
+            "AWAKE": 0.0,
+            "CONSOLIDATING": 0.25,
+            "DREAMING": 0.5,
+            "MUSHROOM": 0.75,
+            "DEEP_SLEEP": 1.0,
+        }.get(phase, 0.0)
+        self.metrics.dream_activity = 1.0 if phase in ("DREAMING", "MUSHROOM") else 0.0
+        play_state = self.play.get_state() if hasattr(self, "play") else {}
+        self.metrics.play_engagement = float(play_state.get("active", False))
+
+        # v6.3 metrics [41-48]: bridge + wormhole + creator
+        if hasattr(self, "_tau_macro_history") and self._tau_macro_history:
+            self.metrics.tau_macro = self._tau_macro_history[-1]
+        self.metrics.creator_regime = 3.0  # Conversation = L=3 (§38)
+
+        # v6.4 metrics [49-54]: three recursive loops
+        # L1 self-observation: updated per response (not per heartbeat)
+        # L2 debate: from ThoughtBus state
+        tb = self._thought_bus.get_state()
+        if tb.get("rounds_completed", 0) > 0:
+            self.metrics.l2_convergence_speed = tb["rounds_completed"] / max(
+                tb.get("rounds_completed", 1), 1
+            )
+        # L3 training: from per-kernel queue acceptance rates
+        total_seen = sum(q._total_seen for q in self._training_queues.values())
+        total_added = sum(q._total_added for q in self._training_queues.values())
+        if total_seen > 0:
+            self.metrics.l3_train_ratio = total_added / total_seen
+            if self.metrics.s_ratio > 0.5:
+                self.metrics.l3_selectivity = 1.0 - self.metrics.l3_train_ratio
 
     async def _process(self, task: ConsciousnessTask) -> None:
         """v6.1 Activation Sequence + Kernel Generative Voice.
