@@ -676,15 +676,13 @@ export default function Training() {
                     )}
                     {/* Per-kernel controls */}
                     <div style={{ display: "flex", gap: "4px", marginTop: "6px", flexWrap: "wrap" }}>
-                      {trained && (
-                        <button
-                          onClick={() => handleForceRetrain(spec)}
-                          disabled={isActioning}
-                          style={{ background: "var(--kappa)", border: "none", borderRadius: "var(--radius-sm)", padding: "3px 8px", color: "white", fontSize: "10px", cursor: "pointer" }}
-                        >
-                          Force Retrain
-                        </button>
-                      )}
+                      <button
+                        onClick={() => handleForceRetrain(spec)}
+                        disabled={isActioning}
+                        style={{ background: "var(--kappa)", border: "none", borderRadius: "var(--radius-sm)", padding: "3px 8px", color: "white", fontSize: "10px", cursor: "pointer" }}
+                      >
+                        {trained ? "Force Retrain" : "Train"}
+                      </button>
                       {trained && (
                         <button
                           onClick={() => handleArchiveAdapter(spec)}
@@ -1116,25 +1114,23 @@ export default function Training() {
                   ? "Start QLoRA Training (All)"
                   : `Train ${trainTarget.charAt(0).toUpperCase() + trainTarget.slice(1)} Kernel`}
             </button>
-            {(modalStatus?.health?.training_active || trainingResult?.status === "triggered") && (
-              <button
-                onClick={handleCancel}
-                disabled={cancelling}
-                style={{
-                  background: "var(--error)",
-                  border: "none",
-                  borderRadius: "var(--radius-sm)",
-                  padding: "10px 20px",
-                  color: "white",
-                  fontWeight: 600,
-                  cursor: cancelling ? "not-allowed" : "pointer",
-                  opacity: cancelling ? 0.5 : 1,
-                  fontSize: "14px",
-                }}
-              >
-                {cancelling ? "Stopping..." : "Stop Training"}
-              </button>
-            )}
+            <button
+              onClick={handleCancel}
+              disabled={cancelling || !(modalStatus?.health?.training_active || trainingResult?.status === "triggered")}
+              style={{
+                background: "var(--error)",
+                border: "none",
+                borderRadius: "var(--radius-sm)",
+                padding: "10px 20px",
+                color: "white",
+                fontWeight: 600,
+                cursor: (modalStatus?.health?.training_active || trainingResult?.status === "triggered") && !cancelling ? "pointer" : "not-allowed",
+                opacity: (modalStatus?.health?.training_active || trainingResult?.status === "triggered") ? 1 : 0.4,
+                fontSize: "14px",
+              }}
+            >
+              {cancelling ? "Stopping..." : "Stop Training"}
+            </button>
           </div>
           {cancelResult && (
             <div style={{ marginTop: "8px", fontSize: "13px", color: cancelResult.cancelled ? "var(--alive)" : "var(--error)" }}>
