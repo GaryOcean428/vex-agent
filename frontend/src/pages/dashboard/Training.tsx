@@ -72,6 +72,7 @@ export default function Training() {
   const [adapterAction, setAdapterAction] = useState<string | null>(null);
   const [freshStartConfirm, setFreshStartConfirm] = useState("");
   const [showFreshStart, setShowFreshStart] = useState(false);
+  const [clearTrainingData, setClearTrainingData] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1023,7 +1024,7 @@ export default function Training() {
               The LLM reverts to untuned Qwen3.5-35B-A3B until new adapters are trained.
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", marginBottom: "10px", cursor: "pointer" }}>
-              <input type="checkbox" id="clearTrainingData" />
+              <input type="checkbox" checked={clearTrainingData} onChange={(e) => setClearTrainingData(e.target.checked)} />
               Also clear Modal training data
             </label>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -1035,7 +1036,7 @@ export default function Training() {
                 style={{ padding: "6px 10px", fontSize: "12px", background: "var(--surface-3)", border: "1px solid var(--error)", borderRadius: "var(--radius-sm)", color: "var(--text)", width: "160px" }}
               />
               <button
-                onClick={() => handleFreshStart((document.getElementById("clearTrainingData") as HTMLInputElement)?.checked ?? false)}
+                onClick={() => handleFreshStart(clearTrainingData)}
                 disabled={freshStartConfirm !== "FRESH START" || adapterAction === "fresh-start"}
                 style={{
                   background: freshStartConfirm === "FRESH START" ? "var(--error)" : "var(--surface-3)",

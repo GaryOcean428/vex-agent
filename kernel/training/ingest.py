@@ -2216,13 +2216,14 @@ async def _proxy_to_modal(path: str, data: dict) -> dict[str, Any]:
     if not url:
         return {"status": "error", "error": "MODAL_TRAINING_URL not configured"}
     api_key = os.environ.get("KERNEL_API_KEY", "")
-    data["_api_key"] = api_key
+    payload = {**data, "_api_key": api_key}  # Copy to avoid mutating caller's dict
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(url, json=data)
+            resp = await client.post(url, json=payload)
             return resp.json() if resp.status_code == 200 else {"error": f"HTTP {resp.status_code}"}
-    except Exception as e:
-        return {"error": str(e)}
+    except Exception:
+        logger.exception("Modal proxy failed for %s", path)
+        return {"error": "Modal endpoint unavailable"}
 
 
 @training_router.post("/training/archive-adapters", response_model=None)

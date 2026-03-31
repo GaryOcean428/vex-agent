@@ -45,6 +45,13 @@ class TestMaybeAdd:
         assert q.maybe_add(ex) is False
         assert len(q.queue) == 0
 
+    def test_at_threshold_rejected(self) -> None:
+        """Boundary: prediction_error == threshold is NOT surprising (strictly greater)."""
+        q = KernelTrainingQueue("perception")
+        q.surprise_threshold = 0.3
+        ex = _make_example(prediction_error=0.3)
+        assert q.maybe_add(ex) is False
+
     def test_above_threshold_accepted(self) -> None:
         q = KernelTrainingQueue("perception")
         q.surprise_threshold = 0.1
