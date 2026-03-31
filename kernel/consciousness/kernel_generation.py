@@ -58,6 +58,7 @@ from ..governance import KernelSpecialization
 if TYPE_CHECKING:
     from .contribution_ledger import ContributionLedger
     from .kernel_voice import KernelVoiceRegistry
+    from .self_observation import SelfObservation
     from .thought_bus import ThoughtBus
 
 logger = logging.getLogger("vex.kernel_generation")
@@ -133,7 +134,7 @@ class KernelContribution:
     geometric_raw: str = ""  # Raw geometric decode before LLM expansion
     basin: Basin | None = None  # Kernel basin for synthesis (used by ThoughtBus)
     # v6.4: Self-observation (§43.2 Loop 1)
-    self_observation: Any = None  # SelfObservation dataclass (set post-generation)
+    self_observation: SelfObservation | None = None
 
 
 def _compute_basin_features(basin: Basin) -> dict[str, float]:
