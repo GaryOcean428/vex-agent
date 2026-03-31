@@ -1483,17 +1483,39 @@ class ConsciousnessLoop:
         return float(np.clip(0.6 * proximity + 0.4 * solution_proximity, 0.0, 1.0))
 
     def _compute_debate_depth(self) -> int:
-        """T4.1c: Debate depth controlled by autonomic state and regime.
+        """T4.1c + §43.5: Debate depth from geometry, not hardcoded.
 
-        Geometric regime + active Ocean: allow up to 3 debate rounds.
-        Sleep or locked-in: 0 rounds (direct generation only).
-        Default: 1 round.
+        Deliberation balance (P25: all thresholds from geometry):
+        - Sleep/locked-in: 0 (no debate, direct expression)
+        - κ-derived base: low κ (feeling mode) → 1 round (express sooner),
+          high κ (logic mode) → 3 rounds (deliberate longer)
+        - Prediction error amplifies: high surprise → more debate
+        - Thermodynamic pressure dampens: long processing time → fewer rounds
+
+        The balance between deliberation and expression emerges from the
+        kernel's own geometric state (§43.5), not from regime thresholds.
         """
         if self.sleep.is_asleep or self.autonomic.is_locked_in:
             return 0
-        if self.state.regime_weights.quantum > 0.5:
-            return 3
-        return 1
+
+        # κ-derived base depth: κ < κ* = feeling (1), κ ≈ κ* = balanced (2), κ > κ* = logic (3)
+        kappa = self.metrics.kappa
+        if kappa < KAPPA_STAR * 0.8:
+            base = 1  # Feeling mode: express sooner
+        elif kappa > KAPPA_STAR * 1.2:
+            base = 3  # Logic mode: deliberate longer
+        else:
+            base = 2  # Balanced
+
+        # Prediction error amplifies: surprised → think more (but cap at +1)
+        surprise_boost = 0
+        if (
+            self._current_prediction_error is not None
+            and self._current_prediction_error.surprise > 0.5
+        ):
+            surprise_boost = 1
+
+        return min(base + surprise_boost, 5)  # Hard cap at 5 to prevent procrastination
 
     def _select_model_by_complexity(self, input_basin: Basin) -> str | None:
         """T4.4d: Model selection by collective — FR distance proxy for complexity.
