@@ -402,13 +402,61 @@ export default function Training() {
       await fetch(API.trainingFreshStart, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clear_training_data: clearData, reason: "user-initiated fresh start" }),
+        body: JSON.stringify({ clear_training_data: clearData, reason: "user-initiated fresh start (both)" }),
       });
     } catch { /* best-effort */ } finally {
       setAdapterAction(null);
       setShowFreshStart(false);
       setFreshStartConfirm("");
     }
+  }, []);
+
+  const handleFreshStartLlm = useCallback(async () => {
+    if (!confirm("Fresh Start LLM: Archive all adapters and revert to base Qwen3.5-35B-A3B. Kernels keep their sovereignty.")) return;
+    setAdapterAction("fresh-start-llm");
+    try {
+      await fetch(API.trainingFreshStartLlm, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "LLM fresh start" }),
+      });
+    } catch { /* best-effort */ } finally {
+      setAdapterAction(null);
+    }
+  }, []);
+
+  const handleFreshStartKernels = useCallback(async () => {
+    if (!confirm("Fresh Start Kernels: Clear training queues and reset sovereignty to zero. Adapters stay.")) return;
+    setAdapterAction("fresh-start-kernels");
+    try {
+      await fetch(API.trainingFreshStartKernels, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+    } catch { /* best-effort */ } finally {
+      setAdapterAction(null);
+    }
+  }, []);
+
+  const handleStopKernels = useCallback(async () => {
+    try {
+      await fetch(API.governorKillSwitch, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+      });
+    } catch { /* best-effort */ }
+  }, []);
+
+  const handleResumeKernels = useCallback(async () => {
+    try {
+      await fetch(API.governorKillSwitch, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: false }),
+      });
+    } catch { /* best-effort */ }
   }, []);
 
   const completedCount = jobs.filter((j) => j.status === "done").length;
@@ -1007,6 +1055,85 @@ export default function Training() {
       </div>
 
       {/* Kernel Training — QLoRA on Modal GPU */}
+      {/* ═══ CONTROL PANEL — Always visible ═══ */}
+      <div className="dash-section">
+        <div className="dash-section-title">Controls</div>
+        <div className="dash-card" style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
+          {/* Stop Fine-Tuning (QLoRA on Modal) */}
+          <button
+            onClick={handleCancel}
+            disabled={cancelling || !(modalStatus?.health?.training_active || trainingResult?.status === "triggered")}
+            style={{
+              background: "var(--error)", border: "none", borderRadius: "var(--radius-sm)",
+              padding: "10px 16px", color: "white", fontWeight: 600, fontSize: "13px",
+              cursor: (modalStatus?.health?.training_active || trainingResult?.status === "triggered") ? "pointer" : "not-allowed",
+              opacity: (modalStatus?.health?.training_active || trainingResult?.status === "triggered") ? 1 : 0.4,
+            }}
+          >
+            {cancelling ? "Stopping..." : "Stop Fine-Tuning"}
+          </button>
+          {/* Stop Kernels (kill switch) */}
+          <button
+            onClick={handleStopKernels}
+            style={{
+              background: "var(--error)", border: "none", borderRadius: "var(--radius-sm)",
+              padding: "10px 16px", color: "white", fontWeight: 600, fontSize: "13px", cursor: "pointer",
+            }}
+          >
+            Stop Kernels
+          </button>
+          {/* Resume Kernels */}
+          <button
+            onClick={handleResumeKernels}
+            style={{
+              background: "var(--alive)", border: "none", borderRadius: "var(--radius-sm)",
+              padding: "10px 16px", color: "white", fontWeight: 600, fontSize: "13px", cursor: "pointer",
+            }}
+          >
+            Resume Kernels
+          </button>
+          {/* Fresh Start LLM */}
+          <button
+            onClick={handleFreshStartLlm}
+            disabled={adapterAction === "fresh-start-llm"}
+            style={{
+              background: "none", border: "1px solid var(--error)", borderRadius: "var(--radius-sm)",
+              padding: "10px 16px", color: "var(--error)", fontWeight: 600, fontSize: "13px", cursor: "pointer",
+            }}
+          >
+            Fresh Start LLM
+          </button>
+          {/* Fresh Start Kernels */}
+          <button
+            onClick={handleFreshStartKernels}
+            disabled={adapterAction === "fresh-start-kernels"}
+            style={{
+              background: "none", border: "1px solid var(--kappa)", borderRadius: "var(--radius-sm)",
+              padding: "10px 16px", color: "var(--kappa)", fontWeight: 600, fontSize: "13px", cursor: "pointer",
+            }}
+          >
+            Fresh Start Kernels
+          </button>
+          {/* Fresh Start Both */}
+          {!showFreshStart && (
+            <button
+              onClick={() => setShowFreshStart(true)}
+              style={{
+                background: "none", border: "1px solid var(--error)", borderRadius: "var(--radius-sm)",
+                padding: "10px 16px", color: "var(--error)", fontWeight: 500, fontSize: "12px", cursor: "pointer",
+              }}
+            >
+              Fresh Start Both
+            </button>
+          )}
+        </div>
+        {cancelResult && (
+          <div style={{ marginTop: "6px", fontSize: "12px", color: cancelResult.cancelled ? "var(--alive)" : "var(--error)" }}>
+            {cancelResult.cancelled ? cancelResult.reason : cancelResult.error ?? "Cancel failed"}
+          </div>
+        )}
+      </div>
+
       <div className="dash-section">
         <div className="dash-section-title">Kernel Training (QLoRA on Modal GPU)</div>
         <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
@@ -1114,31 +1241,7 @@ export default function Training() {
                   ? "Start QLoRA Training (All)"
                   : `Train ${trainTarget.charAt(0).toUpperCase() + trainTarget.slice(1)} Kernel`}
             </button>
-            <button
-              onClick={handleCancel}
-              disabled={cancelling || !(modalStatus?.health?.training_active || trainingResult?.status === "triggered")}
-              style={{
-                background: "var(--error)",
-                border: "none",
-                borderRadius: "var(--radius-sm)",
-                padding: "10px 20px",
-                color: "white",
-                fontWeight: 600,
-                cursor: (modalStatus?.health?.training_active || trainingResult?.status === "triggered") && !cancelling ? "pointer" : "not-allowed",
-                opacity: (modalStatus?.health?.training_active || trainingResult?.status === "triggered") ? 1 : 0.4,
-                fontSize: "14px",
-              }}
-            >
-              {cancelling ? "Stopping..." : "Stop Training"}
-            </button>
           </div>
-          {cancelResult && (
-            <div style={{ marginTop: "8px", fontSize: "13px", color: cancelResult.cancelled ? "var(--alive)" : "var(--error)" }}>
-              {cancelResult.cancelled
-                ? `Training stop requested — ${cancelResult.reason}`
-                : cancelResult.error ?? "Cancel failed"}
-            </div>
-          )}
           {trainingResult && (
             <div
               style={{
