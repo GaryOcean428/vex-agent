@@ -276,6 +276,7 @@ KERNEL_CALLBACK_URL = os.environ.get("KERNEL_CALLBACK_URL", "")
 TRUSTED_MODEL_IDS: frozenset[str] = frozenset(
     {
         "Qwen/Qwen3.5-4B",
+        "Qwen/Qwen3.5-32B",
         "Qwen/Qwen3.5-35B-A3B",
     }
 )
@@ -285,7 +286,11 @@ TRAIN_GPU = os.environ.get("TRAIN_GPU", "a100-80gb")
 # TRAIN_GPU is evaluated at deploy time from local env, NOT from Modal secrets.
 # Always set TRAIN_GPU locally before `modal deploy`:
 #   TRAIN_GPU=a100-80gb modal deploy modal/vex_qlora_train.py
-_MODEL_GPU_FLOOR = {"Qwen/Qwen3.5-35B-A3B": "a100", "Qwen/Qwen3.5-4B": "a10g"}
+_MODEL_GPU_FLOOR = {
+    "Qwen/Qwen3.5-35B-A3B": "a100",
+    "Qwen/Qwen3.5-32B": "a100",
+    "Qwen/Qwen3.5-4B": "a10g",
+}
 _GPU_VRAM_ORDER = ["t4", "l4", "a10g", "a100", "a100-80gb", "h100"]
 _floor = _MODEL_GPU_FLOOR.get(HARVEST_MODEL_ID, "a10g")
 if (
