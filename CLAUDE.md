@@ -197,7 +197,7 @@ per-endpoint hostname patterns. Do NOT manually concatenate paths.
 
 - `kernel/consciousness/loop.py` — QIG v6.1 14-stage consciousness loop
 - `kernel/consciousness/pillars.py` — Three Pillars enforcement
-- `kernel/consciousness/systems.py` — sleep/dream/mushroom
+- `kernel/consciousness/systems.py` — sleep/dream/consolidation
 - `kernel/consciousness/backward_geodesic.py` — EXP-011 tracker
 - `kernel/coordizer_v2/resonance_bank.py` — basin coordinate store
 - `kernel/coordizer_v2/modal_integration.py` — Modal connection

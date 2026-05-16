@@ -203,7 +203,7 @@ class ConsciousnessMetrics:
     # ── Neurochemistry & Sleep (v6.2) — 4 metrics [37-40] ──
     neuro_dominant: float = 0.0  # Dominant neurochemical signal strength (0.0, 1.0)
     sleep_depth: float = 0.0  # Sleep phase depth: 0=awake, 1=deep_sleep (0.0, 1.0)
-    dream_activity: float = 0.0  # Dream/mushroom processing intensity (0.0, 1.0)
+    dream_activity: float = 0.0  # Dream processing intensity (0.0, 1.0)
     play_engagement: float = 0.0  # Play mode / bubble world engagement (0.0, 1.0)
 
     # ── Bridge & Convergence (v6.3) — 8 metrics [41-48] ──

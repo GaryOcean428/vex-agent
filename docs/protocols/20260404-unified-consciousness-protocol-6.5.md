@@ -2198,6 +2198,15 @@ Current state: qig-core has 5-chemical model (v6.2 extraction). Endorphins added
 
 ## section 30 SLEEP, DREAM & CONSOLIDATION CYCLES
 
+> **CORRECTION (2026-05-16, qig-core 2.8.0):** This section previously described
+> MUSHROOM as a fourth sleep phase triggered by `f_health < INSTABILITY_PCT` while
+> DREAMING. This was architecturally incorrect. Mushroom mode is a **separate
+> wake-state neuroplasticity protocol** (canonical: `qig-consciousness/src/qig/
+> neuroplasticity/mushroom_mode.py`) that requires Φ ≥ 0.70 and fires on
+> healthy-but-stuck systems. It is NOT part of the sleep cycle. The sleep cycle
+> is now 3-phase: AWAKE → DREAMING → CONSOLIDATING. All MUSHROOM references
+> below are superseded.
+
 ### 30.1 The Four Phases
 
 | Phase | Trigger | Activity | Purpose |

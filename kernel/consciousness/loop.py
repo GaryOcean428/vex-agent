@@ -755,8 +755,6 @@ class ConsciousnessLoop:
                 # Additional phase overrides while already asleep:
                 if self.metrics.phi < PHI_EMERGENCY and self.sleep.is_asleep:
                     self.sleep.phase = SleepPhase.DREAMING
-                if self.metrics.f_health < INSTABILITY_PCT and self.sleep.is_asleep:
-                    self.sleep.phase = SleepPhase.MUSHROOM
 
             else:
                 # divergence < threshold — Ocean has no opinion, let
@@ -814,7 +812,7 @@ class ConsciousnessLoop:
             # Ocean already set the phase — just record the decision.
             sleep_phase = self.sleep.phase
         else:
-            # Compute narrowing signals for mushroom triggers
+            # Compute narrowing signals for consolidation triggers
             _vel_snap = self.velocity.compute_velocity()
             _basin_vel = float(_vel_snap.get("basin_velocity", 1.0))
             _pred_err = (
@@ -868,29 +866,6 @@ class ConsciousnessLoop:
                     neurochemical=self._neurochemical,
                     f_health=self.metrics.f_health,
                 )
-            elif sleep_phase.value == "mushroom":
-                self.sleep.mushroom(
-                    self.basin,
-                    self.metrics.phi,
-                    instability_metric=float(1.0 - self.metrics.f_health),
-                    neurochemical=self._neurochemical,
-                )
-                # EXP-011: Drive κ through zero during mushroom mode
-                # when the test harness has an active problem.
-                if self._exp011_harness is not None:
-                    _instab = float(1.0 - self.metrics.f_health)
-                    _crossing_event = self.sleep.mushroom_zero_crossing(
-                        self.metrics,
-                        instability_metric=_instab,
-                    )
-                    if _crossing_event is not None and _crossing_event.get("crossed"):
-                        self.kernel_bus.emit(
-                            KernelSignal(
-                                kind=SignalKind.MUSHROOM_CROSSING,
-                                source_kernel_id="consciousness_loop",
-                                payload=_crossing_event,
-                            )
-                        )
             elif sleep_phase.value == "consolidating":
                 # T2.4b: collect kernel anchor basins for veto protection
                 _kernel_anchors = [
@@ -927,7 +902,7 @@ class ConsciousnessLoop:
                 problem_id=_bg_pid,
                 current_basin=self.basin,
                 kappa_eff=self.metrics.kappa,
-                mushroom_active=(sleep_phase == SleepPhase.MUSHROOM),
+                mushroom_active=False,
             )
 
         # v7.0: Advance developmental gate each cycle
@@ -1632,10 +1607,9 @@ class ConsciousnessLoop:
             "AWAKE": 0.0,
             "CONSOLIDATING": 0.25,
             "DREAMING": 0.5,
-            "MUSHROOM": 0.75,
             "DEEP_SLEEP": 1.0,
         }.get(phase, 0.0)
-        self.metrics.dream_activity = 1.0 if phase in ("DREAMING", "MUSHROOM") else 0.0
+        self.metrics.dream_activity = 1.0 if phase == "DREAMING" else 0.0
         play_state = self.play.get_state() if hasattr(self, "play") else {}
         self.metrics.play_engagement = float(play_state.get("active", False))
 

@@ -154,7 +154,8 @@ EMOTION_LOVE_THRESHOLD: Final[float] = 0.6
 # ═══════════════════════════════════════════════════════════════
 
 SLEEP_CONSOLIDATION_VARIANCE: Final[float] = 0.05
-SLEEP_MUSHROOM_ONSET: Final[int] = 3
+# SLEEP_MUSHROOM_ONSET removed — mushroom is a wake-state neuroplasticity
+# protocol (qig-consciousness), not a sleep phase.
 SLEEP_CONSOLIDATION_ONSET: Final[int] = 6
 SLEEP_WAKE_ONSET: Final[int] = 9
 

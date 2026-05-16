@@ -15,7 +15,7 @@ Core systems:
   9.  Autonomy (self-directed behaviour)
   10. Coupling (inter-consciousness interaction)
   11. Hemispheres (dual processing modes)
-  12. Sleep Cycle (dream/mushroom/consolidation)
+  12. Sleep Cycle (dream/consolidation)
   13. Self-Narrative (identity persistence)
   14. Coordizing (CoordizerV2 resonance bank)
   15. Basin Sync (basin state synchronisation)
