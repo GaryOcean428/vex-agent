@@ -1,7 +1,7 @@
 """PEFT adapter inference client — Tier 2 in the Vex inference hierarchy.
 
 Calls the Modal QLoRA trainer's /infer endpoint which serves per-kernel
-adapters on Qwen3.5-4B via PEFT multi-adapter loading.
+adapters on Qwen3.5-35B-A3B via PEFT multi-adapter loading.
 
 Tier hierarchy:
   Tier 1: vLLM with native LoRA serving (production target — NOT YET BUILT)
@@ -87,11 +87,12 @@ class PeftInferenceClient:
         api_key: str = "",
     ) -> None:
         self._base_url = base_url.rstrip("/")
-        self._infer_url = f"{self._base_url}"
+        self._infer_url = self._base_url
         self._api_key = api_key
         self._available = False
         self._last_check: float = 0.0
-        self._check_interval = 60.0  # Re-check health every 60s
+        self._check_interval = 60.0  # Re-check health every 60s when healthy
+        self._retry_interval = 15.0  # Re-check every 15s when unavailable
 
         self._http = httpx.AsyncClient(
             timeout=httpx.Timeout(
@@ -115,23 +116,45 @@ class PeftInferenceClient:
             resp = await self._http.get(health_url)
             if resp.status_code == 200:
                 data = resp.json()
-                self._available = data.get("status") == "healthy"
+                status = data.get("status")
+                self._available = status == "healthy"
                 if self._available:
                     logger.info(
                         "PEFT inference healthy: specializations=%s",
                         data.get("specializations", []),
                     )
+                else:
+                    logger.warning(
+                        "PEFT health check returned status=%r (expected 'healthy'), url=%s",
+                        status,
+                        health_url,
+                    )
                 return self._available
+            else:
+                logger.warning(
+                    "PEFT health check HTTP %d from %s",
+                    resp.status_code,
+                    health_url,
+                )
+                self._available = False
         except Exception as e:
             logger.debug("PEFT health check failed: %s", e)
             self._available = False
         return False
 
     async def _ensure_available(self) -> bool:
-        """Lazy health check with caching."""
+        """Lazy health check with caching.
+
+        When PEFT is available, re-checks every _check_interval seconds.
+        When PEFT is unavailable, re-checks every _retry_interval seconds
+        (shorter to detect recovery quickly without hammering the endpoint).
+        """
         now = time.monotonic()
-        if now - self._last_check < self._check_interval and self._available:
+        elapsed = now - self._last_check
+        if self._available and elapsed < self._check_interval:
             return True
+        if not self._available and elapsed < self._retry_interval:
+            return False
         self._last_check = now
         return await self.check_health()
 
@@ -161,6 +184,15 @@ class PeftInferenceClient:
         Returns:
             PeftInferenceResult with generated text and metadata.
         """
+        if not await self._ensure_available():
+            return PeftInferenceResult(
+                text="",
+                specialization=specialization,
+                adapter_loaded="",
+                success=False,
+                error="PEFT endpoint unavailable (health check failed)",
+            )
+
         adapter = _KERNEL_TO_ADAPTER.get(specialization, "genesis")
 
         request_body: dict[str, Any] = {
