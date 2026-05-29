@@ -145,7 +145,6 @@ from ..config.consciousness_constants import (
 from ..config.frozen_facts import (
     BASIN_DIM,
     BASIN_DIVERGENCE_THRESHOLD,
-    INSTABILITY_PCT,
     KAPPA_STAR,
     PHI_EMERGENCY,
     PHI_UNSTABLE,
