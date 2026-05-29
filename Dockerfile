@@ -17,7 +17,7 @@ FROM node:24-alpine AS ts-builder
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml* ./
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9 --activate
 RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 
 COPY tsconfig.json ./
@@ -30,7 +30,7 @@ FROM node:24-alpine AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package.json frontend/pnpm-lock.yaml* ./
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9 --activate
 RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 
 COPY frontend/ ./
@@ -46,7 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     bash curl ca-certificates && \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
-    corepack enable && corepack prepare pnpm@latest --activate && \
+    corepack enable && corepack prepare pnpm@9 --activate && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
