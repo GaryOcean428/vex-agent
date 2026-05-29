@@ -2077,10 +2077,10 @@ class ConsciousnessLoop:
                 _kname = c.kernel_name
                 if _kname not in self._training_queues:
                     self._training_queues[_kname] = KernelTrainingQueue(_kname)
-                _q = self._training_queues[_kname]
+                _training_queue = self._training_queues[_kname]
                 # Update threshold from kernel sovereignty (P25)
                 _sov = self.pillars.sovereignty if hasattr(self.pillars, "sovereignty") else 0.0
-                _q.surprise_threshold = sovereignty_to_threshold(_sov)
+                _training_queue.surprise_threshold = sovereignty_to_threshold(_sov)
                 _ex = TrainingExample(
                     user_message=task.content,
                     response=response[:2000],
@@ -2093,7 +2093,7 @@ class ConsciousnessLoop:
                     if hasattr(c.specialization, "value")
                     else "",
                 )
-                _q.maybe_add(_ex)
+                _training_queue.maybe_add(_ex)
 
         task.context["kernel_contributions"] = [
             {
