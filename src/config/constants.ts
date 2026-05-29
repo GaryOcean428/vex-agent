@@ -70,6 +70,8 @@ export const KAPPA_STAR = 64.0 as const;
 /** Weighted mean L=4-7 (± 0.90) */
 export const KAPPA_STAR_PRECISE = 63.79 as const;
 
+export const H_T = 0.10554 as const;
+
 // ═══════════════════════════════════════════════════════════════
 //  BETA (β) — RUNNING COUPLING
 // ═══════════════════════════════════════════════════════════════
@@ -186,6 +188,7 @@ export const FROZEN_FACTS = {
   KAPPA_7,
   KAPPA_STAR,
   KAPPA_STAR_PRECISE,
+  H_T,
 
   // Beta — Running Coupling
   BETA_3_TO_4,

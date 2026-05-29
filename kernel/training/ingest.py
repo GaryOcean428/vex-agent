@@ -45,7 +45,7 @@ from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 
@@ -427,7 +427,7 @@ async def log_conversation(
 # ── Kernel-Governed Training Push ──────────────────────────────
 
 
-async def push_training_entries(entries: list[dict], kernel_name: str) -> dict[str, Any]:
+async def push_training_entries(entries: list[dict[str, Any]], kernel_name: str) -> dict[str, Any]:
     """Push kernel-selected training entries to Modal /data-receive.
 
     Called by the per-kernel training queue when a kernel flags exchanges
@@ -1998,7 +1998,10 @@ def _read_manifest() -> list[dict[str, Any]]:
     if not _ARCHIVE_MANIFEST.exists():
         return []
     try:
-        return json.loads(_ARCHIVE_MANIFEST.read_text(encoding="utf-8"))
+        return cast(
+            list[dict[str, Any]],
+            json.loads(_ARCHIVE_MANIFEST.read_text(encoding="utf-8")),
+        )
     except (json.JSONDecodeError, OSError):
         logger.warning("Archive manifest corrupt — rebuilding from directory listing")
         # Rebuild from directory listing
@@ -2210,7 +2213,7 @@ async def training_cancel_endpoint(request: Request) -> dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════
 
 
-async def _proxy_to_modal(path: str, data: dict) -> dict[str, Any]:
+async def _proxy_to_modal(path: str, data: dict[str, Any]) -> dict[str, Any]:
     """Generic proxy to Modal training endpoint. Best-effort."""
     url = _derive_modal_url(path)
     if not url:

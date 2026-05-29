@@ -106,7 +106,7 @@ class KernelTrainingQueue:
         """
         self._total_seen += 1
 
-        if example.prediction_error < self._surprise_threshold:
+        if example.prediction_error <= self._surprise_threshold:
             return False  # Already knew this. Skip.
 
         if len(self.queue) >= self.max_size:

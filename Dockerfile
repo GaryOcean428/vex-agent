@@ -11,13 +11,16 @@
 #  Railway exposes port 8080 (the web server).
 # ═══════════════════════════════════════════════════════════════
 
+ARG PNPM_VERSION=9
+
 # ── Stage 1a: Build TypeScript (Express server) ─────────────────
 FROM node:24-alpine AS ts-builder
+ARG PNPM_VERSION
 
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml* ./
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 
 COPY tsconfig.json ./
@@ -26,11 +29,12 @@ RUN pnpm run build
 
 # ── Stage 1b: Build React Frontend (Vite) ───────────────────────
 FROM node:24-alpine AS frontend-builder
+ARG PNPM_VERSION
 
 WORKDIR /app/frontend
 
 COPY frontend/package.json frontend/pnpm-lock.yaml* ./
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 
 COPY frontend/ ./
@@ -40,13 +44,14 @@ RUN pnpm run build \
 
 # ── Stage 2: Production image ─────────────────────────────────
 FROM python:3.14-slim
+ARG PNPM_VERSION
 
 # Install Node.js 24
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash curl ca-certificates && \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
-    corepack enable && corepack prepare pnpm@latest --activate && \
+    corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
