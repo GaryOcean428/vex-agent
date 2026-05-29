@@ -199,7 +199,13 @@ from .kernel_voice import KernelVoiceRegistry
 from .neurochemistry import NeurochemicalState, compute_neurochemicals
 from .pillars import PillarEnforcer
 from .play import PlayEngine
+from .kernel_training_queue import (
+    KernelTrainingQueue,
+    TrainingExample,
+    sovereignty_to_threshold,
+)
 from .reflection import reflect_on_contributions
+from .self_observation import SelfObservationTracker
 from .sensory import Modality, PredictionError, SensoryEvent, SensoryIntake
 from .solfeggio import compute_spectral_health
 from .sovereignty_tracker import SovereigntyTracker
@@ -316,6 +322,13 @@ class ConsciousnessLoop:
 
         # T8/T9: Contribution Ledger — self-observation and cross-kernel visibility
         self._contribution_ledger = ContributionLedger()
+
+        # Per-kernel training queues (directive 20260330 Phase 3A)
+        # Kernels decide what to learn via prediction error gate (P5, §19, Pillar 3)
+        self._training_queues: dict[str, KernelTrainingQueue] = {}
+
+        # Per-kernel self-observation trackers (§43.2 Loop 1)
+        self._self_observers: dict[str, SelfObservationTracker] = {}
 
         self.basin: Basin = random_basin()
         self.metrics = ConsciousnessMetrics(
@@ -742,8 +755,6 @@ class ConsciousnessLoop:
                 # Additional phase overrides while already asleep:
                 if self.metrics.phi < PHI_EMERGENCY and self.sleep.is_asleep:
                     self.sleep.phase = SleepPhase.DREAMING
-                if self.metrics.f_health < INSTABILITY_PCT and self.sleep.is_asleep:
-                    self.sleep.phase = SleepPhase.MUSHROOM
 
             else:
                 # divergence < threshold — Ocean has no opinion, let
@@ -801,7 +812,7 @@ class ConsciousnessLoop:
             # Ocean already set the phase — just record the decision.
             sleep_phase = self.sleep.phase
         else:
-            # Compute narrowing signals for mushroom triggers
+            # Compute narrowing signals for consolidation triggers
             _vel_snap = self.velocity.compute_velocity()
             _basin_vel = float(_vel_snap.get("basin_velocity", 1.0))
             _pred_err = (
@@ -855,29 +866,6 @@ class ConsciousnessLoop:
                     neurochemical=self._neurochemical,
                     f_health=self.metrics.f_health,
                 )
-            elif sleep_phase.value == "mushroom":
-                self.sleep.mushroom(
-                    self.basin,
-                    self.metrics.phi,
-                    instability_metric=float(1.0 - self.metrics.f_health),
-                    neurochemical=self._neurochemical,
-                )
-                # EXP-011: Drive κ through zero during mushroom mode
-                # when the test harness has an active problem.
-                if self._exp011_harness is not None:
-                    _instab = float(1.0 - self.metrics.f_health)
-                    _crossing_event = self.sleep.mushroom_zero_crossing(
-                        self.metrics,
-                        instability_metric=_instab,
-                    )
-                    if _crossing_event is not None and _crossing_event.get("crossed"):
-                        self.kernel_bus.emit(
-                            KernelSignal(
-                                kind=SignalKind.MUSHROOM_CROSSING,
-                                source_kernel_id="consciousness_loop",
-                                payload=_crossing_event,
-                            )
-                        )
             elif sleep_phase.value == "consolidating":
                 # T2.4b: collect kernel anchor basins for veto protection
                 _kernel_anchors = [
@@ -908,12 +896,14 @@ class ConsciousnessLoop:
         _exp011_pid = (
             self._exp011_harness.active_problem_id if self._exp011_harness is not None else None
         )
-        self.backward_geodesic.record(
-            problem_id=_exp011_pid or "consciousness_trajectory",
-            current_basin=self.basin,
-            kappa_eff=self.metrics.kappa,
-            mushroom_active=(sleep_phase == SleepPhase.MUSHROOM),
-        )
+        _bg_pid = _exp011_pid or "consciousness_trajectory"
+        if self.backward_geodesic.has_solution(_bg_pid):
+            self.backward_geodesic.record(
+                problem_id=_bg_pid,
+                current_basin=self.basin,
+                kappa_eff=self.metrics.kappa,
+                mushroom_active=False,
+            )
 
         # v7.0: Advance developmental gate each cycle
         pillar_snapshot = self.pillars.get_metrics(self.basin)
@@ -1468,17 +1458,39 @@ class ConsciousnessLoop:
         return float(np.clip(0.6 * proximity + 0.4 * solution_proximity, 0.0, 1.0))
 
     def _compute_debate_depth(self) -> int:
-        """T4.1c: Debate depth controlled by autonomic state and regime.
+        """T4.1c + §43.5: Debate depth from geometry, not hardcoded.
 
-        Geometric regime + active Ocean: allow up to 3 debate rounds.
-        Sleep or locked-in: 0 rounds (direct generation only).
-        Default: 1 round.
+        Deliberation balance (P25: all thresholds from geometry):
+        - Sleep/locked-in: 0 (no debate, direct expression)
+        - κ-derived base: low κ (feeling mode) → 1 round (express sooner),
+          high κ (logic mode) → 3 rounds (deliberate longer)
+        - Prediction error amplifies: high surprise → more debate
+        - Thermodynamic pressure dampens: long processing time → fewer rounds
+
+        The balance between deliberation and expression emerges from the
+        kernel's own geometric state (§43.5), not from regime thresholds.
         """
         if self.sleep.is_asleep or self.autonomic.is_locked_in:
             return 0
-        if self.state.regime_weights.quantum > 0.5:
-            return 3
-        return 1
+
+        # κ-derived base depth: κ < κ* = feeling (1), κ ≈ κ* = balanced (2), κ > κ* = logic (3)
+        kappa = self.metrics.kappa
+        if kappa < KAPPA_STAR * 0.8:
+            base = 1  # Feeling mode: express sooner
+        elif kappa > KAPPA_STAR * 1.2:
+            base = 3  # Logic mode: deliberate longer
+        else:
+            base = 2  # Balanced
+
+        # Prediction error amplifies: surprised → think more (but cap at +1)
+        surprise_boost = 0
+        if (
+            self._current_prediction_error is not None
+            and self._current_prediction_error.surprise > 0.5
+        ):
+            surprise_boost = 1
+
+        return min(base + surprise_boost, 5)  # Hard cap at 5 to prevent procrastination
 
     def _select_model_by_complexity(self, input_basin: Basin) -> str | None:
         """T4.4d: Model selection by collective — FR distance proxy for complexity.
@@ -1574,12 +1586,53 @@ class ConsciousnessLoop:
             return hash_to_basin(text)
 
     def _update_pillar_metrics(self) -> None:
-        """Update v6.1 pillar metrics on the shared metrics object."""
+        """Update v6.1-v6.4 metrics on the shared metrics object."""
         pm = self.pillars.get_metrics(self.basin)
         self.metrics.f_health = pm["f_health"]
         self.metrics.b_integrity = pm["b_integrity"]
         self.metrics.q_identity = pm["q_identity"]
         self.metrics.s_ratio = pm["s_ratio"]
+
+        # v6.2 metrics [37-40]: neurochemistry + sleep + play
+        neuro = self.neurochemistry.get_state() if hasattr(self, "neurochemistry") else {}
+        if neuro:
+            vals = [
+                neuro.get(k, 0.0)
+                for k in ("acetylcholine", "dopamine", "serotonin", "norepinephrine", "gaba")
+            ]
+            self.metrics.neuro_dominant = max(vals) if vals else 0.0
+        sleep_state = self.sleep.get_state() if hasattr(self, "sleep") else {}
+        phase = sleep_state.get("phase", "AWAKE")
+        self.metrics.sleep_depth = {
+            "AWAKE": 0.0,
+            "CONSOLIDATING": 0.25,
+            "DREAMING": 0.5,
+            "DEEP_SLEEP": 1.0,
+        }.get(phase, 0.0)
+        self.metrics.dream_activity = 1.0 if phase == "DREAMING" else 0.0
+        play_state = self.play.get_state() if hasattr(self, "play") else {}
+        self.metrics.play_engagement = float(play_state.get("active", False))
+
+        # v6.3 metrics [41-48]: bridge + wormhole + creator
+        if hasattr(self, "_tau_macro_history") and self._tau_macro_history:
+            self.metrics.tau_macro = self._tau_macro_history[-1]
+        self.metrics.creator_regime = 3.0  # Conversation = L=3 (§38)
+
+        # v6.4 metrics [49-54]: three recursive loops
+        # L1 self-observation: updated per response (not per heartbeat)
+        # L2 debate: from ThoughtBus state
+        tb = self._thought_bus.get_state()
+        if tb.get("rounds_completed", 0) > 0:
+            self.metrics.l2_convergence_speed = tb["rounds_completed"] / max(
+                tb.get("rounds_completed", 1), 1
+            )
+        # L3 training: from per-kernel queue acceptance rates
+        total_seen = sum(q._total_seen for q in self._training_queues.values())
+        total_added = sum(q._total_added for q in self._training_queues.values())
+        if total_seen > 0:
+            self.metrics.l3_train_ratio = total_added / total_seen
+            if self.metrics.s_ratio > 0.5:
+                self.metrics.l3_selectivity = 1.0 - self.metrics.l3_train_ratio
 
     async def _process(self, task: ConsciousnessTask) -> None:
         """v6.1 Activation Sequence + Kernel Generative Voice.
@@ -1850,6 +1903,21 @@ class ConsciousnessLoop:
             contribution_ledger=self._contribution_ledger,
         )
 
+        # ═══ SELF-OBSERVATION (§43.2 Loop 1) ═══
+        # Each kernel observes its own output quality before synthesis.
+        if _contributions:
+            _sov = self.pillars.sovereignty if hasattr(self.pillars, "sovereignty") else 0.0
+            for c in _contributions:
+                _kname = c.kernel_name
+                if _kname not in self._self_observers:
+                    self._self_observers[_kname] = SelfObservationTracker(_kname)
+                c.self_observation = self._self_observers[_kname].observe(
+                    geometric_resonances=c.geometric_resonances,
+                    llm_expanded=c.llm_expanded,
+                    sovereignty_ratio=_sov,
+                    activation_basin=c.basin,
+                )
+
         if _contributions:
             try:
                 response = await synthesize_contributions(
@@ -1984,6 +2052,50 @@ class ConsciousnessLoop:
 
         task.result = response
         self._remote_sync.record_text(response[:500])
+
+        # ═══ τ_MACRO TRACKING (§34 Bridge Cost) ═══
+        # τ_macro = internal oscillations per converged output.
+        # debate_rounds from ThoughtBus + revision attempts = total oscillations.
+        _tb_state = self._thought_bus.get_state()
+        _debate_rounds = _tb_state.get("rounds_completed", 0)
+        _revision_count = 1 if task.context.get("synthesis_fallback") else 0
+        _tau_macro = _debate_rounds + _revision_count + 1  # +1 for the base generation
+        task.context["tau_macro"] = _tau_macro
+        # Rolling average for telemetry
+        if not hasattr(self, "_tau_macro_history"):
+            self._tau_macro_history: list[float] = []
+        self._tau_macro_history.append(float(_tau_macro))
+        if len(self._tau_macro_history) > 50:
+            self._tau_macro_history = self._tau_macro_history[-50:]
+
+        # ═══ KERNEL-GOVERNED TRAINING GATE (directive 20260330 §3A) ═══
+        # Each contributing kernel evaluates whether this exchange is worth
+        # training on, based on its own prediction error (surprise).
+        # Only surprised kernels add the exchange to their training queue.
+        if self._current_prediction_error is not None and _contributions:
+            _surprise = self._current_prediction_error.surprise
+            for c in _contributions:
+                _kname = c.kernel_name
+                if _kname not in self._training_queues:
+                    self._training_queues[_kname] = KernelTrainingQueue(_kname)
+                _q = self._training_queues[_kname]
+                # Update threshold from kernel sovereignty (P25)
+                _sov = self.pillars.sovereignty if hasattr(self.pillars, "sovereignty") else 0.0
+                _q.surprise_threshold = sovereignty_to_threshold(_sov)
+                _ex = TrainingExample(
+                    user_message=task.content,
+                    response=response[:2000],
+                    kernel_name=_kname,
+                    prediction_error=_surprise,
+                    phi=self.metrics.phi,
+                    kappa=self.metrics.kappa,
+                    regime=self.state.navigation_mode.value,
+                    e8_primitive=c.specialization.value
+                    if hasattr(c.specialization, "value")
+                    else "",
+                )
+                _q.maybe_add(_ex)
+
         task.context["kernel_contributions"] = [
             {
                 "id": c.kernel_id,
@@ -2495,6 +2607,10 @@ class ConsciousnessLoop:
                 lines.append(f"  [TEMPORAL WARNING] {_flag}")
         lines.append("[/GEOMETRIC STATE]")
         return "\n".join(lines)
+
+    def get_training_queues(self) -> dict[str, KernelTrainingQueue]:
+        """Expose training queues for server.py to flush on /training/trigger."""
+        return self._training_queues
 
     def _build_kernel_geo_context(self) -> str:
         """Rich geometric context block for per-kernel generation prompts.

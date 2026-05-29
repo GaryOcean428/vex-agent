@@ -68,6 +68,16 @@ export const API = {
 	trainingModalStatus: '/training/modal-status',
 	trainingSync: '/training/sync',
 	trainingModalData: '/training/modal-data',
+	trainingArchive: '/training/archive',
+	trainingRestore: '/training/restore',
+	trainingCancel: '/training/cancel',
+	trainingArchiveAdapters: '/training/archive-adapters',
+	trainingRollback: '/training/rollback',
+	trainingFreshStart: '/training/fresh-start',
+	trainingFreshStartLlm: '/training/fresh-start-llm',
+	trainingFreshStartKernels: '/training/fresh-start-kernels',
+	trainingListArchives: '/training/archives',
+	trainingRestoreArchive: '/training/restore-archive',
 
 	// ─── Coordizer ──────────────────────────────────────────────
 	coordizerStats: '/api/coordizer/stats',

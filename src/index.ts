@@ -261,6 +261,41 @@ async function main(): Promise<void> {
   });
   proxyPost(ROUTES.training_complete);
   proxyGet(ROUTES.training_modal_data);
+
+  // Training data archive (GET list, POST archive, DELETE permanent)
+  proxyGet(ROUTES.training_archive);
+  proxyPost(ROUTES.training_archive);
+  app.delete(ROUTES.training_archive, async (req: Request, res: Response) => {
+    try {
+      const resp = await fetch(`${KERNEL_URL}${ROUTES.training_archive}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+      });
+      const data = await resp.json();
+      res.status(resp.status).json(data);
+    } catch (err) {
+      res
+        .status(502)
+        .json({ error: `Kernel unreachable: ${(err as Error).message}` });
+    }
+  });
+  proxyPost(ROUTES.training_restore);
+
+  // Training cancel
+  proxyPost(ROUTES.training_cancel);
+
+  // Adapter lifecycle
+  proxyPost(ROUTES.training_archive_adapters);
+  proxyPost(ROUTES.training_rollback);
+  proxyPost(ROUTES.training_fresh_start);
+  proxyPost(ROUTES.training_fresh_start_llm);
+  proxyPost(ROUTES.training_fresh_start_kernels);
+
+  // Adapter archive restore
+  proxyGet(ROUTES.training_list_archives);
+  proxyPost(ROUTES.training_restore_archive);
+
   // Training sync needs a longer timeout — pushes all JSONL to Modal
   app.post(ROUTES.training_sync, async (req: Request, res: Response) => {
     try {

@@ -57,6 +57,26 @@ export default function Training() {
   const [modalData, setModalData] = useState<{ total_files?: number; total_records?: number; files?: { path: string; records: number; size_kb: number; modified_at: string }[] } | null>(null);
   const [modalDataLoading, setModalDataLoading] = useState(false);
 
+  // Cancel training
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelResult, setCancelResult] = useState<{ cancelled?: boolean; reason?: string; error?: string } | null>(null);
+
+  // Archive management
+  const [archiveFiles, setArchiveFiles] = useState<{ name: string; archived_at: string; reason: string; size_kb: number }[]>([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveAction, setArchiveAction] = useState<string | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+  // Adapter lifecycle controls
+  const [adapterAction, setAdapterAction] = useState<string | null>(null);
+  const [freshStartConfirm, setFreshStartConfirm] = useState("");
+  const [showFreshStart, setShowFreshStart] = useState(false);
+  const [clearTrainingData, setClearTrainingData] = useState(false);
+
+  // Adapter archives (deprecated backups)
+  const [adapterArchives, setAdapterArchives] = useState<{ name: string; kernels: string[]; kernel_count: number }[]>([]);
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -257,6 +277,218 @@ export default function Training() {
   // Fetch Modal data stats on mount
   useEffect(() => { fetchModalData(); }, [fetchModalData]);
 
+  // Fetch archive list
+  const fetchArchive = useCallback(async () => {
+    setArchiveLoading(true);
+    try {
+      const resp = await fetch(API.trainingArchive);
+      if (resp.ok) {
+        const data = await resp.json();
+        setArchiveFiles(data.files ?? []);
+      }
+    } catch { /* best-effort */ } finally {
+      setArchiveLoading(false);
+    }
+  }, []);
+  useEffect(() => { fetchArchive(); }, [fetchArchive]);
+
+  // Cancel training handler
+  const handleCancel = useCallback(async () => {
+    if (!confirm("Stop training? Completed kernel adapters will be saved.")) return;
+    setCancelling(true);
+    setCancelResult(null);
+    try {
+      const resp = await fetch(API.trainingCancel, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const data = await resp.json();
+      setCancelResult(data);
+    } catch (err) {
+      setCancelResult({ error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setCancelling(false);
+    }
+  }, []);
+
+  // Archive a file
+  const handleArchiveFile = useCallback(async (filename: string) => {
+    const reason = prompt("Reason for archiving (optional):", "") ?? "";
+    setArchiveAction(filename);
+    try {
+      const resp = await fetch(API.trainingArchive, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files: [filename], reason }),
+      });
+      if (resp.ok) { refetch(); fetchArchive(); }
+    } catch { /* best-effort */ } finally {
+      setArchiveAction(null);
+    }
+  }, [refetch, fetchArchive]);
+
+  // Restore a file from archive
+  const handleRestore = useCallback(async (filename: string) => {
+    setArchiveAction(filename);
+    try {
+      const resp = await fetch(API.trainingRestore, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files: [filename] }),
+      });
+      if (resp.ok) { refetch(); fetchArchive(); }
+    } catch { /* best-effort */ } finally {
+      setArchiveAction(null);
+    }
+  }, [refetch, fetchArchive]);
+
+  // Permanently delete an archived file
+  const handleDeleteArchived = useCallback(async (filename: string) => {
+    setArchiveAction(filename);
+    try {
+      const resp = await fetch(API.trainingArchive, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files: [filename], confirm: true }),
+      });
+      if (resp.ok) { fetchArchive(); }
+    } catch { /* best-effort */ } finally {
+      setArchiveAction(null);
+      setDeleteTarget(null);
+      setDeleteConfirmText("");
+    }
+  }, [fetchArchive]);
+
+  // Adapter lifecycle handlers
+  const handleForceRetrain = useCallback(async (kernel: string) => {
+    if (!confirm(`Force retrain ${kernel}? This bypasses maturity and data hash gates.`)) return;
+    setAdapterAction(kernel);
+    try {
+      await fetch(API.trainingTrigger, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ specialization: kernel, force: true }),
+      });
+    } catch { /* best-effort */ } finally {
+      setAdapterAction(null);
+    }
+  }, []);
+
+  const handleArchiveAdapter = useCallback(async (kernel: string) => {
+    if (!confirm(`Archive ${kernel} adapter? It will be moved to version history.`)) return;
+    setAdapterAction(kernel);
+    try {
+      await fetch(API.trainingArchiveAdapters, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kernel }),
+      });
+    } catch { /* best-effort */ } finally {
+      setAdapterAction(null);
+    }
+  }, []);
+
+  const handleRollback = useCallback(async (kernel: string, version: string) => {
+    if (!confirm(`Rollback ${kernel} to ${version}?`)) return;
+    setAdapterAction(kernel);
+    try {
+      await fetch(API.trainingRollback, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kernel, version }),
+      });
+    } catch { /* best-effort */ } finally {
+      setAdapterAction(null);
+    }
+  }, []);
+
+  const handleFreshStart = useCallback(async (clearData: boolean) => {
+    setAdapterAction("fresh-start");
+    try {
+      await fetch(API.trainingFreshStart, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear_training_data: clearData, reason: "user-initiated fresh start (both)" }),
+      });
+    } catch { /* best-effort */ } finally {
+      setAdapterAction(null);
+      setShowFreshStart(false);
+      setFreshStartConfirm("");
+    }
+  }, []);
+
+  const handleFreshStartLlm = useCallback(async () => {
+    if (!confirm("Fresh Start LLM: Archive all adapters and revert to base Qwen3.5-35B-A3B. Kernels keep their sovereignty.")) return;
+    setAdapterAction("fresh-start-llm");
+    try {
+      await fetch(API.trainingFreshStartLlm, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "LLM fresh start" }),
+      });
+    } catch { /* best-effort */ } finally {
+      setAdapterAction(null);
+    }
+  }, []);
+
+  const handleFreshStartKernels = useCallback(async () => {
+    if (!confirm("Fresh Start Kernels: Clear training queues and reset sovereignty to zero. Adapters stay.")) return;
+    setAdapterAction("fresh-start-kernels");
+    try {
+      await fetch(API.trainingFreshStartKernels, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+    } catch { /* best-effort */ } finally {
+      setAdapterAction(null);
+    }
+  }, []);
+
+  const handleStopKernels = useCallback(async () => {
+    try {
+      await fetch(API.governorKillSwitch, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+      });
+    } catch { /* best-effort */ }
+  }, []);
+
+  const handleResumeKernels = useCallback(async () => {
+    try {
+      await fetch(API.governorKillSwitch, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: false }),
+      });
+    } catch { /* best-effort */ }
+  }, []);
+
+  // Fetch adapter archives
+  const fetchAdapterArchives = useCallback(async () => {
+    try {
+      const resp = await fetch(API.trainingListArchives);
+      if (resp.ok) {
+        const data = await resp.json();
+        setAdapterArchives(data.archives ?? []);
+      }
+    } catch { /* best-effort */ }
+  }, []);
+  useEffect(() => { fetchAdapterArchives(); }, [fetchAdapterArchives]);
+
+  const handleRestoreArchive = useCallback(async (archiveName: string) => {
+    if (!confirm(`Restore all adapters from ${archiveName}? Current active adapters will be versioned first.`)) return;
+    setAdapterAction("restore");
+    try {
+      await fetch(API.trainingRestoreArchive, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archive: archiveName }),
+      });
+      fetchAdapterArchives();
+    } catch { /* best-effort */ } finally {
+      setAdapterAction(null);
+    }
+  }, [fetchAdapterArchives]);
+
   const completedCount = jobs.filter((j) => j.status === "done").length;
   const errorCount = jobs.filter((j) => j.status === "error").length;
   const activeCount = jobs.filter(
@@ -347,15 +579,33 @@ export default function Training() {
                     {Object.entries(f.e8_tags).map(([k, v]) => `${k}:${v}`).join(" ")}
                   </div>
                 </div>
-                <div
-                  style={{
-                    fontSize: "10px",
-                    color: "var(--text-secondary)",
-                    fontFamily: "var(--mono)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {new Date(f.uploaded_at).toLocaleDateString()}
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      color: "var(--text-secondary)",
+                      fontFamily: "var(--mono)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {new Date(f.uploaded_at).toLocaleDateString()}
+                  </span>
+                  <button
+                    onClick={() => handleArchiveFile(`curriculum/${f.filename}`)}
+                    disabled={archiveAction === f.filename}
+                    title="Archive this file"
+                    style={{
+                      background: "none",
+                      border: "1px solid var(--border)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "2px 6px",
+                      color: "var(--text-secondary)",
+                      fontSize: "10px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Archive
+                  </button>
                 </div>
               </div>
             ))}
@@ -451,19 +701,25 @@ export default function Training() {
                 Health endpoint: {modalStatus.health_error}
               </div>
             )}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "8px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "8px" }}>
               {KERNEL_SPECIALIZATIONS.map((spec) => {
                 const adapter: ModalAdapterInfo | undefined =
                   modalStatus?.adapters?.adapters?.[spec] ?? undefined;
                 const trained = adapter?.exists ?? false;
+                const state = adapter?.state ?? (trained ? "trained" : "untrained");
                 const meta = adapter?.training_meta;
+                const historyCount = adapter?.history_count ?? 0;
+                const historyVersions = adapter?.history_versions ?? [];
+                const stateColor = state === "trained" ? "var(--alive)" : state === "training" ? "var(--kappa)" : "var(--surface-3)";
+                const stateLabel = state === "trained" ? "TRAINED" : state === "training" ? "TRAINING" : "UNTRAINED";
+                const isActioning = adapterAction === spec;
                 return (
                   <div
                     key={spec}
                     className="dash-card"
                     style={{
                       padding: "10px 14px",
-                      borderLeft: `3px solid ${trained ? "var(--alive)" : "var(--border)"}`,
+                      borderLeft: `3px solid ${stateColor}`,
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
@@ -476,11 +732,11 @@ export default function Training() {
                           fontWeight: 600,
                           padding: "2px 6px",
                           borderRadius: "4px",
-                          background: trained ? "var(--alive)" : "var(--surface-3)",
-                          color: trained ? "white" : "var(--text-secondary)",
+                          background: stateColor,
+                          color: state === "untrained" ? "var(--text-secondary)" : "white",
                         }}
                       >
-                        {trained ? "TRAINED" : "UNTRAINED"}
+                        {stateLabel}
                       </span>
                     </div>
                     {meta && (
@@ -491,6 +747,39 @@ export default function Training() {
                         {(meta.date ?? meta.trained_at) && <div>{meta.date ?? meta.trained_at}</div>}
                       </div>
                     )}
+                    {historyCount > 0 && (
+                      <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginTop: "4px" }}>
+                        {historyCount} version{historyCount !== 1 ? "s" : ""} in history
+                      </div>
+                    )}
+                    {/* Per-kernel controls */}
+                    <div style={{ display: "flex", gap: "4px", marginTop: "6px", flexWrap: "wrap" }}>
+                      <button
+                        onClick={() => handleForceRetrain(spec)}
+                        disabled={isActioning}
+                        style={{ background: "var(--kappa)", border: "none", borderRadius: "var(--radius-sm)", padding: "3px 8px", color: "white", fontSize: "10px", cursor: "pointer" }}
+                      >
+                        {trained ? "Force Retrain" : "Train"}
+                      </button>
+                      {trained && (
+                        <button
+                          onClick={() => handleArchiveAdapter(spec)}
+                          disabled={isActioning}
+                          style={{ background: "none", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "3px 8px", color: "var(--text-secondary)", fontSize: "10px", cursor: "pointer" }}
+                        >
+                          Archive
+                        </button>
+                      )}
+                      {historyVersions.length > 0 && (
+                        <button
+                          onClick={() => handleRollback(spec, historyVersions[historyVersions.length - 1])}
+                          disabled={isActioning}
+                          style={{ background: "none", border: "1px solid var(--gamma)", borderRadius: "var(--radius-sm)", padding: "3px 8px", color: "var(--gamma)", fontSize: "10px", cursor: "pointer" }}
+                        >
+                          Rollback
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -796,14 +1085,140 @@ export default function Training() {
       </div>
 
       {/* Kernel Training — QLoRA on Modal GPU */}
+      {/* ═══ CONTROL PANEL — Always visible ═══ */}
+      <div className="dash-section">
+        <div className="dash-section-title">Controls</div>
+        <div className="dash-card" style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
+          {/* Stop Fine-Tuning (QLoRA on Modal) */}
+          <button
+            onClick={handleCancel}
+            disabled={cancelling || !(modalStatus?.health?.training_active || trainingResult?.status === "triggered")}
+            style={{
+              background: "var(--error)", border: "none", borderRadius: "var(--radius-sm)",
+              padding: "10px 16px", color: "white", fontWeight: 600, fontSize: "13px",
+              cursor: (modalStatus?.health?.training_active || trainingResult?.status === "triggered") ? "pointer" : "not-allowed",
+              opacity: (modalStatus?.health?.training_active || trainingResult?.status === "triggered") ? 1 : 0.4,
+            }}
+          >
+            {cancelling ? "Stopping..." : "Stop Fine-Tuning"}
+          </button>
+          {/* Stop Kernels (kill switch) */}
+          <button
+            onClick={handleStopKernels}
+            style={{
+              background: "var(--error)", border: "none", borderRadius: "var(--radius-sm)",
+              padding: "10px 16px", color: "white", fontWeight: 600, fontSize: "13px", cursor: "pointer",
+            }}
+          >
+            Stop Kernels
+          </button>
+          {/* Resume Kernels */}
+          <button
+            onClick={handleResumeKernels}
+            style={{
+              background: "var(--alive)", border: "none", borderRadius: "var(--radius-sm)",
+              padding: "10px 16px", color: "white", fontWeight: 600, fontSize: "13px", cursor: "pointer",
+            }}
+          >
+            Resume Kernels
+          </button>
+          {/* Fresh Start LLM */}
+          <button
+            onClick={handleFreshStartLlm}
+            disabled={adapterAction === "fresh-start-llm"}
+            style={{
+              background: "none", border: "1px solid var(--error)", borderRadius: "var(--radius-sm)",
+              padding: "10px 16px", color: "var(--error)", fontWeight: 600, fontSize: "13px", cursor: "pointer",
+            }}
+          >
+            Fresh Start LLM
+          </button>
+          {/* Fresh Start Kernels */}
+          <button
+            onClick={handleFreshStartKernels}
+            disabled={adapterAction === "fresh-start-kernels"}
+            style={{
+              background: "none", border: "1px solid var(--kappa)", borderRadius: "var(--radius-sm)",
+              padding: "10px 16px", color: "var(--kappa)", fontWeight: 600, fontSize: "13px", cursor: "pointer",
+            }}
+          >
+            Fresh Start Kernels
+          </button>
+          {/* Fresh Start Both */}
+          {!showFreshStart && (
+            <button
+              onClick={() => setShowFreshStart(true)}
+              style={{
+                background: "none", border: "1px solid var(--error)", borderRadius: "var(--radius-sm)",
+                padding: "10px 16px", color: "var(--error)", fontWeight: 500, fontSize: "12px", cursor: "pointer",
+              }}
+            >
+              Fresh Start Both
+            </button>
+          )}
+        </div>
+        {cancelResult && (
+          <div style={{ marginTop: "6px", fontSize: "12px", color: cancelResult.cancelled ? "var(--alive)" : "var(--error)" }}>
+            {cancelResult.cancelled ? cancelResult.reason : cancelResult.error ?? "Cancel failed"}
+          </div>
+        )}
+      </div>
+
       <div className="dash-section">
         <div className="dash-section-title">Kernel Training (QLoRA on Modal GPU)</div>
         <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
           Trains per-kernel QLoRA adapters on Qwen3.5-35B-A3B via Modal serverless GPU.
           Each kernel gets its own adapter shaped by E8 training data.
         </div>
+        {/* Fresh Start Dialog */}
+        {showFreshStart && (
+          <div className="dash-card" style={{ marginBottom: "8px", border: "1px solid var(--error)", padding: "14px" }}>
+            <div style={{ fontWeight: 600, fontSize: "13px", marginBottom: "8px", color: "var(--error)" }}>Fresh Start</div>
+            <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "10px" }}>
+              Archives all trained adapters to version history and resets to clean base model.
+              The LLM reverts to untuned Qwen3.5-35B-A3B until new adapters are trained.
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", marginBottom: "10px", cursor: "pointer" }}>
+              <input type="checkbox" checked={clearTrainingData} onChange={(e) => setClearTrainingData(e.target.checked)} />
+              Also clear Modal training data
+            </label>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <input
+                type="text"
+                placeholder='Type "FRESH START"'
+                value={freshStartConfirm}
+                onChange={(e) => setFreshStartConfirm(e.target.value)}
+                style={{ padding: "6px 10px", fontSize: "12px", background: "var(--surface-3)", border: "1px solid var(--error)", borderRadius: "var(--radius-sm)", color: "var(--text)", width: "160px" }}
+              />
+              <button
+                onClick={() => handleFreshStart(clearTrainingData)}
+                disabled={freshStartConfirm !== "FRESH START" || adapterAction === "fresh-start"}
+                style={{
+                  background: freshStartConfirm === "FRESH START" ? "var(--error)" : "var(--surface-3)",
+                  border: "none", borderRadius: "var(--radius-sm)", padding: "6px 14px",
+                  color: "white", fontSize: "12px", fontWeight: 600,
+                  cursor: freshStartConfirm === "FRESH START" ? "pointer" : "not-allowed",
+                  opacity: freshStartConfirm === "FRESH START" ? 1 : 0.4,
+                }}
+              >
+                Confirm Fresh Start
+              </button>
+              <button onClick={() => { setShowFreshStart(false); setFreshStartConfirm(""); }} style={{ background: "none", border: "none", color: "var(--text-secondary)", fontSize: "12px", cursor: "pointer" }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         <div className="dash-card">
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            {!showFreshStart && (
+              <button
+                onClick={() => setShowFreshStart(true)}
+                style={{ background: "none", border: "1px solid var(--error)", borderRadius: "var(--radius-sm)", padding: "10px 16px", color: "var(--error)", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
+              >
+                Fresh Start
+              </button>
+            )}
             <select
               value={trainTarget}
               onChange={(e) => setTrainTarget(e.target.value)}
@@ -951,6 +1366,160 @@ export default function Training() {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Adapter Archives — restore previous adapter sets */}
+      <div className="dash-section">
+        <div className="dash-section-title">Adapter Archives</div>
+        <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
+          Previous adapter sets. Restore to bring back trained adapters.
+        </div>
+        {adapterArchives.length === 0 ? (
+          <div className="dash-card" style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
+            No adapter archives found
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            {adapterArchives.map((arch) => (
+              <div
+                key={arch.name}
+                className="dash-card"
+                style={{ padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+              >
+                <div>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: "12px", fontWeight: 600 }}>{arch.name}</div>
+                  <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }}>
+                    {arch.kernel_count} kernels: {arch.kernels.join(", ")}
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleRestoreArchive(arch.name)}
+                  disabled={adapterAction === "restore"}
+                  style={{
+                    background: "var(--alive)", border: "none", borderRadius: "var(--radius-sm)",
+                    padding: "6px 14px", color: "white", fontWeight: 600, fontSize: "12px", cursor: "pointer",
+                  }}
+                >
+                  Restore
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Training Archive (P15: fail-closed safety) */}
+      <div className="dash-section">
+        <div className="dash-section-title">Training Archive</div>
+        <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
+          Quarantined training data. Archived files are excluded from future training runs.
+          Restore to re-include, or delete permanently.
+        </div>
+        {archiveLoading ? (
+          <div style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Loading archive...</div>
+        ) : archiveFiles.length === 0 ? (
+          <div className="dash-card" style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
+            No archived files
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            {archiveFiles.map((f) => (
+              <div
+                key={f.name}
+                className="dash-card"
+                style={{ padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: "12px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {f.name}
+                  </div>
+                  <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }}>
+                    {f.size_kb}KB · {f.reason || "no reason"} · {new Date(f.archived_at).toLocaleDateString()}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+                  <button
+                    onClick={() => handleRestore(f.name)}
+                    disabled={archiveAction === f.name}
+                    style={{
+                      background: "var(--surface-3)",
+                      border: "1px solid var(--border)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "4px 10px",
+                      color: "var(--text)",
+                      fontSize: "11px",
+                      cursor: archiveAction === f.name ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Restore
+                  </button>
+                  {deleteTarget === f.name ? (
+                    <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                      <input
+                        type="text"
+                        placeholder='Type "DELETE"'
+                        value={deleteConfirmText}
+                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                        style={{
+                          width: "90px",
+                          padding: "3px 6px",
+                          fontSize: "11px",
+                          background: "var(--surface-3)",
+                          border: "1px solid var(--error)",
+                          borderRadius: "var(--radius-sm)",
+                          color: "var(--text)",
+                        }}
+                      />
+                      <button
+                        onClick={() => handleDeleteArchived(f.name)}
+                        disabled={deleteConfirmText !== "DELETE" || archiveAction === f.name}
+                        style={{
+                          background: deleteConfirmText === "DELETE" ? "var(--error)" : "var(--surface-3)",
+                          border: "none",
+                          borderRadius: "var(--radius-sm)",
+                          padding: "4px 8px",
+                          color: "white",
+                          fontSize: "11px",
+                          cursor: deleteConfirmText === "DELETE" ? "pointer" : "not-allowed",
+                          opacity: deleteConfirmText === "DELETE" ? 1 : 0.4,
+                        }}
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        onClick={() => { setDeleteTarget(null); setDeleteConfirmText(""); }}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "var(--text-secondary)",
+                          fontSize: "11px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setDeleteTarget(f.name)}
+                      style={{
+                        background: "none",
+                        border: "1px solid var(--error)",
+                        borderRadius: "var(--radius-sm)",
+                        padding: "4px 10px",
+                        color: "var(--error)",
+                        fontSize: "11px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

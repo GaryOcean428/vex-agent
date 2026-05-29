@@ -21,6 +21,7 @@ to extract text from message items.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -222,6 +223,11 @@ class LLMClient:
 
         # Per-response attribution — which backend actually served the last call
         self._last_backend: str = "none"
+
+        # Concurrency limiter for CPU-bound Ollama backend.
+        # When PEFT falls back to Ollama, parallel kernel calls would
+        # overwhelm the single-instance CPU. Serialize them.
+        self._ollama_semaphore = asyncio.Semaphore(1)
 
         # Inference latency/throughput tracking (rolling window of last 50 calls)
         self._latency_history: deque[float] = deque(maxlen=50)
@@ -538,6 +544,19 @@ class LLMClient:
     # --- Railway Ollama ----------------------------------------
 
     async def _ollama_complete(
+        self,
+        system_prompt: str,
+        user_message: str,
+        opts: LLMOptions,
+        messages: list[dict[str, str]] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> str:
+        async with self._ollama_semaphore:
+            return await self._ollama_complete_inner(
+                system_prompt, user_message, opts, messages, tools
+            )
+
+    async def _ollama_complete_inner(
         self,
         system_prompt: str,
         user_message: str,

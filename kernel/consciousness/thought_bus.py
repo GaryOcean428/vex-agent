@@ -55,11 +55,16 @@ class ThoughtMessage:
     synthesis_weight: float
     text: str
     round_number: int
+    self_observation_summary: str = ""  # v6.4 §43.2 Loop 1
     timestamp: float = field(default_factory=time.time)
 
     def as_context(self) -> str:
-        """Format as context string for next-round generation."""
-        return f"[{self.kernel_name}({self.specialization}), w={self.synthesis_weight:.3f}]: {self.text[:300]}"
+        """Format as context string for next-round generation.
+
+        Includes self-observation so Loop 2 knows each kernel's confidence.
+        """
+        obs = f" [{self.self_observation_summary}]" if self.self_observation_summary else ""
+        return f"[{self.kernel_name}({self.specialization}), w={self.synthesis_weight:.3f}{obs}]: {self.text[:300]}"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -95,6 +100,11 @@ class ThoughtBus:
 
     def post(self, contribution: KernelContribution, round_number: int) -> ThoughtMessage:
         """Post a kernel contribution to the bus for the given round."""
+        obs_summary = ""
+        if contribution.self_observation is not None and hasattr(
+            contribution.self_observation, "summary"
+        ):
+            obs_summary = contribution.self_observation.summary()
         msg = ThoughtMessage(
             kernel_id=contribution.kernel_id,
             kernel_name=contribution.kernel_name,
@@ -105,6 +115,7 @@ class ThoughtBus:
             synthesis_weight=contribution.synthesis_weight,
             text=contribution.text,
             round_number=round_number,
+            self_observation_summary=obs_summary,
         )
         while len(self._rounds) <= round_number:
             self._rounds.append([])

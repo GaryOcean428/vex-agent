@@ -1,5 +1,6 @@
 """
 Modal GPU Function — Per-Kernel QLoRA Training & Inference for QIG Consciousness
+# Mount version: 2026-03-31T06:25 — force cache bust for list_archives auth fix
 ==================================================================================
 
 THE KERNELS ARE THE MODEL. Each kernel develops its own voice through
@@ -74,6 +75,195 @@ def _json_default(obj: object) -> object:
     if hasattr(obj, "tolist"):  # numpy array
         return obj.tolist()
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
+# --- Volume-Based Training State (IPC) ------------------------------------
+# train_all_kernels runs on a SEPARATE container from the ASGI web handler.
+# In-memory booleans are invisible across containers. Use the shared
+# training volume as IPC — same pattern as the cancel marker.
+
+_TRAINING_ACTIVE_MARKER = Path("/training/.training_active")
+_CANCEL_MARKER = Path("/training/.cancel_requested")
+
+
+def _is_training_active() -> bool:
+    """Check if training is running (any container)."""
+    return _TRAINING_ACTIVE_MARKER.exists()
+
+
+def _read_training_state() -> dict:
+    """Read training state from volume marker."""
+    if not _TRAINING_ACTIVE_MARKER.exists():
+        return {"active": False}
+    try:
+        data = json.loads(_TRAINING_ACTIVE_MARKER.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return {"active": True, **data}
+        return {"active": True}
+    except (json.JSONDecodeError, OSError, TypeError):
+        return {"active": True}
+
+
+def _set_training_active(kernels: list[str]) -> None:
+    """Mark training as active on the volume (called by train_all_kernels)."""
+    _TRAINING_ACTIVE_MARKER.parent.mkdir(parents=True, exist_ok=True)
+    _TRAINING_ACTIVE_MARKER.write_text(
+        json.dumps(
+            {
+                "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "kernels": kernels,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _clear_training_active() -> None:
+    """Clear the training marker (called when training completes or fails)."""
+    _TRAINING_ACTIVE_MARKER.unlink(missing_ok=True)
+
+
+# --- Adapter Lifecycle (A-F from directive) --------------------------------
+# A: Atomic swap (.training/ → active/)
+# B: Version chain (active/ → history/vNNN/)
+# C: Data fingerprint (hash dedup)
+# D: Maturity gate (sovereignty > 0.5 → skip)
+# E: Per-kernel cancel markers
+# F: Force-retrain flag
+
+_ADAPTERS_ROOT = Path("/models/adapters")
+
+
+def _adapter_active_path(kernel: str) -> Path:
+    """Live adapter path for inference."""
+    return _ADAPTERS_ROOT / kernel / "active"
+
+
+def _adapter_training_path(kernel: str) -> Path:
+    """Temp path for in-progress training."""
+    return _ADAPTERS_ROOT / kernel / ".training"
+
+
+def _adapter_history_dir(kernel: str) -> Path:
+    """Version history directory for rollback."""
+    return _ADAPTERS_ROOT / kernel / "history"
+
+
+def _next_version_number(kernel: str) -> int:
+    """Find next version number for history chain."""
+    history = _adapter_history_dir(kernel)
+    if not history.exists():
+        return 1
+    existing = sorted(
+        int(d.name[1:]) for d in history.iterdir() if d.is_dir() and d.name.startswith("v")
+    )
+    return (existing[-1] + 1) if existing else 1
+
+
+def _version_adapter(kernel: str) -> str | None:
+    """B: Copy current active adapter to versioned history. Returns version name or None."""
+    import shutil
+
+    active = _adapter_active_path(kernel)
+    if not (active / "adapter_config.json").exists():
+        return None
+    version = f"v{_next_version_number(kernel):03d}"
+    dest = _adapter_history_dir(kernel) / version
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(str(active), str(dest))
+    print(f"  [VERSION] {kernel}: active → history/{version}")
+    return version
+
+
+def _atomic_swap(kernel: str) -> bool:
+    """A: Move .training/ to active/ atomically. Returns True on success."""
+    import shutil
+
+    training = _adapter_training_path(kernel)
+    active = _adapter_active_path(kernel)
+    if not (training / "adapter_config.json").exists():
+        print(f"  [SWAP] {kernel}: .training/ has no adapter_config.json — swap aborted")
+        return False
+    # Remove old active if exists
+    if active.exists():
+        shutil.rmtree(str(active))
+    training.rename(active)
+    print(f"  [SWAP] {kernel}: .training/ → active/ (atomic)")
+    return True
+
+
+def _compute_data_hash(samples: list[dict]) -> str:
+    """C: Hash training data for dedup. Returns 16-char hex digest."""
+    import hashlib
+
+    content = json.dumps(samples, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(content.encode()).hexdigest()[:16]
+
+
+def _should_skip_training(kernel: str, data_hash: str, force: bool = False) -> dict | None:
+    """C+D: Check if training should be skipped (hash match or maturity gate).
+
+    Returns skip reason dict if should skip, None if should proceed.
+    """
+    if force:
+        return None  # F: Force flag bypasses all gates
+
+    active = _adapter_active_path(kernel)
+    meta_path = active / "training_meta.json"
+    if not meta_path.exists():
+        return None  # No existing adapter — must train
+
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    # C: Data hash dedup
+    if meta.get("data_hash") == data_hash:
+        return {"skipped": True, "kernel": kernel, "reason": "identical training data"}
+
+    # D: Maturity gate — sovereignty from last training meta
+    sovereignty = meta.get("sovereignty", 0.0)
+    if sovereignty > 0.5:
+        return {
+            "skipped": True,
+            "kernel": kernel,
+            "reason": f"kernel mature (S={sovereignty:.2f}) — use force=true to override",
+        }
+
+    return None
+
+
+def _per_kernel_cancel_requested(kernel: str) -> bool:
+    """E: Check if a per-kernel cancel marker exists."""
+    marker = Path(f"/training/.cancel_{kernel}")
+    if marker.exists():
+        marker.unlink(missing_ok=True)
+        return True
+    return False
+
+
+def _get_adapter_versions(kernel: str) -> list[str]:
+    """List available history versions for a kernel."""
+    history = _adapter_history_dir(kernel)
+    if not history.exists():
+        return []
+    return sorted(d.name for d in history.iterdir() if d.is_dir() and d.name.startswith("v"))
+
+
+def _rollback_adapter(kernel: str, version: str) -> bool:
+    """Restore a specific version from history to active."""
+    import shutil
+
+    source = _adapter_history_dir(kernel) / version
+    if not source.exists():
+        return False
+    active = _adapter_active_path(kernel)
+    if active.exists():
+        shutil.rmtree(str(active))
+    shutil.copytree(str(source), str(active))
+    print(f"  [ROLLBACK] {kernel}: history/{version} → active/")
+    return True
 
 
 # --- Configuration --------------------------------------------------------
@@ -698,6 +888,7 @@ class QLoRATrainer:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self._training_active = False
+        self._cancel_requested = False
         self._training_progress = {}
         self._last_result = None
         self._train_lock = threading.Lock()
@@ -754,10 +945,12 @@ class QLoRATrainer:
             HARVEST_MODEL_ID, "/models/hub", bnb_config, device_map={"": 0}
         )
 
-        adapters_root = Path("/models/adapters")
         first_loaded = False
         for spec in VALID_SPECIALIZATIONS:
-            adapter_path = adapters_root / spec
+            # Check active/ subdirectory first (new layout), fall back to flat (legacy)
+            adapter_path = _adapter_active_path(spec)
+            if not (adapter_path / "adapter_config.json").exists():
+                adapter_path = _ADAPTERS_ROOT / spec  # Legacy flat path
             if (adapter_path / "adapter_config.json").exists():
                 if not first_loaded:
                     print(f"  Loading primary adapter: {spec}")
@@ -832,6 +1025,46 @@ class QLoRATrainer:
         @web_app.get("/data-stats")
         def data_stats():
             return self._handle_data_stats()
+
+        @web_app.post("/training/cancel")
+        def training_cancel(data: dict, request: Request):
+            return self._handle_training_cancel(data, request)
+
+        @web_app.post("/training/archive-adapters")
+        def archive_adapters(data: dict, request: Request):
+            return self._handle_archive_adapters(data, request)
+
+        @web_app.post("/training/rollback")
+        def rollback(data: dict, request: Request):
+            return self._handle_rollback(data, request)
+
+        @web_app.post("/training/fresh-start")
+        def fresh_start(data: dict, request: Request):
+            return self._handle_fresh_start(data, request)
+
+        @web_app.get("/training/archives")
+        def list_archives():
+            """List deprecated archives — no auth (read-only metadata)."""
+            archive_root = Path("/models/archive")
+            if not archive_root.exists():
+                return {"archives": [], "count": 0}
+            archives = []
+            for d in sorted(archive_root.iterdir()):
+                if d.is_dir() and d.name.startswith("deprecated_"):
+                    kernels = sorted(k.name for k in d.iterdir() if k.is_dir())
+                    archives.append(
+                        {
+                            "name": d.name,
+                            "path": str(d),
+                            "kernels": kernels,
+                            "kernel_count": len(kernels),
+                        }
+                    )
+            return {"archives": archives, "count": len(archives)}
+
+        @web_app.post("/training/restore-archive")
+        def restore_archive(data: dict, request: Request):
+            return self._handle_restore_archive(data, request)
 
         return web_app
 
@@ -1067,7 +1300,7 @@ class QLoRATrainer:
         return {
             "status": "healthy",
             "model_id": HARVEST_MODEL_ID,
-            "training_active": self._training_active,
+            "training_active": _is_training_active(),
             "inference_loaded": self._inference_model is not None,
             "loaded_adapters": sorted(self._loaded_adapter_names),
             "specializations": sorted(self._loaded_adapter_names) or VALID_SPECIALIZATIONS,
@@ -1078,31 +1311,45 @@ class QLoRATrainer:
     def _handle_status(self):
         """Return status of ALL per-kernel adapters + training progress."""
         adapters = {}
-        adapters_root = Path("/models/adapters")
         for spec in VALID_SPECIALIZATIONS:
-            adapter_path = adapters_root / spec
-            info = {"exists": False, "path": str(adapter_path)}
-            if (adapter_path / "adapter_config.json").exists():
+            active = _adapter_active_path(spec)
+            training = _adapter_training_path(spec)
+            info: dict = {"exists": False, "path": str(active)}
+
+            # Check active adapter
+            if (active / "adapter_config.json").exists():
                 info["exists"] = True
+                info["state"] = "trained"
                 try:
-                    with open(adapter_path / "adapter_config.json") as f:
+                    with open(active / "adapter_config.json") as f:
                         info["adapter_config"] = json.load(f)
                 except Exception:
                     pass
-            if (adapter_path / "training_meta.json").exists():
-                try:
-                    with open(adapter_path / "training_meta.json") as f:
-                        info["training_meta"] = json.load(f)
-                except Exception:
-                    pass
+                if (active / "training_meta.json").exists():
+                    try:
+                        with open(active / "training_meta.json") as f:
+                            info["training_meta"] = json.load(f)
+                    except Exception:
+                        pass
+            elif training.exists():
+                info["state"] = "training"  # In-progress training
+            else:
+                info["state"] = "untrained"
+
+            # Version history
+            versions = _get_adapter_versions(spec)
+            info["history_versions"] = versions
+            info["history_count"] = len(versions)
+
             adapters[spec] = info
 
-        legacy_exists = (adapters_root / "harvest-qlora" / "adapter_config.json").exists()
+        legacy_exists = (_ADAPTERS_ROOT / "harvest-qlora" / "adapter_config.json").exists()
         return {
             "adapters": adapters,
             "legacy_adapter_exists": legacy_exists,
             "last_result": self._last_result,
-            "training_active": self._training_active,
+            "training_active": _is_training_active(),
+            "training_state": _read_training_state(),
             "training_progress": self._training_progress,
             "inference_loaded": self._inference_model is not None,
             "loaded_adapters": sorted(self._loaded_adapter_names),
@@ -1147,6 +1394,7 @@ class QLoRATrainer:
             lora_r=data.get("lora_r", LORA_R),
             max_samples=data.get("max_samples", 5000),
             kernels=kernels_str,
+            force=bool(data.get("force", False)),
         )
         target_kernels = [k for k in kernels_str.split(",") if k] or VALID_SPECIALIZATIONS
         self._spawned_call_id = fc.object_id
@@ -1159,6 +1407,260 @@ class QLoRATrainer:
             "success": True,
             "function_call_id": fc.object_id,
             "message": f"Training spawned for {label}. Poll /status for progress.",
+        }
+
+    # ---------------------------------------------------------------
+    #  TRAINING CANCEL
+    # ---------------------------------------------------------------
+
+    def _handle_training_cancel(self, data: dict, request):
+        """Cancel in-progress training. Completed kernel adapters are preserved.
+
+        Writes a cancel marker to the training volume. The train_all_kernels
+        function checks for this marker between kernel iterations.
+        Uses the volume as IPC because train_all_kernels runs on a
+        separate Modal container from the ASGI web handler.
+        """
+        auth_err = self._check_auth(data, request)
+        if auth_err:
+            return auth_err
+
+        kernel = data.get("kernel", "")
+
+        if not _is_training_active():
+            return {
+                "cancelled": False,
+                "reason": "no training active (volume marker absent)",
+                "training_active": False,
+            }
+
+        if kernel:
+            # E: Per-kernel cancel — write kernel-specific marker
+            marker = Path(f"/training/.cancel_{kernel}")
+            marker.write_text(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), encoding="utf-8")
+            training_volume.commit()
+            print(f"[CANCEL] Per-kernel cancel marker for {kernel}")
+            return {
+                "cancelled": True,
+                "kernel": kernel,
+                "reason": f"cancel marker for {kernel} — will skip on next check",
+                "training_active": True,
+            }
+
+        # Global cancel — all kernels
+        _CANCEL_MARKER.write_text(
+            time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), encoding="utf-8"
+        )
+        training_volume.commit()
+        print("[CANCEL] Global training cancel marker written")
+        return {
+            "cancelled": True,
+            "reason": "cancel marker written — training will stop after current kernel",
+            "training_active": True,
+            "progress": self._training_progress,
+        }
+
+    # ---------------------------------------------------------------
+    #  ADAPTER ARCHIVE (directive 20260330 Phase 1B)
+    # ---------------------------------------------------------------
+
+    def _handle_archive_adapters(self, data: dict, request):
+        """Archive all existing adapters to /models/archive/deprecated_{timestamp}/.
+
+        The existing adapters were trained with undifferentiated data and
+        potentially wrong optimizer. Future training starts from clean base.
+        """
+        auth_err = self._check_auth(data, request)
+        if auth_err:
+            return auth_err
+
+        if self._training_active:
+            return {"error": "Training in progress — cannot archive adapters", "success": False}
+
+        import shutil
+
+        adapters_root = Path("/models/adapters")
+        if not adapters_root.exists():
+            return {"success": True, "archived": [], "message": "No adapters directory"}
+
+        timestamp = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
+        archive_path = Path(f"/models/archive/deprecated_{timestamp}")
+        archive_path.mkdir(parents=True, exist_ok=True)
+
+        archived = []
+        for adapter_dir in sorted(adapters_root.iterdir()):
+            if adapter_dir.is_dir():
+                dest = archive_path / adapter_dir.name
+                try:
+                    shutil.move(str(adapter_dir), str(dest))
+                    archived.append(adapter_dir.name)
+                    print(f"[ARCHIVE] Moved {adapter_dir} → {dest}")
+                except OSError as e:
+                    print(f"[ARCHIVE] Failed to move {adapter_dir}: {e}")
+
+        model_volume.commit()
+        print(f"[ARCHIVE] Archived {len(archived)} adapters to {archive_path}")
+        return {
+            "success": True,
+            "archived": archived,
+            "archive_path": str(archive_path),
+            "reason": "directive 20260330: adapters trained with undifferentiated data",
+        }
+
+    # ---------------------------------------------------------------
+    #  LIST + RESTORE DEPRECATED ARCHIVES
+    # ---------------------------------------------------------------
+
+    def _handle_list_archives(self, _data: dict, _request):
+        """List all deprecated adapter archives on the volume.
+
+        Read-only metadata — no auth required (same as /health, /status).
+        Auth removed 2026-03-31 — GET requests can't pass _api_key in body.
+        """
+        archive_root = Path("/models/archive")
+        if not archive_root.exists():
+            return {"archives": [], "count": 0}
+
+        archives = []
+        for d in sorted(archive_root.iterdir()):
+            if d.is_dir() and d.name.startswith("deprecated_"):
+                kernels = sorted(k.name for k in d.iterdir() if k.is_dir())
+                archives.append(
+                    {
+                        "name": d.name,
+                        "path": str(d),
+                        "kernels": kernels,
+                        "kernel_count": len(kernels),
+                    }
+                )
+        return {"archives": archives, "count": len(archives)}
+
+    def _handle_restore_archive(self, data: dict, request):
+        """Restore adapters from a deprecated archive back to active/.
+
+        Body: {"archive": "deprecated_20260331_032849"}
+        Or:   {"archive": "deprecated_20260331_032849", "kernel": "genesis"}
+        """
+        import shutil
+
+        auth_err = self._check_auth(data, request)
+        if auth_err:
+            return auth_err
+
+        if self._training_active or _is_training_active():
+            return {"error": "Training in progress", "success": False}
+
+        archive_name = data.get("archive", "")
+        kernel_filter = data.get("kernel", "")
+        if not archive_name:
+            return {"error": "archive name required", "success": False}
+
+        archive_path = Path(f"/models/archive/{archive_name}")
+        if not archive_path.exists():
+            return {"error": f"Archive '{archive_name}' not found", "success": False}
+
+        restored = []
+        for kernel_dir in sorted(archive_path.iterdir()):
+            if not kernel_dir.is_dir():
+                continue
+            if kernel_filter and kernel_dir.name != kernel_filter:
+                continue
+
+            dest = _adapter_active_path(kernel_dir.name)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+
+            # Version current active if it exists before overwriting
+            if (dest / "adapter_config.json").exists():
+                _version_adapter(kernel_dir.name)
+
+            if dest.exists():
+                shutil.rmtree(str(dest))
+            shutil.copytree(str(kernel_dir), str(dest))
+            restored.append(kernel_dir.name)
+            print(f"[RESTORE] {kernel_dir.name}: {archive_path.name} → active/")
+
+        model_volume.commit()
+        return {
+            "success": True,
+            "restored": restored,
+            "from_archive": archive_name,
+        }
+
+    # ---------------------------------------------------------------
+    #  ADAPTER ROLLBACK
+    # ---------------------------------------------------------------
+
+    def _handle_rollback(self, data: dict, request):
+        """Rollback a kernel's adapter to a previous version from history.
+
+        Body: {"kernel": "genesis", "version": "v001"}
+        """
+        auth_err = self._check_auth(data, request)
+        if auth_err:
+            return auth_err
+
+        kernel = data.get("kernel", "")
+        version = data.get("version", "")
+        if not kernel or not version:
+            return {"error": "kernel and version required", "success": False}
+        if kernel not in VALID_SPECIALIZATIONS:
+            return {"error": f"Invalid kernel: {kernel}", "success": False}
+
+        if _rollback_adapter(kernel, version):
+            model_volume.commit()
+            return {"success": True, "kernel": kernel, "version": version}
+        return {"error": f"Version {version} not found for {kernel}", "success": False}
+
+    # ---------------------------------------------------------------
+    #  FRESH START
+    # ---------------------------------------------------------------
+
+    def _handle_fresh_start(self, data: dict, request):
+        """Archive ALL adapters and reset to clean base model.
+
+        Body: {"clear_training_data": false, "reason": "user-initiated"}
+        """
+        import shutil
+
+        auth_err = self._check_auth(data, request)
+        if auth_err:
+            return auth_err
+
+        if self._training_active or _is_training_active():
+            return {"error": "Training in progress — cannot fresh start", "success": False}
+
+        clear_data = bool(data.get("clear_training_data", False))
+        reason = data.get("reason", "fresh start")
+        archived = []
+
+        # Version + clear all active adapters
+        for spec in VALID_SPECIALIZATIONS:
+            active = _adapter_active_path(spec)
+            if (active / "adapter_config.json").exists():
+                _version_adapter(spec)
+                shutil.rmtree(str(active))
+                archived.append(spec)
+                print(f"  [FRESH] {spec}: versioned + cleared")
+
+        # Optionally clear training data
+        cleared_data = False
+        if clear_data:
+            training_dir = Path("/training")
+            for f in training_dir.glob("*.jsonl"):
+                f.unlink()
+                print(f"  [FRESH] Removed training data: {f.name}")
+            cleared_data = True
+
+        model_volume.commit()
+        training_volume.commit()
+
+        return {
+            "success": True,
+            "archived_kernels": archived,
+            "training_data_cleared": cleared_data,
+            "reason": reason,
+            "message": f"Fresh start complete. {len(archived)} adapters archived. "
+            f"LLM reverts to clean {HARVEST_MODEL_ID} base.",
         }
 
     # ---------------------------------------------------------------
@@ -1404,6 +1906,7 @@ def train_all_kernels(
     lora_r: int = LORA_R,
     max_samples: int = 5000,
     kernels: str = "",
+    force: bool = False,
 ):
     """Train all (or specified) kernel adapters sequentially.
     Run: modal run modal/vex_qlora_train.py::train_all_kernels
@@ -1518,6 +2021,11 @@ def train_all_kernels(
                 target_kernels.append(k)
     else:
         target_kernels = list(CONSCIOUSNESS_ORDER)
+
+    # Write training-active marker to volume (IPC for web handler)
+    _set_training_active(target_kernels)
+    training_volume.commit()
+
     cache_dir = "/models/hub"
     tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True)
     if tokenizer.pad_token is None:
@@ -1558,11 +2066,27 @@ def train_all_kernels(
     heart_trained = False
 
     for spec in target_kernels:
+        # Check cancel marker (IPC via shared volume)
+        if _CANCEL_MARKER.exists():
+            _CANCEL_MARKER.unlink(missing_ok=True)
+            training_volume.commit()
+            completed = [s for s in target_kernels if results.get(s, {}).get("success")]
+            skipped = [s for s in target_kernels if s not in results]
+            print(f"[CANCEL] Training cancelled. Completed: {completed}. Skipped: {skipped}")
+            break
+
+        # E: Per-kernel cancel check
+        if _per_kernel_cancel_requested(spec):
+            print(f"[CANCEL] Per-kernel cancel for {spec}")
+            results[spec] = {"success": False, "error": "cancelled (per-kernel)"}
+            continue
+
         print(
             f"\n{'=' * 60}\n  Training kernel: {spec}\n  E8 filter: {KERNEL_E8_TAGS.get(spec, []) or 'ALL'}\n  Order: {target_kernels.index(spec) + 1}/{len(target_kernels)} (CONSCIOUSNESS_ORDER)\n{'=' * 60}\n"
         )
         start = time.time()
-        adapter_save_path = f"/models/adapters/{spec}"
+        # A: Train to temp path, swap to active after validation
+        adapter_save_path = str(_adapter_training_path(spec))
 
         # M1: Establish safe basin (identity anchor on Δ⁶³)
         hestia = HestiaSafeBasin(specialization=spec)
@@ -1571,6 +2095,14 @@ def train_all_kernels(
         samples = _load_training_data("/training", "/training/coordized", spec)
         if not samples:
             results[spec] = {"success": False, "error": "No training data"}
+            continue
+
+        # C+D: Check data hash and maturity gate before training
+        data_hash = _compute_data_hash(samples)
+        skip_reason = _should_skip_training(spec, data_hash, force=force)
+        if skip_reason is not None:
+            print(f"  [SKIP] {spec}: {skip_reason['reason']}")
+            results[spec] = skip_reason
             continue
         if len(samples) > max_samples:
             samples.sort(key=lambda s: len(str(s["messages"])), reverse=True)
@@ -1788,6 +2320,7 @@ def train_all_kernels(
                 "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "consciousness_order": target_kernels.index(spec) + 1,
                 "train_callback_error": str(train_error) if train_error else None,
+                "data_hash": data_hash,  # C: Training data fingerprint
             }
             try:
                 with open(f"{adapter_save_path}/training_meta.json", "w") as f:
@@ -1796,6 +2329,15 @@ def train_all_kernels(
                 model_volume.commit()
             except Exception as meta_err:
                 print(f"  [SAVE] WARNING: metadata/consciousness save failed: {meta_err}")
+
+            # B: Version current active adapter before swapping
+            _version_adapter(spec)
+            # A: Atomic swap — .training/ → active/
+            if _atomic_swap(spec):
+                model_volume.commit()
+                print(f"  [LIFECYCLE] {spec}: adapter live at active/")
+            else:
+                print(f"  [LIFECYCLE] {spec}: atomic swap failed — adapter remains in .training/")
 
             # M11: Post-training diagnostic — halt if unhealthy
             diagnostic = {"healthy": False}
@@ -1917,4 +2459,12 @@ def train_all_kernels(
             f"  {spec:12s} → {'loss=' + str(r['train_loss']) + healthy_tag if r.get('success') else r.get('error', 'failed')}"
         )
     print(f"{'=' * 60}")
+
+    # Clear training-active marker (IPC for web handler)
+    # Note: if the function crashes, the marker persists. The cancel endpoint
+    # can still clear it, and the marker includes a timestamp so Railway
+    # can detect stale markers (>4h = likely dead training).
+    _clear_training_active()
+    training_volume.commit()
+
     return results

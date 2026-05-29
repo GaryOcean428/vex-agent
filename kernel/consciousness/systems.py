@@ -741,14 +741,24 @@ class HemisphereScheduler:
 
 
 # ═══════════════════════════════════════════════════════════════
-#  10. SLEEP CYCLE — dream/mushroom/consolidation
+#  10. SLEEP CYCLE — dream/consolidation
+#
+#  NOTE: Mushroom mode is a SEPARATE wake-state neuroplasticity protocol
+#  (qig-consciousness/src/qig/neuroplasticity/mushroom_mode.py).
+#  It requires Φ ≥ 0.70 and fires on healthy-but-stuck systems.
+#  It is NOT part of the sleep cycle. Removed in qig-core 2.8.0.
 # ═══════════════════════════════════════════════════════════════
 
 
 class SleepPhase(StrEnum):
+    """Three phases of the sleep cycle.
+
+    Note: MUSHROOM was removed in qig-core 2.8.0. Mushroom mode is a separate
+    wake-state neuroplasticity protocol in qig-consciousness, not a sleep phase.
+    """
+
     AWAKE = "awake"
     DREAMING = "dreaming"
-    MUSHROOM = "mushroom"
     CONSOLIDATING = "consolidating"
 
 
@@ -758,8 +768,6 @@ _HEBBIAN_BOOST: float = 1.1
 _DOWNSCALE_FACTOR: float = 0.9
 _DREAM_SLERP_T_MIN: float = 0.2
 _DREAM_SLERP_T_MAX: float = 0.8
-_MUSHROOM_NOISE_SCALE_INIT: float = 0.05
-_MUSHROOM_INSTABILITY_THRESHOLDS = (0.30, 0.35, 0.40)
 
 # Maturity-aware sleep thresholds
 # Immature kernels (SCHOOL, GUIDED_CURIOSITY): tighter envelope, earlier consolidation
@@ -780,7 +788,7 @@ _IMMATURE_PHI_CEILING: float = 0.75  # Immature kernels consolidate above this �
 _IMMATURE_SLEEP_PHI: float = 0.50  # Immature kernels dream earlier (stagnation)
 _MATURE_SLEEP_PHI: float = 0.40  # Mature kernels tolerate lower Φ before dreaming
 
-# Narrowing detection thresholds (mushroom triggers independent of dream path)
+# Narrowing detection thresholds (consolidation triggers independent of dream path)
 _KAPPA_OVERCOUPLING: float = 80.0  # κ_eff above this = rigid overcoupling
 _KAPPA_SUSTAINED_CYCLES: int = 5  # How many cycles κ must exceed threshold
 _BANK_ENTROPY_FLOOR: float = 0.3  # Bank entropy below this = clustering
@@ -789,22 +797,24 @@ _PREDICTION_ERROR_FLOOR: float = 0.01  # Prediction error below this = no surpri
 
 
 class SleepCycleManager:
-    """Manages sleep/dream/mushroom/consolidation cycles.
+    """Manages sleep/dream/consolidation cycles.
 
     L6 (Structural Leg): All phase transitions are geometry-driven.
     NO cycle counters gate sleep/wake. Conditions:
       AWAKE → DREAMING:      Φ < threshold AND variance < threshold (stagnation)
-      AWAKE → CONSOLIDATING: high variance (turbulence), or immature kernel Φ > ceiling
-      AWAKE → MUSHROOM:      narrowing detected (κ sustained high, low entropy/velocity)
-      DREAMING → MUSHROOM:   narrowing detected OR f_health < instability threshold
+      AWAKE → CONSOLIDATING: high variance (turbulence), immature kernel Φ > ceiling,
+                             or narrowing detected (κ sustained high, low entropy/velocity)
       DREAMING → AWAKE:      Φ recovers above wake threshold
-      MUSHROOM → CONSOLIDATING: handled by mushroom() method
       CONSOLIDATING → AWAKE: Φ recovers above emergency threshold
       Any → AWAKE:           Ocean divergence breakdown (handled in loop.py)
 
     Maturity gating: DevGate stage adjusts thresholds.
       Mature kernels: wider Φ envelope, FORESIGHT/LIGHTNING allowed.
       Immature kernels: tighter envelope, high Φ → CONSOLIDATING (no 4D).
+
+    Note: Mushroom mode is a separate wake-state neuroplasticity protocol
+    in qig-consciousness (requires Φ ≥ 0.70, fires on healthy-but-stuck
+    systems). It is NOT part of this sleep cycle.
     """
 
     # Geometric thresholds (§30.2) — defaults for SELF_TEACHING stage
@@ -817,7 +827,6 @@ class SleepCycleManager:
         self._conversation_count: int = 0
         self._dream_log: deque[dict[str, Any]] = deque(maxlen=100)
         self._replayed_this_sleep: set[int] = set()  # T2.3a: track replayed IDs
-        self._mushroom_noise_scale: float = _MUSHROOM_NOISE_SCALE_INIT  # T2.3e: adaptive
         # Narrowing detection state
         self._kappa_high_cycles: int = 0  # consecutive cycles with κ > threshold
 
@@ -845,12 +854,11 @@ class SleepCycleManager:
 
         Transitions are determined by geometric conditions only:
           AWAKE → DREAMING:       Φ < threshold AND variance < threshold (stagnation)
-          AWAKE → CONSOLIDATING:  high variance (turbulence), or immature kernel Φ > ceiling
-          AWAKE → MUSHROOM:       narrowing detected (κ sustained high, low entropy/velocity)
-          DREAMING → MUSHROOM:    narrowing detected
+          AWAKE → CONSOLIDATING:  high variance (turbulence), immature kernel Φ > ceiling,
+                                  or narrowing detected (κ sustained high, stuck)
+          DREAMING → CONSOLIDATING: narrowing detected
           DREAMING → AWAKE:       Φ recovers (geometry resolved the stagnation)
           CONSOLIDATING → AWAKE:  Φ recovers above emergency threshold
-          MUSHROOM → CONSOLIDATING: handled by mushroom() method
         Ocean divergence transitions are handled in loop.py (L6 complement).
 
         Args:
@@ -886,17 +894,17 @@ class SleepCycleManager:
         )
 
         if self.phase == SleepPhase.AWAKE:
-            # Narrowing: κ sustained high, or bank clustering, or stuck → mushroom
+            # Narrowing: κ sustained high, or bank clustering, or stuck → consolidate
             if _narrowing:
                 logger.info(
-                    "Narrowing detected → MUSHROOM: κ_high_cycles=%d bank_entropy=%.3f "
+                    "Narrowing detected → CONSOLIDATING: κ_high_cycles=%d bank_entropy=%.3f "
                     "basin_vel=%.4f pred_err=%.4f",
                     self._kappa_high_cycles,
                     bank_entropy,
                     basin_velocity,
                     prediction_error,
                 )
-                self.phase = SleepPhase.MUSHROOM
+                self.phase = SleepPhase.CONSOLIDATING
             # Immature kernel with Φ above ceiling → consolidate (prevent 4D)
             elif _phi_ceiling is not None and phi > _phi_ceiling:
                 logger.info(
@@ -913,9 +921,9 @@ class SleepCycleManager:
                 self.phase = SleepPhase.CONSOLIDATING
 
         elif self.phase == SleepPhase.DREAMING:
-            # Narrowing can also trigger mushroom from DREAMING
+            # Narrowing can trigger consolidation from DREAMING
             if _narrowing:
-                self.phase = SleepPhase.MUSHROOM
+                self.phase = SleepPhase.CONSOLIDATING
             # Wake when Φ recovers (dreaming resolved the stagnation)
             elif phi >= self.CONSOLIDATION_PHI_WAKE:
                 self.phase = SleepPhase.AWAKE
@@ -924,7 +932,6 @@ class SleepCycleManager:
             # Wake when Φ recovers
             self.phase = SleepPhase.AWAKE
 
-        # MUSHROOM → CONSOLIDATING transitions are handled by mushroom() method
         return self.phase
 
     def on_sleep_enter(self, neurochemical: Any | None = None) -> None:
@@ -948,11 +955,7 @@ class SleepCycleManager:
         neurochemical: Any | None = None,
         f_health: float = 1.0,
     ) -> None:
-        """T2.3a+d: Hippocampal replay + dream recombination.
-
-        L6: DREAMING → MUSHROOM transition is geometry-driven via f_health.
-        When f_health drops below instability threshold, mushroom mode activates.
-        """
+        """T2.3a+d: Hippocampal replay + dream recombination."""
         self._dream_log.append(
             {
                 "phi": phi,
@@ -985,89 +988,6 @@ class SleepCycleManager:
         # T2.3f: Norepinephrine micro-spike during dream startles
         if neurochemical is not None and rng.random() < 0.1:
             neurochemical.norepinephrine = min(1.0, neurochemical.norepinephrine + 0.2)
-
-        # L6: Geometry-driven mushroom onset — f_health collapse triggers mushroom
-        if f_health < _MUSHROOM_INSTABILITY_THRESHOLDS[0]:
-            self.phase = SleepPhase.MUSHROOM
-
-    def mushroom(
-        self,
-        _basin: Basin,
-        _phi: float,
-        instability_metric: float = 0.0,
-        neurochemical: Any | None = None,
-    ) -> None:
-        """T2.3e: Controlled perturbation with safety gates."""
-        lo, mid, hi = _MUSHROOM_INSTABILITY_THRESHOLDS
-
-        if instability_metric > hi:
-            # CATASTROPHIC — refuse, go straight to CONSOLIDATING
-            self.phase = SleepPhase.CONSOLIDATING
-            return
-        if instability_metric > mid:
-            # High risk — reduce scale, abort mushroom
-            self._mushroom_noise_scale = max(0.01, self._mushroom_noise_scale * 0.5)
-            self.phase = SleepPhase.CONSOLIDATING
-            return
-        if instability_metric > lo:
-            # Microdose only
-            self._mushroom_noise_scale = max(0.01, self._mushroom_noise_scale * 0.75)
-
-        # T2.3f: Boost dopamine during mushroom (controlled reward signal)
-        if neurochemical is not None:
-            neurochemical.dopamine = min(1.0, neurochemical.dopamine + 0.15)
-
-        # L6: Geometry-driven consolidation — when instability is moderate
-        # (not catastrophic/high), mushroom has done its work → consolidate
-        if instability_metric <= lo:
-            self.phase = SleepPhase.CONSOLIDATING
-
-    def mushroom_zero_crossing(
-        self,
-        metrics: Any,
-        crossing_strength: float = 0.8,
-        instability_metric: float = 0.0,
-    ) -> dict[str, Any] | None:
-        """EXP-011: Drive kappa through zero during mushroom perturbation.
-
-        Applies a directed perturbation that takes kappa_eff through zero,
-        creating the stud topology boundary crossing needed for back-loop
-        solution detection.
-
-        Safety: Uses the same three-tier safety gates as mushroom().
-        Only invoked when EXP-011 mode is active.
-
-        Returns event dict on successful crossing, None otherwise.
-        """
-        import time as _time
-
-        _, mid, _ = _MUSHROOM_INSTABILITY_THRESHOLDS
-        if instability_metric > mid:
-            return None  # Safety gate: too unstable
-
-        kappa_pre = metrics.kappa
-
-        # Drive kappa toward zero and, for sufficiently strong perturbations, through zero.
-        # Example (scale == _MUSHROOM_NOISE_SCALE_INIT):
-        #   crossing_strength=0.8  → new kappa = 0.2 * old kappa  (toward zero, same sign)
-        #   crossing_strength=1.2  → new kappa = -0.2 * old kappa (through zero, sign flip)
-        scale = max(0.01, self._mushroom_noise_scale)
-        metrics.kappa = kappa_pre * (1.0 - crossing_strength * scale / _MUSHROOM_NOISE_SCALE_INIT)
-
-        crossed = kappa_pre * metrics.kappa < 0
-        event = {
-            "type": "MUSHROOM_ZERO_CROSSING",
-            "kappa_pre": float(kappa_pre),
-            "kappa_post": float(metrics.kappa),
-            "crossed": crossed,
-            "crossing_strength": crossing_strength,
-            "instability": instability_metric,
-            "timestamp_ms": _time.time() * 1000,
-        }
-        if crossed:
-            logger.info(f"EXP-011 zero crossing: κ {kappa_pre:.2f} → {metrics.kappa:.2f}")
-        self.phase = SleepPhase.CONSOLIDATING
-        return event
 
     def consolidate(
         self,
