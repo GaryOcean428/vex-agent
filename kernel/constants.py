@@ -33,6 +33,7 @@ from kernel.config.frozen_facts import (  # noqa: F401
     E8_ROOTS,
     FULL_IMAGE,
     GOD_BUDGET,
+    H_T,
     INSTABILITY_PCT,
     KAPPA_3,
     KAPPA_4,
