@@ -287,7 +287,7 @@ export default function Lifecycle() {
           <div className="dash-row">
             <span className="dash-row-label">{"κ"} Coupling</span>
             <span className="dash-row-value">
-              {state.kappa.toFixed(2)} (target: {QIG.KAPPA_STAR})
+              {state.kappa.toFixed(2)} (target: {QIG.KAPPA_ATTRACTOR})
             </span>
           </div>
           <div className="dash-row">

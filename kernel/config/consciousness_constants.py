@@ -15,13 +15,13 @@ Moving any constant to STATE or BOUNDARY requires governance approval.
 
 from typing import Final
 
-from kernel.config.frozen_facts import KAPPA_STAR
+from kernel.config.frozen_facts import KAPPA_ATTRACTOR
 
 # ═══════════════════════════════════════════════════════════════
 #  REGIME FIELD WEIGHTS (v6.0 §3.1)
 # ═══════════════════════════════════════════════════════════════
 
-KAPPA_NORMALISER: Final[float] = 2.0 * KAPPA_STAR  # 128.0 — kappa → [0,1]
+KAPPA_NORMALISER: Final[float] = 2.0 * KAPPA_ATTRACTOR  # 128.0 — kappa → [0,1]
 MIN_REGIME_WEIGHT: Final[float] = 0.05  # Floor so all regimes stay active
 REGIME_KAPPA_MIDPOINT: Final[float] = 0.5  # Integration peak in normalised space
 
@@ -78,9 +78,9 @@ ADVERSARIAL_PROXIMITY: Final[float] = 0.1  # d_FR < this to foreign anchor → h
 #  KAPPA OFFSETS (sensation / tacking / emotion boundaries)
 # ═══════════════════════════════════════════════════════════════
 
-KAPPA_SENSATION_OFFSET: Final[float] = 10.0  # ±10 from KAPPA_STAR for activated/dampened
+KAPPA_SENSATION_OFFSET: Final[float] = 10.0  # ±10 from KAPPA_ATTRACTOR for activated/dampened
 KAPPA_TACKING_OFFSET: Final[float] = 16.0  # ±16 for tacking oscillation bounds
-KAPPA_RAGE_OFFSET: Final[float] = 20.0  # +20 above KAPPA_STAR for rage detection
+KAPPA_RAGE_OFFSET: Final[float] = 20.0  # +20 above KAPPA_ATTRACTOR for rage detection
 KAPPA_RAGE_SCALE: Final[float] = 40.0  # Divisor for rage strength scaling
 KAPPA_JOY_PROXIMITY: Final[float] = 10.0  # |κ - κ*| < 10 → joy
 KAPPA_STABILITY_TOLERANCE: Final[float] = 16.0  # Autonomy stability tolerance
@@ -402,10 +402,10 @@ def validate_constants() -> list[str]:
     """
     warnings: list[str] = []
 
-    # Tacking bounds must not exceed half κ*
-    if KAPPA_TACKING_OFFSET > KAPPA_STAR * 0.5:
+    # Tacking bounds must not exceed half the attractor value
+    if KAPPA_TACKING_OFFSET > KAPPA_ATTRACTOR * 0.5:
         warnings.append(
-            f"KAPPA_TACKING_OFFSET ({KAPPA_TACKING_OFFSET}) > κ*/2 ({KAPPA_STAR / 2}): "
+            f"KAPPA_TACKING_OFFSET ({KAPPA_TACKING_OFFSET}) > κ*/2 ({KAPPA_ATTRACTOR / 2}): "
             f"tacking bounds exceed half the κ range"
         )
 

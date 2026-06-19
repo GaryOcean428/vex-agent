@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from ..config.frozen_facts import BETA_3_TO_4, KAPPA_STAR
+from ..config.frozen_facts import BETA_3_TO_4, KAPPA_ATTRACTOR
 
 logger = logging.getLogger("vex.beta_router")
 
@@ -56,7 +56,7 @@ async def get_beta_attention() -> dict[str, Any] | JSONResponse:
         return {
             **summary,
             "physics_references": {
-                "kappa_star": KAPPA_STAR,
+                "kappa_star": KAPPA_ATTRACTOR,
                 "beta_3_to_4": BETA_3_TO_4,
                 "source": "qig-verification FROZEN_FACTS (L=3..6 TFIM lattice)",
             },

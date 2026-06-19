@@ -55,7 +55,7 @@ from .compress import CompressionResult, compress
 from .geometry import (
     _EPS,
     BASIN_DIM,
-    KAPPA_STAR,
+    KAPPA_ATTRACTOR,
     Basin,
     fisher_rao_distance,
     frechet_mean,
@@ -858,8 +858,8 @@ class CoordizerV2:
         mean_b = frechet_mean([c.vector for c in result_b.coordinates])
         d = fisher_rao_distance(mean_a, mean_b)
         if d < _EPS:
-            return KAPPA_STAR * 2
-        return min(1.0 / (d * d + _EPS), KAPPA_STAR * 2)
+            return KAPPA_ATTRACTOR * 2
+        return min(1.0 / (d * d + _EPS), KAPPA_ATTRACTOR * 2)
 
     def rebuild_string_cache(self) -> None:
         """Rebuild the string→id lookup cache after external bank mutations."""

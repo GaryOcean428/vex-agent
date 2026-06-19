@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
-from ..config.frozen_facts import BETA_3_TO_4, KAPPA_STAR
+from ..config.frozen_facts import BETA_3_TO_4, KAPPA_ATTRACTOR
 
 logger = logging.getLogger("vex.beta_tracker")
 
@@ -385,7 +385,7 @@ class BetaAttentionTracker:
             "verdict": verdict,
             "substrate_match": substrate_match,
             "uptime_hours": round((time.time() - self._started_at) / 3600, 2),
-            "kappa_star_reference": KAPPA_STAR,
+            "kappa_star_reference": KAPPA_ATTRACTOR,
             "acceptance_threshold": ACCEPTANCE_THRESHOLD,
         }
 

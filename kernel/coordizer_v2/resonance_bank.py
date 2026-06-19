@@ -34,7 +34,7 @@ from .compress import CompressionResult
 from .geometry import (
     _EPS,
     BASIN_DIM,
-    KAPPA_STAR,
+    KAPPA_ATTRACTOR,
     Basin,
     exp_map,
     fisher_rao_distance,
@@ -372,7 +372,7 @@ class ResonanceBank:
 
         scores = np.zeros(len(candidates))
         for i, (tid, dist) in enumerate(candidates):
-            proximity = np.exp(-dist * KAPPA_STAR / 10.0)
+            proximity = np.exp(-dist * KAPPA_ATTRACTOR / 10.0)
             candidate_basin = self.coordinates[tid]
             if velocity_norm > _EPS:
                 candidate_tangent = log_map(recent[-1], candidate_basin)

@@ -17,7 +17,7 @@ from numpy.typing import NDArray
 from ..config.frozen_facts import (
     BASIN_DIM,
     E8_RANK,  # noqa: F401 — re-exported for compress.py / coordizer.py
-    KAPPA_STAR,  # noqa: F401 — re-exported for coordizer.py
+    KAPPA_ATTRACTOR,  # noqa: F401 — re-exported for coordizer.py (was KAPPA_STAR, RETIRED)
 )
 
 # Re-export shared geometry from canonical source (kernel/geometry/fisher_rao.py).
@@ -39,7 +39,7 @@ from ..geometry.fisher_rao import (
 __all__ = [
     "BASIN_DIM",
     "E8_RANK",
-    "KAPPA_STAR",
+    "KAPPA_ATTRACTOR",
     "Basin",
     "to_simplex",
     "random_basin",

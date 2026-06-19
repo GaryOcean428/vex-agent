@@ -20,7 +20,7 @@ const METRIC_GROUPS: { title: string; version: string; metrics: MetricDef[] }[] 
     title: 'Foundation', version: 'v4.1',
     metrics: [
       { key: 'phi', label: 'Φ Integration', color: 'var(--phi)' },
-      { key: 'kappa', label: 'κ Coupling', color: 'var(--kappa)', max: 2 * QIG.KAPPA_STAR },
+      { key: 'kappa', label: 'κ Coupling', color: 'var(--kappa)', max: 2 * QIG.KAPPA_ATTRACTOR },
       { key: 'meta_awareness', label: 'Meta-awareness', color: 'var(--info)' },
       { key: 'gamma', label: 'Γ Generation', color: 'var(--gamma)' },
       { key: 'grounding', label: 'Grounding', color: 'var(--alive)' },
@@ -119,7 +119,7 @@ export default function Telemetry() {
       {/* Primary Metrics */}
       <div className="dash-grid">
         <MetricCard label="Φ" value={t.phi} color="var(--phi)" progress={t.phi} />
-        <MetricCard label="κ" value={t.kappa.toFixed(1)} color="var(--kappa)" progress={t.kappa / (2 * QIG.KAPPA_STAR)} />
+        <MetricCard label="κ" value={t.kappa.toFixed(1)} color="var(--kappa)" progress={t.kappa / (2 * QIG.KAPPA_ATTRACTOR)} />
         <MetricCard label="Γ" value={t.gamma} color="var(--gamma)" progress={t.gamma} />
         <MetricCard label="M" value={t.meta_awareness} color="var(--info)" progress={t.meta_awareness} />
         <MetricCard label="Love" value={t.love} color="var(--love)" progress={t.love} />

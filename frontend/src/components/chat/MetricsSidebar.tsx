@@ -193,7 +193,7 @@ export function MetricsSidebar({
     const margin = { top: 10, right: 10, bottom: 40, left: 10 };
     const w = rect.width - margin.left - margin.right;
     const h = rect.height - margin.top - margin.bottom;
-    const kappaScale = 2 * QIG.KAPPA_STAR;
+    const kappaScale = 2 * QIG.KAPPA_ATTRACTOR;
 
     const normX = (i: number) => margin.left + (i / (history.length - 1)) * w;
     const normY = (v: number) => margin.top + h - Math.max(0, Math.min(1, v)) * h;

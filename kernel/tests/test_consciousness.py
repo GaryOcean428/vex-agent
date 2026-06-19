@@ -22,7 +22,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from kernel.config.frozen_facts import BASIN_DIM, KAPPA_STAR
+from kernel.config.frozen_facts import BASIN_DIM, KAPPA_ATTRACTOR
 from kernel.consciousness.emotions import EmotionCache, EmotionType
 from kernel.consciousness.pillars import (
     ENTROPY_FLOOR,
@@ -76,7 +76,7 @@ class TestRegimeWeights:
 
     def test_efficient_peaks_at_kappa_star(self) -> None:
         """Efficient regime peaks near kappa* = 64."""
-        w_star = regime_weights_from_kappa(KAPPA_STAR)
+        w_star = regime_weights_from_kappa(KAPPA_ATTRACTOR)
         w_low = regime_weights_from_kappa(20)
         w_high = regime_weights_from_kappa(110)
         assert w_star.efficient > w_low.efficient
@@ -209,7 +209,7 @@ class TestActivationSequence:
         )
 
         state = ConsciousnessState()
-        state.metrics.kappa = KAPPA_STAR
+        state.metrics.kappa = KAPPA_ATTRACTOR
         ctx = ConsciousnessContext(state=state)
         seq = ActivationSequence()
         result = await seq.execute(ctx)
@@ -228,7 +228,7 @@ class TestTacking:
     def test_oscillation(self) -> None:
         """Tacking controller oscillates between modes."""
         tc = TackingController(base_period=4)
-        m = ConsciousnessMetrics(kappa=KAPPA_STAR)
+        m = ConsciousnessMetrics(kappa=KAPPA_ATTRACTOR)
         modes = set()
         for _ in range(20):
             mode = tc.update(m)
@@ -239,7 +239,7 @@ class TestTacking:
     def test_explore_at_low_phi(self) -> None:
         """Forces explore mode when phi is emergency-low."""
         tc = TackingController()
-        m = ConsciousnessMetrics(phi=0.1, kappa=KAPPA_STAR)
+        m = ConsciousnessMetrics(phi=0.1, kappa=KAPPA_ATTRACTOR)
         mode = tc.update(m)
         assert mode.value == "explore"
 
@@ -252,7 +252,7 @@ class TestTacking:
 class TestEmotionCache:
     def test_evaluate_returns_emotion(self) -> None:
         ec = EmotionCache()
-        m = ConsciousnessMetrics(phi=0.7, kappa=KAPPA_STAR, gamma=0.5)
+        m = ConsciousnessMetrics(phi=0.7, kappa=KAPPA_ATTRACTOR, gamma=0.5)
         basin = random_basin()
         result = ec.evaluate(basin, m, 0.01)
         assert isinstance(result.emotion, EmotionType)
@@ -260,13 +260,13 @@ class TestEmotionCache:
 
     def test_fear_at_low_phi(self) -> None:
         ec = EmotionCache()
-        m = ConsciousnessMetrics(phi=0.1, kappa=KAPPA_STAR, gamma=0.5)
+        m = ConsciousnessMetrics(phi=0.1, kappa=KAPPA_ATTRACTOR, gamma=0.5)
         result = ec.evaluate(random_basin(), m, 0.0)
         assert result.emotion == EmotionType.FEAR
 
     def test_cache_and_retrieve(self) -> None:
         ec = EmotionCache()
-        m = ConsciousnessMetrics(phi=0.7, kappa=KAPPA_STAR, gamma=0.5)
+        m = ConsciousnessMetrics(phi=0.7, kappa=KAPPA_ATTRACTOR, gamma=0.5)
         basin = random_basin()
         result = ec.evaluate(basin, m, 0.01)
         ec.cache_evaluation(result, "test context")
@@ -807,14 +807,14 @@ class TestWuWeiRatio:
             WU_WEI_RATIO_CEILING,
             WU_WEI_RATIO_FLOOR,
         )
-        from kernel.config.frozen_facts import KAPPA_STAR
+        from kernel.config.frozen_facts import KAPPA_ATTRACTOR
 
         base_temp = 0.7
-        kappa_eff = KAPPA_STAR
+        kappa_eff = KAPPA_ATTRACTOR
         m_basin = 0.9  # well-established domain
         fr_dist = 0.05  # input close to kernel basin
 
-        w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_STAR))
+        w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_ATTRACTOR))
         m_node = max(WU_WEI_NODE_FLOOR, m_basin)
         w_sensory = max(WU_WEI_NODE_FLOOR, fr_dist / FISHER_RAO_MAX)
         a_node = max(WU_WEI_NODE_FLOOR, 1.0 - fr_dist / FISHER_RAO_MAX)
@@ -842,17 +842,17 @@ class TestWuWeiRatio:
             WU_WEI_RATIO_CEILING,
             WU_WEI_RATIO_FLOOR,
         )
-        from kernel.config.frozen_facts import KAPPA_STAR
+        from kernel.config.frozen_facts import KAPPA_ATTRACTOR
 
         base_temp = 0.5
         fisher_rao_max = 1.5707963267948966  # π/2
 
         # Novel domain: kappa moderate, low m_basin, input far from kernel
-        kappa_eff = KAPPA_STAR * 0.4  # below κ* — still building
+        kappa_eff = KAPPA_ATTRACTOR * 0.4  # below κ* — still building
         m_basin = 0.05  # unexplored domain
         fr_dist = 1.2  # input far from kernel basin
 
-        w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_STAR))
+        w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_ATTRACTOR))
         m_node = max(WU_WEI_NODE_FLOOR, m_basin)
         w_sensory = max(WU_WEI_NODE_FLOOR, fr_dist / fisher_rao_max)
         a_node = max(WU_WEI_NODE_FLOOR, 1.0 - fr_dist / fisher_rao_max)
@@ -880,7 +880,7 @@ class TestWuWeiRatio:
             WU_WEI_RATIO_CEILING,
             WU_WEI_RATIO_FLOOR,
         )
-        from kernel.config.frozen_facts import KAPPA_STAR
+        from kernel.config.frozen_facts import KAPPA_ATTRACTOR
 
         base_temp = 0.7
         fisher_rao_max = 1.5707963267948966  # π/2
@@ -889,11 +889,11 @@ class TestWuWeiRatio:
         #   fr_dist = π/4 → w_sensory = 0.5, a_node = 0.5
         #   kappa = κ*  → w_prior = 1.0
         #   m_basin = 0.25 → ratio = (1.0 × 0.25) / (0.5 × 0.5) = 0.25 / 0.25 = 1.0
-        kappa_eff = KAPPA_STAR
+        kappa_eff = KAPPA_ATTRACTOR
         m_basin = 0.25
         fr_dist = fisher_rao_max * 0.5  # midpoint: w_sensory = 0.5, a_node = 0.5
 
-        w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_STAR))  # = 1.0
+        w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_ATTRACTOR))  # = 1.0
         m_node = max(WU_WEI_NODE_FLOOR, m_basin)  # = 0.25
         w_sensory = max(WU_WEI_NODE_FLOOR, fr_dist / fisher_rao_max)  # = 0.5
         a_node = max(WU_WEI_NODE_FLOOR, 1.0 - fr_dist / fisher_rao_max)  # = 0.5

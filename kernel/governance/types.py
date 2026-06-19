@@ -231,7 +231,7 @@ _PARAMETER_VARS = [
     ("config.consciousness_constants", "GAMMA_ACTIVE_INCREMENT"),
     ("config.consciousness_constants", "GAMMA_CONVERSATION_INCREMENT"),
     ("config.consciousness_constants", "LLM_BASE_TEMPERATURE"),
-    ("config.frozen_facts", "KAPPA_STAR"),
+    ("config.frozen_facts", "KAPPA_ATTRACTOR"),
     ("config.frozen_facts", "BASIN_DIM"),
     ("config.frozen_facts", "PHI_THRESHOLD"),
     ("config.frozen_facts", "PHI_EMERGENCY"),

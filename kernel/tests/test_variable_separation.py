@@ -114,7 +114,7 @@ class TestStateVariables:
 
 class TestParameterVariables:
     def test_kappa_star_is_parameter(self) -> None:
-        cat = get_variable_category("config.frozen_facts", "KAPPA_STAR")
+        cat = get_variable_category("config.frozen_facts", "KAPPA_ATTRACTOR")
         assert cat == VariableCategory.PARAMETER
 
     def test_basin_dim_is_parameter(self) -> None:
@@ -199,7 +199,9 @@ class TestEnforceCategory:
         assert enforce_category("basin", VariableCategory.STATE, UpdateFrequency.PER_CYCLE)
 
     def test_parameter_at_correct_frequency_passes(self) -> None:
-        assert enforce_category("KAPPA_STAR", VariableCategory.PARAMETER, UpdateFrequency.PER_EPOCH)
+        assert enforce_category(
+            "KAPPA_ATTRACTOR", VariableCategory.PARAMETER, UpdateFrequency.PER_EPOCH
+        )
 
     def test_boundary_at_correct_frequency_passes(self) -> None:
         assert enforce_category(
@@ -217,7 +219,7 @@ class TestEnforceCategory:
         """PARAMETER variable updated at per-cycle frequency must warn and return False."""
         with caplog.at_level(logging.WARNING, logger="kernel.governance.types"):
             result = enforce_category(
-                "KAPPA_STAR", VariableCategory.PARAMETER, UpdateFrequency.PER_CYCLE
+                "KAPPA_ATTRACTOR", VariableCategory.PARAMETER, UpdateFrequency.PER_CYCLE
             )
         assert result is False
         assert "P14 violation" in caplog.text

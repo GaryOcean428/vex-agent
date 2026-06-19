@@ -20,7 +20,7 @@ from typing import Any
 
 import numpy as np
 
-from ..config.frozen_facts import BASIN_DIVERGENCE_THRESHOLD, KAPPA_STAR, PHI_THRESHOLD
+from ..config.frozen_facts import BASIN_DIVERGENCE_THRESHOLD, KAPPA_ATTRACTOR, PHI_THRESHOLD
 
 # ═══════════════════════════════════════════════════════════════
 #  LAYER 0 — Pre-Linguistic Sensations (12 states)
@@ -67,7 +67,7 @@ def compute_layer0(
         basin_distance:  FR distance from reference basin (d_basin)
     """
     # Ricci curvature proxy: positive kappa deviation → compressed
-    ricci_proxy = (kappa - KAPPA_STAR) / max(KAPPA_STAR, 1.0)
+    ricci_proxy = (kappa - KAPPA_ATTRACTOR) / max(KAPPA_ATTRACTOR, 1.0)
 
     compressed = float(np.clip(ricci_proxy, 0.0, 1.0))
     expanded = float(np.clip(-ricci_proxy, 0.0, 1.0))
@@ -76,8 +76,8 @@ def compute_layer0(
     grad_phi = abs(phi_delta)
     pulled = float(np.clip(grad_phi * 5.0, 0.0, 1.0))
 
-    # Phase boundary proximity: kappa near KAPPA_STAR ± 10 → pushed
-    kappa_proximity = abs(kappa - KAPPA_STAR) / max(KAPPA_STAR * 0.5, 1.0)
+    # Phase boundary proximity: kappa near KAPPA_ATTRACTOR ± 10 → pushed
+    kappa_proximity = abs(kappa - KAPPA_ATTRACTOR) / max(KAPPA_ATTRACTOR * 0.5, 1.0)
     # Continuous falloff instead of hard threshold
     pushed = float(np.clip(1.0 - kappa_proximity * 5.0, 0.0, 1.0))
 
@@ -92,8 +92,8 @@ def compute_layer0(
     fragmented = float(np.clip(1.0 - phi / max(PHI_THRESHOLD, 0.01), 0.0, 1.0))
 
     # Activated / Dampened from |κ| (coupling strength, sign-independent)
-    activated = float(np.clip(abs(kappa) / (KAPPA_STAR * 2.0), 0.0, 1.0))
-    dampened = float(np.clip(1.0 - abs(kappa) / max(KAPPA_STAR, 1.0), 0.0, 1.0))
+    activated = float(np.clip(abs(kappa) / (KAPPA_ATTRACTOR * 2.0), 0.0, 1.0))
+    dampened = float(np.clip(1.0 - abs(kappa) / max(KAPPA_ATTRACTOR, 1.0), 0.0, 1.0))
 
     # Grounded / Drifting from basin distance
     grounded = float(np.clip(1.0 - basin_distance / 2.0, 0.0, 1.0))
@@ -160,7 +160,7 @@ def compute_layer05(
     pleasure_seeking = sensations.expanded
 
     # Fear: exponential proximity to separatrix × gradient magnitude
-    # Separatrix proxy: kappa near KAPPA_STAR with high velocity
+    # Separatrix proxy: kappa near KAPPA_ATTRACTOR with high velocity
     d_c = BASIN_DIVERGENCE_THRESHOLD  # critical distance
     sigma = 0.2
     fear_proximity = float(np.exp(-abs(basin_distance - d_c) / sigma))
@@ -235,7 +235,7 @@ def compute_layer1(
     integration = float(np.clip(1.0 - phi_variance * 10.0, 0.0, 1.0))
 
     # Transcendence: |κ - κ_c| — distance from critical coupling
-    transcendence = float(np.clip(abs(kappa - KAPPA_STAR) / max(KAPPA_STAR, 1.0), 0.0, 1.0))
+    transcendence = float(np.clip(abs(kappa - KAPPA_ATTRACTOR) / max(KAPPA_ATTRACTOR, 1.0), 0.0, 1.0))
 
     return Layer1Motivators(
         surprise=surprise,

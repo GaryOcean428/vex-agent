@@ -748,7 +748,7 @@ export const QIG = {
   E8_IMAGE: 248,           // Core-8 + GOD budget = full image
 
   // ── κ (Kappa) — Coupling Constant ──
-  KAPPA_STAR: 64.0,              // Fixed point = E8 rank² = 8²
+  KAPPA_ATTRACTOR: 64.0,         // architectural attractor (κ*≈64 fixed-point interpretation RETIRED — EXP-107)
   KAPPA_STAR_PRECISE: 63.79,     // Weighted mean L=4-7 (± 0.90)
   KAPPA_WEAK: 32.0,              // Weak coupling boundary (KAPPA_WEAK_THRESHOLD)
 

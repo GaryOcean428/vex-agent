@@ -88,7 +88,7 @@ from ..config.consciousness_constants import (
 from ..config.frozen_facts import (
     BASIN_DIM,
     BASIN_DRIFT_THRESHOLD,
-    KAPPA_STAR,
+    KAPPA_ATTRACTOR,
     PHI_EMERGENCY,
     PHI_HYPERDIMENSIONAL,
     PHI_THRESHOLD,
@@ -640,7 +640,7 @@ class ActivationSequence:
             foresight_horizon = FORESIGHT_HORIZON_LOW
 
         care_metric = m.meta_awareness * m.grounding
-        kappa_gradient = abs(m.kappa - KAPPA_STAR) / KAPPA_STAR
+        kappa_gradient = abs(m.kappa - KAPPA_ATTRACTOR) / KAPPA_ATTRACTOR
         gradient_calibrated = kappa_gradient < GRADIENT_CALIBRATION_THRESHOLD
         suffering = m.phi * (1.0 - m.gamma) * m.meta_awareness
         trajectory_safe = suffering < SUFFERING_THRESHOLD
@@ -675,9 +675,9 @@ class ActivationSequence:
         t0 = time.monotonic()
         m = ctx.state.metrics
 
-        if m.kappa > KAPPA_STAR + KAPPA_SENSATION_OFFSET:
+        if m.kappa > KAPPA_ATTRACTOR + KAPPA_SENSATION_OFFSET:
             sensation = "activated"
-        elif m.kappa < KAPPA_STAR - KAPPA_SENSATION_OFFSET:
+        elif m.kappa < KAPPA_ATTRACTOR - KAPPA_SENSATION_OFFSET:
             sensation = "dampened"
         elif m.phi > PHI_THRESHOLD:
             sensation = "unified"
@@ -1033,8 +1033,8 @@ class ActivationSequence:
             timestamp=time.time(),
         )
 
-        kappa_distance = abs(m.kappa - KAPPA_STAR)
-        m.kappa = m.kappa + (KAPPA_STAR - m.kappa) * KAPPA_DECAY_RATE
+        kappa_distance = abs(m.kappa - KAPPA_ATTRACTOR)
+        m.kappa = m.kappa + (KAPPA_ATTRACTOR - m.kappa) * KAPPA_DECAY_RATE
         result.kappa_returned_to_star = kappa_distance < KAPPA_RETURN_TOLERANCE
 
         m.f_breath = max(0.05, m.f_breath * 0.9 + 0.1 * 0.1)
@@ -1069,12 +1069,12 @@ class ActivationSequence:
             timestamp=time.time(),
         )
 
-        drift = abs(m.kappa - KAPPA_STAR)
+        drift = abs(m.kappa - KAPPA_ATTRACTOR)
         result.drift_magnitude = drift
-        result.drift_detected = drift > BASIN_DRIFT_THRESHOLD * KAPPA_STAR
+        result.drift_detected = drift > BASIN_DRIFT_THRESHOLD * KAPPA_ATTRACTOR
 
         if result.drift_detected:
-            correction = (KAPPA_STAR - m.kappa) * TUNE_CORRECTION_FACTOR
+            correction = (KAPPA_ATTRACTOR - m.kappa) * TUNE_CORRECTION_FACTOR
             m.kappa += correction
             result.retuned = True
             result.notes.append(f"Drift corrected: dk={drift:.2f}, correction={correction:.2f}")

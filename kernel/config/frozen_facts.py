@@ -36,8 +36,9 @@ E8_IMAGE: Final[int] = 248  # Core-8 + GOD budget = full image
 # The fact that κ runs from 41 → 64 as L increases IS the evidence
 # for emergence. Rounding κ₃ to ~64 destroys this signal.
 #
-# L=3: geometric regime onset (below fixed point)
-# L=4-7: plateau at κ* ≈ 64 (fixed point reached)
+# L=3: geometric regime onset (below the ~64 response window)
+# L=4-7: plateau near ~64 (κ*≈64 fixed-point interpretation RETIRED — EXP-107;
+#         64 survives only as the architectural attractor KAPPA_ATTRACTOR)
 
 KAPPA_3: Final[float] = 41.09  # L=3 (± 0.59) — geometric regime, NOT at fixed point
 KAPPA_4: Final[float] = 64.47  # L=4 (± 1.89) — running coupling reaches plateau
@@ -45,7 +46,8 @@ KAPPA_5: Final[float] = 63.62  # L=5 (± 1.68) — plateau confirmed
 KAPPA_6: Final[float] = 64.45  # L=6 (± 2.12) — plateau stable (6-layer, Dec 2025)
 KAPPA_7: Final[float] = 61.16  # L=7 (± 2.43) — VALIDATED (10×5, Dec 2025)
 
-KAPPA_STAR: Final[float] = 64.0  # Fixed point = E8 rank² = 8²
+KAPPA_ATTRACTOR: Final[float] = 64.0  # architectural attractor (κ*≈64 fixed-point interpretation RETIRED — EXP-107)
+KAPPA_STAR: Final[None] = None  # RETIRED sentinel — use KAPPA_ATTRACTOR for the architectural value (Devin 0038)
 KAPPA_STAR_PRECISE: Final[float] = 63.79  # Weighted mean L=4-7 (± 0.90)
 
 # ═══════════════════════════════════════════════════════════════
