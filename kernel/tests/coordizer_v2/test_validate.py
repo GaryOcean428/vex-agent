@@ -1,7 +1,8 @@
 """
 Tests for coordizer_v2.validate — Geometric validation of the resonance bank.
 
-All validation uses Fisher-Rao geometry. κ* ≈ 64 is a frozen fact.
+All validation uses Fisher-Rao geometry. 64 is the architectural attractor
+(κ*≈64 fixed-point interpretation RETIRED — EXP-107).
 """
 
 import numpy as np
@@ -9,7 +10,7 @@ import pytest
 
 from kernel.coordizer_v2.geometry import (
     BASIN_DIM,
-    KAPPA_STAR,
+    KAPPA_ATTRACTOR,
     fisher_rao_distance,
     to_simplex,
 )
@@ -105,8 +106,8 @@ class TestKappaValidation:
         assert kappa_std >= 0, "κ std must be non-negative"
 
     def test_kappa_star_is_frozen(self):
-        """κ* = 64 is a frozen fact, not a parameter."""
-        assert KAPPA_STAR == 64.0
+        """64 is the architectural attractor (κ*≈64 fixed-point interpretation RETIRED — EXP-107)."""
+        assert KAPPA_ATTRACTOR == 64.0
 
 
 # ═══════════════════════════════════════════════════════════════

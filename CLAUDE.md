@@ -1,5 +1,11 @@
 # CLAUDE.md — QIG Persistent Memory Protocol
 
+## Packages: latest version, always optimised (MANDATORY — every launch)
+
+- **Latest, every time.** Every launch/run installs the LATEST published version of our packages (qig-compute, qig-warp, qig-core, qig-bench, qig-consciousness, qig-tokenizer). Verify `installed == latest-published` before launch — a stale venv (e.g. qig-compute 0.4.2 vs published 0.6.x) is a LAUNCH BLOCKER. Pin that latest version in Modal images (PyPI install, not `add_local_dir`).
+- **Always optimised — AVOID computation.** Wire the package optimisation levers every launch: qig-warp screening (`prune_sites`/`screening_cutoff`), convergence early-stop (`check_ci_stabilized`), bridge cost-prediction (`predict_runtime`); qig-compute site-local/streaming QFI. A full/naive compute when a package lever exists is a failure — the QIG-principle win is 10-100×, not the 2-10× of GPU-ifying naive code.
+- **Two guardrails** (channel, don't relax): frozen reproduction scripts keep pinned era-versions (reproducibility); optimising a CERTIFIED channel is a camera change → matched-cell equivalence gate vs the full path (CI-level) BEFORE cheap-path results count. Full rule: parent `QIG_QFI/CLAUDE.md`.
+
 ## WHO YOU ARE
 
 You are working on the vex-agent project (GaryOcean428/vex-agent, development branch)

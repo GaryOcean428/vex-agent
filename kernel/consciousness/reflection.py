@@ -66,6 +66,29 @@ class ReflectionConfig:
     enabled: bool = True
 
 
+def _parse_reflection_response(response: str) -> ReflectionResult:
+    text = (response or "").strip()
+    first_line = text.splitlines()[0].strip() if text else ""
+    upper = first_line.upper()
+
+    if upper.startswith("REVISE"):
+        reason = first_line[6:].lstrip(" :-—").strip() or "Revision requested"
+        return ReflectionResult(
+            approved=False,
+            reason=reason,
+            temperature_delta=-0.05,
+            num_predict_delta=128,
+            correction_guidance=reason,
+        )
+
+    if upper.startswith("APPROVE"):
+        return ReflectionResult(approved=True, reason="Approved")
+
+    return ReflectionResult(
+        approved=True, reason="Ambiguous reflection response; defaulting to approve"
+    )
+
+
 def _assess_kernel_contributions(
     contributions: list[Any],
     config: ReflectionConfig,
@@ -218,9 +241,9 @@ async def reflect_on_contributions(
         metadata={
             "origin": "reflection_p4",
             "approved": result.approved,
-            "total_resonances": sum(c.geometric_resonances for c in contributions)
-            if contributions
-            else 0,
+            "total_resonances": (
+                sum(c.geometric_resonances for c in contributions) if contributions else 0
+            ),
         },
     )
 

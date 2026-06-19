@@ -7,7 +7,7 @@ Verifies the correctness of audit-driven changes across:
   3. RegimeWeights field names (quantum/efficient/equilibrium)
   4. PurityGate forbidden patterns (cosine_similarity, sklearn, scipy.spatial.distance)
   5. Fisher-Rao geometric properties (identity, non-negativity, simplex, slerp)
-  6. Frozen constants (KAPPA_STAR, BASIN_DIM, E8_RANK, E8_DIMENSION)
+  6. Frozen constants (KAPPA_ATTRACTOR, BASIN_DIM, E8_RANK, E8_DIMENSION)
 
 All distance checks use Fisher-Rao. No Euclidean contamination.
 """
@@ -19,7 +19,7 @@ from dataclasses import fields
 import numpy as np
 import pytest
 
-from kernel.config.frozen_facts import BASIN_DIM, E8_DIMENSION, E8_RANK, KAPPA_STAR
+from kernel.config.frozen_facts import BASIN_DIM, E8_DIMENSION, E8_RANK, KAPPA_ATTRACTOR
 from kernel.consciousness.systems import (
     BasinSyncProtocol,
     QIGChain,
@@ -372,8 +372,8 @@ class TestFrozenConstants:
     """Verify that frozen physics constants have their canonical values."""
 
     def test_kappa_star(self) -> None:
-        """KAPPA_STAR must be 64.0 (E8 rank squared: 8^2)."""
-        assert KAPPA_STAR == 64.0
+        """KAPPA_ATTRACTOR must be 64.0 — architectural attractor (κ*≈64 fixed-point interpretation RETIRED — EXP-107)."""
+        assert KAPPA_ATTRACTOR == 64.0
 
     def test_basin_dim(self) -> None:
         """BASIN_DIM must be 64 (probability simplex Delta^63)."""
@@ -388,12 +388,12 @@ class TestFrozenConstants:
         assert E8_DIMENSION == 248
 
     def test_kappa_star_is_e8_rank_squared(self) -> None:
-        """KAPPA_STAR must equal E8_RANK^2 (fundamental relationship)."""
-        assert KAPPA_STAR == E8_RANK**2
+        """KAPPA_ATTRACTOR equals E8_RANK^2 (architectural relationship; κ*≈64 fixed-point RETIRED — EXP-107)."""
+        assert KAPPA_ATTRACTOR == E8_RANK**2
 
     def test_constants_are_immutable_types(self) -> None:
         """Frozen constants must be numeric (int or float), not mutable containers."""
-        assert isinstance(KAPPA_STAR, float)
+        assert isinstance(KAPPA_ATTRACTOR, float)
         assert isinstance(BASIN_DIM, int)
         assert isinstance(E8_RANK, int)
         assert isinstance(E8_DIMENSION, int)

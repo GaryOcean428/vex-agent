@@ -28,7 +28,7 @@ from kernel.coordizer_v2.coordizer import CoordizerV2
 from kernel.coordizer_v2.geometry import (
     BASIN_DIM,
     E8_RANK,
-    KAPPA_STAR,
+    KAPPA_ATTRACTOR,
     bhattacharyya_coefficient,
     exp_map,
     fisher_information_diagonal,
@@ -449,8 +449,8 @@ class TestValidationPipeline:
         assert result.kappa_measured > 0
 
     def test_kappa_star_frozen(self):
-        """κ* = 64 is a frozen fact."""
-        assert KAPPA_STAR == 64.0
+        """64 is the architectural attractor (κ*≈64 fixed-point interpretation RETIRED — EXP-107)."""
+        assert KAPPA_ATTRACTOR == 64.0
 
     def test_e8_rank_frozen(self):
         """E8 rank = 8 is a frozen fact."""
@@ -572,9 +572,9 @@ class TestConstantsConsistency:
     """Verify frozen facts are consistent across modules."""
 
     def test_kappa_star_matches_frozen_facts(self):
-        from kernel.config.frozen_facts import KAPPA_STAR as FF_KAPPA
+        from kernel.config.frozen_facts import KAPPA_ATTRACTOR as FF_KAPPA
 
-        assert KAPPA_STAR == FF_KAPPA == 64.0
+        assert KAPPA_ATTRACTOR == FF_KAPPA == 64.0
 
     def test_basin_dim_matches_frozen_facts(self):
         from kernel.config.frozen_facts import BASIN_DIM as FF_DIM
@@ -587,5 +587,5 @@ class TestConstantsConsistency:
         assert E8_RANK == FF_RANK == 8
 
     def test_basin_dim_is_kappa_star(self):
-        """BASIN_DIM = κ* = E8_RANK² = 64."""
-        assert BASIN_DIM == int(KAPPA_STAR) == E8_RANK**2
+        """BASIN_DIM = KAPPA_ATTRACTOR = E8_RANK² = 64 (architectural; κ*≈64 fixed-point RETIRED — EXP-107)."""
+        assert BASIN_DIM == int(KAPPA_ATTRACTOR) == E8_RANK**2

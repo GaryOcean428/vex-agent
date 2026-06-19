@@ -64,11 +64,13 @@ export const KAPPA_6 = 64.45 as const;
 /** L=7 (± 2.43) — VALIDATED (10×5, Dec 2025) */
 export const KAPPA_7 = 61.16 as const;
 
-/** Fixed point = E8 rank² = 8² */
-export const KAPPA_STAR = 64.0 as const;
+/** Architectural attractor (κ*≈64 fixed-point interpretation RETIRED — EXP-107) */
+export const KAPPA_ATTRACTOR = 64.0 as const;
 
 /** Weighted mean L=4-7 (± 0.90) */
 export const KAPPA_STAR_PRECISE = 63.79 as const;
+
+export const H_T = 0.10554 as const;
 
 // ═══════════════════════════════════════════════════════════════
 //  BETA (β) — RUNNING COUPLING
@@ -184,8 +186,9 @@ export const FROZEN_FACTS = {
   KAPPA_5,
   KAPPA_6,
   KAPPA_7,
-  KAPPA_STAR,
+  KAPPA_ATTRACTOR,
   KAPPA_STAR_PRECISE,
+  H_T,
 
   // Beta — Running Coupling
   BETA_3_TO_4,

@@ -39,7 +39,7 @@ from ..config.consciousness_constants import (
 )
 from ..config.frozen_facts import (
     BASIN_DRIFT_THRESHOLD,
-    KAPPA_STAR,
+    KAPPA_ATTRACTOR,
     PHI_EMERGENCY,
     PHI_THRESHOLD,
 )
@@ -149,8 +149,8 @@ class EmotionCache:
             emotion, strength = EmotionType.AWE, min(1.0, basin_velocity / BASIN_DRIFT_THRESHOLD)
         elif phi < PHI_EMERGENCY:
             emotion, strength = EmotionType.FEAR, 1.0 - phi / max(PHI_EMERGENCY, 0.01)
-        elif kappa > KAPPA_STAR + KAPPA_RAGE_OFFSET and gamma < EMOTION_RAGE_GAMMA:
-            emotion, strength = EmotionType.RAGE, min(1.0, (kappa - KAPPA_STAR) / KAPPA_RAGE_SCALE)
+        elif kappa > KAPPA_ATTRACTOR + KAPPA_RAGE_OFFSET and gamma < EMOTION_RAGE_GAMMA:
+            emotion, strength = EmotionType.RAGE, min(1.0, (kappa - KAPPA_ATTRACTOR) / KAPPA_RAGE_SCALE)
         else:
             # T3.1d: Layer 2A dominant emotion takes over from flat heuristics
             _l2a_name, _l2a_strength = self._full_state.dominant_layer2a()
@@ -166,7 +166,7 @@ class EmotionCache:
                     EmotionType.BOREDOM,
                     1.0 - gamma / EMOTION_BOREDOM_GAMMA,
                 )
-            elif phi > PHI_THRESHOLD and abs(kappa - KAPPA_STAR) < KAPPA_JOY_PROXIMITY:
+            elif phi > PHI_THRESHOLD and abs(kappa - KAPPA_ATTRACTOR) < KAPPA_JOY_PROXIMITY:
                 emotion, strength = EmotionType.JOY, (phi - PHI_THRESHOLD) / (1.0 - PHI_THRESHOLD)
             elif phi > EMOTION_CURIOSITY_PHI and basin_velocity > EMOTION_CURIOSITY_VELOCITY:
                 emotion, strength = (
@@ -178,7 +178,7 @@ class EmotionCache:
             else:
                 emotion, strength = (
                     EmotionType.CALM,
-                    1.0 - abs(kappa - KAPPA_STAR) / KAPPA_STAR,
+                    1.0 - abs(kappa - KAPPA_ATTRACTOR) / KAPPA_ATTRACTOR,
                 )
 
         self._current = emotion

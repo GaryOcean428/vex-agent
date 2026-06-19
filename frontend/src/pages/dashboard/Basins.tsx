@@ -91,7 +91,7 @@ export default function Basins() {
     }
 
     // Use phi and kappa as 2D projection (actual PCA would require basin history)
-    const points = history.map(h => ({ x: h.phi, y: h.kappa / (2 * QIG.KAPPA_STAR) }));
+    const points = history.map(h => ({ x: h.phi, y: h.kappa / (2 * QIG.KAPPA_ATTRACTOR) }));
     const margin = 40;
     const w = rect.width - margin * 2;
     const h = rect.height - margin * 2;

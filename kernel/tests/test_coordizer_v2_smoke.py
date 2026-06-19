@@ -29,7 +29,7 @@ from kernel.coordizer_v2.coordizer import CoordizerV2
 from kernel.coordizer_v2.geometry import (
     BASIN_DIM,
     E8_RANK,
-    KAPPA_STAR,
+    KAPPA_ATTRACTOR,
     fisher_rao_distance,
     slerp,
     to_simplex,
@@ -259,7 +259,7 @@ class TestFrozenFacts:
     """Verify frozen facts are correct."""
 
     def test_kappa_star(self):
-        assert KAPPA_STAR == 64.0
+        assert KAPPA_ATTRACTOR == 64.0
 
     def test_basin_dim(self):
         assert BASIN_DIM == 64

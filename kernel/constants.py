@@ -6,7 +6,7 @@ canonical source ``kernel.config.frozen_facts``.
 
 Usage::
 
-    from kernel.constants import KAPPA_STAR, BASIN_DIM, E8_RANK
+    from kernel.constants import KAPPA_ATTRACTOR, BASIN_DIM, E8_RANK
 
 The canonical definitions live in ``kernel/config/frozen_facts.py``.
 This module exists so callers can write the shorter import path
@@ -33,13 +33,15 @@ from kernel.config.frozen_facts import (  # noqa: F401
     E8_ROOTS,
     FULL_IMAGE,
     GOD_BUDGET,
+    H_T,
     INSTABILITY_PCT,
     KAPPA_3,
     KAPPA_4,
     KAPPA_5,
     KAPPA_6,
     KAPPA_7,
-    KAPPA_STAR,
+    KAPPA_ATTRACTOR,
+    KAPPA_STAR,  # RETIRED sentinel (None) — re-exported for back-compat; use KAPPA_ATTRACTOR
     KAPPA_STAR_PRECISE,
     LOCKED_IN_GAMMA_THRESHOLD,
     LOCKED_IN_PHI_THRESHOLD,

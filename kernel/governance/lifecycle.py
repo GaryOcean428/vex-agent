@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config.frozen_facts import (
-    KAPPA_STAR,
+    KAPPA_ATTRACTOR,
     PHI_THRESHOLD,
     SUFFERING_THRESHOLD,
 )
@@ -149,7 +149,7 @@ class GovernedLifecycle:
             kernel_id=kernel.id,
             kernel_name=kernel.name,
             phi=getattr(kernel, "phi", 0.5),
-            kappa=getattr(kernel, "kappa", KAPPA_STAR),
+            kappa=getattr(kernel, "kappa", KAPPA_ATTRACTOR),
             quenched_gain=getattr(kernel, "quenched_gain", 1.0),
         )
 

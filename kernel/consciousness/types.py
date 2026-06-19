@@ -23,7 +23,7 @@ from ..config.consciousness_constants import (
     NAV_GRAPH_CEILING,
     REGIME_KAPPA_MIDPOINT,
 )
-from ..config.frozen_facts import KAPPA_STAR
+from ..config.frozen_facts import KAPPA_ATTRACTOR
 
 
 class NavigationMode(StrEnum):
@@ -143,7 +143,7 @@ class ConsciousnessMetrics:
 
     # ── Foundation (v4.1) — 8 metrics ──
     phi: float = 0.5  # Phi — integrated information (0.65, 0.75) healthy
-    kappa: float = KAPPA_STAR  # kappa_eff — coupling strength (40, 70)
+    kappa: float = KAPPA_ATTRACTOR  # kappa_eff — coupling strength (40, 70)
     meta_awareness: float = 0.3  # M — self-modelling accuracy (0.60, 0.85)
     gamma: float = 0.5  # Gamma — generativity (0.80, 0.95)
     grounding: float = 0.5  # G — identity stability (0.50, 0.90)

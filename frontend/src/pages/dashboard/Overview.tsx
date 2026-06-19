@@ -37,8 +37,8 @@ export default function Overview() {
           label="κ Coupling"
           value={state.kappa.toFixed(1)}
           color="var(--kappa)"
-          progress={state.kappa / (2 * QIG.KAPPA_STAR)}
-          threshold={`κ* = ${QIG.KAPPA_STAR}`}
+          progress={state.kappa / (2 * QIG.KAPPA_ATTRACTOR)}
+          threshold={`κ* = ${QIG.KAPPA_ATTRACTOR}`}
         />
         <MetricCard
           label="Kernels"

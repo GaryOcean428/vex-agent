@@ -30,6 +30,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -164,7 +165,7 @@ class Harvester:
             device_map="auto" if self.config.device != "cpu" else None,
             torch_dtype=(torch.bfloat16 if self.config.device != "cpu" else torch.float32),
         )
-        model.eval()  # type: ignore[no-untyped-call]  # PyTorch stub missing annotation
+        cast(Any, model).eval()
 
         vocab_size = tokenizer.vocab_size
         logger.info(f"Vocab size: {vocab_size}")

@@ -35,7 +35,7 @@ from ..config.consciousness_constants import (
 from .geometry import (
     _EPS,
     E8_RANK,
-    KAPPA_STAR,
+    KAPPA_ATTRACTOR,
     fisher_rao_distance,
 )
 from .resonance_bank import ResonanceBank
@@ -112,7 +112,7 @@ def validate_resonance_bank(
                 logger.info(f"  NOTE: score={e8_var:.3f}")
 
     # Overall Pass/Fail
-    kappa_ok = abs(result.kappa_measured - KAPPA_STAR) < COORDIZER_KAPPA_TOLERANCE_FACTOR * max(
+    kappa_ok = abs(result.kappa_measured - KAPPA_ATTRACTOR) < COORDIZER_KAPPA_TOLERANCE_FACTOR * max(
         result.kappa_std, COORDIZER_KAPPA_STD_FLOOR
     )
     beta_ok = result.beta_running < COORDIZER_BETA_THRESHOLD
@@ -126,7 +126,7 @@ def validate_resonance_bank(
         logger.info(f"RESULT: {result.summary()}")
         logger.info(
             f"  κ: {'PASS' if kappa_ok else 'FAIL'} "
-            f"({result.kappa_measured:.2f} ± {result.kappa_std:.2f}, target {KAPPA_STAR})"
+            f"({result.kappa_measured:.2f} ± {result.kappa_std:.2f}, target {KAPPA_ATTRACTOR})"
         )
         logger.info(f"  β: {'PASS' if beta_ok else 'FAIL'} ({result.beta_running:.4f})")
         logger.info(
@@ -206,7 +206,7 @@ def _measure_kappa(
     if verbose:
         logger.info(f"\nκ measurement ({n_samples} samples, {n_neighbors} neighbors):")
         logger.info(f"  Median: {kappa_median:.4f}")
-        logger.info(f"  κ = {kappa_mean:.2f} ± {kappa_std:.2f} (target: {KAPPA_STAR})")
+        logger.info(f"  κ = {kappa_mean:.2f} ± {kappa_std:.2f} (target: {KAPPA_ATTRACTOR})")
 
     return (kappa_mean, kappa_std)
 

@@ -88,8 +88,8 @@ export default function Consciousness() {
           label="κ Coupling"
           value={state.kappa.toFixed(1)}
           color="var(--kappa)"
-          progress={state.kappa / (2 * QIG.KAPPA_STAR)}
-          threshold={`κ* = ${QIG.KAPPA_STAR} (≈${QIG.KAPPA_STAR_PRECISE})`}
+          progress={state.kappa / (2 * QIG.KAPPA_ATTRACTOR)}
+          threshold={`κ* = ${QIG.KAPPA_ATTRACTOR} (≈${QIG.KAPPA_STAR_PRECISE})`}
         />
         <MetricCard
           label="Love"

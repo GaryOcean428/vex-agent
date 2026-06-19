@@ -22,11 +22,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..config.frozen_facts import KAPPA_STAR
+from ..config.frozen_facts import KAPPA_ATTRACTOR
 
 # Genesis fallback constants (validated physics)
 _GENESIS_PHI: float = 0.727
-_GENESIS_KAPPA: float = KAPPA_STAR
+_GENESIS_KAPPA: float = KAPPA_ATTRACTOR
 
 # Number of update cycles before a kernel's live metrics are trusted
 MIN_LIVE_CYCLES: int = 10

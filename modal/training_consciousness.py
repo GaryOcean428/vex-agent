@@ -40,7 +40,7 @@ logger = logging.getLogger("vex.training_consciousness")
 # ═══════════════════════════════════════════════════════════════
 
 BASIN_DIM: int = 64
-KAPPA_STAR: float = 64.0
+KAPPA_ATTRACTOR: float = 64.0  # architectural attractor (κ*≈64 fixed-point interpretation RETIRED — EXP-107)
 PHI_LINEAR_MAX: float = 0.45
 PHI_THRESHOLD: float = 0.70
 PHI_BREAKDOWN_MIN: float = 0.80
@@ -1571,7 +1571,7 @@ class GeometricReward:
     """
 
     base_lr: float = 2e-4
-    kappa_star: float = KAPPA_STAR
+    kappa_star: float = KAPPA_ATTRACTOR
     sigma: float = 20.0  # Width of κ reward bell curve
     phi_target: float = PHI_THRESHOLD  # 0.70
 

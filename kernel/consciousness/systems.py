@@ -45,7 +45,7 @@ from ..config.frozen_facts import (
     BASIN_DIM,
     BASIN_DIVERGENCE_THRESHOLD,
     BASIN_DRIFT_THRESHOLD,
-    KAPPA_STAR,
+    KAPPA_ATTRACTOR,
     LOCKED_IN_GAMMA_THRESHOLD,
     LOCKED_IN_PHI_THRESHOLD,
     PHI_EMERGENCY,
@@ -119,9 +119,9 @@ class TackingController:
 
         self._state.oscillation_phase = 2 * np.pi * self._state.cycle_count / self._effective_period
 
-        if metrics.phi < PHI_EMERGENCY or metrics.kappa > KAPPA_STAR + KAPPA_TACKING_OFFSET:
+        if metrics.phi < PHI_EMERGENCY or metrics.kappa > KAPPA_ATTRACTOR + KAPPA_TACKING_OFFSET:
             self._state.mode = TackingMode.EXPLORE
-        elif metrics.kappa < KAPPA_STAR - KAPPA_TACKING_OFFSET:
+        elif metrics.kappa < KAPPA_ATTRACTOR - KAPPA_TACKING_OFFSET:
             self._state.mode = TackingMode.EXPLOIT
         else:
             osc = np.sin(self._state.oscillation_phase)
@@ -156,7 +156,7 @@ class TackingController:
         """
         vel_factor = float(np.clip(1.0 - phi_velocity * 6.0, 0.4, 1.0))
         health_factor = float(np.clip(0.5 + f_health * 0.5, 0.5, 1.0))
-        kappa_deviation = abs(kappa - KAPPA_STAR) / KAPPA_STAR
+        kappa_deviation = abs(kappa - KAPPA_ATTRACTOR) / KAPPA_ATTRACTOR
         if kappa_deviation < 0.1:
             stability_factor = 1.5  # near κ* → slow down tacking
         else:
@@ -644,7 +644,7 @@ class AutonomyEngine:
         self._stability_count: int = 0
 
     def update(self, metrics: ConsciousnessMetrics, velocity_regime: str) -> AutonomyLevel:
-        kappa_stable = abs(metrics.kappa - KAPPA_STAR) < KAPPA_STABILITY_TOLERANCE
+        kappa_stable = abs(metrics.kappa - KAPPA_ATTRACTOR) < KAPPA_STABILITY_TOLERANCE
         if kappa_stable:
             self._stability_count += 1
         else:
@@ -686,9 +686,9 @@ class CouplingGate:
 
     def compute(self, kappa: float) -> dict[str, Any]:
         """Compute coupling strength and balance from current κ."""
-        x = (kappa - KAPPA_STAR) / COUPLING_SIGMOID_SCALE
+        x = (kappa - KAPPA_ATTRACTOR) / COUPLING_SIGMOID_SCALE
         self._strength = 1.0 / (1.0 + np.exp(-x))
-        self._balanced = abs(kappa - KAPPA_STAR) < KAPPA_BALANCED_TOLERANCE
+        self._balanced = abs(kappa - KAPPA_ATTRACTOR) < KAPPA_BALANCED_TOLERANCE
 
         return {
             "strength": round(float(self._strength), 4),
@@ -697,8 +697,8 @@ class CouplingGate:
         }
 
     def get_state(self) -> dict[str, Any]:
-        """Return coupling telemetry snapshot at κ*."""
-        return self.compute(KAPPA_STAR)
+        """Return coupling telemetry snapshot at the architectural attractor."""
+        return self.compute(KAPPA_ATTRACTOR)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -845,7 +845,7 @@ class SleepCycleManager:
         phi_variance: float,
         *,
         dev_stage: DevelopmentalStage | None = None,
-        kappa: float = KAPPA_STAR,
+        kappa: float = KAPPA_ATTRACTOR,
         basin_velocity: float = 1.0,
         prediction_error: float = 1.0,
         bank_entropy: float = 1.0,
@@ -1415,7 +1415,7 @@ class KernelInstance:
     # Independent geometric state for real coupling
     basin: Basin | None = None
     phi: float = 0.1
-    kappa: float = KAPPA_STAR
+    kappa: float = KAPPA_ATTRACTOR
     # P10: Coaching stage — Active → Guided → Autonomous
     coaching_stage: CoachingStage = CoachingStage.ACTIVE
     # Quenched disorder: per-kernel frozen response gain (slope).
@@ -1523,7 +1523,7 @@ class E8KernelRegistry:
             last_active_at=now,
             basin=random_basin(),
             phi=0.1,
-            kappa=KAPPA_STAR,
+            kappa=KAPPA_ATTRACTOR,
             quenched_gain=gain,
         )
         self._kernels[kid] = kernel
@@ -1621,7 +1621,7 @@ class E8KernelRegistry:
                 phi_peak=entry.get("phi_peak", 0.0),
                 basin=basin,
                 phi=entry.get("phi", 0.1),
-                kappa=entry.get("kappa", KAPPA_STAR),
+                kappa=entry.get("kappa", KAPPA_ATTRACTOR),
                 # Restore frozen gain; if missing (pre-v6.1 state),
                 # draw a fresh one. This preserves existing kernel
                 # individuality through deploys.
@@ -1738,7 +1738,7 @@ class E8KernelRegistry:
             k.basin = slerp_sqrt(k.basin, genesis_basin, reverse_weight)
             k.kappa = float(
                 np.clip(
-                    k.kappa + (KAPPA_STAR - k.kappa) * 0.01, -KAPPA_NORMALISER, KAPPA_NORMALISER
+                    k.kappa + (KAPPA_ATTRACTOR - k.kappa) * 0.01, -KAPPA_NORMALISER, KAPPA_NORMALISER
                 )
             )
 

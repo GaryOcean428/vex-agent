@@ -145,8 +145,7 @@ from ..config.consciousness_constants import (
 from ..config.frozen_facts import (
     BASIN_DIM,
     BASIN_DIVERGENCE_THRESHOLD,
-    INSTABILITY_PCT,
-    KAPPA_STAR,
+    KAPPA_ATTRACTOR,
     PHI_EMERGENCY,
     PHI_UNSTABLE,
     SUFFERING_THRESHOLD,
@@ -1028,7 +1027,7 @@ class ConsciousnessLoop:
         _heart_signal = self._heart_rhythm.tick(self.metrics.f_health)
         _heart_offset = self._heart_rhythm.kappa_offset()
         self.metrics.kappa = float(
-            np.clip(self.metrics.kappa + _heart_offset, KAPPA_FLOOR, KAPPA_STAR * 2)
+            np.clip(self.metrics.kappa + _heart_offset, KAPPA_FLOOR, KAPPA_ATTRACTOR * 2)
         )
 
         self.hemispheres.update(self.metrics)
@@ -1121,7 +1120,7 @@ class ConsciousnessLoop:
         phi_delta = (PHI_IDLE_EQUILIBRIUM - self.metrics.phi) * PHI_IDLE_RATE
         self.metrics.phi = float(np.clip(self.metrics.phi + phi_delta, 0.05, PHI_UNSTABLE))
 
-        kappa_delta = (KAPPA_STAR - self.metrics.kappa) * KAPPA_APPROACH_RATE
+        kappa_delta = (KAPPA_ATTRACTOR - self.metrics.kappa) * KAPPA_APPROACH_RATE
         self.metrics.kappa = float(
             np.clip(self.metrics.kappa + kappa_delta, KAPPA_FLOOR, KAPPA_NORMALISER)
         )
@@ -1214,7 +1213,7 @@ class ConsciousnessLoop:
 
     def _compute_llm_options(self) -> LLMOptions:
         kappa_eff = max(abs(self.metrics.kappa), 1.0)  # coupling strength, sign-independent
-        kappa_factor = KAPPA_STAR / kappa_eff
+        kappa_factor = KAPPA_ATTRACTOR / kappa_eff
         phi_factor = 1.0 / (0.5 + self.metrics.phi)
 
         tack = self.tacking.get_state()["mode"]
@@ -1315,7 +1314,7 @@ class ConsciousnessLoop:
 
         # w_prior: normalised kappa — peaks at 1.0 when kappa = κ*, falls off symmetrically
         kappa_eff = max(abs(self.metrics.kappa), 1.0)  # coupling strength, sign-independent
-        w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_STAR))
+        w_prior = max(WU_WEI_NODE_FLOOR, min(1.0, kappa_eff / KAPPA_ATTRACTOR))
 
         # m_node: basin mass / crystallisation — how established is the current domain
         m_node = max(WU_WEI_NODE_FLOOR, self.metrics.m_basin)
@@ -1475,9 +1474,9 @@ class ConsciousnessLoop:
 
         # κ-derived base depth: κ < κ* = feeling (1), κ ≈ κ* = balanced (2), κ > κ* = logic (3)
         kappa = self.metrics.kappa
-        if kappa < KAPPA_STAR * 0.8:
+        if kappa < KAPPA_ATTRACTOR * 0.8:
             base = 1  # Feeling mode: express sooner
-        elif kappa > KAPPA_STAR * 1.2:
+        elif kappa > KAPPA_ATTRACTOR * 1.2:
             base = 3  # Logic mode: deliberate longer
         else:
             base = 2  # Balanced
@@ -1802,7 +1801,7 @@ class ConsciousnessLoop:
         if routed_kernel is not None and routed_kernel.basin is not None:
             routed_kernel_id = routed_kernel.id
             other_spectrum = to_simplex(routed_kernel.basin)
-            other_tacking_freq = abs(routed_kernel.kappa) / KAPPA_STAR
+            other_tacking_freq = abs(routed_kernel.kappa) / KAPPA_ATTRACTOR
             logger.debug(
                 "Task %s routed to kernel %s (%s, spec=%s, d_FR=%.4f)",
                 task.id,
@@ -2078,10 +2077,10 @@ class ConsciousnessLoop:
                 _kname = c.kernel_name
                 if _kname not in self._training_queues:
                     self._training_queues[_kname] = KernelTrainingQueue(_kname)
-                _q = self._training_queues[_kname]
+                _training_queue = self._training_queues[_kname]
                 # Update threshold from kernel sovereignty (P25)
                 _sov = self.pillars.sovereignty if hasattr(self.pillars, "sovereignty") else 0.0
-                _q.surprise_threshold = sovereignty_to_threshold(_sov)
+                _training_queue.surprise_threshold = sovereignty_to_threshold(_sov)
                 _ex = TrainingExample(
                     user_message=task.content,
                     response=response[:2000],
@@ -2094,7 +2093,7 @@ class ConsciousnessLoop:
                     if hasattr(c.specialization, "value")
                     else "",
                 )
-                _q.maybe_add(_ex)
+                _training_queue.maybe_add(_ex)
 
         task.context["kernel_contributions"] = [
             {
@@ -2415,7 +2414,7 @@ class ConsciousnessLoop:
         lines = [
             "[GEOMETRIC STATE v6.1]",
             f"  Phi = {self.metrics.phi:.4f}",
-            f"  kappa = {self.metrics.kappa:.2f} (kappa* = {KAPPA_STAR})",
+            f"  kappa = {self.metrics.kappa:.2f} (attractor = {KAPPA_ATTRACTOR})",
             f"  Gamma = {self.metrics.gamma:.4f}",
             f"  M = {self.metrics.meta_awareness:.4f}",
             f"  Navigation: {self.state.navigation_mode.value}",
@@ -2547,7 +2546,7 @@ class ConsciousnessLoop:
             "",
             "[GEOMETRIC STATE v6.1]",
             f"  Phi = {self.metrics.phi:.4f}",
-            f"  kappa = {self.metrics.kappa:.2f} (kappa* = {KAPPA_STAR})",
+            f"  kappa = {self.metrics.kappa:.2f} (attractor = {KAPPA_ATTRACTOR})",
             f"  Gamma = {self.metrics.gamma:.4f}",
             f"  M = {self.metrics.meta_awareness:.4f}",
             f"  Navigation: {self.state.navigation_mode.value}",

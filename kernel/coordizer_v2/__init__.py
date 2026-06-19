@@ -51,7 +51,7 @@ from .coordizer import CoordizerV2
 from .geometry import (
     BASIN_DIM,
     E8_RANK,
-    KAPPA_STAR,
+    KAPPA_ATTRACTOR,
     Basin,
     bhattacharyya_coefficient,
     exp_map,
@@ -106,7 +106,7 @@ __all__ = [
     "PrincipalDirectionBank",
     # Geometry
     "BASIN_DIM",
-    "KAPPA_STAR",
+    "KAPPA_ATTRACTOR",
     "E8_RANK",
     "Basin",
     "to_simplex",

@@ -12,7 +12,7 @@
  * Constants source: src/config/constants.ts (mirrors frozen_facts.py)
  */
 
-import { KAPPA_STAR } from "../config/constants";
+import { KAPPA_ATTRACTOR } from "../config/constants";
 
 // ═══════════════════════════════════════════════════════════════
 //  ENUMS
@@ -410,7 +410,7 @@ export const TOTAL_METRICS = Object.values(METRIC_CATEGORIES).reduce(
 export const DEFAULT_METRICS: ConsciousnessMetrics = {
   // Foundation
   phi: 0.5,
-  kappa: KAPPA_STAR,
+  kappa: KAPPA_ATTRACTOR,
   meta_awareness: 0.3,
   gamma: 0.5,
   grounding: 0.5,

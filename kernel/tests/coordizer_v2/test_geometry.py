@@ -15,7 +15,7 @@ import pytest
 from kernel.coordizer_v2.geometry import (
     BASIN_DIM,
     E8_RANK,
-    KAPPA_STAR,
+    KAPPA_ATTRACTOR,
     bhattacharyya_coefficient,
     exp_map,
     fisher_information_diagonal,
@@ -67,7 +67,10 @@ class TestConstants:
     """Verify frozen facts are correctly set."""
 
     def test_kappa_star_is_64(self):
-        assert KAPPA_STAR == 64.0, "κ* must be exactly 64.0"
+        assert KAPPA_ATTRACTOR == 64.0, (
+            "architectural attractor must be exactly 64.0 "
+            "(κ*≈64 fixed-point interpretation RETIRED — EXP-107)"
+        )
 
     def test_basin_dim_is_64(self):
         assert BASIN_DIM == 64, "Basin dimension must be 64 (Δ⁶³)"

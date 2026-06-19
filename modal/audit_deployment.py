@@ -329,7 +329,9 @@ def main():
     print("\n" + "=" * 60)
     print("[2] GPU TYPE ANALYSIS")
     print("=" * 60)
-    train_gpu_local = os.environ.get("TRAIN_GPU", "a100-80gb (DEFAULT — TRAIN_GPU not set in local env)")
+    train_gpu_local = os.environ.get(
+        "TRAIN_GPU", "a100-80gb (DEFAULT — TRAIN_GPU not set in local env)"
+    )
     harvest_model_local = os.environ.get("HARVEST_MODEL_ID", "Qwen/Qwen3.5-4B (DEFAULT — not set)")
     print(f"\n  Local env TRAIN_GPU:       {train_gpu_local}")
     print(f"  Local env HARVEST_MODEL_ID:{harvest_model_local}")

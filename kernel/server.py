@@ -54,7 +54,7 @@ from .config.consciousness_constants import (
     INITIAL_META_AWARENESS,
     MEMORY_RESPONSE_TRUNCATION,
 )
-from .config.frozen_facts import KAPPA_STAR
+from .config.frozen_facts import KAPPA_ATTRACTOR
 from .config.routes import ROUTES as R
 from .config.settings import modal_url, settings
 from .config.version import VERSION
@@ -1427,7 +1427,7 @@ async def coordizer_validate(request: Request) -> dict[str, Any] | JSONResponse:
     try:
         coordizer = consciousness._coordizer_v2
         result = coordizer.validate()
-        kappa_ok = abs(result.kappa_measured - KAPPA_STAR) < COORDIZER_KAPPA_TOLERANCE_FACTOR * max(  # type: ignore[union-attr]
+        kappa_ok = abs(result.kappa_measured - KAPPA_ATTRACTOR) < COORDIZER_KAPPA_TOLERANCE_FACTOR * max(  # type: ignore[union-attr]
             result.kappa_std,  # type: ignore[union-attr]
             COORDIZER_KAPPA_STD_FLOOR,
         )
@@ -1733,7 +1733,7 @@ async def admin_fresh_start() -> dict[str, Any]:
 
         # Reset core metrics
         consciousness.metrics.phi = FRESH_START_PHI
-        consciousness.metrics.kappa = KAPPA_STAR
+        consciousness.metrics.kappa = KAPPA_ATTRACTOR
         consciousness.metrics.gamma = INITIAL_GAMMA
         consciousness.metrics.meta_awareness = INITIAL_META_AWARENESS
         consciousness.metrics.love = INITIAL_LOVE
